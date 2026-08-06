@@ -8,3 +8,4 @@
 // express in a `pnpm db:generate:custom` migration.
 
 export * from './client';
+export * from './contract';
