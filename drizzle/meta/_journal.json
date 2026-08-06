@@ -12,15 +12,29 @@
     {
       "idx": 1,
       "version": "7",
-      "when": 1786052144111,
-      "tag": "0001_fiscal_profile",
+      "when": 1786052108887,
+      "tag": "0001_client_contract_rate_card",
       "breakpoints": true
     },
     {
       "idx": 2,
       "version": "7",
-      "when": 1786052167848,
-      "tag": "0002_fiscal_profile_period",
+      "when": 1786052116670,
+      "tag": "0002_client_contract_rate_card_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786056658073,
+      "tag": "0003_fiscal_profile",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786056664658,
+      "tag": "0004_fiscal_profile_period",
       "breakpoints": true
     }
   ]
