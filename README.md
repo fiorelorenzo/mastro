@@ -1,6 +1,6 @@
 # mastro
 
-*From the Italian **libro mastro** — the general ledger.*
+_From the Italian **libro mastro** — the general ledger._
 
 A self-hosted ledger for independent consultants who bill by the **day**, and whose
 days have to be **approved in writing before they are worked**.

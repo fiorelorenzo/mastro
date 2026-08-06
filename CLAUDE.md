@@ -2,7 +2,7 @@
 
 ## Claude Code specific
 
-Everything about *this project* — architecture, invariants, board conventions,
+Everything about _this project_ — architecture, invariants, board conventions,
 language rules — lives in `AGENTS.md`, imported above. This section is only for how
 **Claude Code** should operate here.
 

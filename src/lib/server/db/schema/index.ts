@@ -1,0 +1,10 @@
+// The schema barrel. One file per area under this folder (`client.ts`,
+// `contract.ts`, `work-unit.ts`, ...), re-exported here so that
+// `import * as schema from '$lib/server/db/schema'` sees every table and
+// drizzle-kit picks them all up.
+//
+// Adding a table: create its own file, re-export it below, run
+// `pnpm db:generate`, then hand-write the constraints the generator cannot
+// express in a `pnpm db:generate:custom` migration.
+
+export {};

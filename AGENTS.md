@@ -1,9 +1,9 @@
 # AGENTS.md
 
 Orientation for AI coding agents (Claude Code, Codex, Cursor, Gemini CLI, …) and
-human contributors. This file is the source of truth for *how we build*; the
+human contributors. This file is the source of truth for _how we build_; the
 [project board](https://github.com/users/fiorelorenzo/projects/8) is the source of
-truth for *what we build and where it stands*.
+truth for _what we build and where it stands_.
 
 ## What this is
 
@@ -30,7 +30,7 @@ only social provider, requesting `openid email profile` and nothing more, gated 
 mandatory email allowlist. Mailbox access is **IMAP/SMTP with an app password**, not
 the Gmail API, and the Drive mirror uses the `drive.file` scope. This is deliberate,
 and the reason is worth knowing before someone "simplifies" it: a Google project in
-*Testing* publishing status issues refresh tokens that expire after seven days unless
+_Testing_ publishing status issues refresh tokens that expire after seven days unless
 the only scopes requested are a subset of name, email and profile. `gmail.readonly`
 is a restricted scope, so routing mail through the Gmail API would both break weekly
 in Testing and require every self-hoster to pass Google's full verification with a
@@ -49,7 +49,7 @@ of time. `ceiling`s come either from a pack or from a contract.
 Five invariants. Breaking one is a defect even if the tests pass:
 
 1. **No country-specific logic outside a jurisdiction pack.** No `if (country ===
-   'IT')` in the core, ever. If the engine needs to branch, the pack interface is
+'IT')` in the core, ever. If the engine needs to branch, the pack interface is
    missing a capability — extend the interface. Acceptance test: with the `generic`
    pack selected, the entire product still works, minus ceilings.
 2. **Pack rules follow the money; contract rules follow the counterparty.** A revenue
@@ -79,10 +79,10 @@ error to be smoothed over.
 
 ## Build order
 
-| Milestone | What it proves |
-| --- | --- |
-| `v0` | The ledger protects: no day worked without approval goes unnoticed, no ceiling is crossed blind, this year's history is loaded, and it is usable from a phone in under 30 seconds per day. |
-| `v1` | Days propose themselves from the client's own emails, without imposing a format on the client, and every proposal stays reviewable next to the excerpt that produced it. |
+| Milestone | What it proves                                                                                                                                                                             |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `v0`      | The ledger protects: no day worked without approval goes unnoticed, no ceiling is crossed blind, this year's history is loaded, and it is usable from a phone in under 30 seconds per day. |
+| `v1`      | Days propose themselves from the client's own emails, without imposing a format on the client, and every proposal stays reviewable next to the excerpt that produced it.                   |
 
 Epic order on the board is build order. Foundations, day lifecycle, invoices and
 jurisdiction packs are serial: the ceiling engine cannot be written before the pack
@@ -185,6 +185,66 @@ amounts changed, structure kept.
 
 ## Local development
 
-Not yet: the bootstrap issue in the Foundations epic is the first thing to build. It
-must leave `pnpm dev` bringing up web and database with migrations running from
-empty, and this section rewritten to say so.
+Requirements: Node 24 (pinned in `.nvmrc`), pnpm, Docker with the Compose plugin.
+
+```bash
+cp .env.example .env     # once; .env is never committed
+pnpm install
+pnpm dev                 # starts Postgres, applies migrations, then Vite on :5187
+```
+
+`pnpm dev` is the whole story: it runs `db:up` (Compose, waits for the healthcheck),
+then `db:migrate`, then `vite dev`. From an empty machine it produces a working
+database and a running app, and `GET /health` returns `{"status":"ok"}` only when the
+database really answers.
+
+|Command|What it does|
+|---|---|
+|`pnpm dev`|Database, migrations and Vite on `:5187`|
+|`pnpm build` / `pnpm preview`|`adapter-node` bundle in `build/`, then run it|
+|`pnpm check`|`svelte-check` (types, unused exports, a11y)|
+|`pnpm lint` / `pnpm format`|Prettier check plus ESLint / rewrite in place|
+|`pnpm test`|Vitest, one run|
+|`pnpm db:up` / `pnpm db:down`|Postgres 16 container, loopback on `:5436`|
+|`pnpm db:migrate`|Apply every pending migration|
+|`pnpm db:reset`|Destroy the volume and rebuild from empty|
+|`pnpm db:generate`|Generate SQL from the TypeScript schema|
+|`pnpm db:generate:custom`|Empty migration to hand-write SQL into|
+
+Ports are fixed (app `5187`, Postgres `5436`) so this project can run beside the
+others on the same box. Postgres is published on `127.0.0.1` only.
+
+### Migrations
+
+**Drizzle ORM, with the SQL committed.** The tables live in TypeScript, one file per
+area under `src/lib/server/db/schema/`, re-exported from that folder's `index.ts`;
+`pnpm db:generate` turns them into numbered SQL in `drizzle/`, which is committed and
+is what actually runs. `pnpm db:migrate` applies it through
+`scripts/migrate.ts`, plain `node` with type stripping, so the deployed image can run
+the same script on boot without dev dependencies.
+
+**`drizzle-kit push` is not used and there is no script for it.** It diffs a live
+database against the schema and would silently drop the constraints below, which the
+generator cannot see.
+
+Everything the generator cannot express — CHECK constraints, triggers, partial unique
+indexes, the state-machine rules — goes in a hand-written migration from
+`pnpm db:generate:custom --name=<what_it_does>`, committed next to the generated ones.
+That is not a workaround: those constraints are where the invariants are enforced, so
+they belong in SQL and are reviewed as SQL.
+
+Conventions every table follows: `id` uuid, `created_at`, `updated_at`, using the
+helpers in `src/lib/server/db/columns.ts`, and a trigger installing `set_updated_at()`
+(migration `0000`) so an UPDATE cannot forget the timestamp:
+
+```sql
+CREATE TRIGGER <table>_set_updated_at BEFORE UPDATE ON "<table>"
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+```
+
+### Tests
+
+Vitest, in a node environment, `*.test.ts` next to the code. Database tests use the
+real database (`pnpm db:up && pnpm db:migrate` first) and do their work inside a
+transaction they roll back, so the suite leaves nothing behind and does not care about
+order. `src/lib/server/db/set-updated-at.test.ts` is the pattern to copy.
