@@ -1,4 +1,5 @@
 import { error, fail, redirect } from '@sveltejs/kit';
+import * as m from '$lib/paraglide/messages';
 import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
 import { getClientWithContacts, updateClient } from '$lib/server/repositories/client';
 import { parseClientForm } from '$lib/server/repositories/client-form';
@@ -6,7 +7,7 @@ import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
 	const client = await getClientWithContacts(params.id);
-	if (!client) error(404, 'Client not found');
+	if (!client) error(404, m.client_not_found());
 	return { client };
 };
 
@@ -21,7 +22,7 @@ export const actions: Actions = {
 		} catch (err) {
 			if (isPostgresConstraintViolation(err, '23505', 'client_tax_id_unique')) {
 				return fail(400, {
-					errors: { taxId: 'A client with this tax id already exists.' },
+					errors: { taxId: m.client_validation_tax_id_duplicate() },
 					values: result.values
 				});
 			}

@@ -1,4 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
+import * as m from '$lib/paraglide/messages';
 import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
 import { createClient } from '$lib/server/repositories/client';
 import { parseClientForm } from '$lib/server/repositories/client-form';
@@ -15,7 +16,7 @@ export const actions: Actions = {
 		} catch (error) {
 			if (isPostgresConstraintViolation(error, '23505', 'client_tax_id_unique')) {
 				return fail(400, {
-					errors: { taxId: 'A client with this tax id already exists.' },
+					errors: { taxId: m.client_validation_tax_id_duplicate() },
 					values: result.values
 				});
 			}
