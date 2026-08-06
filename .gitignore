@@ -2,6 +2,7 @@ node_modules/
 .env
 .env.*
 !.env.example
+!.env.prod.example
 build/
 .svelte-kit/
 dist/
@@ -11,3 +12,9 @@ coverage/
 # Paraglide
 src/lib/paraglide
 project.inlang/cache/
+
+# Local rehearsal artifacts for the production compose stack (#76, #77):
+# the bind-mounted documents directory and backup archives, never real
+# client data, never committed.
+/data/
+/backups/

@@ -1,0 +1,89 @@
+# Production stack (#76). Separate from compose.yaml on purpose: that file
+# is the local development database only, still used by `pnpm dev`, and
+# this file must never be merged into it. Bring this stack up with
+#
+#   docker compose -f compose.prod.yaml --env-file .env.prod up -d
+#
+# `.env.prod` is the secrets file (docs/deploy.md): create it from
+# `.env.prod.example`, fill it in, then `chmod 600 .env.prod`. It is never
+# read by anything that builds the image, only by compose at container
+# start, and it stays out of git the same way `.env` already does
+# (`.gitignore`: `.env.*`, `!.env.example`).
+name: mastro-prod
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    # No port published at all: `web` reaches it as `db` on the compose
+    # network, and nothing else needs to. This is stricter than loopback
+    # publishing and sidesteps the trap #76 names entirely for this
+    # service — there is no host port to misconfigure.
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mastro}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env.prod}
+      POSTGRES_DB: ${POSTGRES_DB:-mastro}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-mastro} -d ${POSTGRES_DB:-mastro}']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env.prod
+    environment:
+      # Composed from .env.prod's pieces rather than duplicated as its own
+      # line, so the password lives in exactly one place. `db` is the
+      # compose service name, resolved over the internal network only.
+      DATABASE_URL: postgres://${POSTGRES_USER:-mastro}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-mastro}
+    # Loopback only, per #76: publishing to 0.0.0.0 here would bypass the
+    # host firewall on most Docker setups (Docker's own iptables/nftables
+    # rules run ahead of the host's INPUT chain). The reverse proxy below
+    # is the only service allowed to publish to every interface.
+    ports:
+      - '127.0.0.1:${WEB_PORT:-3001}:3000'
+    volumes:
+      - ${DOCUMENTS_DIR:-./data/documents}:/app/data/documents
+
+  # The reverse proxy: the only thing in this stack facing the network,
+  # terminating TLS. Caddy always listens on the standard 80 (redirect)
+  # and 443 (TLS) *inside* the container; PROXY_HTTP_PORT/PROXY_HTTPS_PORT
+  # below only change which host port maps to them, so MASTRO_SITE_ADDRESS
+  # never needs a port of its own. In production, point it at the real
+  # domain and set MASTRO_TLS_ARG to an email address; Caddy then obtains
+  # and renews a real certificate automatically (ACME, so 80 and 443 both
+  # need to be reachable from the internet for the challenge and for the
+  # HTTP-to-HTTPS redirect Caddy adds by default). Locally,
+  # MASTRO_SITE_ADDRESS defaults to `localhost` and MASTRO_TLS_ARG to
+  # `internal`, which makes Caddy mint its own local CA and a self-signed
+  # certificate instead — see docs/deploy.md for the rehearsal this proved.
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - web
+    ports:
+      - '${PROXY_HTTP_PORT:-80}:80'
+      - '${PROXY_HTTPS_PORT:-443}:443'
+    environment:
+      MASTRO_SITE_ADDRESS: ${MASTRO_SITE_ADDRESS:-localhost}
+      MASTRO_TLS_ARG: ${MASTRO_TLS_ARG:-internal}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
