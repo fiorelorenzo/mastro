@@ -1,3 +1,4 @@
+import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vitest/config';
 import adapter from '@sveltejs/adapter-node';
@@ -21,6 +22,15 @@ export default defineConfig({
 					config.include.push('../drizzle.config.ts', '../scripts/**/*.ts');
 				}
 			}
+		}),
+		paraglideVitePlugin({
+			project: './project.inlang',
+			outdir: './src/lib/paraglide',
+			// Cookie survives a language switch; Accept-Language guesses before the
+			// user ever picks; baseLocale is the final fallback. No "url" strategy:
+			// this app does not route by locale prefix.
+			strategy: ['cookie', 'preferredLanguage', 'baseLocale'],
+			emitTsDeclarations: true
 		})
 	],
 	test: {

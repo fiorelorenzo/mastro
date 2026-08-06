@@ -1,6 +1,7 @@
 <script lang="ts">
 	import './layout.css';
 	import favicon from '$lib/assets/favicon.svg';
+	import LanguageSwitch from '$lib/components/LanguageSwitch.svelte';
 	import InstallPrompt from '$lib/pwa/InstallPrompt.svelte';
 	import { SURFACE_DARK, SURFACE_LIGHT } from '$lib/pwa/colors';
 
@@ -21,5 +22,8 @@
 	<!-- iOS ignores short_name too, and shows this under the home screen icon instead. -->
 	<meta name="apple-mobile-web-app-title" content="mastro" />
 </svelte:head>
+<div class="flex justify-end p-4">
+	<LanguageSwitch />
+</div>
 {@render children()}
 <InstallPrompt />
