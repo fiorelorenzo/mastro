@@ -8,6 +8,20 @@
       "when": 1786047630039,
       "tag": "0000_set_updated_at",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786052108887,
+      "tag": "0001_client_contract_rate_card",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786052116670,
+      "tag": "0002_client_contract_rate_card_constraints",
+      "breakpoints": true
     }
   ]
 }
