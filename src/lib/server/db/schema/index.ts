@@ -9,4 +9,5 @@
 
 export * from './client';
 export * from './contract';
+export * from './fiscal';
 export * from './rate-card';
