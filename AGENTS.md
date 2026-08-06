@@ -106,9 +106,12 @@ board.
 - Board fields, the same four as every other roadmap board here on purpose: `Status`
   (`Todo` / `In Progress` / `Done`), `Priority` (P0–P3), `Effort` (S/M/L/XL) and
   `Parallel` (Yes/No — whether a parallel agent can take the issue without
-  colliding). Set all four on anything you file. Never write a value that is not
-  already an option: read the schema instead of guessing, and never add, rename or
-  drop a field on this board alone.
+  colliding). Set all four on any **issue** you file. **Epics carry `Status` and
+  `Priority` only**: an epic's effort is the sum of its children and its parallelism
+  is a property of them, so filling those fields on a container would be a number
+  nobody should trust. Never write a value that is not already an option: read the
+  schema instead of guessing, and never add, rename or drop a field on this board
+  alone.
 
 **Comment when a reader would want to know.** A decision taken, an approach tried and
 abandoned, a blocker hit, a surprise in the code, a finding that invalidates the issue
