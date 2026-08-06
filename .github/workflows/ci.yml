@@ -43,6 +43,9 @@ jobs:
       BETTER_AUTH_URL: http://localhost:5187
       GOOGLE_CLIENT_ID: ci-test-client-id
       GOOGLE_CLIENT_SECRET: ci-test-client-secret
+      # Direction detection (#45) needs this to tell an outgoing invoice
+      # from an incoming one; not a real tax id.
+      ACCOUNT_HOLDER_TAX_ID: IT01234567890
 
     steps:
       - uses: actions/checkout@v5
