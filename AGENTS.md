@@ -221,14 +221,20 @@ others on the same box. Postgres is published on `127.0.0.1` only.
 `pnpm build` regenerate it automatically through the Vite plugin in
 `vite.config.ts`; `pnpm check` and `pnpm messages:compile` regenerate it explicitly
 first, because `svelte-check` does not go through Vite. Reference a message key
-that is not in both catalogues and `pnpm check` fails. `LegalString`
-(`src/lib/legal/legal-string.ts`) is the type for statutory citations, tax
-treatment codes and mandatory invoice annotations (invariant 5): it has no
-dependency on the i18n layer or on the jurisdiction pack module, so a pack can
-import it without importing anything else. `$lib/i18n/translate.ts` wraps every
-compiled message function and refuses a `LegalString` in an interpolation slot at
-compile time; a legal string renders through `LegalText.svelte` instead, verbatim,
-regardless of locale.
+that is not in both catalogues and `pnpm check` fails. `LegalText`
+(`src/lib/legal/legal-text.ts`) is the type for statutory citations, tax
+treatment codes and mandatory invoice annotations (invariant 5): it carries the
+language the law requires them in and has no dependency on the i18n layer or on
+the jurisdiction pack module, so a pack can import it without importing anything
+else. `$lib/i18n/translate.ts` wraps every compiled message function and refuses
+a `LegalText` in an interpolation slot at compile time; a legal text renders
+through `LegalText.svelte` instead, verbatim, regardless of locale. Number, date
+and currency formatting goes through the helpers in `$lib/i18n/format.ts`, which
+wrap `Intl` for the active locale — nothing else is sanctioned to format one.
+Jurisdiction packs carry their own presentational label bundle
+(`src/lib/server/fiscal/label.ts`) keyed by every supported interface language,
+so a bundle missing a translation fails `pnpm check` rather than falling back
+silently.
 
 ### Migrations
 
