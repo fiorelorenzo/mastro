@@ -22,7 +22,21 @@ than starting a parallel document.
 **Stack.** SvelteKit (`adapter-node`) + TypeScript + Postgres 16. A separate worker
 process for mailbox polling, mirror publishing and alerts. An isolated ACP runner for
 agentic ingestion. Docker Compose, app bound to loopback, a reverse proxy as the only
-edge. Single tenant: one user, one fiscal profile, no registration.
+edge. Single tenant in the sense that there is one fiscal profile and one ledger —
+**not** in the sense that authentication is optional.
+
+**Authentication and external access.** Login is **Better Auth** with Google as the
+only social provider, requesting `openid email profile` and nothing more, gated by a
+mandatory email allowlist. Mailbox access is **IMAP/SMTP with an app password**, not
+the Gmail API, and the Drive mirror uses the `drive.file` scope. This is deliberate,
+and the reason is worth knowing before someone "simplifies" it: a Google project in
+*Testing* publishing status issues refresh tokens that expire after seven days unless
+the only scopes requested are a subset of name, email and profile. `gmail.readonly`
+is a restricted scope, so routing mail through the Gmail API would both break weekly
+in Testing and require every self-hoster to pass Google's full verification with a
+security assessment to escape it. IMAP also makes the product work with any provider.
+`drive.file` is neither sensitive nor restricted, and is the correct privilege anyway
+since `mastro` only touches files it created.
 
 **The domain, in one paragraph.** A `client` has `contract`s; a contract has
 `rate_card`s with validity periods, and produces `work_unit`s (days) and `invoice`s.
@@ -52,6 +66,10 @@ Five invariants. Breaking one is a defect even if the tests pass:
    and mandatory invoice annotations come from the pack and render verbatim, in the
    language the law requires, whatever the interface language is. Make this hard to
    get wrong in the type system.
+6. **Access control is deny-by-default.** A new route or endpoint is protected unless
+   it explicitly opts out, so forgetting is safe. An empty allowlist means nobody gets
+   in, never everybody. This instance is reachable from the internet, and an open
+   Google login without an allowlist lets any Google account register on it.
 
 **State machine constraints are enforced by the database**, not by application
 checks. A day on an approval-required contract cannot reach `approved` without an
@@ -113,8 +131,8 @@ you split it out, with a link.
   `priority:P0`–`priority:P3`, and one or more `area:*`. `epic` and `flagship` are the
   only unprefixed labels. Priority lives in two places on purpose, the label and the
   board field: set both.
-- **`area:*` values here**: `domain`, `fiscal`, `import`, `agent`, `mail`, `drive`,
-  `web`, `pwa`, `i18n`, `alerts`, `deploy`, `docs`. Add one only when a surface really
+- **`area:*` values here**: `domain`, `fiscal`, `import`, `agent`, `auth`, `mail`,
+  `drive`, `web`, `pwa`, `i18n`, `alerts`, `deploy`, `docs`. Add one only when a surface really
   is new.
 - **Milestone**: `v0` or `v1`. An issue that belongs to neither is not ready to be
   filed.
@@ -157,7 +175,8 @@ gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" \
 
 Conventional Commits (`feat(fiscal): ...`, `fix(import): ...`). Branch per issue,
 `type/short-slug`. Never commit to `main` directly once CI exists. No secret ever
-enters the repository: real client data, contracts and invoice documents stay out,
+enters the repository (and `BETTER_AUTH_SECRET` belongs in the backup set, because
+losing it invalidates every session): real client data, contracts and invoice documents stay out,
 and test fixtures derived from real documents must be anonymised — names, tax ids and
 amounts changed, structure kept.
 

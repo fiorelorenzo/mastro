@@ -73,6 +73,13 @@ and tells you what it means for the work ahead.
 SvelteKit (`adapter-node`) and Postgres, single tenant, behind a reverse proxy that
 terminates TLS. Deployment instructions will land with the first release.
 
+Sign-in is Better Auth over Google, with a mandatory allowlist of permitted
+addresses. Everything else it needs is deliberately chosen to avoid Google's
+verification process: mail is read and sent over **IMAP/SMTP with an app password**
+rather than the Gmail API, and the Drive mirror asks only for `drive.file`. You
+should never have to submit your own instance for a security assessment just to read
+your own inbox.
+
 ## Contributing
 
 The board carries the full breakdown, and every issue states its own acceptance
