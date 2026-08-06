@@ -198,18 +198,18 @@ then `db:migrate`, then `vite dev`. From an empty machine it produces a working
 database and a running app, and `GET /health` returns `{"status":"ok"}` only when the
 database really answers.
 
-|Command|What it does|
-|---|---|
-|`pnpm dev`|Database, migrations and Vite on `:5187`|
-|`pnpm build` / `pnpm preview`|`adapter-node` bundle in `build/`, then run it|
-|`pnpm check`|`svelte-check` (types, unused exports, a11y)|
-|`pnpm lint` / `pnpm format`|Prettier check plus ESLint / rewrite in place|
-|`pnpm test`|Vitest, one run|
-|`pnpm db:up` / `pnpm db:down`|Postgres 16 container, loopback on `:5436`|
-|`pnpm db:migrate`|Apply every pending migration|
-|`pnpm db:reset`|Destroy the volume and rebuild from empty|
-|`pnpm db:generate`|Generate SQL from the TypeScript schema|
-|`pnpm db:generate:custom`|Empty migration to hand-write SQL into|
+| Command                       | What it does                                   |
+| ----------------------------- | ---------------------------------------------- |
+| `pnpm dev`                    | Database, migrations and Vite on `:5187`       |
+| `pnpm build` / `pnpm preview` | `adapter-node` bundle in `build/`, then run it |
+| `pnpm check`                  | `svelte-check` (types, unused exports, a11y)   |
+| `pnpm lint` / `pnpm format`   | Prettier check plus ESLint / rewrite in place  |
+| `pnpm test`                   | Vitest, one run                                |
+| `pnpm db:up` / `pnpm db:down` | Postgres 16 container, loopback on `:5436`     |
+| `pnpm db:migrate`             | Apply every pending migration                  |
+| `pnpm db:reset`               | Destroy the volume and rebuild from empty      |
+| `pnpm db:generate`            | Generate SQL from the TypeScript schema        |
+| `pnpm db:generate:custom`     | Empty migration to hand-write SQL into         |
 
 Ports are fixed (app `5187`, Postgres `5436`) so this project can run beside the
 others on the same box. Postgres is published on `127.0.0.1` only.
