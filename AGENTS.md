@@ -1,0 +1,168 @@
+# AGENTS.md
+
+Orientation for AI coding agents (Claude Code, Codex, Cursor, Gemini CLI, …) and
+human contributors. This file is the source of truth for *how we build*; the
+[project board](https://github.com/users/fiorelorenzo/projects/8) is the source of
+truth for *what we build and where it stands*.
+
+## What this is
+
+`mastro` is a self-hosted ledger for independent consultants who bill by the day and
+whose days must be approved in writing before they are worked. See
+[`README.md`](README.md) for the product framing.
+
+There is deliberately **no SPEC.md**. The design lives in the epic descriptions on
+the board, each of which carries the architecture for its area, and every issue
+states its own acceptance criteria. If you find yourself wanting a spec, the epic you
+are working under is missing context — say so in a comment and fix it there, rather
+than starting a parallel document.
+
+## Architecture, and the invariants that matter
+
+**Stack.** SvelteKit (`adapter-node`) + TypeScript + Postgres 16. A separate worker
+process for mailbox polling, mirror publishing and alerts. An isolated ACP runner for
+agentic ingestion. Docker Compose, app bound to loopback, a reverse proxy as the only
+edge. Single tenant: one user, one fiscal profile, no registration.
+
+**The domain, in one paragraph.** A `client` has `contract`s; a contract has
+`rate_card`s with validity periods, and produces `work_unit`s (days) and `invoice`s.
+A day's life is `proposed → approved → worked → invoiced → paid`, with the branches
+`worked_without_approval`, `disputed`, `revoked`, `rejected`, `unbillable`. An
+`approval` is immutable and carries the proof (channel, sender, message id, excerpt,
+archived document). A `fiscal_profile` points at a **jurisdiction pack** for a period
+of time. `ceiling`s come either from a pack or from a contract.
+
+Five invariants. Breaking one is a defect even if the tests pass:
+
+1. **No country-specific logic outside a jurisdiction pack.** No `if (country ===
+   'IT')` in the core, ever. If the engine needs to branch, the pack interface is
+   missing a capability — extend the interface. Acceptance test: with the `generic`
+   pack selected, the entire product still works, minus ceilings.
+2. **Pack rules follow the money; contract rules follow the counterparty.** A revenue
+   ceiling belongs to a pack and disappears when the regime changes. A clause capping
+   one client's share of your income belongs to the contract and survives any change
+   of regime. When unsure which one you are modelling, apply that test.
+3. **Agents propose, humans confirm.** The ACP runner has no write access to the
+   database. Its only output is a `proposal` carrying the verbatim excerpt it rests
+   on. Nothing reaches the ledger without a human accepting it.
+4. **Never keep only the extracted fields.** Every derived datum keeps its source
+   document. If a client disputes a day, what counts is the original message, not the
+   row.
+5. **Legal strings are never translated.** Statutory citations, tax treatment codes
+   and mandatory invoice annotations come from the pack and render verbatim, in the
+   language the law requires, whatever the interface language is. Make this hard to
+   get wrong in the type system.
+
+**State machine constraints are enforced by the database**, not by application
+checks. A day on an approval-required contract cannot reach `approved` without an
+`approval_id`, and a day recorded as `worked` without one lands in
+`worked_without_approval` automatically. That state is a product feature, not an
+error to be smoothed over.
+
+## Build order
+
+| Milestone | What it proves |
+| --- | --- |
+| `v0` | The ledger protects: no day worked without approval goes unnoticed, no ceiling is crossed blind, this year's history is loaded, and it is usable from a phone in under 30 seconds per day. |
+| `v1` | Days propose themselves from the client's own emails, without imposing a format on the client, and every proposal stays reviewable next to the excerpt that produced it. |
+
+Epic order on the board is build order. Foundations, day lifecycle, invoices and
+jurisdiction packs are serial: the ceiling engine cannot be written before the pack
+interface exists.
+
+## The GitHub Project is the source of truth
+
+Current state and roadmap live on **Project #8 "Mastro roadmap"** (owner
+`fiorelorenzo`), not in this file and not in a chat transcript. Keeping the board
+current is part of doing the work, not paperwork at the end: it is how the state is
+visible without reading session logs, so a board that lags reality is worse than no
+board.
+
+**Status is a claim about reality. Keep it true.**
+
+- Before you write code for an issue, move it to `In Progress`. If what you are about
+  to do has no issue, create one first, then start.
+- Move it to `Done` only when the change is merged and verified, not when the code is
+  written. Merged but something still open? Say so in a comment and leave it
+  `In Progress`.
+- Board fields, the same four as every other roadmap board here on purpose: `Status`
+  (`Todo` / `In Progress` / `Done`), `Priority` (P0–P3), `Effort` (S/M/L/XL) and
+  `Parallel` (Yes/No — whether a parallel agent can take the issue without
+  colliding). Set all four on anything you file. Never write a value that is not
+  already an option: read the schema instead of guessing, and never add, rename or
+  drop a field on this board alone.
+
+**Comment when a reader would want to know.** A decision taken, an approach tried and
+abandoned, a blocker hit, a surprise in the code, a finding that invalidates the issue
+as written. One comment per meaningful turn in the work, not one per commit, and no
+routine progress narration.
+
+**File the work you discover.** When something real surfaces mid-task, open an issue
+instead of silently widening the current change. Then say in the current issue that
+you split it out, with a link.
+
+## Conventions for a new issue
+
+- **Title**: conventional-commit form, `type(area): imperative summary` — e.g.
+  `feat(fiscal): cash and accrual duality over one ledger`. Specific beats short.
+- **Body**: because there is no spec, an issue must stand alone. State the context,
+  what to build, and explicit acceptance criteria. Assume the reader has not read the
+  other issues.
+- **Labels**: exactly one `type:*` (`feature`, `fix`, `refactor`, `test`, `chore`,
+  `ci`, `docs`, `design`, `security`, `spike`), exactly one of
+  `priority:P0`–`priority:P3`, and one or more `area:*`. `epic` and `flagship` are the
+  only unprefixed labels. Priority lives in two places on purpose, the label and the
+  board field: set both.
+- **`area:*` values here**: `domain`, `fiscal`, `import`, `agent`, `mail`, `drive`,
+  `web`, `pwa`, `i18n`, `alerts`, `deploy`, `docs`. Add one only when a surface really
+  is new.
+- **Milestone**: `v0` or `v1`. An issue that belongs to neither is not ready to be
+  filed.
+- **Every issue hangs off an epic.** Epics are titled `[Epic] Name` and carry the
+  `epic` label. An issue with no parent is a defect in the board.
+
+```bash
+# Read the schema, never guess an option value
+gh project field-list 8 --owner fiorelorenzo --format json
+gh label list -R fiorelorenzo/mastro --limit 100
+
+# Fill these in; everything below runs as written
+ISSUE=123; EPIC=456; STATUS="In Progress"     # Todo | In Progress | Done
+OWNER=fiorelorenzo; REPO=mastro; PROJECT=8
+
+PROJECT_ID=$(gh project view $PROJECT --owner $OWNER --format json --jq '.id')
+STATUS_FIELD=$(gh project field-list $PROJECT --owner $OWNER --format json \
+  --jq '.fields[] | select(.name=="Status") | .id')
+OPTION_ID=$(gh project field-list $PROJECT --owner $OWNER --format json \
+  --jq ".fields[] | select(.name==\"Status\") | .options[] | select(.name==\"$STATUS\") | .id")
+ITEM_ID=$(gh project item-list $PROJECT --owner $OWNER --format json --limit 500 \
+  --jq ".items[] | select(.content.number==$ISSUE) | .id")
+
+gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" \
+  --field-id "$STATUS_FIELD" --single-select-option-id "$OPTION_ID"
+```
+
+## Language
+
+- **Code, comments, identifiers, commit messages, issues, PRs and documentation:
+  English.** No exceptions, including internal comments.
+- **The interface is multilingual**: English and Italian at launch, through a
+  compile-time type-safe i18n layer. A missing key fails the build.
+- Number, date and currency formatting goes through `Intl`, never hand-rolled.
+- Jurisdiction packs carry their own label bundle in every supported language.
+- And again, because it is the one that gets broken: **legal strings are data, not
+  copy. They are never translated.**
+
+## Commits and branches
+
+Conventional Commits (`feat(fiscal): ...`, `fix(import): ...`). Branch per issue,
+`type/short-slug`. Never commit to `main` directly once CI exists. No secret ever
+enters the repository: real client data, contracts and invoice documents stay out,
+and test fixtures derived from real documents must be anonymised — names, tax ids and
+amounts changed, structure kept.
+
+## Local development
+
+Not yet: the bootstrap issue in the Foundations epic is the first thing to build. It
+must leave `pnpm dev` bringing up web and database with migrations running from
+empty, and this section rewritten to say so.
