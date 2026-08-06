@@ -32,6 +32,22 @@ export interface Ceiling {
 	readonly label: LabelBundle;
 	readonly legalBasis?: LegalText;
 	readonly amount: MinorUnits;
+	/**
+	 * What crossing the ceiling does, in plain interface-language copy —
+	 * e.g. "the regime is lost from the following year" versus "the regime
+	 * is lost immediately, VAT applies from here on" (#33). A jurisdiction
+	 * can carry more than one ceiling with different consequences, so the
+	 * dashboard (#57) needs this alongside `label` to tell them apart. Not
+	 * a legal string — nothing here is mandated wording — so it is a
+	 * `LabelBundle` like `label`, never a `LegalText`.
+	 *
+	 * Added by #33: the interface as #30 shipped it had no way to say what
+	 * happens when a ceiling is crossed, and the Italian flat-rate regime
+	 * has two ceilings whose consequences differ in kind, not just degree.
+	 * That is a capability every future pack's ceilings will want, so it
+	 * belongs here, not as a per-pack workaround.
+	 */
+	readonly consequence: LabelBundle;
 	/** The period the ceiling resets over. One member today; add more here,
 	 * never as a special case in a consumer. */
 	readonly period: 'fiscal_year';
