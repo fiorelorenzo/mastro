@@ -3,5 +3,7 @@
 	"landing_tagline": "Un registro per le giornate che devono essere approvate prima di essere lavorate.",
 	"language_switch_label": "Lingua",
 	"invoice_mandatory_annotation_label": "Annotazione obbligatoria",
-	"greeting": "Ciao, {name}."
+	"greeting": "Ciao, {name}.",
+	"signed_in_as": "Accesso effettuato come {email}.",
+	"sign_out": "Esci"
 }

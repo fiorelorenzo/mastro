@@ -37,6 +37,12 @@ jobs:
 
     env:
       DATABASE_URL: postgres://mastro:mastro@localhost:5432/mastro
+      # Not real credentials: this instance is never reachable and no
+      # sign-in ever completes against Google in CI. See #51.
+      BETTER_AUTH_SECRET: ci-test-secret-not-used-anywhere-else
+      BETTER_AUTH_URL: http://localhost:5187
+      GOOGLE_CLIENT_ID: ci-test-client-id
+      GOOGLE_CLIENT_SECRET: ci-test-client-secret
 
     steps:
       - uses: actions/checkout@v5

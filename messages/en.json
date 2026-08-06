@@ -3,5 +3,7 @@
 	"landing_tagline": "A ledger for days that must be approved before they are worked.",
 	"language_switch_label": "Language",
 	"invoice_mandatory_annotation_label": "Mandatory annotation",
-	"greeting": "Hello, {name}."
+	"greeting": "Hello, {name}.",
+	"signed_in_as": "Signed in as {email}.",
+	"sign_out": "Sign out"
 }
