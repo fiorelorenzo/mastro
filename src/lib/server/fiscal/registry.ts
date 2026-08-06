@@ -5,6 +5,7 @@
 
 import type { FiscalPack } from './pack';
 import { genericPack } from './packs/generic';
+import { itFlatRatePack } from './packs/it-flat-rate';
 
 export type PackRegistry = ReadonlyMap<string, FiscalPack>;
 
@@ -32,4 +33,4 @@ export function lookupPack(registry: PackRegistry, id: string, version: string):
 }
 
 /** Every pack mastro ships, registered once. */
-export const defaultRegistry: PackRegistry = buildRegistry([genericPack]);
+export const defaultRegistry: PackRegistry = buildRegistry([genericPack, itFlatRatePack]);
