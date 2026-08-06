@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Anonymised FatturaPA 1.2 fixture (#42). Structure built directly from the
+  published XSD (Agenzia delle Entrate, "Schema del file xml FatturaPA
+  versione 1.2", https://www.fatturapa.gov.it/export/documenti/fatturapa/v1.2/Schema_del_file_xml_FatturaPA_versione_1.2.xsd)
+  and cross-checked against the companion "Rappresentazione tabellare"
+  field list for the same version, not against any real invoice. Every
+  name, tax id, address and amount below is invented for this fixture.
+  The transmitter is deliberately a different tax id from the supplier, to
+  exercise the trap #42 calls out: an invoicing service transmits on the
+  account holder's behalf, so the transmitter must never be read for
+  direction detection (#45) — only CedentePrestatore is.
+-->
+<FatturaElettronica xmlns="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" versione="FPR12">
+  <FatturaElettronicaHeader>
+    <DatiTrasmissione>
+      <IdTrasmittente>
+        <IdPaese>IT</IdPaese>
+        <IdCodice>11122233344</IdCodice>
+      </IdTrasmittente>
+      <ProgressivoInvio>00042</ProgressivoInvio>
+      <FormatoTrasmissione>FPR12</FormatoTrasmissione>
+      <CodiceDestinatario>0000000</CodiceDestinatario>
+    </DatiTrasmissione>
+    <CedentePrestatore>
+      <DatiAnagrafici>
+        <IdFiscaleIVA>
+          <IdPaese>IT</IdPaese>
+          <IdCodice>01234567890</IdCodice>
+        </IdFiscaleIVA>
+        <CodiceFiscale>BNCCHR85M41H501Z</CodiceFiscale>
+        <Anagrafica>
+          <Nome>Chiara</Nome>
+          <Cognome>Bianchi</Cognome>
+        </Anagrafica>
+        <RegimeFiscale>RF19</RegimeFiscale>
+      </DatiAnagrafici>
+      <Sede>
+        <Indirizzo>Via delle Officine</Indirizzo>
+        <NumeroCivico>10</NumeroCivico>
+        <CAP>20121</CAP>
+        <Comune>Milano</Comune>
+        <Provincia>MI</Provincia>
+        <Nazione>IT</Nazione>
+      </Sede>
+    </CedentePrestatore>
+    <CessionarioCommittente>
+      <DatiAnagrafici>
+        <IdFiscaleIVA>
+          <IdPaese>IT</IdPaese>
+          <IdCodice>09876543210</IdCodice>
+        </IdFiscaleIVA>
+        <Anagrafica>
+          <Denominazione>Esempio Servizi S.r.l.</Denominazione>
+        </Anagrafica>
+      </DatiAnagrafici>
+      <Sede>
+        <Indirizzo>Piazza dei Modelli</Indirizzo>
+        <NumeroCivico>4</NumeroCivico>
+        <CAP>00187</CAP>
+        <Comune>Roma</Comune>
+        <Provincia>RM</Provincia>
+        <Nazione>IT</Nazione>
+      </Sede>
+    </CessionarioCommittente>
+  </FatturaElettronicaHeader>
+  <FatturaElettronicaBody>
+    <DatiGenerali>
+      <DatiGeneraliDocumento>
+        <TipoDocumento>TD06</TipoDocumento>
+        <Divisa>EUR</Divisa>
+        <Data>2026-03-15</Data>
+        <Numero>6/2026</Numero>
+        <DatiBollo>
+          <BolloVirtuale>SI</BolloVirtuale>
+          <ImportoBollo>2.00</ImportoBollo>
+        </DatiBollo>
+        <DatiCassaPrevidenziale>
+          <TipoCassa>TC22</TipoCassa>
+          <AlCassa>4.00</AlCassa>
+          <ImportoContributoCassa>40.00</ImportoContributoCassa>
+          <ImponibileCassa>1000.00</ImponibileCassa>
+          <AliquotaIVA>0.00</AliquotaIVA>
+        </DatiCassaPrevidenziale>
+        <ImportoTotaleDocumento>1042.00</ImportoTotaleDocumento>
+      </DatiGeneraliDocumento>
+    </DatiGenerali>
+    <DatiBeniServizi>
+      <DettaglioLinee>
+        <NumeroLinea>1</NumeroLinea>
+        <Descrizione>Consulenza professionale - marzo 2026</Descrizione>
+        <Quantita>5.00</Quantita>
+        <UnitaMisura>GG</UnitaMisura>
+        <PrezzoUnitario>200.00</PrezzoUnitario>
+        <PrezzoTotale>1000.00</PrezzoTotale>
+        <AliquotaIVA>0.00</AliquotaIVA>
+      </DettaglioLinee>
+      <DatiRiepilogo>
+        <AliquotaIVA>0.00</AliquotaIVA>
+        <Natura>N2</Natura>
+        <ImponibileImporto>1040.00</ImponibileImporto>
+        <Imposta>0.00</Imposta>
+        <RiferimentoNormativo>Operazione senza addebito d'imposta ai sensi dell'art. 1, commi da 54 a 89, Legge 23 dicembre 2014, n. 190, e successive modificazioni</RiferimentoNormativo>
+      </DatiRiepilogo>
+    </DatiBeniServizi>
+    <DatiPagamento>
+      <CondizioniPagamento>TP01</CondizioniPagamento>
+      <DettaglioPagamento>
+        <ModalitaPagamento>MP05</ModalitaPagamento>
+        <DataScadenzaPagamento>2026-04-14</DataScadenzaPagamento>
+        <ImportoPagamento>521.00</ImportoPagamento>
+        <IBAN>IT60X0542811101000000123456</IBAN>
+      </DettaglioPagamento>
+      <DettaglioPagamento>
+        <ModalitaPagamento>MP05</ModalitaPagamento>
+        <DataScadenzaPagamento>2026-05-14</DataScadenzaPagamento>
+        <ImportoPagamento>521.00</ImportoPagamento>
+        <IBAN>IT60X0542811101000000123456</IBAN>
+      </DettaglioPagamento>
+    </DatiPagamento>
+  </FatturaElettronicaBody>
+</FatturaElettronica>
