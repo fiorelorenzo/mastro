@@ -66,6 +66,7 @@ test('an address outside the allowlist completes account creation and is still r
 		{ emailAndPassword: { enabled: true } },
 		new Set(['someone-else@example.com'])
 	);
+	const accountCountBefore = (await db.select().from(schema.account)).length;
 
 	await expect(
 		testAuth.api.signUpEmail({
@@ -73,8 +74,10 @@ test('an address outside the allowlist completes account creation and is still r
 		})
 	).rejects.toMatchObject({ status: 'FORBIDDEN', body: { message: ALLOWLIST_REJECTION_MESSAGE } });
 
-	const rows = await db.select().from(schema.user).where(eq(schema.user.email, email));
-	expect(rows).toHaveLength(0);
+	const userRows = await db.select().from(schema.user).where(eq(schema.user.email, email));
+	expect(userRows).toHaveLength(0);
+	const accountCountAfter = (await db.select().from(schema.account)).length;
+	expect(accountCountAfter).toBe(accountCountBefore);
 });
 
 test('an allowlisted address signs up, gets a Secure/HttpOnly/SameSite=Lax cookie in production configuration, and sign-out clears it', async () => {
