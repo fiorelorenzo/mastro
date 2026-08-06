@@ -1,4 +1,5 @@
 <script lang="ts">
+	import * as m from '$lib/paraglide/messages';
 	import type { PageProps } from './$types';
 
 	let { data }: PageProps = $props();
@@ -9,10 +10,10 @@
 <main class="mx-auto max-w-2xl p-8">
 	<h1 class="text-2xl font-semibold">mastro</h1>
 	<p class="mt-2 text-sm opacity-70">
-		A ledger for days that must be approved before they are worked.
+		{m.landing_tagline()}
 	</p>
-	<p class="mt-6 text-sm">Signed in as {data.user.email}.</p>
+	<p class="mt-6 text-sm">{m.signed_in_as({ email: data.user.email })}</p>
 	<form method="POST" action="/sign-out">
-		<button type="submit" class="mt-2 text-sm underline">Sign out</button>
+		<button type="submit" class="mt-2 text-sm underline">{m.sign_out()}</button>
 	</form>
 </main>

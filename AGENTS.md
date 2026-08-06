@@ -198,21 +198,37 @@ then `db:migrate`, then `vite dev`. From an empty machine it produces a working
 database and a running app, and `GET /health` returns `{"status":"ok"}` only when the
 database really answers.
 
-| Command                       | What it does                                   |
-| ----------------------------- | ---------------------------------------------- |
-| `pnpm dev`                    | Database, migrations and Vite on `:5187`       |
-| `pnpm build` / `pnpm preview` | `adapter-node` bundle in `build/`, then run it |
-| `pnpm check`                  | `svelte-check` (types, unused exports, a11y)   |
-| `pnpm lint` / `pnpm format`   | Prettier check plus ESLint / rewrite in place  |
-| `pnpm test`                   | Vitest, one run                                |
-| `pnpm db:up` / `pnpm db:down` | Postgres 16 container, loopback on `:5436`     |
-| `pnpm db:migrate`             | Apply every pending migration                  |
-| `pnpm db:reset`               | Destroy the volume and rebuild from empty      |
-| `pnpm db:generate`            | Generate SQL from the TypeScript schema        |
-| `pnpm db:generate:custom`     | Empty migration to hand-write SQL into         |
+| Command                       | What it does                                          |
+| ----------------------------- | ----------------------------------------------------- |
+| `pnpm dev`                    | Database, migrations and Vite on `:5187`              |
+| `pnpm build` / `pnpm preview` | `adapter-node` bundle in `build/`, then run it        |
+| `pnpm check`                  | `svelte-check` (types, unused exports, a11y)          |
+| `pnpm lint` / `pnpm format`   | Prettier check plus ESLint / rewrite in place         |
+| `pnpm test`                   | Vitest, one run                                       |
+| `pnpm db:up` / `pnpm db:down` | Postgres 16 container, loopback on `:5436`            |
+| `pnpm db:migrate`             | Apply every pending migration                         |
+| `pnpm db:reset`               | Destroy the volume and rebuild from empty             |
+| `pnpm db:generate`            | Generate SQL from the TypeScript schema               |
+| `pnpm db:generate:custom`     | Empty migration to hand-write SQL into                |
+| `pnpm messages:compile`       | Regenerate `src/lib/paraglide` from `messages/*.json` |
 
 Ports are fixed (app `5187`, Postgres `5436`) so this project can run beside the
 others on the same box. Postgres is published on `127.0.0.1` only.
+
+**i18n.** Message catalogues live in `messages/en.json` and `messages/it.json`
+(inlang message format, one key per string), compiled by Paraglide into
+`src/lib/paraglide` — generated, gitignored, never edited by hand. `pnpm dev` and
+`pnpm build` regenerate it automatically through the Vite plugin in
+`vite.config.ts`; `pnpm check` and `pnpm messages:compile` regenerate it explicitly
+first, because `svelte-check` does not go through Vite. Reference a message key
+that is not in both catalogues and `pnpm check` fails. `LegalString`
+(`src/lib/legal/legal-string.ts`) is the type for statutory citations, tax
+treatment codes and mandatory invoice annotations (invariant 5): it has no
+dependency on the i18n layer or on the jurisdiction pack module, so a pack can
+import it without importing anything else. `$lib/i18n/translate.ts` wraps every
+compiled message function and refuses a `LegalString` in an interpolation slot at
+compile time; a legal string renders through `LegalText.svelte` instead, verbatim,
+regardless of locale.
 
 ### Migrations
 
