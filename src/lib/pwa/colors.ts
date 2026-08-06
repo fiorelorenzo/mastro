@@ -1,8 +1,11 @@
-// Placeholder neutral surfaces for the manifest and the theme-color meta tags in
-// +layout.svelte, until #56 lands the real light/dark palette. Tailwind's own
-// neutral-50 and neutral-950 are used on purpose: they carry no hue, so they
-// cannot be mistaken for an invented brand colour, and swapping in the real
-// tokens once #56 defines them is a one-line change here (and a rerun of
-// scripts/generate-pwa-assets.ts to refresh the committed manifest).
-export const SURFACE_LIGHT = '#fafafa';
-export const SURFACE_DARK = '#0a0a0a';
+// Theme colours for the manifest and for the theme-color meta tags in
+// +layout.svelte. They are the page surfaces from the design palette (#56), not
+// a second set of values: an installed app whose chrome does not match the page
+// it frames looks broken, and two sources for one colour drift.
+//
+// The generator script imports this module directly under plain node, so keep
+// the import relative and the module free of anything Vite has to resolve.
+import { surface } from '../design/palette.ts';
+
+export const SURFACE_LIGHT = surface('light').page;
+export const SURFACE_DARK = surface('dark').page;
