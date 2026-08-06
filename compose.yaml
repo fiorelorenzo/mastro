@@ -1,0 +1,23 @@
+name: mastro
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    # Loopback only: the database is never reachable from outside this host.
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5436}:5432'
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mastro}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mastro}
+      POSTGRES_DB: ${POSTGRES_DB:-mastro}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-mastro} -d ${POSTGRES_DB:-mastro}']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:
