@@ -11,3 +11,7 @@ coverage/
 # Paraglide
 src/lib/paraglide
 project.inlang/cache/
+# Document store (#49): content-addressed blobs written by the default
+# DOCUMENT_STORAGE_ROOT. Never committed; real client documents never enter
+# this repository.
+/data/
