@@ -5,7 +5,7 @@
 // `language` is not optional, so there is no code path here that can fall
 // back to whoever happens to be signed in when a message is composed.
 import { daysLate } from '$lib/server/domain/invoice';
-import { formatAmount, formatDate, formatDays } from '$lib/i18n/format';
+import { formatDate, formatDays, formatMinorUnits } from '$lib/i18n/format';
 import type { ContractTemplateLanguage, EmailTemplatePlaceholder } from '$lib/server/db/schema';
 import type { Invoice } from '$lib/server/import/invoice';
 import type { Register } from '$lib/server/register/types';
@@ -42,7 +42,7 @@ function placeholderValues(
 	return {
 		invoice_number: context.invoice.number,
 		period: `${formatDate(context.period.from, language)} – ${formatDate(context.period.to, language)}`,
-		amount: formatAmount(context.invoice.total / 100, context.invoice.currency, language),
+		amount: formatMinorUnits(context.invoice.total, context.invoice.currency, language),
 		due_date: formatDate(context.invoice.dueDate, language),
 		day_list: context.register.entries.map((entry) => formatDate(entry.date, language)).join(', '),
 		day_total: formatDays(context.register.totalQuantity, language),
