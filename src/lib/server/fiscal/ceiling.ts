@@ -134,15 +134,21 @@ export function evaluateCeiling(
 		currentValue,
 		limitValue,
 		usageRatio,
-		// `usageRatio`, not a raw comparison: with a zero `limitValue` (a
-		// percentage-share ceiling whose denominator revenue is itself
-		// zero — #40) `usageRatio` is deliberately floored at 0 above
-		// rather than left as NaN, so a ceiling with nothing yet to
-		// measure reads as not crossed. `currentValue >= limitValue` said
-		// the opposite (0 >= 0) and reported every such ceiling crossed
-		// from the first instant of the fiscal year, before a single
-		// invoice existed to measure it against.
-		crossed: usageRatio >= 1,
+		// `currentValue >= limitValue` directly would say a zero limit
+		// with zero revenue against it (a percentage-share ceiling whose
+		// denominator revenue is itself zero — #40) is crossed, since
+		// `0 >= 0`: every such ceiling reads crossed from the first
+		// instant of its own period, before a single invoice exists to
+		// measure it against, with no alert level ever active to agree
+		// (`usageRatio` is deliberately floored at 0 for the same zero
+		// limit, to keep it finite for display). But a zero limit is not
+		// always an unmeasured ratio — an `absolute_amount` ceiling of 0
+		// is a legal row too, and there `usageRatio`'s floor cannot be
+		// reused: it would report revenue against a zero cap as not
+		// crossed, the opposite defect. So this is not `usageRatio >= 1`
+		// either, that inherits the same floor — a zero limit is crossed
+		// exactly when there is any revenue to measure against it at all.
+		crossed: limitValue === 0 ? currentValue > 0 : currentValue >= limitValue,
 		activeAlertLevels: ceiling.alertLevels.filter((level) => usageRatio >= level.ratio)
 	};
 }
