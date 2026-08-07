@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
 	approval,
@@ -147,4 +147,33 @@ export async function listWorkedWithoutApprovalEvents(
 				: eq(workUnitTransition.toState, 'worked_without_approval')
 		)
 		.orderBy(asc(workUnitTransition.createdAt));
+}
+
+/** The contract most recently recorded on, by insertion time — the day
+ * entry form's "contract used most recently" default (#24). `null` when
+ * no day has ever been recorded, so the caller falls back to its own
+ * default (e.g. the first active contract). */
+export async function getMostRecentContractId(executor: DbExecutor = db): Promise<string | null> {
+	const [row] = await executor
+		.select({ contractId: workUnit.contractId })
+		.from(workUnit)
+		.orderBy(desc(workUnit.createdAt))
+		.limit(1);
+	return row?.contractId ?? null;
+}
+
+/** Every day whose `date` falls in `[startInclusive, endInclusive]`
+ * (ISO dates) — the month calendar's feed (#25). Unordered by contract on
+ * purpose: a date can carry more than one day, across different
+ * contracts, and the caller groups by date itself. */
+export async function listWorkUnitsBetween(
+	startInclusive: string,
+	endInclusive: string,
+	executor: DbExecutor = db
+) {
+	return executor
+		.select()
+		.from(workUnit)
+		.where(and(gte(workUnit.date, startInclusive), lte(workUnit.date, endInclusive)))
+		.orderBy(asc(workUnit.date));
 }
