@@ -8,7 +8,7 @@
 
 import type { ImportableFile, InvoiceFormatAdapter } from '../../adapter';
 import type { Invoice } from '../../invoice';
-import { mapFatturaPaToInvoice } from './map';
+import { mapFatturaPaToInvoices } from './map';
 import { tryParseFatturaElettronica } from './xml';
 
 const FORMAT_ID = 'FPR12';
@@ -40,13 +40,13 @@ function detect(file: ImportableFile): boolean {
 	}
 }
 
-function parse(file: ImportableFile): Invoice {
+function parse(file: ImportableFile): readonly Invoice[] {
 	const xml = decodeUtf8(file.content);
 	if (xml === null) throw new Error(`${file.filename} is not valid UTF-8 text`);
 	const root = tryParseFatturaElettronica(xml);
 	if (root === null)
 		throw new Error(`${file.filename} is not a well-formed FatturaElettronica document`);
-	return mapFatturaPaToInvoice(root);
+	return mapFatturaPaToInvoices(root);
 }
 
 export const fatturaPaAdapter: InvoiceFormatAdapter = { id: FORMAT_ID, detect, parse };

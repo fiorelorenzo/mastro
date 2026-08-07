@@ -1,0 +1,42 @@
+# A throwaway stack for exercising #113 against the real reverse proxy
+# instead of reasoning about it: the exact `deploy/Caddyfile`
+# `compose.prod.yaml` runs, the same `caddy:2-alpine` image, fronting a
+# minimal header-echoing backend (`scripts/xff-echo-server.mjs`) standing in
+# for `web`. `src/lib/server/auth/caddy-xff.test.ts` sends a request with a
+# spoofed `X-Forwarded-For` through this stack and asserts on what the
+# backend actually received, proving (rather than assuming) whether Caddy's
+# default config lets a client dictate the header the rate limiter reads.
+#
+# Usage:
+#   docker compose -f compose.xff-test.yaml up -d
+#   pnpm test -- src/lib/server/auth/caddy-xff.test.ts
+#   docker compose -f compose.xff-test.yaml down
+#
+# Plain HTTP (`MASTRO_SITE_ADDRESS: http://:8080`): a local rehearsal has no
+# domain to request a certificate for, and the header-forwarding behaviour
+# under test does not depend on TLS. Port 34180 is well outside the
+# mail-test range (34025/34143) and every other port this project fixes, for
+# the same reason those are non-default: so this can run next to another
+# agent's worktree on the same box without a clash.
+name: mastro-xff-test
+
+services:
+  web:
+    image: node:24-alpine
+    restart: 'no'
+    command: ['node', '/app/xff-echo-server.mjs']
+    volumes:
+      - ./scripts/xff-echo-server.mjs:/app/xff-echo-server.mjs:ro
+
+  proxy:
+    image: caddy:2-alpine
+    restart: 'no'
+    depends_on:
+      - web
+    environment:
+      MASTRO_SITE_ADDRESS: 'http://:8080'
+      MASTRO_TLS_ARG: 'internal'
+    ports:
+      - '127.0.0.1:34180:8080'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro

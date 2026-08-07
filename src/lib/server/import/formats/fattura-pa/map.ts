@@ -3,6 +3,8 @@
 // mocking required.
 
 import { legalText } from '$lib/legal/legal-text';
+import { computeDueDate } from '$lib/server/domain/contract';
+import type { PaymentTerms } from '$lib/server/db/schema/contract';
 import { decimalStringToMinorUnits } from '../../decimal';
 import type {
 	Invoice,
@@ -21,6 +23,7 @@ import type {
 	RawDatiRiepilogo,
 	RawDettaglioLinee,
 	RawFatturaElettronica,
+	RawFatturaElettronicaBody,
 	RawIdFiscale,
 	RawIndirizzo
 } from './xml';
@@ -141,40 +144,60 @@ function mapPaymentTerms(pagamento: RawDatiPagamento): InvoicePaymentTerms {
 	return {
 		conditionCode: pagamento.CondizioniPagamento,
 		installments: pagamento.DettaglioPagamento.map((dettaglio) => {
-			if (dettaglio.DataScadenzaPagamento === undefined) {
+			if (dettaglio.DataScadenzaPagamento !== undefined) {
+				return {
+					dueDate: dettaglio.DataScadenzaPagamento,
+					dueDateSource: 'document' as const,
+					amount: decimalStringToMinorUnits(dettaglio.ImportoPagamento),
+					method: dettaglio.ModalitaPagamento,
+					iban: dettaglio.IBAN
+				};
+			}
+			if (
+				dettaglio.DataRiferimentoTerminiPagamento !== undefined &&
+				dettaglio.GiorniTerminiPagamento !== undefined
+			) {
 				// The schema also allows expressing a due date as a relative
 				// term (`GiorniTerminiPagamento` days after
-				// `DataRiferimentoTerminiPagamento`). #42 requires the due
-				// date to come from the document, never be recomputed, so a
-				// document using only the relative form is not supported
-				// here rather than silently deriving a date.
-				throw new Error(
-					'DettaglioPagamento has no DataScadenzaPagamento; relative payment terms are not supported'
+				// `DataRiferimentoTerminiPagamento`) instead of an explicit
+				// `DataScadenzaPagamento`. #101: the due date still comes
+				// from the document, never invented — it is computed here
+				// from the document's own reference date and day count,
+				// the same "net N days" arithmetic `computeDueDate` already
+				// does for a contract's own payment terms, applied to the
+				// document's terms instead of the contract's.
+				const terms: PaymentTerms = {
+					kind: 'net',
+					days: Number(dettaglio.GiorniTerminiPagamento)
+				};
+				const due = computeDueDate(
+					terms,
+					new Date(`${dettaglio.DataRiferimentoTerminiPagamento}T00:00:00Z`)
 				);
+				return {
+					dueDate: due.toISOString().slice(0, 10),
+					dueDateSource: 'computed' as const,
+					amount: decimalStringToMinorUnits(dettaglio.ImportoPagamento),
+					method: dettaglio.ModalitaPagamento,
+					iban: dettaglio.IBAN
+				};
 			}
-			return {
-				dueDate: dettaglio.DataScadenzaPagamento,
-				amount: decimalStringToMinorUnits(dettaglio.ImportoPagamento),
-				method: dettaglio.ModalitaPagamento,
-				iban: dettaglio.IBAN
-			};
+			throw new Error(
+				'DettaglioPagamento has neither DataScadenzaPagamento nor DataRiferimentoTerminiPagamento/GiorniTerminiPagamento to compute a due date from'
+			);
 		})
 	};
 }
 
-/** Maps a single parsed `FatturaElettronica` root to an `Invoice`. Throws
- * on a well-formed document this adapter does not (yet) support — a batch
- * file carrying more than one `FatturaElettronicaBody`, or a document
- * omitting `ImportoTotaleDocumento` — rather than silently parsing part of
- * it. */
-export function mapFatturaPaToInvoice(root: RawFatturaElettronica): Invoice {
-	if (root.FatturaElettronicaBody.length !== 1) {
-		throw new Error(
-			`FatturaElettronica has ${root.FatturaElettronicaBody.length} FatturaElettronicaBody elements; only a single-invoice file is supported`
-		);
-	}
-	const header = root.FatturaElettronicaHeader;
-	const body = root.FatturaElettronicaBody[0];
+/** Maps a single `FatturaElettronicaBody` plus the `FatturaElettronicaHeader`
+ * it shares with every other body in the same file onto an `Invoice`.
+ * Throws on a well-formed body this adapter does not (yet) support — a
+ * document omitting `ImportoTotaleDocumento`, most concretely — rather
+ * than silently parsing part of it. */
+function mapBody(
+	header: RawFatturaElettronica['FatturaElettronicaHeader'],
+	body: RawFatturaElettronicaBody
+): Invoice {
 	const documento = body.DatiGenerali.DatiGeneraliDocumento;
 
 	const documentType = DOCUMENT_TYPE_BY_CODE[documento.TipoDocumento];
@@ -210,4 +233,15 @@ export function mapFatturaPaToInvoice(root: RawFatturaElettronica): Invoice {
 			progressiveNumber: header.DatiTrasmissione.ProgressivoInvio
 		}
 	};
+}
+
+/** Maps a parsed `FatturaElettronica` root to one `Invoice` per
+ * `FatturaElettronicaBody` it carries, in document order. The XSD allows a
+ * root to carry more than one body — a batch (`lotto`) of several
+ * invoices transmitted together in one file, all sharing the same
+ * `FatturaElettronicaHeader` — and #101 requires every one of them to
+ * come back, not just the first, so this maps the whole array rather than
+ * asserting there is exactly one body. */
+export function mapFatturaPaToInvoices(root: RawFatturaElettronica): Invoice[] {
+	return root.FatturaElettronicaBody.map((body) => mapBody(root.FatturaElettronicaHeader, body));
 }

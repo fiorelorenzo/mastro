@@ -35,10 +35,16 @@ afterAll(async () => {
 const ACCOUNT_HOLDER_TAX_ID = 'IT11111111111';
 const ACTOR = { kind: 'human' as const, email: 'lorenzo@example.com' };
 
+// Always decodes to an array, matching `InvoiceFormatAdapter.parse`'s real
+// contract (#101) — `jsonFile` below wraps a single invoice in a
+// one-element array for the ordinary case, `jsonFileBatch` hands over more
+// than one for the FatturaPA-batch-shaped case. Kept local to this file,
+// same as `review.test.ts`'s own copy — each import test file defines its
+// own throwaway adapter rather than sharing one.
 const fakeAdapter: InvoiceFormatAdapter = {
 	id: 'test-json-invoice',
 	detect: (file) => file.filename.endsWith('.json'),
-	parse: (file) => JSON.parse(new TextDecoder().decode(file.content)) as Invoice
+	parse: (file) => JSON.parse(new TextDecoder().decode(file.content)) as Invoice[]
 };
 const registry = buildAdapterRegistry([fakeAdapter]);
 const pack = { formats: [fakeAdapter.id] };
@@ -78,7 +84,11 @@ function invoiceDoc(overrides: Partial<Invoice> = {}): Invoice {
 }
 
 function jsonFile(filename: string, value: Invoice): ImportableFile {
-	return { filename, content: new TextEncoder().encode(JSON.stringify(value)) };
+	return { filename, content: new TextEncoder().encode(JSON.stringify([value])) };
+}
+
+function jsonFileBatch(filename: string, values: Invoice[]): ImportableFile {
+	return { filename, content: new TextEncoder().encode(JSON.stringify(values)) };
 }
 
 /** Narrows a `created` outcome and returns its `invoiceId`, failing the
@@ -157,6 +167,7 @@ test('persisting a new imported invoice creates the invoice, one line and the st
 			const outcome = await persistImportedInvoice(
 				{
 					file: jsonFile('a.json', invoiceDoc()),
+					invoiceIndex: 0,
 					attachments: [],
 					contractId: contractRow.id,
 					lineDecisions: [{ workUnitIds: [] }]
@@ -188,6 +199,7 @@ test('re-running the same import a second time creates nothing: outcome is alrea
 			const file = jsonFile('a.json', invoiceDoc());
 			const request: PersistInvoiceRequest = {
 				file,
+				invoiceIndex: 0,
 				attachments: [],
 				contractId: contractRow.id,
 				lineDecisions: [{ workUnitIds: [] }]
@@ -251,6 +263,7 @@ test('a structured document plus a companion attachment produce one invoice with
 			const outcome = await persistImportedInvoice(
 				{
 					file: structured,
+					invoiceIndex: 0,
 					attachments: [companion],
 					contractId: contractRow.id,
 					lineDecisions: [{ workUnitIds: [] }]
@@ -283,6 +296,7 @@ test('a re-issue with the same natural key but different content is a conflict, 
 			const first = await persistImportedInvoice(
 				{
 					file: original,
+					invoiceIndex: 0,
 					attachments: [],
 					contractId: contractRow.id,
 					lineDecisions: [{ workUnitIds: [] }]
@@ -312,6 +326,7 @@ test('a re-issue with the same natural key but different content is a conflict, 
 			const second = await persistImportedInvoice(
 				{
 					file: reissued,
+					invoiceIndex: 0,
 					attachments: [],
 					contractId: contractRow.id,
 					lineDecisions: [{ workUnitIds: [] }]
@@ -389,6 +404,7 @@ test('confirming a day-mapping decision links the accepted days and moves them t
 							]
 						})
 					),
+					invoiceIndex: 0,
 					attachments: [],
 					contractId: contractRow.id,
 					lineDecisions: [{ workUnitIds: [day1.id, day2.id] }]
@@ -437,6 +453,7 @@ test('rejecting a day-mapping proposal (empty workUnitIds) leaves the days compl
 			const outcome = await persistImportedInvoice(
 				{
 					file: jsonFile('a.json', invoiceDoc()),
+					invoiceIndex: 0,
 					attachments: [],
 					contractId: contractRow.id,
 					// The reviewer rejected the proposal: no day is linked.
@@ -470,6 +487,7 @@ test('a mismatched line-decision count is rejected rather than guessed at', asyn
 				persistImportedInvoice(
 					{
 						file: jsonFile('a.json', invoiceDoc()),
+						invoiceIndex: 0,
 						attachments: [],
 						contractId: contractRow.id,
 						lineDecisions: []
@@ -496,6 +514,7 @@ test('an incoming invoice is rejected, never persisted as revenue', async () => 
 				persistImportedInvoice(
 					{
 						file: jsonFile('a.json', invoiceDoc({ supplier: party({ taxId: 'IT99999999999' }) })),
+						invoiceIndex: 0,
 						attachments: [],
 						contractId: contractRow.id,
 						lineDecisions: [{ workUnitIds: [] }]
@@ -509,6 +528,83 @@ test('an incoming invoice is rejected, never persisted as revenue', async () => 
 					tx
 				)
 			).rejects.toThrow(/incoming/);
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('a batch file whose adapter parses to two invoices persists each independently by invoiceIndex, as two separate invoice rows; an out-of-range invoiceIndex is rejected (#101)', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const contractRow = await insertContract(tx);
+			const batchFile = jsonFileBatch('batch.json', [
+				invoiceDoc({ number: '2024/1' }),
+				invoiceDoc({ number: '2024/2' })
+			]);
+
+			const firstOutcome = await persistImportedInvoice(
+				{
+					file: batchFile,
+					invoiceIndex: 0,
+					attachments: [],
+					contractId: contractRow.id,
+					lineDecisions: [{ workUnitIds: [] }]
+				},
+				pack,
+				registry,
+				ACCOUNT_HOLDER_TAX_ID,
+				[],
+				ACTOR,
+				'first body of the batch',
+				tx
+			);
+			const firstInvoiceId = expectCreated(firstOutcome);
+
+			// A second, independent call — matching how the confirm route
+			// sends two separate confirm-list entries for the same file
+			// (Part I / #101), not a single call handling both bodies.
+			const secondOutcome = await persistImportedInvoice(
+				{
+					file: batchFile,
+					invoiceIndex: 1,
+					attachments: [],
+					contractId: contractRow.id,
+					lineDecisions: [{ workUnitIds: [] }]
+				},
+				pack,
+				registry,
+				ACCOUNT_HOLDER_TAX_ID,
+				[],
+				ACTOR,
+				'second body of the batch',
+				tx
+			);
+			const secondInvoiceId = expectCreated(secondOutcome);
+
+			expect(firstInvoiceId).not.toBe(secondInvoiceId);
+			const after = await countRows(tx, contractRow.id);
+			expect(after.invoices).toBe(2);
+
+			const singleFile = jsonFile('single.json', invoiceDoc());
+			await expect(
+				persistImportedInvoice(
+					{
+						file: singleFile,
+						invoiceIndex: 5,
+						attachments: [],
+						contractId: contractRow.id,
+						lineDecisions: [{ workUnitIds: [] }]
+					},
+					pack,
+					registry,
+					ACCOUNT_HOLDER_TAX_ID,
+					[],
+					ACTOR,
+					'out of range invoiceIndex',
+					tx
+				)
+			).rejects.toThrow(/does not have an invoice at index/);
+
 			tx.rollback();
 		})
 	).rejects.toThrow();

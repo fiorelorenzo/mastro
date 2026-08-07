@@ -51,7 +51,7 @@ test('detect rejects non-XML bytes without throwing', () => {
 });
 
 test('parse maps the fixture into a complete invoice with no human input', () => {
-	const invoice = fatturaPaAdapter.parse(fixture(CONSULTING_INVOICE));
+	const [invoice] = fatturaPaAdapter.parse(fixture(CONSULTING_INVOICE));
 
 	expect(invoice.number).toBe('6/2026');
 	expect(invoice.issueDate).toBe('2026-03-15');
@@ -112,12 +112,14 @@ test('parse maps the fixture into a complete invoice with no human input', () =>
 			installments: [
 				{
 					dueDate: '2026-04-14',
+					dueDateSource: 'document',
 					amount: 52100,
 					method: 'MP05',
 					iban: 'IT60X0542811101000000123456'
 				},
 				{
 					dueDate: '2026-05-14',
+					dueDateSource: 'document',
 					amount: 52100,
 					method: 'MP05',
 					iban: 'IT60X0542811101000000123456'
@@ -143,16 +145,50 @@ test('the importer resolves this adapter through a pack that declares FPR12, end
 	expect(result.kind).toBe('parsed');
 	if (result.kind !== 'parsed') throw new Error('unreachable');
 	expect(result.adapterId).toBe('FPR12');
-	expect(result.invoice.number).toBe('6/2026');
+	expect(result.invoices).toHaveLength(1);
+	expect(result.invoices[0].number).toBe('6/2026');
+});
+
+test('parse handles a batch (lotto) file: two FatturaElettronicaBody elements produce two invoices with distinct numbers, end to end (#101)', () => {
+	const xml = new TextDecoder().decode(fixture(CONSULTING_INVOICE).content);
+	const bodyStartTag = '<FatturaElettronicaBody>';
+	const bodyEndTag = '</FatturaElettronicaBody>';
+	const bodyStart = xml.indexOf(bodyStartTag);
+	const bodyEndTagStart = xml.indexOf(bodyEndTag, bodyStart);
+	if (bodyStart === -1 || bodyEndTagStart === -1) {
+		throw new Error('fixture no longer contains a single FatturaElettronicaBody element');
+	}
+	const bodyEnd = bodyEndTagStart + bodyEndTag.length;
+	const firstBody = xml.slice(bodyStart, bodyEnd);
+	if (!firstBody.includes('<Numero>6/2026</Numero>')) {
+		throw new Error('fixture no longer carries the expected Numero element');
+	}
+	// A second, otherwise identical body distinguished only by its own
+	// Numero — spliced in right after the original body closes, so the
+	// document now carries a lotto of two invoices under one root.
+	const secondBody = firstBody.replace('<Numero>6/2026</Numero>', '<Numero>7/2026</Numero>');
+	const batchXml = xml.slice(0, bodyEnd) + secondBody + xml.slice(bodyEnd);
+	const batchFile = { filename: 'batch.xml', content: new TextEncoder().encode(batchXml) };
+
+	const invoices = fatturaPaAdapter.parse(batchFile);
+	expect(invoices).toHaveLength(2);
+	expect(invoices.map((invoice) => invoice.number)).toEqual(['6/2026', '7/2026']);
+
+	const registry = buildAdapterRegistry([fatturaPaAdapter]);
+	const pack = { formats: ['FPR12'] };
+	const result = importFile(pack, registry, batchFile);
+	expect(result.kind).toBe('parsed');
+	if (result.kind !== 'parsed') throw new Error('unreachable');
+	expect(result.invoices.map((invoice) => invoice.number)).toEqual(['6/2026', '7/2026']);
 });
 
 test('direction detection classifies the fixture as outgoing when the account holder is the supplier', () => {
-	const invoice = fatturaPaAdapter.parse(fixture(CONSULTING_INVOICE));
+	const [invoice] = fatturaPaAdapter.parse(fixture(CONSULTING_INVOICE));
 	expect(classifyImportedInvoice(invoice, 'IT01234567890').kind).toBe('outgoing');
 });
 
 test('direction detection classifies the fixture as incoming when the account holder is not the supplier, and never as outgoing by reading the transmitter instead', () => {
-	const invoice = fatturaPaAdapter.parse(fixture(CONSULTING_INVOICE));
+	const [invoice] = fatturaPaAdapter.parse(fixture(CONSULTING_INVOICE));
 
 	// The account holder configured is the fixture's transmitter, not its
 	// supplier — if direction detection ever fell back to reading

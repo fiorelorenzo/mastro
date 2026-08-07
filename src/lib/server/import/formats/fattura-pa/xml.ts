@@ -144,6 +144,16 @@ const DatiBeniServiziSchema = z.object({
 const DettaglioPagamentoSchema = z.object({
 	ModalitaPagamento: z.string(),
 	DataScadenzaPagamento: z.string().optional(),
+	// The relative form of a due date (#101): a reference date plus a day
+	// count instead of an explicit `DataScadenzaPagamento`. Kept as a
+	// string like every other leaf here, per this module's header comment
+	// on never routing a value through the parser's own number coercion —
+	// `GiorniTerminiPagamento` is a day count, not a monetary amount, but
+	// the same boundary reasoning still applies: `map.ts` is the only
+	// place that turns it into a number, with `Number()`, same as every
+	// other numeric leaf downstream.
+	DataRiferimentoTerminiPagamento: z.string().optional(),
+	GiorniTerminiPagamento: z.string().optional(),
 	ImportoPagamento: z.string(),
 	IBAN: z.string().optional()
 });

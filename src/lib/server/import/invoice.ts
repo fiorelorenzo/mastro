@@ -14,6 +14,7 @@
 // human input, entered after import.
 
 import type { LegalText } from '$lib/legal/legal-text';
+import type { InvoiceDueDateSource } from '$lib/server/domain/invoice';
 
 /** An amount in the currency's minor unit (cents for EUR), matching
  * `MinorUnits` in `fiscal/pack.ts`. Never a float — see `decimal.ts`. */
@@ -123,12 +124,18 @@ export interface InvoiceSocialSecurityCharge {
 	readonly taxRateOnCharge: number;
 }
 
-/** One instalment of a payment plan. `dueDate` is read verbatim from the
- * document (FatturaPA's `DataScadenzaPagamento`) — see the adapter for why
- * it is never recomputed from relative terms. */
+/** One instalment of a payment plan. `dueDate` is either read verbatim
+ * from the document (FatturaPA's `DataScadenzaPagamento`) or computed here
+ * from relative terms the document expresses instead (FatturaPA's
+ * `DataRiferimentoTerminiPagamento` plus `GiorniTerminiPagamento`, #101) —
+ * never invented from anything outside the document itself, the same
+ * "read, don't invent" spirit #26's own `due_date_source` column on
+ * `invoice` applies to a due date computed from the contract.
+ * `dueDateSource` tells a reader which case produced this `dueDate`. */
 export interface InvoicePaymentInstallment {
 	/** ISO date. */
 	readonly dueDate: string;
+	readonly dueDateSource: InvoiceDueDateSource;
 	readonly amount: MinorUnits;
 	/** The document's own payment-method code (FatturaPA's
 	 * `ModalitaPagamento`, e.g. `MP05` for a bank transfer) — opaque here,

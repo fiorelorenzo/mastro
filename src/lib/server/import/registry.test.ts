@@ -7,7 +7,7 @@ function stubAdapter(id: string): InvoiceFormatAdapter {
 	return {
 		id,
 		detect: () => false,
-		parse: (): Invoice => {
+		parse: (): Invoice[] => {
 			throw new Error('not implemented');
 		}
 	};
