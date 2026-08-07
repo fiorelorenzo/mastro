@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate } from '$lib/i18n/format';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import type { InvoiceFormValues } from '$lib/server/repositories/invoice-form';
 	import type { ActionData, PageData } from './$types';
 
@@ -73,13 +73,11 @@
 
 <svelte:head><title>{m.invoice_new_page_title()}</title></svelte:head>
 
-<main class="mx-auto max-w-3xl p-8">
-	<PageHeader crumbs={data.crumbs} title={m.invoice_new_heading()} />
-
-	<form method="GET" class="mt-6 flex items-end gap-3">
-		<label class="flex flex-col gap-1 text-sm">
+<Page crumbs={data.crumbs} title={m.invoice_new_heading()}>
+	<form method="GET" class="flex flex-wrap items-end gap-3">
+		<label class="flex min-w-0 flex-1 flex-col gap-1 text-sm">
 			{m.invoice_form_contract_label()}
-			<select name="contractId" class="border px-2 py-1" required>
+			<select name="contractId" class="w-full border px-2 py-1" required>
 				<option value="" disabled selected={data.selectedContractId === ''}
 					>{m.invoice_form_contract_placeholder()}</option
 				>
@@ -90,7 +88,9 @@
 				{/each}
 			</select>
 		</label>
-		<button type="submit" class="border px-4 py-1 text-sm">{m.invoice_form_load_contract()}</button>
+		<button type="submit" class="shrink-0 border px-4 py-1 text-sm"
+			>{m.invoice_form_load_contract()}</button
+		>
 	</form>
 
 	{#if selectedContract}
@@ -269,4 +269,4 @@
 			>
 		</form>
 	{/if}
-</main>
+</Page>
