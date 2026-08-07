@@ -24,6 +24,15 @@ import { legalText } from '$lib/legal/legal-text';
  * established abroad falls outside Italian VAT); corroborated by multiple
  * 2026-dated practitioner guides quoting the same article and the N2.1
  * code, not read directly against the consolidated D.P.R. text.
+ *
+ * `unresolvedRevenue: 'carries_forward'` (#122): declared for the same
+ * reason `generic.ts` declares it — an accrual basis never leaves a row
+ * unresolved, so the value is inert on this pack itself. It matters on
+ * the *other* side of a transition into this regime: an invoice issued
+ * while `it-flat-rate` (cash) governed and still unpaid when a profile
+ * switches to this pack is governed by `it-flat-rate`'s own declared
+ * value, not this one — see that pack's header for the citation (Legge
+ * 190/2014, art. 1, comma 72).
  */
 export const itStandardPack: FiscalPack = {
 	id: 'it-standard',
@@ -48,5 +57,6 @@ export const itStandardPack: FiscalPack = {
 	],
 	charges: [],
 	// Shared with it-flat-rate; see that file's comment on 'FPR12'.
-	formats: ['FPR12']
+	formats: ['FPR12'],
+	unresolvedRevenue: 'carries_forward'
 };

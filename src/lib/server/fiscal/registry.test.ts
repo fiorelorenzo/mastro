@@ -13,7 +13,8 @@ function pack(id: string, version: string): FiscalPack {
 		ceilings: [],
 		treatments: [],
 		charges: [],
-		formats: []
+		formats: [],
+		unresolvedRevenue: 'carries_forward'
 	};
 }
 

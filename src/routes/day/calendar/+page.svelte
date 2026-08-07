@@ -59,8 +59,8 @@
 	><title>{m.day_calendar_page_title({ month: formatMonth(data.monthStart) })}</title></svelte:head
 >
 
-<main class="mx-auto max-w-3xl p-8">
-	<div class="flex items-center justify-between gap-4">
+<main class="mx-auto max-w-3xl p-4 sm:p-8">
+	<div class="flex flex-wrap items-center justify-between gap-4">
 		<h1 class="text-2xl font-semibold">
 			{m.day_calendar_heading({ month: formatMonth(data.monthStart) })}
 		</h1>
@@ -84,7 +84,7 @@
 		</nav>
 	</div>
 
-	<p class="mt-4 flex gap-6 text-sm">
+	<p class="mt-4 flex flex-wrap gap-6 text-sm">
 		<span
 			><span class="opacity-70">{m.day_calendar_total_days_label()}:</span>
 			{formatDays(data.totalDays)}</span
