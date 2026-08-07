@@ -1,4 +1,5 @@
 import { error, fail, redirect } from '@sveltejs/kit';
+import type { Crumb } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
 import { getContractWithClient } from '$lib/server/repositories/contract';
@@ -15,7 +16,12 @@ export const load: PageServerLoad = async ({ params }) => {
 		error(404, m.rate_card_not_found());
 	}
 
-	return { contract, rateCard };
+	const crumbs: Crumb[] = [
+		{ href: '/clients', label: m.clients_heading() },
+		{ href: `/clients/${contract.clientId}`, label: contract.client.legalName },
+		{ href: `/clients/${contract.clientId}/contracts/${contract.id}`, label: contract.title }
+	];
+	return { contract, rateCard, crumbs };
 };
 
 export const actions: Actions = {

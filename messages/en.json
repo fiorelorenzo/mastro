@@ -215,6 +215,7 @@
 	"contract_status_draft": "Draft",
 	"contract_status_expired": "Expired",
 	"contract_status_terminated": "Terminated",
+	"contract_subtitle_notice_period": "{days} notice",
 	"contract_validation_currency_invalid": "Currency must be a three-letter ISO code, e.g. EUR.",
 	"contract_validation_ends_on_invalid": "Enter a valid end date.",
 	"contract_validation_expense_policy_cap_amount_invalid": "Enter a valid cap amount, e.g. 5000.00.",

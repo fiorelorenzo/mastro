@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
-	import * as m from '$lib/paraglide/messages';
 	import { minorUnitsToDecimalString } from '$lib/money';
+	import * as m from '$lib/paraglide/messages';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import ContractForm from '../../ContractForm.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -44,18 +44,10 @@
 >
 
 <main class="mx-auto max-w-3xl p-8">
-	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-semibold">
-			{m.contract_edit_heading({ title: data.contract.title })}
-		</h1>
-		<a
-			href={resolve('/clients/[id]/contracts/[contractId]', {
-				id: data.contract.clientId,
-				contractId: data.contract.id
-			})}
-			class="text-sm underline">{m.contract_back_to_detail_link()}</a
-		>
-	</div>
+	<PageHeader
+		crumbs={data.crumbs}
+		title={m.contract_edit_heading({ title: data.contract.title })}
+	/>
 	<ContractForm {values} errors={form?.errors ?? {}} submitLabel={m.contract_form_submit_save()} />
 
 	<section class="mt-10 flex flex-col gap-3 border-t pt-6">

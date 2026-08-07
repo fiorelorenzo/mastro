@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import RateCardForm from '../../RateCardForm.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -25,17 +25,9 @@
 >
 
 <main class="mx-auto max-w-3xl p-8">
-	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-semibold">
-			{m.rate_card_edit_heading({ contract: data.contract.title })}
-		</h1>
-		<a
-			href={resolve('/clients/[id]/contracts/[contractId]', {
-				id: data.contract.clientId,
-				contractId: data.contract.id
-			})}
-			class="text-sm underline">{m.contract_back_to_detail_link()}</a
-		>
-	</div>
+	<PageHeader
+		crumbs={data.crumbs}
+		title={m.rate_card_edit_heading({ contract: data.contract.title })}
+	/>
 	<RateCardForm {values} errors={form?.errors ?? {}} submitLabel={m.rate_card_form_submit_save()} />
 </main>

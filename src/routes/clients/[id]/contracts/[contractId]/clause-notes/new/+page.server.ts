@@ -1,4 +1,5 @@
 import { error, fail, redirect } from '@sveltejs/kit';
+import type { Crumb } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import { createClauseNote } from '$lib/server/repositories/clause-note';
 import { parseClauseNoteForm } from '$lib/server/repositories/clause-note-form';
@@ -8,7 +9,13 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ params }) => {
 	const contract = await getContractWithClient(params.contractId);
 	if (!contract || contract.clientId !== params.id) error(404, m.contract_not_found());
-	return { contract };
+
+	const crumbs: Crumb[] = [
+		{ href: '/clients', label: m.clients_heading() },
+		{ href: `/clients/${contract.clientId}`, label: contract.client.legalName },
+		{ href: `/clients/${contract.clientId}/contracts/${contract.id}`, label: contract.title }
+	];
+	return { contract, crumbs };
 };
 
 export const actions: Actions = {

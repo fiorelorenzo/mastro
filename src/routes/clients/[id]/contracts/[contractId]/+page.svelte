@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import { formatAmount, formatDate, formatMinorUnits, formatNumber } from '$lib/i18n/format';
+	import {
+		formatAmount,
+		formatDate,
+		formatDays,
+		formatMinorUnits,
+		formatNumber
+	} from '$lib/i18n/format';
+	import { factLine } from '$lib/nav/crumbs';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import {
 		expensePolicyKindLabel,
 		invoicingCadenceLabel,
@@ -20,27 +28,50 @@
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
 	const contract = $derived(data.contract);
+	const subtitle = $derived(
+		factLine([
+			formatDate(contract.startsOn),
+			renewalTypeLabel(contract.renewalType),
+			m.contract_subtitle_notice_period({ days: formatDays(contract.terminationNoticeDays) })
+		])
+	);
 </script>
 
 <svelte:head><title>{m.contract_detail_page_title({ title: contract.title })}</title></svelte:head>
 
 <main class="mx-auto max-w-3xl p-8">
-	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-semibold">{contract.title}</h1>
-		<a href={resolve('/clients/[id]', { id: contract.client.id })} class="text-sm underline"
-			>{m.contract_back_to_client_link()}</a
-		>
-	</div>
-	<p class="text-sm opacity-70">{contract.client.legalName}</p>
-	<p class="mt-2 text-sm">
-		<a
-			href={resolve('/clients/[id]/contracts/[contractId]/edit', {
-				id: contract.client.id,
-				contractId: contract.id
-			})}
-			class="underline">{m.contract_edit_link()}</a
-		>
-	</p>
+	<PageHeader crumbs={data.crumbs} title={contract.title} {subtitle}>
+		{#snippet actions()}
+			<a
+				href={resolve('/clients/[id]/contracts/[contractId]/edit', {
+					id: contract.client.id,
+					contractId: contract.id
+				})}
+				class="text-sm underline">{m.contract_edit_link()}</a
+			>
+			<a
+				href={resolve('/clients/[id]/contracts/[contractId]/rate-cards/new', {
+					id: contract.client.id,
+					contractId: contract.id
+				})}
+				class="text-sm underline">{m.rate_card_new_link()}</a
+			>
+			<a
+				href={resolve('/clients/[id]/contracts/[contractId]/clause-notes/new', {
+					id: contract.client.id,
+					contractId: contract.id
+				})}
+				class="text-sm underline">{m.clause_note_new_link()}</a
+			>
+			<a
+				href={resolve('/clients/[id]/contracts/[contractId]/expenses/new', {
+					id: contract.client.id,
+					contractId: contract.id
+				})}
+				class="text-sm underline">{m.expense_new_link()}</a
+			>
+		{/snippet}
+	</PageHeader>
 
 	<section class="mt-6">
 		<h2 class="text-lg font-semibold">{m.contract_form_identity_legend()}</h2>
@@ -81,16 +112,7 @@
 			no detail tabs to bury it in.
 		-->
 		<div class="mt-4 border-l-2 pl-4">
-			<div class="flex items-center justify-between">
-				<h3 class="text-sm font-semibold">{m.clause_note_section_heading()}</h3>
-				<a
-					href={resolve('/clients/[id]/contracts/[contractId]/clause-notes/new', {
-						id: contract.client.id,
-						contractId: contract.id
-					})}
-					class="text-sm underline">{m.clause_note_new_link()}</a
-				>
-			</div>
+			<h3 class="text-sm font-semibold">{m.clause_note_section_heading()}</h3>
 			{#if data.clauseNotes.length === 0}
 				<p class="mt-2 text-sm opacity-70">{m.clause_note_empty()}</p>
 			{:else}
@@ -165,16 +187,7 @@
 	</section>
 
 	<section class="mt-6">
-		<div class="flex items-center justify-between">
-			<h2 class="text-lg font-semibold">{m.rate_card_section_heading()}</h2>
-			<a
-				href={resolve('/clients/[id]/contracts/[contractId]/rate-cards/new', {
-					id: contract.client.id,
-					contractId: contract.id
-				})}
-				class="text-sm underline">{m.rate_card_new_link()}</a
-			>
-		</div>
+		<h2 class="text-lg font-semibold">{m.rate_card_section_heading()}</h2>
 		{#if data.rateCards.length === 0}
 			<p class="mt-2 text-sm opacity-70">{m.rate_card_empty()}</p>
 		{:else}
@@ -219,16 +232,7 @@
 	</section>
 
 	<section class="mt-6">
-		<div class="flex items-center justify-between">
-			<h2 class="text-lg font-semibold">{m.expense_section_heading()}</h2>
-			<a
-				href={resolve('/clients/[id]/contracts/[contractId]/expenses/new', {
-					id: contract.client.id,
-					contractId: contract.id
-				})}
-				class="text-sm underline">{m.expense_new_link()}</a
-			>
-		</div>
+		<h2 class="text-lg font-semibold">{m.expense_section_heading()}</h2>
 		{#if form?.rebillError}<p class="mt-2 text-xs font-semibold">{form.rebillError}</p>{/if}
 		{#if data.expenses.length === 0}
 			<p class="mt-2 text-sm opacity-70">{m.expense_empty()}</p>

@@ -215,6 +215,7 @@
 	"contract_status_draft": "Bozza",
 	"contract_status_expired": "Scaduto",
 	"contract_status_terminated": "Terminato",
+	"contract_subtitle_notice_period": "Preavviso di {days}",
 	"contract_validation_currency_invalid": "La valuta deve essere un codice ISO di tre lettere, ad es. EUR.",
 	"contract_validation_ends_on_invalid": "Inserisci una data di scadenza valida.",
 	"contract_validation_expense_policy_cap_amount_invalid": "Inserisci un importo del massimale valido, ad es. 5000.00.",

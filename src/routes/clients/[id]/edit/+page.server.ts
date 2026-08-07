@@ -1,4 +1,5 @@
 import { error, fail, redirect } from '@sveltejs/kit';
+import type { Crumb } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
 import { getClientWithContacts, updateClient } from '$lib/server/repositories/client';
@@ -8,7 +9,12 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ params }) => {
 	const client = await getClientWithContacts(params.id);
 	if (!client) error(404, m.client_not_found());
-	return { client };
+
+	const crumbs: Crumb[] = [
+		{ href: '/clients', label: m.clients_heading() },
+		{ href: `/clients/${client.id}`, label: client.legalName }
+	];
+	return { client, crumbs };
 };
 
 export const actions: Actions = {

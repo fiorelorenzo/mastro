@@ -1,4 +1,5 @@
 import { error, fail, redirect } from '@sveltejs/kit';
+import type { Crumb } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import { getContractWithClient } from '$lib/server/repositories/contract';
 import {
@@ -20,7 +21,18 @@ export const load: PageServerLoad = async ({ params }) => {
 
 	const receipts = await getExpenseReceipts(params.expenseId);
 
-	return { contract, expense, existingReceiptName: receipts[0]?.originalName ?? null };
+	const crumbs: Crumb[] = [
+		{ href: '/clients', label: m.clients_heading() },
+		{ href: `/clients/${contract.clientId}`, label: contract.client.legalName },
+		{ href: `/clients/${contract.clientId}/contracts/${contract.id}`, label: contract.title }
+	];
+
+	return {
+		contract,
+		expense,
+		existingReceiptName: receipts[0]?.originalName ?? null,
+		crumbs
+	};
 };
 
 export const actions: Actions = {
