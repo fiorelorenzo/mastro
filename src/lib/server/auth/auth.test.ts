@@ -7,23 +7,29 @@
 // databaseHooks.user.create.before that Google sign-in reaches, since both
 // go through internalAdapter.createUser under the hood. Production never
 // enables email and password; see createAuth in ./index.ts.
-import { eq } from 'drizzle-orm';
+import { eq, gte, inArray } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
 import { client, db } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
 import { ALLOWLIST_REJECTION_MESSAGE } from './allowlist';
 import { auth, createAuth } from './index';
 
+// Better Auth manages its own writes, so this suite cannot wrap its work in
+// the transaction the other database tests roll back. It cleans up instead,
+// and the cleanup is scoped to the rows this run created: an unqualified
+// DELETE would sign out whoever is using the same database, which is exactly
+// what it did to a browser session during the #152 work (#163).
+const startedAt = new Date();
+const createdEmails: string[] = [];
+
 afterAll(async () => {
-	// This suite is the only one writing to Better Auth's tables; clear what
-	// it created (an OAuth state row from the scope-check call, plus the
-	// user/account/session rows from the sign-up flows below) so the suite
-	// leaves nothing behind, in the spirit of the transaction-rollback
-	// pattern used elsewhere even though Better Auth manages its own writes.
-	await db.delete(schema.verification);
-	await db.delete(schema.session);
-	await db.delete(schema.account);
-	await db.delete(schema.user);
+	// user cascades to account and session, so those need no delete of their
+	// own. The verification rows come from the OAuth state the scope check
+	// writes and carry no user, so they go by age instead.
+	if (createdEmails.length > 0) {
+		await db.delete(schema.user).where(inArray(schema.user.email, createdEmails));
+	}
+	await db.delete(schema.verification).where(gte(schema.verification.createdAt, startedAt));
 	await client.end();
 });
 
@@ -59,6 +65,7 @@ test('the OAuth callback rejects a state it never issued, without setting a sess
 
 test('an address outside the allowlist completes account creation and is still rejected, leaving no user or account row behind', async () => {
 	const email = `outsider-${crypto.randomUUID()}@example.com`;
+	createdEmails.push(email);
 	// The allowlist has one unrelated address on it, not this one: an empty
 	// allowlist would admit nobody for a different reason than the one this
 	// test checks.
@@ -82,6 +89,7 @@ test('an address outside the allowlist completes account creation and is still r
 
 test('an allowlisted address signs up, gets a Secure/HttpOnly/SameSite=Lax cookie in production configuration, and sign-out clears it', async () => {
 	const email = `member-${crypto.randomUUID()}@example.com`;
+	createdEmails.push(email);
 	const testAuth = createAuth(
 		{ emailAndPassword: { enabled: true }, advanced: { useSecureCookies: true } },
 		new Set([email])
