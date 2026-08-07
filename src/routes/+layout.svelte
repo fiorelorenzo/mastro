@@ -1,12 +1,19 @@
 <script lang="ts">
 	import './layout.css';
+	import { page } from '$app/state';
 	import favicon from '$lib/assets/favicon.svg';
-	import LanguageSwitch from '$lib/components/LanguageSwitch.svelte';
+	import Sidebar from '$lib/nav/Sidebar.svelte';
+	import BottomBar from '$lib/nav/BottomBar.svelte';
 	import InstallPrompt from '$lib/pwa/InstallPrompt.svelte';
 	import OfflineDataBanner from '$lib/pwa/OfflineDataBanner.svelte';
 	import { SURFACE_DARK, SURFACE_LIGHT } from '$lib/pwa/colors';
+	import type { LayoutProps } from './$types';
 
-	let { children } = $props();
+	let { children, data }: LayoutProps = $props();
+
+	// No chrome where there is nothing to navigate to: the sign-in page and
+	// the offline fallback are both public and both dead ends by design.
+	const chrome = $derived(data.user !== null);
 </script>
 
 <svelte:head>
@@ -24,8 +31,50 @@
 	<meta name="apple-mobile-web-app-title" content="mastro" />
 </svelte:head>
 <OfflineDataBanner />
-<div class="flex justify-end p-4">
-	<LanguageSwitch />
-</div>
-{@render children()}
+{#if chrome}
+	<div class="shell">
+		<div class="rail">
+			<Sidebar pathname={page.url.pathname} unreadAlerts={data.unreadAlerts} user={data.user} />
+		</div>
+		<div class="content">{@render children()}</div>
+	</div>
+	<div class="tabs">
+		<BottomBar pathname={page.url.pathname} unreadAlerts={data.unreadAlerts} />
+	</div>
+{:else}
+	{@render children()}
+{/if}
 <InstallPrompt />
+
+<style>
+	.shell {
+		display: flex;
+		align-items: flex-start;
+	}
+	.rail {
+		position: sticky;
+		top: 0;
+	}
+	.content {
+		flex: 1;
+		min-width: 0;
+		max-width: 1100px;
+		padding-bottom: 72px; /* clears the bottom bar */
+	}
+	.tabs {
+		display: block;
+	}
+	@media (max-width: 899px) {
+		.rail {
+			display: none;
+		}
+	}
+	@media (min-width: 900px) {
+		.tabs {
+			display: none;
+		}
+		.content {
+			padding-bottom: 0;
+		}
+	}
+</style>
