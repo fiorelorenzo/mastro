@@ -33,10 +33,18 @@
 		<h1 class="text-2xl font-semibold">mastro</h1>
 		<p class="tagline">{m.landing_tagline()}</p>
 
-		<div class="mt-4 flex items-center gap-4">
+		<div class="mt-4 flex flex-wrap gap-3">
 			<a href={resolve('/day/new')} class="record-day-cta">{m.home_record_day_cta()}</a>
-			<span class="text-xs opacity-60">{m.home_record_day_shortcut_hint()}</span>
+			<a href={resolve('/proposals')} class="proposals-cta">
+				{m.home_proposals_cta()}
+				{#if data.pendingProposalsCount > 0}
+					<span class="proposals-badge"
+						>{m.home_proposals_pending_badge({ count: data.pendingProposalsCount })}</span
+					>
+				{/if}
+			</a>
 		</div>
+		<p class="mt-2 text-xs opacity-60">{m.home_record_day_shortcut_hint()}</p>
 		<p class="mt-3 text-sm">
 			<a href={resolve('/day/calendar')} class="underline">{m.home_calendar_link()}</a>
 		</p>
@@ -62,6 +70,7 @@
 			months={data.cashCalendar.months}
 			to={data.cashCalendar.to}
 			markers={data.cashCalendar.markers}
+			assumptions={data.cashCalendar.assumptions}
 		/>
 	</section>
 
@@ -109,6 +118,29 @@
 		font-weight: 600;
 		text-decoration: none;
 		min-height: 3rem;
+	}
+	.proposals-cta {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		border: 1px solid var(--text-primary);
+		background: var(--surface-1);
+		color: var(--text-primary);
+		padding: 0.875rem 1.5rem;
+		font-size: 1rem;
+		font-weight: 600;
+		text-decoration: none;
+		min-height: 3rem;
+	}
+	.proposals-badge {
+		display: inline-flex;
+		align-items: center;
+		border-radius: 999px;
+		background: var(--status-warning);
+		color: var(--text-primary);
+		padding: 0.125rem 0.5rem;
+		font-size: 0.75rem;
+		font-weight: 600;
 	}
 	.widget {
 		margin-bottom: 2.5rem;

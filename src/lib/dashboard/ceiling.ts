@@ -10,6 +10,7 @@ import { getLocale } from '$lib/paraglide/runtime';
 import type { StatusLevel } from '$lib/design';
 import type { CeilingAlertLevel, CeilingBasis } from '$lib/server/fiscal/pack';
 import type { LabelBundle } from '$lib/server/fiscal/label';
+import type { RenewalAssumptionContribution } from './renewal-assumption';
 
 /** One hero ceiling meter, the shape `+page.server.ts` returns per active
  * whole-practice ceiling. */
@@ -27,6 +28,11 @@ export interface CeilingView {
 	readonly activeAlertLevels: readonly CeilingAlertLevel[];
 	readonly consequence: LabelBundle;
 	readonly projectedEnd: number;
+	/** #127: every recorded renewal assumption that actually contributed
+	 * to `projectedEnd` over `[today, periodTo)` — empty when none did,
+	 * never omitted, so the year-end projection note can disclose exactly
+	 * what it silently includes. */
+	readonly assumptions: readonly RenewalAssumptionContribution[];
 }
 
 /** Which accounting basis produced the figure, said in words — #57's own
