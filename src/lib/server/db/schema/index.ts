@@ -14,6 +14,7 @@ export * from './ceiling';
 export * from './client';
 export * from './contract';
 export * from './document';
+export * from './document-mirror';
 export * from './email-template';
 export * from './fiscal';
 export * from './invoice';
