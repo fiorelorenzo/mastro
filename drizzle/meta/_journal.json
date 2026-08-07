@@ -183,6 +183,13 @@
       "when": 1786090845712,
       "tag": "0025_expense_and_clause_note_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786091612033,
+      "tag": "0026_document_invoice_owner",
+      "breakpoints": true
     }
   ]
 }

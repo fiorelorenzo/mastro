@@ -3,7 +3,8 @@ import type { SkipReason } from './types';
 
 /** The reason a file was skipped, in the active locale — every skipped
  * file lists one of these (#47's acceptance), including the incoming
- * invoices direction detection rejects. */
+ * invoices direction detection rejects and, since #44, a known client
+ * with no single active contract to file the invoice against. */
 export function skipReasonLabel(reason: SkipReason): string {
 	switch (reason.kind) {
 		case 'unrecognised_format':
@@ -13,6 +14,10 @@ export function skipReasonLabel(reason: SkipReason): string {
 		case 'incoming_invoice':
 			return m.import_skip_reason_incoming_invoice({
 				supplierTaxId: reason.reason.supplierTaxId
+			});
+		case 'ambiguous_contract':
+			return m.import_skip_reason_ambiguous_contract({
+				clientLegalName: reason.clientLegalName
 			});
 	}
 }

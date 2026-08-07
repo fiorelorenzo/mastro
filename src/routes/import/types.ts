@@ -24,24 +24,62 @@ export type SkipReason =
 				readonly supplierTaxId: string;
 				readonly accountHolderTaxId: string;
 			};
-	  };
+	  }
+	| { readonly kind: 'ambiguous_contract'; readonly clientLegalName: string };
 
 export interface SkippedFile {
 	readonly filename: string;
 	readonly reason: SkipReason;
 }
 
+/** #48: a proposed set of already-recorded days a line billed, with the
+ * reasoning (period, count, amount) the acceptance criteria asks to be
+ * visible — never applied until the reviewer confirms it. */
+export interface DayMappingProposal {
+	readonly workUnitIds: readonly string[];
+	readonly periodStart: string;
+	readonly periodEnd: string;
+	readonly dayCount: number;
+	readonly proposedAmount: number;
+	readonly lineAmount: number;
+	readonly amountMatches: boolean;
+}
+
+export interface InvoiceLineView {
+	readonly description: string;
+	readonly quantity: number;
+	readonly unitPrice: number;
+	readonly amount: number;
+	readonly taxRate: number;
+	readonly dayMapping: DayMappingProposal | null;
+}
+
 export interface RecognisedFile {
 	readonly filename: string;
 	readonly invoice: InvoiceSummary;
+	readonly lines: readonly InvoiceLineView[];
 	readonly clientId: string;
 	readonly clientLegalName: string;
+	readonly contractId: string;
+	readonly attachments: readonly string[];
 }
+
+export type AlreadyPresentSource = 'batch' | 'database';
 
 export interface AlreadyPresentFile {
 	readonly filename: string;
 	readonly invoice: InvoiceSummary;
-	readonly duplicateOfFilename: string;
+	readonly source: AlreadyPresentSource;
+	readonly duplicateOfFilename: string | null;
+	readonly existingInvoiceNumber: string | null;
+	readonly attachments: readonly string[];
+}
+
+export interface ConflictFile {
+	readonly filename: string;
+	readonly invoice: InvoiceSummary;
+	readonly existingInvoiceNumber: string;
+	readonly existingIssueDate: string;
 }
 
 export type InvoicingCadence = 'monthly' | 'quarterly' | 'annual' | 'on_completion';
@@ -88,6 +126,7 @@ export interface ClarificationGroup {
 export interface ReviewResult {
 	readonly recognised: readonly RecognisedFile[];
 	readonly alreadyPresent: readonly AlreadyPresentFile[];
+	readonly conflicts: readonly ConflictFile[];
 	readonly clarifications: readonly ClarificationGroup[];
 	readonly skipped: readonly SkippedFile[];
 }
@@ -99,4 +138,11 @@ export interface ConfirmResponse {
 		readonly contractId: string;
 	}[];
 	readonly failed: readonly { readonly groupKey: string; readonly message: string }[];
+	readonly invoicesCreated: readonly { readonly filename: string; readonly invoiceId: string }[];
+	readonly invoicesAlreadyPresent: readonly { readonly filename: string }[];
+	readonly invoicesConflicted: readonly {
+		readonly filename: string;
+		readonly existingInvoiceNumber: string;
+	}[];
+	readonly invoicesFailed: readonly { readonly filename: string; readonly message: string }[];
 }

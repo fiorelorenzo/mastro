@@ -44,14 +44,19 @@ function invoice(overrides: Partial<Invoice> = {}): Invoice {
 
 test('matchClientByTaxId finds an exact match, ignoring case and whitespace', () => {
 	const clients: ClientMatchCandidate[] = [
-		{ id: 'client-1', taxId: ' it01234567890 ', legalName: 'Rossi Consulting srl' }
+		{
+			id: 'client-1',
+			taxId: ' it01234567890 ',
+			legalName: 'Rossi Consulting srl',
+			activeContractId: 'contract-1'
+		}
 	];
 	expect(matchClientByTaxId({ taxId: 'IT01234567890' }, clients)).toEqual(clients[0]);
 });
 
 test('matchClientByTaxId returns null when no client has this tax id', () => {
 	const clients: ClientMatchCandidate[] = [
-		{ id: 'client-1', taxId: 'IT09876543210', legalName: 'Bianchi spa' }
+		{ id: 'client-1', taxId: 'IT09876543210', legalName: 'Bianchi spa', activeContractId: null }
 	];
 	expect(matchClientByTaxId({ taxId: 'IT01234567890' }, clients)).toBeNull();
 });

@@ -16,6 +16,15 @@ export interface ClientMatchCandidate {
 	readonly id: string;
 	readonly taxId: string;
 	readonly legalName: string;
+	/** The one contract an imported invoice for this client can be filed
+	 * against without asking, computed by the caller (#44): the client's
+	 * sole `active` contract, or `null` when there is none or more than
+	 * one. A client with several active contracts is a genuine ambiguity —
+	 * nothing on an invoice document says which engagement it belongs to —
+	 * so `review.ts` leaves a file with no resolvable contract unimported
+	 * rather than guessing one, the same restraint direction detection
+	 * already applies to an incoming invoice. */
+	readonly activeContractId: string | null;
 }
 
 /** Exact match on tax id, the only signal #46 asks for — case and
