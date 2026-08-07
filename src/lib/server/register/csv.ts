@@ -3,6 +3,7 @@
 // embedded quote doubled. `scope` is free text a human typed, so it is the
 // one field here that can contain any of the three.
 import * as m from '$lib/paraglide/messages';
+import type { ContractTemplateLanguage } from '$lib/server/db/schema';
 import { formatApprovalReference } from './format';
 import type { Register } from './types';
 
@@ -14,17 +15,18 @@ function csvRow(fields: readonly string[]): string {
 	return fields.map(csvField).join(',');
 }
 
-/** Renders `register` as CSV text: a header row, one row per entry, and a
- * totals row. `renderRegisterPdf` renders the same `Register` with the
- * same cell values (`formatApprovalReference`, the raw ISO date, the plain
- * decimal quantity) — see `equivalence.test.ts` for the proof the two
- * agree. */
-export function renderRegisterCsv(register: Register): string {
+/** Renders `register` as CSV text in `language` — the contract's own
+ * template language (#69), never the operator's active interface locale —
+ * a header row, one row per entry, and a totals row. `renderRegisterPdf`
+ * renders the same `Register` with the same cell values
+ * (`formatApprovalReference`, the raw ISO date, the plain decimal
+ * quantity) — see `equivalence.test.ts` for the proof the two agree. */
+export function renderRegisterCsv(register: Register, language: ContractTemplateLanguage): string {
 	const header = csvRow([
-		m.register_column_date(),
-		m.register_column_quantity(),
-		m.register_column_scope(),
-		m.register_column_approval()
+		m.register_column_date({}, { locale: language }),
+		m.register_column_quantity({}, { locale: language }),
+		m.register_column_scope({}, { locale: language }),
+		m.register_column_approval({}, { locale: language })
 	]);
 
 	const rows = register.entries.map((entry) =>
@@ -36,7 +38,12 @@ export function renderRegisterCsv(register: Register): string {
 		])
 	);
 
-	const totalsRow = csvRow(['', String(register.totalQuantity), m.register_totals_label(), '']);
+	const totalsRow = csvRow([
+		'',
+		String(register.totalQuantity),
+		m.register_totals_label({}, { locale: language }),
+		''
+	]);
 
 	return [header, ...rows, totalsRow].map((row) => `${row}\r\n`).join('');
 }

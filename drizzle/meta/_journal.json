@@ -127,6 +127,20 @@
       "when": 1786068406999,
       "tag": "0017_email_template_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786084473656,
+      "tag": "0018_contract_template_language",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1786084495039,
+      "tag": "0019_email_template_days_after_due",
+      "breakpoints": true
     }
   ]
 }

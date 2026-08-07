@@ -1,10 +1,12 @@
-// Placeholder substitution against real data (#71). Rendering always uses
-// the interface's active locale (`$lib/i18n/format.ts`), the same
-// simplification #69 (per-contract template language, out of scope this
-// wave) names explicitly — a contract that needs its templates in a fixed
-// language regardless of who is signed in needs that issue done first.
+// Placeholder substitution against real data (#71). Every figure below is
+// formatted against `context.language` — the contract's own template
+// language (#69) — explicitly, never against `$lib/i18n/format`'s default
+// parameter (the signed-in operator's active interface locale): passing
+// `language` is not optional, so there is no code path here that can fall
+// back to whoever happens to be signed in when a message is composed.
+import { daysLate } from '$lib/server/domain/invoice';
 import { formatAmount, formatDate, formatDays } from '$lib/i18n/format';
-import type { EmailTemplatePlaceholder } from '$lib/server/db/schema';
+import type { ContractTemplateLanguage, EmailTemplatePlaceholder } from '$lib/server/db/schema';
 import type { Invoice } from '$lib/server/import/invoice';
 import type { Register } from '$lib/server/register/types';
 import { substitutePlaceholders } from './placeholders';
@@ -13,11 +15,13 @@ import { substitutePlaceholders } from './placeholders';
  * What a template renders against. `invoice` only needs the handful of
  * fields the placeholder list actually reads, spelled out against the
  * neutral `Invoice` shape `src/lib/server/import/invoice.ts` already
- * defines — #26 turns that shape into the persisted `invoice` table this
- * wave, so a caller here supplies one by hand (a manual compose, or a
- * test) until a persisted row exists to read one from. `register` is the
- * day register for the same period (#70): `day_list`/`day_total`
- * substitute from its entries, never from a second, independent query.
+ * defines — the persisted `invoice` table (#26) satisfies this shape
+ * directly, and a manual compose or a test can still supply one by hand.
+ * `register` is the day register for the same period (#70): `day_list`/
+ * `day_total` substitute from its entries, never from a second,
+ * independent query. `language` is the contract's own template language
+ * (#69, `contract.templateLanguage`) — every caller reads it off the same
+ * contract the template belongs to, never off the active session.
  */
 export type EmailTemplateContext = {
 	invoice: Pick<Invoice, 'number' | 'total' | 'currency'> & {
@@ -28,18 +32,27 @@ export type EmailTemplateContext = {
 	};
 	period: { from: string; to: string };
 	register: Register;
+	language: ContractTemplateLanguage;
 };
 
 function placeholderValues(
 	context: EmailTemplateContext
 ): Readonly<Record<EmailTemplatePlaceholder, string>> {
+	const { language } = context;
 	return {
 		invoice_number: context.invoice.number,
-		period: `${formatDate(context.period.from)} – ${formatDate(context.period.to)}`,
-		amount: formatAmount(context.invoice.total / 100, context.invoice.currency),
-		due_date: formatDate(context.invoice.dueDate),
-		day_list: context.register.entries.map((entry) => formatDate(entry.date)).join(', '),
-		day_total: formatDays(context.register.totalQuantity)
+		period: `${formatDate(context.period.from, language)} – ${formatDate(context.period.to, language)}`,
+		amount: formatAmount(context.invoice.total / 100, context.invoice.currency, language),
+		due_date: formatDate(context.invoice.dueDate, language),
+		day_list: context.register.entries.map((entry) => formatDate(entry.date, language)).join(', '),
+		day_total: formatDays(context.register.totalQuantity, language),
+		// Derived on read (#27's rule, reused rather than reimplemented):
+		// never a stored figure that a batch job would have to refresh.
+		// Negative or zero before the due date has passed — a dunning
+		// template is only ever opened from an overdue invoice
+		// (`src/lib/server/mail/dunning.ts`), so that case does not arise
+		// in practice, but nothing here hides it if it did.
+		days_late: formatDays(daysLate(context.invoice.dueDate), language)
 	};
 }
 

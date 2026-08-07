@@ -43,8 +43,8 @@ const register: Register = {
 };
 
 test('the PDF carries every figure the CSV carries: dates, quantities, scopes, approval references and the total', async () => {
-	const csv = renderRegisterCsv(register);
-	const pdfBuffer = await renderRegisterPdf(register);
+	const csv = renderRegisterCsv(register, 'en');
+	const pdfBuffer = await renderRegisterPdf(register, 'en');
 
 	const parser = new PDFParse({ data: pdfBuffer });
 	const { text: pdfText } = await parser.getText();

@@ -32,7 +32,7 @@ test('produces a well-formed PDF that starts a new page rather than truncating a
 		totalQuantity: entries.length
 	};
 
-	const buffer = await renderRegisterPdf(register);
+	const buffer = await renderRegisterPdf(register, 'en');
 	expect(buffer.subarray(0, 5).toString('ascii')).toBe('%PDF-');
 
 	const parser = new PDFParse({ data: buffer });
@@ -50,9 +50,28 @@ test('an empty period still renders a valid PDF carrying the header and the zero
 		totalQuantity: 0
 	};
 
-	const buffer = await renderRegisterPdf(register);
+	const buffer = await renderRegisterPdf(register, 'en');
 	const parser = new PDFParse({ data: buffer });
 	const { text } = await parser.getText();
 	await parser.destroy();
 	expect(text).toContain('0');
+});
+
+// #69's acceptance: the generated day register attachment follows the
+// contract's own template language, not the interface's.
+test('renders its column headers in the language passed in', async () => {
+	const register: Register = {
+		contractId: 'contract-1',
+		from: '2024-01-01',
+		to: '2024-01-31',
+		entries: [],
+		totalQuantity: 0
+	};
+
+	const buffer = await renderRegisterPdf(register, 'it');
+	const parser = new PDFParse({ data: buffer });
+	const { text } = await parser.getText();
+	await parser.destroy();
+	expect(text).toContain('Quantità');
+	expect(text).toContain('Totale');
 });

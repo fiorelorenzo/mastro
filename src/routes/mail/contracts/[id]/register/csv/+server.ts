@@ -13,7 +13,7 @@ export async function GET({ params, url }) {
 	if (!from || !to) error(400, 'from and to query parameters are required');
 
 	const register = await buildRegister(params.id, from, to);
-	const csv = renderRegisterCsv(register);
+	const csv = renderRegisterCsv(register, contract.templateLanguage);
 	return new Response(csv, {
 		headers: {
 			'Content-Type': 'text/csv; charset=utf-8',

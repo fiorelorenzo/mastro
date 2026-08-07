@@ -38,7 +38,7 @@ const register: Register = {
 };
 
 test('renders a header row, one row per entry, and a totals row', () => {
-	const rows = renderRegisterCsv(register).split('\r\n').filter(Boolean);
+	const rows = renderRegisterCsv(register, 'en').split('\r\n').filter(Boolean);
 	expect(rows).toHaveLength(4);
 	expect(rows[0]).toBe('Date,Quantity,Scope,Approval');
 	expect(rows[1]).toBe(
@@ -48,8 +48,17 @@ test('renders a header row, one row per entry, and a totals row', () => {
 });
 
 test('quotes a field containing a comma, a quote or a newline, doubling embedded quotes', () => {
-	const rows = renderRegisterCsv(register).split('\r\n').filter(Boolean);
+	const rows = renderRegisterCsv(register, 'en').split('\r\n').filter(Boolean);
 	expect(rows[2]).toBe(
 		'2024-03-20,1,"On-site, ""kickoff""\nand handover.",certified_mail · legal@client.example · 2024-03-15'
 	);
+});
+
+// #69's acceptance: the generated day register attachment follows the
+// contract's own template language, not the interface's — headers here,
+// same for the PDF (`pdf.test.ts`).
+test('renders its header and totals row in the language passed in, independent of any default', () => {
+	const rows = renderRegisterCsv(register, 'it').split('\r\n').filter(Boolean);
+	expect(rows[0]).toBe('Data,Quantità,Oggetto,Approvazione');
+	expect(rows[3]).toBe(',1.5,Totale,');
 });
