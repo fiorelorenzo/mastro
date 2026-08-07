@@ -71,6 +71,9 @@
 		border-right: 1px solid var(--border-hairline);
 	}
 	.brand {
+		display: flex;
+		align-items: center;
+		min-height: 44px;
 		font-weight: 600;
 	}
 	.group {
@@ -120,5 +123,15 @@
 	.email {
 		color: var(--text-muted);
 		overflow-wrap: anywhere;
+	}
+	/* The footer controls are the only other things in here you can press,
+	   so they get the same 44px hit area as a navigation item, in both
+	   dimensions: "Esci" is four characters wide and would otherwise be a
+	   26px target. */
+	.foot :global(button) {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+		min-width: 44px;
 	}
 </style>
