@@ -30,6 +30,7 @@ const packWithCharges: FiscalPack = {
 	ceilings: [],
 	treatments: [],
 	formats: [],
+	unresolvedRevenue: 'carries_forward',
 	charges: [
 		{
 			id: 'always-on',

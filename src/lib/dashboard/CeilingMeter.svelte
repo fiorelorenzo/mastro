@@ -4,6 +4,7 @@
 	import { formatMinorUnits, formatPercent } from '$lib/i18n/format';
 	import { STATUS, StatusIndicator } from '$lib/design';
 	import { ceilingBasisWords, ceilingStatus, type CeilingView } from './ceiling';
+	import { renewalAssumptionLine } from './renewal-assumption';
 
 	let { view }: { view: CeilingView } = $props();
 
@@ -88,6 +89,17 @@
 			percent: formatPercent(view.projectedEnd / view.limitValue)
 		})}
 	</p>
+
+	{#if view.assumptions.length > 0}
+		<div class="assumptions">
+			<p class="assumptions-heading">{m.dashboard_assumptions_heading()}</p>
+			<ul>
+				{#each view.assumptions as assumption (assumption.contractId)}
+					<li>{renewalAssumptionLine(assumption)}</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
 </section>
 
 <style>
@@ -182,6 +194,32 @@
 		margin: 0.625rem 0 0;
 		color: var(--text-muted);
 		font-size: 0.75rem;
+	}
+	.assumptions {
+		margin-top: 0.5rem;
+		padding-top: 0.5rem;
+		border-top: 1px dashed var(--border-hairline);
+	}
+	.assumptions-heading {
+		margin: 0;
+		color: var(--text-secondary);
+		font-size: 0.6875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.02em;
+	}
+	.assumptions ul {
+		margin: 0.375rem 0 0;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+	.assumptions li {
+		color: var(--text-muted);
+		font-size: 0.75rem;
+		overflow-wrap: anywhere;
 	}
 	.sr-only {
 		position: absolute;

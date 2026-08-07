@@ -1,6 +1,6 @@
 {
-  "id": "b28ddf6c-b6d2-4572-88e9-329377c758ba",
-  "prevId": "9643994c-21e5-4159-8512-3ebaabae154d",
+  "id": "010e8854-2531-4549-97dd-869ac5e51eef",
+  "prevId": "09e9f27e-4820-49fa-8464-55672d73cdfb",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1190,6 +1190,12 @@
           "notNull": true,
           "default": "'en'"
         },
+        "mail_folder": {
+          "name": "mail_folder",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "expense_policy": {
           "name": "expense_policy",
           "type": "jsonb",
@@ -1210,12 +1216,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'draft'"
-        },
-        "hosted_extraction_consent_document_id": {
-          "name": "hosted_extraction_consent_document_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -1241,19 +1241,6 @@
             "client_id"
           ],
           "tableTo": "client",
-          "columnsTo": [
-            "id"
-          ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
-        },
-        "contract_hosted_extraction_consent_document_id_document_id_fk": {
-          "name": "contract_hosted_extraction_consent_document_id_document_id_fk",
-          "tableFrom": "contract",
-          "columnsFrom": [
-            "hosted_extraction_consent_document_id"
-          ],
-          "tableTo": "document",
           "columnsTo": [
             "id"
           ],
@@ -1900,6 +1887,115 @@
       },
       "isRLSEnabled": false
     },
+    "public.inbound_thread": {
+      "name": "inbound_thread",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "contract_id": {
+          "name": "contract_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mailbox": {
+          "name": "mailbox",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "imap_uid_validity": {
+          "name": "imap_uid_validity",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "imap_uid": {
+          "name": "imap_uid",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "received_at": {
+          "name": "received_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "inbound_thread_contract_id_contract_id_fk": {
+          "name": "inbound_thread_contract_id_contract_id_fk",
+          "tableFrom": "inbound_thread",
+          "columnsFrom": [
+            "contract_id"
+          ],
+          "tableTo": "contract",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        },
+        "inbound_thread_document_id_document_id_fk": {
+          "name": "inbound_thread_document_id_document_id_fk",
+          "tableFrom": "inbound_thread",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "tableTo": "document",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.invoice": {
       "name": "invoice",
       "schema": "",
@@ -2194,6 +2290,59 @@
           "value": "\"invoice_line\".\"tax_rate\" >= 0 and \"invoice_line\".\"tax_rate\" <= 100"
         }
       },
+      "isRLSEnabled": false
+    },
+    "public.mailbox_poll_run": {
+      "name": "mailbox_poll_run",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "status": {
+          "name": "status",
+          "type": "mailbox_poll_run_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "detail": {
+          "name": "detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "acknowledged_at": {
+          "name": "acknowledged_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.proposal": {
@@ -2820,6 +2969,14 @@
       "values": [
         "document",
         "computed"
+      ]
+    },
+    "public.mailbox_poll_run_status": {
+      "name": "mailbox_poll_run_status",
+      "schema": "public",
+      "values": [
+        "success",
+        "failure"
       ]
     },
     "public.proposal_status": {

@@ -131,6 +131,12 @@ export type AlertDetail =
 			readonly reason: 'failure' | 'stale';
 			readonly detail: string | null;
 			readonly since: string;
+	  }
+	| {
+			readonly type: 'mailbox_poll_failure';
+			readonly reason: 'failure' | 'stale' | 'never_run';
+			readonly detail: string | null;
+			readonly lastRunAt: string | null;
 	  };
 
 export interface Alert {

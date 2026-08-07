@@ -157,6 +157,36 @@ export interface StatutoryCharge {
 }
 
 /**
+ * #122: an invoice issued while a cash-basis pack governed can still be
+ * unpaid when a later fiscal profile takes over — a practitioner exiting
+ * Italy's flat-rate regime for the standard one mid-year is the concrete
+ * case this exists for, since an invoice issued shortly before the switch
+ * is often still unpaid at that point. Once it is paid, which basis
+ * governs it?
+ *
+ * `'carries_forward'` is the only value defined so far: this pack's cash
+ * basis keeps governing the invoice — it is recognised, still by its
+ * payment date, in whichever later sub-period's window actually contains
+ * that date, however many regime changes later (`ledger.ts`'s
+ * `sumLedgerAcrossPeriods`). This is not a default invented for the
+ * engine's convenience: it is what Italian law requires on exit from
+ * Italy's flat-rate regime (Legge 23 dicembre 2014, n. 190, art. 1, comma
+ * 72 — see `packs/it-flat-rate.ts`'s header for the full citation and
+ * the scheme's own name), and it is also the only value that keeps the
+ * invariant every other figure in this engine already keeps: revenue
+ * that really happened is never silently dropped. Only a `'cash'` basis
+ * can ever leave a row unresolved — an accrual basis recognises revenue
+ * the instant it is issued — so the value has no effect under `basis:
+ * 'accrual'`, but every pack still declares one: the engine never fills
+ * in a missing capability by branching on `basis` instead, per AGENTS.md
+ * invariant 1. A jurisdiction whose law instead deems such revenue
+ * realised at the moment of transition (a closing adjustment valued at
+ * issuance rather than at collection) would need a second value here;
+ * none is modelled because no pack this product ships needs one yet.
+ */
+export type UnresolvedRevenueTreatment = 'carries_forward';
+
+/**
  * A jurisdiction pack: basis, fiscal year, ceilings, treatments, charges,
  * invoice formats and labels, all as data. `id` plus `version` identify it
  * (by convention `<country>-<regime>`, resolved case by case in
@@ -182,6 +212,8 @@ export interface FiscalPack {
 	 * it carries them through without needing to know what any of them
 	 * mean. Empty for a pack with no national format. */
 	readonly formats: readonly string[];
+	/** #122: see `UnresolvedRevenueTreatment`. */
+	readonly unresolvedRevenue: UnresolvedRevenueTreatment;
 }
 
 function parseIsoDate(date: string): Date {

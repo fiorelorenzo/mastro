@@ -23,6 +23,7 @@ import {
 	CONTRACT_DEADLINE_WARNING_DAYS,
 	INVOICE_OVERDUE_CRITICAL_DAYS,
 	INVOICE_OVERDUE_SERIOUS_DAYS,
+	MAILBOX_POLL_STALE_HOURS,
 	MIRROR_STALE_HOURS,
 	OVERRUN_CRITICAL_RATIO,
 	OVERRUN_SERIOUS_RATIO
@@ -529,4 +530,57 @@ export function detectMirrorFailure(rows: readonly MirrorCandidateRow[], asOfDat
 		}
 	}
 	return alerts;
+}
+
+export interface MailboxPollRunRow {
+	readonly status: 'success' | 'failure';
+	readonly detail: string | null;
+	readonly createdAt: Date;
+}
+
+/** The same two-part check as `detectBackupFailure` (#84 follows that
+ * table's own instruction to reuse the pattern), gated first on
+ * `pollingConfigured` — true only when the mail account is configured
+ * *and* at least one contract has a folder mapped
+ * (`repository.ts`'s `fetchLatestMailboxPollRun`) — the same "not
+ * configured is never a failure to alert on" gate `detectMirrorFailure`
+ * gets from `mirrorConfigured`, so an instance that has not opted into
+ * mail ingestion yet never sees a spurious "never run" alert. */
+export function detectMailboxPollFailure(
+	pollingConfigured: boolean,
+	latestRun: MailboxPollRunRow | null,
+	asOfDate: Date
+): Alert[] {
+	if (!pollingConfigured) return [];
+	if (latestRun === null) {
+		return [
+			makeAlert('global', 'critical', {
+				type: 'mailbox_poll_failure',
+				reason: 'never_run',
+				detail: null,
+				lastRunAt: null
+			})
+		];
+	}
+	if (latestRun.status === 'failure') {
+		return [
+			makeAlert('global', 'critical', {
+				type: 'mailbox_poll_failure',
+				reason: 'failure',
+				detail: latestRun.detail,
+				lastRunAt: latestRun.createdAt.toISOString()
+			})
+		];
+	}
+	if (hoursSince(latestRun.createdAt, asOfDate) > MAILBOX_POLL_STALE_HOURS) {
+		return [
+			makeAlert('global', 'serious', {
+				type: 'mailbox_poll_failure',
+				reason: 'stale',
+				detail: null,
+				lastRunAt: latestRun.createdAt.toISOString()
+			})
+		];
+	}
+	return [];
 }

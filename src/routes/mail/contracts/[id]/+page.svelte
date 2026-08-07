@@ -77,6 +77,26 @@
 		>
 	</form>
 
+	<form method="POST" action="?/mailFolder" class="mt-6 flex flex-col gap-2 border p-4">
+		<span class="text-sm font-semibold">{m.mail_contract_inbound_folder_legend()}</span>
+		<p class="text-xs opacity-70">{m.mail_contract_inbound_folder_hint()}</p>
+		<label class="flex flex-col gap-1 text-sm">
+			<input
+				type="text"
+				name="mailFolder"
+				value={data.contract.mailFolder ?? ''}
+				placeholder={m.mail_contract_inbound_folder_placeholder()}
+				class="w-fit border px-2 py-1"
+			/>
+		</label>
+		{#if form && 'mailFolderError' in form && form.mailFolderError}
+			<span class="text-xs font-semibold">{form.mailFolderError}</span>
+		{/if}
+		<button type="submit" class="w-fit border px-4 py-2 text-sm"
+			>{m.mail_contract_inbound_folder_save()}</button
+		>
+	</form>
+
 	<div class="mt-6 flex items-center justify-between">
 		<h2 class="text-lg font-semibold">{m.mail_contract_templates_heading()}</h2>
 		<a

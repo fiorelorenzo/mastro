@@ -123,6 +123,17 @@ export const contract = pgTable('contract', {
 	// (#69) — never the signed-in operator's interface locale. See
 	// `contractTemplateLanguage`'s own doc comment above.
 	templateLanguage: contractTemplateLanguage('template_language').notNull().default('en'),
+	// The IMAP folder or label (#84) new approval mail for this contract
+	// is filed under, in the same account `IMAP_HOST`/`IMAP_USER` already
+	// authenticate to (`mail/config.ts`) — a mailbox concern, not a
+	// commercial one, grouped here next to `templateLanguage` for the
+	// same reason `autoSendMail` is. Null means "not polled", the default
+	// for every contract until an operator sets one from the mail hub
+	// (`setContractMailFolder`, `/mail/contracts/[id]`); at most one
+	// contract may claim a given folder (`contract_mail_folder_key` in
+	// the accompanying custom migration) so a message never has two
+	// candidate contracts to be handed off under.
+	mailFolder: text('mail_folder'),
 	expensePolicy: jsonb('expense_policy').$type<ExpensePolicy>().notNull(),
 	// Whether an expense on this contract needs written pre-authorisation
 	// to be reimbursable, independent of `requiresPriorApproval` (days) —

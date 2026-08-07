@@ -37,8 +37,7 @@ ENV DATABASE_URL=postgres://build:build@build-time-placeholder/build \
 	BETTER_AUTH_URL=http://localhost:5187 \
 	GOOGLE_CLIENT_ID=build-time-placeholder \
 	GOOGLE_CLIENT_SECRET=build-time-placeholder \
-	AUTH_ALLOWED_EMAILS= \
-	ACCOUNT_HOLDER_TAX_ID=build-time-placeholder
+	AUTH_ALLOWED_EMAILS=
 RUN pnpm build
 
 # Runtime-only dependency set: a second, independent `pnpm install` rather

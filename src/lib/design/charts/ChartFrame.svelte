@@ -1,5 +1,7 @@
 <script lang="ts" generics="Row">
+	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
+	import * as m from '$lib/paraglide/messages';
 	import DataTable from './DataTable.svelte';
 	import type { TableColumn } from './types';
 
@@ -23,19 +25,43 @@
 		chart: Snippet;
 	} = $props();
 
+	// #64: a chart drawn to its own native size (every chart here scrolls
+	// its SVG rather than squashing it illegibly) is exactly what forces
+	// horizontal scrolling at a phone width. Below the same breakpoint
+	// Tailwind's own `sm`, this defaults the toggle to the table — no
+	// horizontal scroll a table's wrapping text and shrinking columns
+	// cannot already handle — while a manual pick (either direction)
+	// always wins once made, including across a later resize.
+	const PHONE_WIDTH_QUERY = '(max-width: 640px)';
 	let view: 'chart' | 'table' = $state('chart');
+	let userPickedView = false;
+
+	function pickView(next: 'chart' | 'table') {
+		userPickedView = true;
+		view = next;
+	}
+
+	onMount(() => {
+		const query = window.matchMedia(PHONE_WIDTH_QUERY);
+		const applyDefault = () => {
+			if (!userPickedView) view = query.matches ? 'table' : 'chart';
+		};
+		applyDefault();
+		query.addEventListener('change', applyDefault);
+		return () => query.removeEventListener('change', applyDefault);
+	});
 </script>
 
 <figure class="chart-frame">
 	<figcaption>
 		<div class="heading">
 			<h3>{title}</h3>
-			<div class="view-toggle" role="group" aria-label="Chart or table view">
-				<button type="button" class:active={view === 'chart'} onclick={() => (view = 'chart')}>
-					Chart
+			<div class="view-toggle" role="group" aria-label={m.chart_frame_toggle_group_label()}>
+				<button type="button" class:active={view === 'chart'} onclick={() => pickView('chart')}>
+					{m.chart_frame_view_chart()}
 				</button>
-				<button type="button" class:active={view === 'table'} onclick={() => (view = 'table')}>
-					Table
+				<button type="button" class:active={view === 'table'} onclick={() => pickView('table')}>
+					{m.chart_frame_view_table()}
 				</button>
 			</div>
 		</div>
@@ -82,9 +108,14 @@
 		overflow: hidden;
 	}
 	.view-toggle button {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
 		border: none;
 		background: none;
-		padding: 0.25rem 0.625rem;
+		min-width: 2.75rem;
+		min-height: 2.75rem;
+		padding: 0.5rem 0.875rem;
 		color: var(--text-secondary);
 		font: inherit;
 		font-size: 0.75rem;
@@ -99,5 +130,10 @@
 		/* Fixed height includes the axis band: the plot area grows with its
 		   content instead of clipping tick labels into a nested scroll. */
 		overflow-x: auto;
+	}
+	@media (max-width: 480px) {
+		.chart-frame {
+			padding: 0.625rem;
+		}
 	}
 </style>

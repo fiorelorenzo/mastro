@@ -78,3 +78,24 @@ export function readMailConfig(source: Record<string, string | undefined>): Mail
 export function mailConfigFromEnv(): MailConfig {
 	return readMailConfig(env);
 }
+
+/** Whether IMAP is configured at all, without throwing — `readMailConfig`
+ * deliberately throws on a half-set mailbox (this file's own doc
+ * comment: sending is a deliberate action, nobody should be surprised by
+ * the error). The alert engine's "is polling even configured" gate
+ * (`detectMailboxPollFailure`, #84) needs the opposite: a safe probe it
+ * can call on every `detectAlerts` run regardless of whether mail is set
+ * up, the same role `mirrorConfigFromEnv() !== null` plays for the
+ * document mirror. */
+export function isImapConfigured(source: Record<string, string | undefined>): boolean {
+	return Boolean(
+		source.IMAP_HOST?.trim() &&
+		source.IMAP_PORT?.trim() &&
+		source.IMAP_USER?.trim() &&
+		source.IMAP_APP_PASSWORD?.trim()
+	);
+}
+
+export function imapConfiguredInEnv(): boolean {
+	return isImapConfigured(env);
+}

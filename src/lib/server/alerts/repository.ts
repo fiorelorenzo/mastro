@@ -16,6 +16,7 @@ import {
 	contract,
 	document,
 	documentMirrorRun,
+	mailboxPollRun,
 	workUnit
 } from '$lib/server/db/schema';
 import { forecastCommitted, forecastProjected } from '$lib/server/fiscal/forecast';
@@ -32,6 +33,7 @@ import type {
 	BillablePeriodRow,
 	ContractDeadlineRow,
 	InvoiceOverdueRow,
+	MailboxPollRunRow,
 	MirrorCandidateRow,
 	WorkedWithoutApprovalRow,
 	YearEndOverrunInput
@@ -279,4 +281,38 @@ export async function fetchMirrorFailureRows(
 		...doc,
 		latestRun: latestByDocument.get(doc.documentId) ?? null
 	}));
+}
+
+/** `mailAccountConfigured` is resolved once by the caller (`engine.ts`,
+ * via a safe probe of the mail env vars) the same way `mirrorConfigured`
+ * is `mirrorConfigFromEnv() !== null` — an env check has no business
+ * inside a DB query function. Combined here with whether any contract
+ * actually has a folder mapped (`contract.mail_folder`): polling counts
+ * as "configured" only when both an account to connect with and at
+ * least one contract to poll for exist — `detectMailboxPollFailure`'s
+ * own gate, so an instance that has not opted into mail ingestion at
+ * all never sees a spurious "never run" alert. */
+export async function fetchLatestMailboxPollRun(
+	mailAccountConfigured: boolean,
+	executor: DbExecutor = db
+): Promise<{ pollingConfigured: boolean; latestRun: MailboxPollRunRow | null }> {
+	if (!mailAccountConfigured) return { pollingConfigured: false, latestRun: null };
+
+	const [anyMapped] = await executor
+		.select({ id: contract.id })
+		.from(contract)
+		.where(isNotNull(contract.mailFolder))
+		.limit(1);
+	if (!anyMapped) return { pollingConfigured: false, latestRun: null };
+
+	const [row] = await executor
+		.select({
+			status: mailboxPollRun.status,
+			detail: mailboxPollRun.detail,
+			createdAt: mailboxPollRun.createdAt
+		})
+		.from(mailboxPollRun)
+		.orderBy(desc(mailboxPollRun.createdAt))
+		.limit(1);
+	return { pollingConfigured: true, latestRun: row ?? null };
 }

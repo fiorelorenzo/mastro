@@ -155,3 +155,58 @@ test('every supported template language round-trips through the database (#69)',
 test('the contract template language enum matches the interface locales exactly', () => {
 	expect([...contractTemplateLanguage.enumValues].sort()).toEqual([...locales].sort());
 });
+
+// #84: `mail_folder`'s own constraints (`0034_mail_poll_constraints.sql`).
+
+test('mail_folder defaults to null (not polled) and accepts a plain value', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const [clientRow] = await tx.insert(client).values(clientFields()).returning();
+			const [unset] = await tx.insert(contract).values(baseContract(clientRow.id)).returning();
+			expect(unset.mailFolder).toBeNull();
+
+			const [set] = await tx
+				.insert(contract)
+				.values({ ...baseContract(clientRow.id), mailFolder: 'Acme Corp' })
+				.returning();
+			expect(set.mailFolder).toBe('Acme Corp');
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('a blank mail_folder is rejected by the database, null is not', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const [clientRow] = await tx.insert(client).values(clientFields()).returning();
+			await expect(
+				tx.insert(contract).values({ ...baseContract(clientRow.id), mailFolder: '   ' })
+			).rejects.toThrow();
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('two contracts cannot claim the same mail_folder, but two nulls are both fine', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const [clientRow] = await tx.insert(client).values(clientFields()).returning();
+			await tx
+				.insert(contract)
+				.values({ ...baseContract(clientRow.id), mailFolder: 'Acme Corp' })
+				.returning();
+
+			await expect(
+				tx.insert(contract).values({ ...baseContract(clientRow.id), mailFolder: 'Acme Corp' })
+			).rejects.toThrow();
+
+			// Two unpolled contracts, both null, are not a conflict.
+			await tx.insert(contract).values(baseContract(clientRow.id)).returning();
+			await tx.insert(contract).values(baseContract(clientRow.id)).returning();
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});

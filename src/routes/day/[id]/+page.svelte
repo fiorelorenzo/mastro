@@ -53,13 +53,15 @@
 	><title>{m.day_detail_page_title({ date: formatDate(data.workUnit.date) })}</title></svelte:head
 >
 
-<main class="mx-auto max-w-2xl p-8">
+<main class="mx-auto max-w-2xl p-4 sm:p-8">
 	<h1 class="text-2xl font-semibold">
 		{m.day_detail_heading({ date: formatDate(data.workUnit.date) })}
 	</h1>
 	<div class="mt-2"><DayStateBadge state={data.workUnit.state} /></div>
 
-	<dl class="mt-6 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
+	<dl
+		class="mt-6 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm [&_dd]:min-w-0 [&_dd]:break-words"
+	>
 		<dt class="opacity-70">{m.day_detail_contract_label()}</dt>
 		<dd>{data.contract.title}</dd>
 		<dt class="opacity-70">{m.day_detail_quantity_label()}</dt>
@@ -87,7 +89,7 @@
 			<h2 class="text-base font-medium">{m.day_detail_approval_link_heading()}</h2>
 			<label class="flex flex-col gap-1 text-sm">
 				<span>{m.day_detail_approval_select_label()}</span>
-				<select name="approvalId" required class="border px-3 py-2 text-base">
+				<select name="approvalId" required class="border px-3 py-3 text-base">
 					<option value="" disabled selected>{m.day_detail_approval_select_placeholder()}</option>
 					{#each data.linkableApprovals as approval (approval.id)}
 						<option value={approval.id}
@@ -97,7 +99,7 @@
 				</select>
 			</label>
 			{#if form?.linkError}<span class="text-sm text-red-700">{form.linkError}</span>{/if}
-			<button type="submit" class="w-fit border px-4 py-2 text-sm">
+			<button type="submit" class="w-fit border px-4 py-3 text-base">
 				{m.day_detail_approval_link_submit()}
 			</button>
 		</form>

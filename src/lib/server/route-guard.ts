@@ -17,6 +17,10 @@ export const PUBLIC_ROUTE_IDS: ReadonlySet<string> = new Set([
 	// caller is cron, with no browser session to present at all — see the
 	// route's own bearer-token check, which is the actual protection here.
 	'/api/alerts/run/[job]',
+	// The IMAP poller's cron-driven run (#84): same shape as the alerts
+	// route above — the caller is cron, no session to present, protected
+	// by the route's own bearer-token check instead.
+	'/api/mail/poll',
 	// The offline fallback the service worker serves for a failed navigation
 	// (#61). Prerendered and stateless — it never reads locals.user — which
 	// is exactly why it is safe to precache and hand to a visitor the

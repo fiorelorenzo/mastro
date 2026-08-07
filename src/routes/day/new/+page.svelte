@@ -94,7 +94,7 @@
 <svelte:head><title>{m.day_new_page_title()}</title></svelte:head>
 <svelte:window onkeydown={onKeydown} />
 
-<main class="mx-auto max-w-xl p-8">
+<main class="mx-auto max-w-xl p-4 sm:p-8">
 	<h1 class="text-2xl font-semibold">{m.day_new_heading()}</h1>
 
 	{#if data.contracts.length === 0}
@@ -109,14 +109,14 @@
 					name="date"
 					value={form?.values.date ?? data.defaultDate}
 					required
-					class="w-fit border px-3 py-2 text-base"
+					class="w-fit border px-3 py-3 text-base"
 				/>
 				{#if form?.errors.date}<span class="text-sm text-red-700">{form.errors.date}</span>{/if}
 			</label>
 
 			<fieldset class="flex flex-col gap-2">
 				<legend class="text-sm">{m.day_form_quantity_legend()}</legend>
-				<div class="flex gap-2" role="group" aria-label={m.day_form_quantity_legend()}>
+				<div class="flex flex-wrap gap-2" role="group" aria-label={m.day_form_quantity_legend()}>
 					<button
 						type="button"
 						class="quantity-preset"
@@ -143,7 +143,7 @@
 						step="0.25"
 						min="0.25"
 						required
-						class="w-32 border px-3 py-2 text-base"
+						class="w-32 border px-3 py-3 text-base"
 					/>
 				</label>
 				{#if form?.errors.quantity}<span class="text-sm text-red-700">{form.errors.quantity}</span
@@ -159,7 +159,7 @@
 					placeholder={m.day_form_scope_placeholder()}
 					required
 					use:autofocusOnMount
-					class="border px-3 py-2 text-base"
+					class="border px-3 py-3 text-base"
 				/>
 				{#if form?.errors.scope}<span class="text-sm text-red-700">{form.errors.scope}</span>{/if}
 			</label>
@@ -171,7 +171,7 @@
 					bind:value={contractId}
 					onchange={onContractChange}
 					required
-					class="border px-3 py-2 text-base"
+					class="border px-3 py-3 text-base"
 				>
 					<option value="" disabled>{m.day_form_contract_placeholder()}</option>
 					{#each data.contracts as contract (contract.id)}
@@ -186,7 +186,7 @@
 			{#if selectedContract?.requiresPriorApproval}
 				<label class="flex flex-col gap-1 text-sm">
 					<span>{m.day_form_approval_label()}</span>
-					<select name="approvalId" bind:value={approvalId} class="border px-3 py-2 text-base">
+					<select name="approvalId" bind:value={approvalId} class="border px-3 py-3 text-base">
 						<option value="">{m.day_form_approval_none_option()}</option>
 						{#each approvalsForContract as approval (approval.id)}
 							<option value={approval.id}
@@ -224,12 +224,12 @@
 
 <style>
 	.quantity-preset {
+		flex: 1 1 8rem;
 		border: 1px solid var(--border-hairline, currentColor);
 		padding: 0.875rem 1.25rem;
 		font-size: 1rem;
 		background: var(--surface-1, transparent);
 		min-height: 3rem;
-		min-width: 8rem;
 	}
 	.quantity-preset.selected {
 		background: var(--text-primary, #0b0b0b);

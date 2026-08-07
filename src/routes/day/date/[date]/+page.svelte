@@ -12,13 +12,13 @@
 	><title>{m.day_date_list_page_title({ date: formatDate(data.date) })}</title></svelte:head
 >
 
-<main class="mx-auto max-w-xl p-8">
+<main class="mx-auto max-w-xl p-4 sm:p-8">
 	<h1 class="text-2xl font-semibold">{m.day_date_list_heading({ date: formatDate(data.date) })}</h1>
 
 	<ul class="mt-6 flex flex-col gap-3">
 		{#each data.entries as entry (entry.id)}
 			<li>
-				<a href={resolve('/day/[id]', { id: entry.id })} class="flex items-center gap-3 border p-3">
+				<a href={resolve('/day/[id]', { id: entry.id })} class="flex items-center gap-3 border p-4">
 					<DayStateBadge state={entry.state} compact />
 					<span class="text-sm">{entry.contractLabel}</span>
 				</a>

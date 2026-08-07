@@ -19,14 +19,16 @@
 
 <svelte:head><title>{m.proposal_detail_page_title()}</title></svelte:head>
 
-<main class="mx-auto max-w-4xl p-8">
+<main class="mx-auto max-w-4xl p-4 sm:p-8">
 	<h1 class="text-2xl font-semibold">{m.proposal_detail_heading()}</h1>
 	<div class="mt-2 flex items-center gap-3">
 		<ProposalStatusBadge status={data.proposal.status} />
 		<span class="text-sm opacity-70">{proposalTargetTypeLabel(data.proposal.targetType)}</span>
 	</div>
 
-	<dl class="mt-4 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm">
+	<dl
+		class="mt-4 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm [&_dd]:min-w-0 [&_dd]:break-words"
+	>
 		<dt class="opacity-70">{m.proposal_detail_contract_label()}</dt>
 		<dd>{data.contract?.title ?? data.proposal.id}</dd>
 		<dt class="opacity-70">{m.proposal_detail_confidence_label()}</dt>
@@ -55,12 +57,12 @@
 									type="number"
 									step="any"
 									value={value as number}
-									class="border px-2 py-1"
+									class="border px-3 py-3"
 								/>
 							{:else if inputType(value) === 'date'}
-								<input name={field} type="date" value={value as string} class="border px-2 py-1" />
+								<input name={field} type="date" value={value as string} class="border px-3 py-3" />
 							{:else}
-								<input name={field} type="text" value={value as string} class="border px-2 py-1" />
+								<input name={field} type="text" value={value as string} class="border px-3 py-3" />
 							{/if}
 						</label>
 					{/each}
@@ -73,16 +75,22 @@
 					{/if}
 
 					<div class="mt-2 flex gap-3">
-						<button type="submit" class="border px-4 py-2 text-sm">
+						<button type="submit" class="border px-4 py-3.5 text-sm">
 							{m.proposal_detail_accept_submit()}
 						</button>
-						<button type="submit" formaction="?/reject" class="border px-4 py-2 text-sm opacity-80">
+						<button
+							type="submit"
+							formaction="?/reject"
+							class="border px-4 py-3.5 text-sm opacity-80"
+						>
 							{m.proposal_detail_reject_submit()}
 						</button>
 					</div>
 				</form>
 			{:else}
-				<dl class="mt-3 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+				<dl
+					class="mt-3 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm [&_dd]:min-w-0 [&_dd]:break-words"
+				>
 					{#each fieldEntries as [field] (field)}
 						<dt class="opacity-70">{proposalFieldLabel(field)}</dt>
 						<dd>{String((data.proposal.acceptedFields ?? data.proposal.proposedFields)[field])}</dd>
@@ -95,7 +103,9 @@
 	{#if data.proposal.status !== 'pending'}
 		<section class="mt-6 border p-4">
 			<h2 class="text-base font-medium">{m.proposal_detail_decided_heading()}</h2>
-			<dl class="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+			<dl
+				class="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm [&_dd]:min-w-0 [&_dd]:break-words"
+			>
 				<dt class="opacity-70">{m.proposal_detail_decided_by_label()}</dt>
 				<dd>{data.proposal.decidedBy}</dd>
 				<dt class="opacity-70">{m.proposal_detail_decided_at_label()}</dt>
