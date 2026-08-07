@@ -1,0 +1,36 @@
+# A throwaway SMTP + IMAP server for exercising #72 against something real
+# instead of a mock. GreenMail is a test mailbox: real AUTH, real SMTP
+# relay, real IMAP with APPEND — not a capture-only tool like MailHog,
+# which has no IMAP side to prove a message lands in Sent.
+#
+# Usage:
+#   docker compose -f compose.mail-test.yaml up -d
+#   # SMTP_HOST=localhost SMTP_PORT=34025 SMTP_SECURE=false
+#   # SMTP_USER=mastro@mastro.test SMTP_APP_PASSWORD=test-app-password
+#   # IMAP_HOST=localhost IMAP_PORT=34143 IMAP_SECURE=false
+#   # IMAP_USER=mastro@mastro.test IMAP_APP_PASSWORD=test-app-password
+#   pnpm test -- src/lib/server/mail/smtp-imap.test.ts
+#   docker compose -f compose.mail-test.yaml down
+#
+# Ports are non-default (34025/34143, not 25/143 or the usual 3025/3143) so
+# this can run next to another agent's worktree on the same box without a
+# port clash — see AGENTS.md on ports being fixed per project for the same
+# reason.
+name: mastro-mail-test
+
+services:
+  greenmail:
+    image: greenmail/standalone:2.1.8
+    restart: 'no'
+    ports:
+      - '127.0.0.1:34025:3025' # SMTP
+      - '127.0.0.1:34143:3143' # IMAP
+    environment:
+      # One fixed test account, auth required (real AUTH, not
+      # `greenmail.auth.disabled`) so this actually exercises the
+      # app-password login path #72 depends on.
+      GREENMAIL_OPTS: >-
+        -Dgreenmail.setup.test.smtp
+        -Dgreenmail.setup.test.imap
+        -Dgreenmail.hostname=0.0.0.0
+        -Dgreenmail.users=mastro@mastro.test:test-app-password
