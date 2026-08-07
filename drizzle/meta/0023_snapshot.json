@@ -1,6 +1,6 @@
 {
-  "id": "ccb5409e-635a-4d53-9804-b96e9b4a81f6",
-  "prevId": "173abc17-c881-495f-b108-e0b69e4a03b7",
+  "id": "0a7266c3-4321-48bc-9543-85a3b1d7e417",
+  "prevId": "876e090d-353d-44af-9a52-c6b6c646d91e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -909,6 +909,14 @@
           "notNull": true,
           "default": false
         },
+        "template_language": {
+          "name": "template_language",
+          "type": "contract_template_language",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'en'"
+        },
         "expense_policy": {
           "name": "expense_policy",
           "type": "jsonb",
@@ -1061,6 +1069,79 @@
           ],
           "onUpdate": "no action",
           "onDelete": "restrict"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.document_mirror_run": {
+      "name": "document_mirror_run",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "document_mirror_run_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "detail": {
+          "name": "detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "acknowledged_at": {
+          "name": "acknowledged_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "document_mirror_run_document_id_document_id_fk": {
+          "name": "document_mirror_run_document_id_document_id_fk",
+          "tableFrom": "document_mirror_run",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "tableTo": "document",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -1983,6 +2064,14 @@
         "expired"
       ]
     },
+    "public.contract_template_language": {
+      "name": "contract_template_language",
+      "schema": "public",
+      "values": [
+        "en",
+        "it"
+      ]
+    },
     "public.invoicing_cadence": {
       "name": "invoicing_cadence",
       "schema": "public",
@@ -2001,6 +2090,14 @@
         "mail",
         "upload",
         "generated"
+      ]
+    },
+    "public.document_mirror_run_status": {
+      "name": "document_mirror_run_status",
+      "schema": "public",
+      "values": [
+        "success",
+        "failure"
       ]
     },
     "public.invoice_document_type": {

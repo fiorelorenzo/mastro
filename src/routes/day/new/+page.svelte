@@ -1,7 +1,13 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
+	import type { SubmitFunction } from '@sveltejs/kit';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDateTime } from '$lib/i18n/format';
+	import { StatusIndicator } from '$lib/design';
+	import { offlineQueue } from '$lib/pwa/offline-queue.svelte';
+	import OfflineQueuePanel from './OfflineQueuePanel.svelte';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
@@ -15,8 +21,24 @@
 	let contractId = $state(form?.values.contractId ?? data.defaultContractId);
 	let approvalId = $state(form?.values.approvalId ?? '');
 
+	// The idempotency key #62's offline queue and the server share (see
+	// createWorkUnit): generated fresh for every attempt this page makes,
+	// live or queued. Reusing form.values.workUnitId across a
+	// validation-failure re-render keeps a fix-and-resubmit cycle under
+	// one id, same as every other field here — nothing was persisted for
+	// a failed attempt, so there is nothing to be idempotent against yet.
+	let workUnitId = $state(form?.values.workUnitId || crypto.randomUUID());
+
+	// Set right after a submission goes into the offline queue, cleared by
+	// the next attempt — the inline confirmation that pairs with the
+	// queue panel below to make the "pending, not saved" distinction
+	// impossible to miss at the moment it matters most.
+	let justQueued = $state(false);
+
 	const selectedContract = $derived(data.contracts.find((c) => c.id === contractId));
 	const approvalsForContract = $derived(data.approvalsByContract[contractId] ?? []);
+
+	onMount(() => offlineQueue.init());
 
 	// Switching contract invalidates whichever approval was picked for the
 	// previous one — an approval belongs to exactly one contract, so
@@ -42,6 +64,31 @@
 	function autofocusOnMount(node: HTMLInputElement) {
 		node.focus();
 	}
+
+	// #62: `use:enhance`'s own fetch throws when the request never reaches
+	// the server at all (offline, DNS, a dropped connection mid-flight) —
+	// SvelteKit hands that back as `result.type === 'error'` with no
+	// `status`, the one shape a genuine server response (success, a
+	// validation `failure`, or even an unexpected 500) never has. That is
+	// the single signal this queues on: everything else — including every
+	// validation error the action already returns via `fail()` — still
+	// goes through SvelteKit's normal `update()`, unchanged.
+	const onSubmit: SubmitFunction = () => {
+		return async ({ formData, result, update }) => {
+			if (result.type === 'error' && result.status === undefined) {
+				await offlineQueue.enqueue(formData);
+				justQueued = true;
+				formEl?.reset();
+				quantity = '1';
+				contractId = data.defaultContractId;
+				approvalId = '';
+				workUnitId = crypto.randomUUID();
+				return;
+			}
+			justQueued = false;
+			await update();
+		};
+	};
 </script>
 
 <svelte:head><title>{m.day_new_page_title()}</title></svelte:head>
@@ -53,7 +100,8 @@
 	{#if data.contracts.length === 0}
 		<p class="mt-4 text-sm opacity-70">{m.day_new_no_contracts()}</p>
 	{:else}
-		<form bind:this={formEl} method="POST" class="mt-6 flex flex-col gap-6">
+		<form bind:this={formEl} method="POST" class="mt-6 flex flex-col gap-6" use:enhance={onSubmit}>
+			<input type="hidden" name="workUnitId" value={workUnitId} />
 			<label class="flex flex-col gap-1 text-sm">
 				<span>{m.day_form_date_label()}</span>
 				<input
@@ -160,7 +208,14 @@
 				<span class="text-xs opacity-60">{m.day_form_keyboard_hint()}</span>
 			</div>
 		</form>
+		{#if justQueued}
+			<div class="queued-notice" role="status">
+				<StatusIndicator level="warning" label={m.day_offline_queued_notice()} />
+			</div>
+		{/if}
 	{/if}
+
+	<OfflineQueuePanel contracts={data.contracts} />
 
 	<p class="mt-6 text-sm">
 		<a href={resolve('/day/calendar')} class="underline">{m.home_calendar_link()}</a>
@@ -180,5 +235,10 @@
 		background: var(--text-primary, #0b0b0b);
 		color: var(--surface-1, #fcfcfb);
 		border-color: var(--text-primary, #0b0b0b);
+	}
+	.queued-notice {
+		margin-top: 1rem;
+		border: 1px solid var(--border-hairline);
+		padding: 0.625rem 1rem;
 	}
 </style>

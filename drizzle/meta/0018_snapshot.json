@@ -1,5 +1,5 @@
 {
-  "id": "75a4e00a-e15c-47ac-b783-1a925c9d7acf",
+  "id": "173abc17-c881-495f-b108-e0b69e4a03b7",
   "prevId": "13c7ae09-6366-4449-ab95-05aa8a51a02f",
   "version": "7",
   "dialect": "postgresql",
@@ -489,6 +489,139 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.ceiling": {
+      "name": "ceiling",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "contract_id": {
+          "name": "contract_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_basis": {
+          "name": "legal_basis",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "measure": {
+          "name": "measure",
+          "type": "ceiling_measure",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "absolute_value_minor_units": {
+          "name": "absolute_value_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "share_ratio": {
+          "name": "share_ratio",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "basis": {
+          "name": "basis",
+          "type": "ceiling_basis",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alert_levels": {
+          "name": "alert_levels",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "consequence": {
+          "name": "consequence",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "ceiling_contract_id_contract_id_fk": {
+          "name": "ceiling_contract_id_contract_id_fk",
+          "tableFrom": "ceiling",
+          "tableTo": "contract",
+          "columnsFrom": [
+            "contract_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "ceiling_contract_code_unique": {
+          "name": "ceiling_contract_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "contract_id",
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "ceiling_value_matches_measure": {
+          "name": "ceiling_value_matches_measure",
+          "value": "(\"ceiling\".\"measure\" = 'absolute_amount' and \"ceiling\".\"absolute_value_minor_units\" is not null and \"ceiling\".\"share_ratio\" is null)\n\t\t\t\tor (\"ceiling\".\"measure\" = 'percentage_share' and \"ceiling\".\"share_ratio\" is not null and \"ceiling\".\"absolute_value_minor_units\" is null)"
+        },
+        "ceiling_absolute_value_non_negative": {
+          "name": "ceiling_absolute_value_non_negative",
+          "value": "\"ceiling\".\"absolute_value_minor_units\" is null or \"ceiling\".\"absolute_value_minor_units\" >= 0"
+        },
+        "ceiling_share_ratio_range": {
+          "name": "ceiling_share_ratio_range",
+          "value": "\"ceiling\".\"share_ratio\" is null or (\"ceiling\".\"share_ratio\" > 0 and \"ceiling\".\"share_ratio\" <= 1)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.client": {
       "name": "client",
       "schema": "",
@@ -775,14 +908,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
-        },
-        "template_language": {
-          "name": "template_language",
-          "type": "contract_template_language",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'en'"
         },
         "expense_policy": {
           "name": "expense_policy",
@@ -1810,6 +1935,23 @@
         "failure"
       ]
     },
+    "public.ceiling_basis": {
+      "name": "ceiling_basis",
+      "schema": "public",
+      "values": [
+        "cash_received_calendar_year",
+        "invoiced_calendar_year",
+        "cash_received_contract_year"
+      ]
+    },
+    "public.ceiling_measure": {
+      "name": "ceiling_measure",
+      "schema": "public",
+      "values": [
+        "absolute_amount",
+        "percentage_share"
+      ]
+    },
     "public.notice_channel": {
       "name": "notice_channel",
       "schema": "public",
@@ -1839,14 +1981,6 @@
         "active",
         "terminated",
         "expired"
-      ]
-    },
-    "public.contract_template_language": {
-      "name": "contract_template_language",
-      "schema": "public",
-      "values": [
-        "en",
-        "it"
       ]
     },
     "public.invoicing_cadence": {
