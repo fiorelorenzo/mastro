@@ -3,7 +3,10 @@
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate, formatMinorUnits } from '$lib/i18n/format';
 	import LegalText from '$lib/legal/LegalText.svelte';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
+	import Section from '$lib/layout/Section.svelte';
+	import RecordList from '$lib/layout/RecordList.svelte';
+	import type { RecordColumn } from '$lib/layout/types';
 	import { factLine } from '$lib/nav/crumbs';
 	import { ageingStatus } from '../status';
 	import type { ActionData, PageData } from './$types';
@@ -33,24 +36,82 @@
 				return state;
 		}
 	}
+
+	type LineRow = PageData['invoice']['lines'][number];
+	type DayRow = LineRow['days'][number];
+	type ExpenseRow = LineRow['expenses'][number];
+
+	const lineColumns: readonly RecordColumn<LineRow>[] = $derived([
+		{
+			key: 'description',
+			label: m.invoice_form_line_description_label(),
+			format: (l) => l.description
+		},
+		{
+			key: 'quantity',
+			label: m.invoice_form_line_quantity_label(),
+			align: 'end',
+			format: (l) => String(l.quantity)
+		},
+		{
+			key: 'unitPrice',
+			label: m.invoice_form_line_unit_price_label(),
+			align: 'end',
+			format: (l) => formatMinorUnits(l.unitPrice, invoice.currency)
+		},
+		{
+			key: 'amount',
+			label: m.invoice_form_line_amount_label(),
+			align: 'end',
+			format: (l) => formatMinorUnits(l.amount, invoice.currency)
+		},
+		{
+			key: 'taxRate',
+			label: m.invoice_form_line_tax_rate_label(),
+			align: 'end',
+			format: (l) => `${l.taxRate}%`
+		}
+	]);
+
+	const dayColumns: readonly RecordColumn<DayRow>[] = $derived([
+		{ key: 'date', label: m.invoice_detail_day_date_label(), format: (d) => formatDate(d.date) },
+		{ key: 'scope', label: m.invoice_detail_day_scope_label(), format: (d) => d.scope },
+		{
+			key: 'status',
+			label: m.invoices_column_status(),
+			format: (d) => (invoice.paidOn ? m.invoice_day_status_paid() : dayStateLabel(d.state))
+		}
+	]);
+	const dayRows = $derived(invoice.lines.flatMap((line) => line.days));
+
+	const expenseColumns: readonly RecordColumn<ExpenseRow>[] = $derived([
+		{ key: 'date', label: m.expense_column_date(), format: (e) => formatDate(e.date) },
+		{ key: 'description', label: m.expense_column_description(), format: (e) => e.description },
+		{
+			key: 'amount',
+			label: m.expense_column_amount(),
+			align: 'end',
+			format: (e) => formatMinorUnits(e.amount, invoice.currency)
+		}
+	]);
+	const expenseRows = $derived(invoice.lines.flatMap((line) => line.expenses));
 </script>
 
 <svelte:head><title>{m.invoice_detail_page_title({ number: invoice.number })}</title></svelte:head>
 
-<main class="mx-auto max-w-3xl p-8">
-	{#snippet remindAction()}
-		<a href={resolve('/invoices/[id]/remind', { id: invoice.id })} class="text-sm underline">
-			{m.invoice_detail_remind_link()}
-		</a>
-	{/snippet}
-	<PageHeader
-		crumbs={data.crumbs}
-		title={invoice.number}
-		{subtitle}
-		actions={data.overdue ? remindAction : undefined}
-	/>
+{#snippet remindAction()}
+	<a href={resolve('/invoices/[id]/remind', { id: invoice.id })} class="underline">
+		{m.invoice_detail_remind_link()}
+	</a>
+{/snippet}
 
-	<dl class="mt-6 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+<Page
+	crumbs={data.crumbs}
+	title={invoice.number}
+	{subtitle}
+	actions={data.overdue ? remindAction : undefined}
+>
+	<dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
 		<dt class="opacity-70">{m.invoice_detail_issue_date_label()}</dt>
 		<dd>{formatDate(invoice.issueDate)}</dd>
 
@@ -100,12 +161,11 @@
 		{/if}
 	</dl>
 
-	<section class="mt-6">
-		<h2 class="text-sm font-semibold">{m.invoice_detail_payment_heading()}</h2>
+	<Section title={m.invoice_detail_payment_heading()}>
 		{#if invoice.paidOn}
 			<p class="text-sm">{m.invoice_detail_paid_on({ date: formatDate(invoice.paidOn) })}</p>
 		{:else}
-			<details class="mt-2">
+			<details>
 				<summary class="cursor-pointer text-sm underline">{m.invoice_mark_paid_toggle()}</summary>
 				<form method="POST" action="?/pay" class="mt-2 flex items-end gap-3">
 					<label class="flex flex-col gap-1 text-sm">
@@ -119,89 +179,40 @@
 				{#if form?.payError}<span class="text-xs font-semibold">{form.payError}</span>{/if}
 			</details>
 		{/if}
-	</section>
+	</Section>
 
-	<section class="mt-6">
-		<h2 class="text-sm font-semibold">{m.invoice_detail_lines_heading()}</h2>
-		<table class="mt-2 w-full border-collapse text-sm">
-			<thead>
-				<tr class="border-b text-left">
-					<th class="py-2 pr-4">{m.invoice_form_line_description_label()}</th>
-					<th class="py-2 pr-4 text-end">{m.invoice_form_line_quantity_label()}</th>
-					<th class="py-2 pr-4 text-end">{m.invoice_form_line_unit_price_label()}</th>
-					<th class="py-2 pr-4 text-end">{m.invoice_form_line_amount_label()}</th>
-					<th class="py-2 text-end">{m.invoice_form_line_tax_rate_label()}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each invoice.lines as line (line.id)}
-					<tr class="border-b">
-						<td class="py-2 pr-4">{line.description}</td>
-						<td class="py-2 pr-4 text-end">{line.quantity}</td>
-						<td class="py-2 pr-4 text-end">{formatMinorUnits(line.unitPrice, invoice.currency)}</td>
-						<td class="py-2 pr-4 text-end">{formatMinorUnits(line.amount, invoice.currency)}</td>
-						<td class="py-2 text-end">{line.taxRate}%</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</section>
+	<Section title={m.invoice_detail_lines_heading()}>
+		<RecordList
+			columns={lineColumns}
+			rows={invoice.lines}
+			caption={m.invoice_detail_lines_heading()}
+			rowKey={(line) => line.id}
+		/>
+	</Section>
 
-	<section id="days" class="mt-6">
-		<h2 class="text-sm font-semibold">{m.invoice_detail_days_heading()}</h2>
-		{#if invoice.lines.every((line) => line.days.length === 0)}
-			<p class="mt-2 text-sm opacity-70">{m.invoice_detail_no_days()}</p>
+	<Section title={m.invoice_detail_days_heading()}>
+		{#if dayRows.length === 0}
+			<p class="text-sm opacity-70">{m.invoice_detail_no_days()}</p>
 		{:else}
-			<table class="mt-2 w-full border-collapse text-sm">
-				<thead>
-					<tr class="border-b text-left">
-						<th class="py-2 pr-4">{m.invoice_detail_day_date_label()}</th>
-						<th class="py-2 pr-4">{m.invoice_detail_day_scope_label()}</th>
-						<th class="py-2">{m.invoices_column_status()}</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each invoice.lines as line (line.id)}
-						{#each line.days as day (day.id)}
-							<tr class="border-b">
-								<td class="py-2 pr-4">{formatDate(day.date)}</td>
-								<td class="py-2 pr-4">{day.scope}</td>
-								<td class="py-2"
-									>{invoice.paidOn ? m.invoice_day_status_paid() : dayStateLabel(day.state)}</td
-								>
-							</tr>
-						{/each}
-					{/each}
-				</tbody>
-			</table>
+			<RecordList
+				columns={dayColumns}
+				rows={dayRows}
+				caption={m.invoice_detail_days_heading()}
+				rowKey={(day) => day.id}
+			/>
 		{/if}
-	</section>
+	</Section>
 
-	<section id="expenses" class="mt-6">
-		<h2 class="text-sm font-semibold">{m.invoice_detail_expenses_heading()}</h2>
-		{#if invoice.lines.every((line) => line.expenses.length === 0)}
-			<p class="mt-2 text-sm opacity-70">{m.invoice_detail_no_expenses()}</p>
+	<Section title={m.invoice_detail_expenses_heading()}>
+		{#if expenseRows.length === 0}
+			<p class="text-sm opacity-70">{m.invoice_detail_no_expenses()}</p>
 		{:else}
-			<table class="mt-2 w-full border-collapse text-sm">
-				<thead>
-					<tr class="border-b text-left">
-						<th class="py-2 pr-4">{m.expense_column_date()}</th>
-						<th class="py-2 pr-4">{m.expense_column_description()}</th>
-						<th class="py-2">{m.expense_column_amount()}</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each invoice.lines as line (line.id)}
-						{#each line.expenses as expenseRow (expenseRow.id)}
-							<tr class="border-b">
-								<td class="py-2 pr-4">{formatDate(expenseRow.date)}</td>
-								<td class="py-2 pr-4">{expenseRow.description}</td>
-								<td class="py-2">{formatMinorUnits(expenseRow.amount, invoice.currency)}</td>
-							</tr>
-						{/each}
-					{/each}
-				</tbody>
-			</table>
+			<RecordList
+				columns={expenseColumns}
+				rows={expenseRows}
+				caption={m.invoice_detail_expenses_heading()}
+				rowKey={(expenseRow) => expenseRow.id}
+			/>
 		{/if}
-	</section>
-</main>
+	</Section>
+</Page>

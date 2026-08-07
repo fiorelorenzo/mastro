@@ -5,7 +5,7 @@
 	import * as m from '$lib/paraglide/messages';
 	import { formatDateTime } from '$lib/i18n/format';
 	import { StatusIndicator } from '$lib/design';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import { offlineQueue } from '$lib/pwa/offline-queue.svelte';
 	import OfflineQueuePanel from './OfflineQueuePanel.svelte';
 	import type { ActionData, PageProps } from './$types';
@@ -94,9 +94,7 @@
 <svelte:head><title>{m.day_new_page_title()}</title></svelte:head>
 <svelte:window onkeydown={onKeydown} />
 
-<main class="mx-auto max-w-xl p-4 sm:p-8">
-	<PageHeader crumbs={data.crumbs} title={m.day_new_heading()} />
-
+<Page crumbs={data.crumbs} title={m.day_new_heading()}>
 	{#if data.contracts.length === 0}
 		<p class="mt-4 text-sm opacity-70">{m.day_new_no_contracts()}</p>
 	{:else}
@@ -113,6 +111,43 @@
 				/>
 				{#if form?.errors.date}<span class="text-sm text-red-700">{form.errors.date}</span>{/if}
 			</label>
+
+			<label class="flex flex-col gap-1 text-sm">
+				<span>{m.day_form_contract_label()}</span>
+				<select
+					name="contractId"
+					bind:value={contractId}
+					onchange={onContractChange}
+					required
+					class="border px-3 py-3 text-base"
+				>
+					<option value="" disabled>{m.day_form_contract_placeholder()}</option>
+					{#each data.contracts as contract (contract.id)}
+						<option value={contract.id}>{contract.clientName} — {contract.title}</option>
+					{/each}
+				</select>
+				{#if form?.errors.contractId}<span class="text-sm text-red-700"
+						>{form.errors.contractId}</span
+					>{/if}
+			</label>
+
+			{#if selectedContract?.requiresPriorApproval}
+				<label class="flex flex-col gap-1 text-sm">
+					<span>{m.day_form_approval_label()}</span>
+					<select name="approvalId" bind:value={approvalId} class="border px-3 py-3 text-base">
+						<option value="">{m.day_form_approval_none_option()}</option>
+						{#each approvalsForContract as approval (approval.id)}
+							<option value={approval.id}
+								>{approval.sender} — {formatDateTime(approval.receivedAt)}</option
+							>
+						{/each}
+					</select>
+					<span class="opacity-70">{m.day_form_approval_hint()}</span>
+					{#if form?.errors.approvalId}<span class="text-sm text-red-700"
+							>{form.errors.approvalId}</span
+						>{/if}
+				</label>
+			{/if}
 
 			<fieldset class="flex flex-col gap-2">
 				<legend class="text-sm">{m.day_form_quantity_legend()}</legend>
@@ -164,43 +199,6 @@
 				{#if form?.errors.scope}<span class="text-sm text-red-700">{form.errors.scope}</span>{/if}
 			</label>
 
-			<label class="flex flex-col gap-1 text-sm">
-				<span>{m.day_form_contract_label()}</span>
-				<select
-					name="contractId"
-					bind:value={contractId}
-					onchange={onContractChange}
-					required
-					class="border px-3 py-3 text-base"
-				>
-					<option value="" disabled>{m.day_form_contract_placeholder()}</option>
-					{#each data.contracts as contract (contract.id)}
-						<option value={contract.id}>{contract.clientName} — {contract.title}</option>
-					{/each}
-				</select>
-				{#if form?.errors.contractId}<span class="text-sm text-red-700"
-						>{form.errors.contractId}</span
-					>{/if}
-			</label>
-
-			{#if selectedContract?.requiresPriorApproval}
-				<label class="flex flex-col gap-1 text-sm">
-					<span>{m.day_form_approval_label()}</span>
-					<select name="approvalId" bind:value={approvalId} class="border px-3 py-3 text-base">
-						<option value="">{m.day_form_approval_none_option()}</option>
-						{#each approvalsForContract as approval (approval.id)}
-							<option value={approval.id}
-								>{approval.sender} — {formatDateTime(approval.receivedAt)}</option
-							>
-						{/each}
-					</select>
-					<span class="opacity-70">{m.day_form_approval_hint()}</span>
-					{#if form?.errors.approvalId}<span class="text-sm text-red-700"
-							>{form.errors.approvalId}</span
-						>{/if}
-				</label>
-			{/if}
-
 			<div class="flex flex-col gap-1">
 				<button type="submit" class="w-fit border px-4 py-3 text-base font-medium">
 					{m.day_form_submit()}
@@ -216,7 +214,7 @@
 	{/if}
 
 	<OfflineQueuePanel contracts={data.contracts} />
-</main>
+</Page>
 
 <style>
 	.quantity-preset {
