@@ -1,0 +1,1 @@
+Synthetic nested fixture file, one directory deep.

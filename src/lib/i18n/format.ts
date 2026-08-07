@@ -32,6 +32,27 @@ export function formatAmount(
 }
 
 /**
+ * A monetary amount stored as `MinorUnits` (cents for EUR — see
+ * `server/import/invoice.ts` and `server/fiscal/pack.ts`: every amount in
+ * this codebase is an integer minor-unit count, never a float). Converts
+ * to the major unit using the currency's own number of decimal digits from
+ * `Intl` — never a hardcoded `/ 100`, since a handful of real currencies
+ * (Japanese yen, Bahraini dinar, ...) use zero or three — before handing
+ * off to `formatAmount`.
+ */
+export function formatMinorUnits(
+	minorUnits: number,
+	currency: string,
+	locale: Locale = getLocale()
+): string {
+	const { maximumFractionDigits = 2 } = new Intl.NumberFormat(locale, {
+		style: 'currency',
+		currency
+	}).resolvedOptions();
+	return formatAmount(minorUnits / 10 ** maximumFractionDigits, currency, locale);
+}
+
+/**
  * A count of work-unit days, e.g. `1 day` / `1 giorno`, `3 days` / `3
  * giorni`. Goes through Intl's unit formatter rather than a hand-rolled
  * plural suffix, because "day" does not become "giorni" by appending an
