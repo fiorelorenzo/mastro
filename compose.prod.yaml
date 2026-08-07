@@ -35,6 +35,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # Explicit, and not optional: `Dockerfile` has more than one final
+      # stage, and docker builds the LAST one when no target is given.
+      # `runner` happens to be last today, so leaving this out silently
+      # built the runner image here and this service spent its whole life
+      # crash-looping on the runner's own missing configuration instead of
+      # ever serving the app. Both services name their stage for that
+      # reason; neither relies on the order stages appear in.
+      target: runtime
     restart: unless-stopped
     depends_on:
       db:

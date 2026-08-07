@@ -101,3 +101,79 @@ jobs:
         env:
           ACCOUNT_HOLDER_TAX_ID: ''
         run: pnpm build
+
+  # The artifact that actually ships, exercised rather than assumed. Both
+  # defects this job exists to catch were live on main at once and neither
+  # was visible from `pnpm build`: compose built the wrong stage, so `web`
+  # ran the runner's entrypoint, and the runtime image was missing a module
+  # `scripts/migrate.ts` imports, so it could not migrate and therefore
+  # could not boot. A unit test cannot see either. Booting the image can.
+  image:
+    name: production image boots and serves
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: mastro
+          POSTGRES_PASSWORD: mastro
+          POSTGRES_DB: mastro
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U mastro -d mastro"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # --target runtime explicitly, the same way compose.prod.yaml names
+      # its stage: the Dockerfile has two final stages and the default is
+      # whichever is last, which is exactly how the wrong one shipped.
+      - name: Build the runtime image
+        run: docker build --target runtime -t mastro-runtime:ci .
+
+      - name: Build the runner image
+        run: docker build --target runner -t mastro-runner:ci .
+
+      # Placeholders, never real: this container is destroyed with the
+      # runner. The app refuses to boot without a value for each, which is
+      # the behaviour being exercised here.
+      - name: Boot it and check /health
+        run: |
+          set -euo pipefail
+          docker run -d --name mastro-ci --network host \
+            -e DATABASE_URL=postgres://mastro:mastro@127.0.0.1:5432/mastro \
+            -e BETTER_AUTH_SECRET=ci-not-a-real-secret \
+            -e BETTER_AUTH_URL=http://localhost:3000 \
+            -e GOOGLE_CLIENT_ID=ci-not-a-real-client \
+            -e GOOGLE_CLIENT_SECRET=ci-not-a-real-secret \
+            -e AUTH_ALLOWED_EMAILS= \
+            -e RUNNER_DB_PASSWORD=ci-not-a-real-password \
+            mastro-runtime:ci
+          for attempt in $(seq 1 30); do
+            health="$(curl -fsS --max-time 5 http://127.0.0.1:3000/health 2>/dev/null || true)"
+            case "$health" in
+              *'"status":"ok"'*'"database":"ok"'*)
+                echo "health: $health"
+                # A protected route must redirect rather than answer: proof
+                # the app itself is serving, not just its health endpoint.
+                code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000/)"
+                echo "GET /: $code"
+                [ "$code" = 303 ] || { echo "::error::expected 303 from a protected route, got $code"; exit 1; }
+                exit 0 ;;
+            esac
+            echo "waiting for /health (attempt $attempt): ${health:-no answer}"
+            sleep 2
+          done
+          echo "::error::the production image never served /health"
+          docker logs mastro-ci
+          exit 1
+
+      - name: Container logs
+        if: always()
+        run: docker logs mastro-ci || true
