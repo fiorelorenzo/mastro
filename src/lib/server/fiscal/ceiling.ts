@@ -134,7 +134,15 @@ export function evaluateCeiling(
 		currentValue,
 		limitValue,
 		usageRatio,
-		crossed: currentValue >= limitValue,
+		// `usageRatio`, not a raw comparison: with a zero `limitValue` (a
+		// percentage-share ceiling whose denominator revenue is itself
+		// zero — #40) `usageRatio` is deliberately floored at 0 above
+		// rather than left as NaN, so a ceiling with nothing yet to
+		// measure reads as not crossed. `currentValue >= limitValue` said
+		// the opposite (0 >= 0) and reported every such ceiling crossed
+		// from the first instant of the fiscal year, before a single
+		// invoice existed to measure it against.
+		crossed: usageRatio >= 1,
 		activeAlertLevels: ceiling.alertLevels.filter((level) => usageRatio >= level.ratio)
 	};
 }
