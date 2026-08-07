@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import { formatAmount, formatDate, formatDays } from '$lib/i18n/format';
+	import { formatDate, formatDays, formatMinorUnits } from '$lib/i18n/format';
 	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import type { DunningSendFormValues } from '$lib/server/repositories/dunning-form';
 	import type { ActionData, PageData } from './$types';
@@ -22,7 +22,7 @@
 
 	const subtitle = $derived(
 		m.mail_dunning_summary({
-			amount: formatAmount(data.invoice.total / 100, data.invoice.currency),
+			amount: formatMinorUnits(data.invoice.total, data.invoice.currency),
 			dueDate: formatDate(data.invoice.dueDate),
 			daysLate: formatDays(data.daysLate)
 		})

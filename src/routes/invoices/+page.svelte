@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import { formatAmount, formatDate, formatDays, formatNumber } from '$lib/i18n/format';
+	import { formatDate, formatDays, formatMinorUnits, formatNumber } from '$lib/i18n/format';
 	import { StatusIndicator } from '$lib/design';
 	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import { ageingStatus } from './status';
@@ -29,7 +29,7 @@
 			{:else}
 				{#each outstandingCurrencies as currency (currency)}
 					<dd class="font-semibold">
-						{formatAmount(data.totalOutstandingByCurrency[currency], currency)}
+						{formatMinorUnits(data.totalOutstandingByCurrency[currency], currency)}
 					</dd>
 				{/each}
 			{/if}
@@ -72,7 +72,7 @@
 							>
 						</td>
 						<td class="py-2 pr-4 text-end"
-							>{formatAmount(row.invoice.total, row.invoice.currency)}</td
+							>{formatMinorUnits(row.invoice.total, row.invoice.currency)}</td
 						>
 					</tr>
 				{/each}
