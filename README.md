@@ -71,14 +71,17 @@ and tells you what it means for the work ahead.
 ## Self-hosting
 
 SvelteKit (`adapter-node`) and Postgres, single tenant, behind a reverse proxy that
-terminates TLS. Deployment instructions will land with the first release.
+terminates TLS. [`docs/deploy.md`](docs/deploy.md) is the production Compose
+runbook, [`docs/backup.md`](docs/backup.md) covers backup and a rehearsed restore,
+and [`docs/self-hosting.md`](docs/self-hosting.md) walks through every credential a
+self-hoster has to create.
 
 Sign-in is Better Auth over Google, with a mandatory allowlist of permitted
 addresses. Everything else it needs is deliberately chosen to avoid Google's
-verification process: mail is read and sent over **IMAP/SMTP with an app password**
-rather than the Gmail API, and the Drive mirror asks only for `drive.file`. You
-should never have to submit your own instance for a security assessment just to read
-your own inbox.
+verification process: mail will be read and sent over **IMAP/SMTP with an app
+password** rather than the Gmail API, and the Drive mirror will ask only for
+`drive.file` — neither is implemented yet. You should never have to submit your own
+instance for a security assessment just to read your own inbox.
 
 ## Contributing
 
