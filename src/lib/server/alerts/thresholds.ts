@@ -55,3 +55,12 @@ export const OVERRUN_CRITICAL_RATIO = 1.2;
  * healthy, regularly-scheduled publish run should have picked this up". */
 export const BACKUP_STALE_HOURS = 26;
 export const MIRROR_STALE_HOURS = 26;
+
+/** `mailbox_poll_failure`: how long is too long since the last recorded
+ * poll attempt (success or failure — `mailbox_poll_run` writes one every
+ * pass, per #84) before silence itself is the alert. Much shorter than
+ * `BACKUP_STALE_HOURS`: the recommended cron cadence for #84's poller is
+ * every few minutes, not once a day, so a gap measured in hours already
+ * means the cron entry itself stopped firing, not merely that no new
+ * mail arrived in that window. */
+export const MAILBOX_POLL_STALE_HOURS = 3;

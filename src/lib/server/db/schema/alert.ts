@@ -7,10 +7,11 @@ import { id, timestamps } from '../columns';
  * `document.ownerType` makes and for the same reason: a new alert type is
  * a metadata-only addition (widen the CHECK), never an `ALTER TYPE ... ADD
  * VALUE` whose new label cannot be used inside the transaction that adds
- * it. The eight are epic #13's own list; `backup_failure` and
- * `mirror_failure` are not on that table but exist because `backup_run`
- * (#77) and `document_mirror_run` (#50) were built with exactly this
- * engine as their stated reader — see those tables' own doc comments.
+ * it. The eight are epic #13's own list; `backup_failure`, `mirror_
+ * failure` and `mailbox_poll_failure` are not on that table but exist
+ * because `backup_run` (#77), `document_mirror_run` (#50) and `mailbox_
+ * poll_run` (#84) were each built with exactly this engine as their
+ * stated reader — see those tables' own doc comments.
  */
 export const ALERT_TYPES = [
 	'contract_expiring',
@@ -22,7 +23,8 @@ export const ALERT_TYPES = [
 	'ceiling_approaching',
 	'year_end_overrun_risk',
 	'backup_failure',
-	'mirror_failure'
+	'mirror_failure',
+	'mailbox_poll_failure'
 ] as const;
 export type AlertType = (typeof ALERT_TYPES)[number];
 

@@ -1,9 +1,11 @@
 import { error } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
 import { isLocale } from '$lib/paraglide/runtime';
+import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
 import {
 	getContractWithClient,
 	setContractAutoSendMail,
+	setContractMailFolder,
 	setContractTemplateLanguage
 } from '$lib/server/repositories/contract';
 import { listEmailTemplatesForContract } from '$lib/server/repositories/email-template';
@@ -35,6 +37,22 @@ export const actions: Actions = {
 			return { ok: false, templateLanguageError: m.mail_contract_template_language_invalid() };
 		}
 		await setContractTemplateLanguage(params.id, templateLanguage);
+		return { ok: true };
+	},
+
+	mailFolder: async ({ request, params }) => {
+		const contract = await getContractWithClient(params.id);
+		if (!contract) error(404, m.mail_contract_not_found());
+		const formData = await request.formData();
+		const mailFolder = String(formData.get('mailFolder') ?? '').trim() || null;
+		try {
+			await setContractMailFolder(params.id, mailFolder);
+		} catch (err) {
+			if (isPostgresConstraintViolation(err, '23505', 'contract_mail_folder_key')) {
+				return { ok: false, mailFolderError: m.mail_contract_inbound_folder_duplicate() };
+			}
+			throw err;
+		}
 		return { ok: true };
 	}
 };

@@ -204,5 +204,22 @@ export function alertMessage(alert: Alert, locale: Locale): AlertMessage {
 								{ locale }
 							)
 			};
+
+		case 'mailbox_poll_failure':
+			return {
+				title: m.alerts_mailbox_poll_failure_title(undefined, { locale }),
+				body:
+					detail.reason === 'never_run'
+						? m.alerts_mailbox_poll_failure_body_never_run(undefined, { locale })
+						: detail.reason === 'failure'
+							? m.alerts_mailbox_poll_failure_body_failure(
+									{ detail: detail.detail ?? '' },
+									{ locale }
+								)
+							: m.alerts_mailbox_poll_failure_body_stale(
+									{ lastRunAt: detail.lastRunAt ? formatDate(detail.lastRunAt, locale) : '' },
+									{ locale }
+								)
+			};
 	}
 }
