@@ -1,204 +1,9 @@
 {
-  "id": "d5328f0f-8142-4ce5-94ca-397d459dbe27",
-  "prevId": "15347ec7-ae12-4b4a-8d91-48c4e2bfb794",
+  "id": "2d197d31-f185-439e-bf94-38428b54c290",
+  "prevId": "a94d09b3-f788-4f79-9ace-d4412594b925",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.alert_acknowledgement": {
-      "name": "alert_acknowledgement",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "alert_key": {
-          "name": "alert_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "alert_type": {
-          "name": "alert_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "severity_rank": {
-          "name": "severity_rank",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "acknowledged_by": {
-          "name": "acknowledged_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "alert_acknowledgement_alert_key_key": {
-          "name": "alert_acknowledgement_alert_key_key",
-          "columns": [
-            "alert_key"
-          ],
-          "nullsNotDistinct": false
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.alert_delivery": {
-      "name": "alert_delivery",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "alert_key": {
-          "name": "alert_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "alert_type": {
-          "name": "alert_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "severity_rank": {
-          "name": "severity_rank",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "channel": {
-          "name": "channel",
-          "type": "alert_delivery_channel",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "alert_delivery_alert_key_key": {
-          "name": "alert_delivery_alert_key_key",
-          "columns": [
-            "alert_key"
-          ],
-          "nullsNotDistinct": false
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.alert_preference": {
-      "name": "alert_preference",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "alert_type": {
-          "name": "alert_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "digest_enabled": {
-          "name": "digest_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "push_enabled": {
-          "name": "push_enabled",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "alert_preference_alert_type_key": {
-          "name": "alert_preference_alert_type_key",
-          "columns": [
-            "alert_type"
-          ],
-          "nullsNotDistinct": false
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.approval": {
       "name": "approval",
       "schema": "",
@@ -1248,6 +1053,95 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.contract_renewal_assumption": {
+      "name": "contract_renewal_assumption",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "contract_id": {
+          "name": "contract_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "probability": {
+          "name": "probability",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expected_volume_minor_units": {
+          "name": "expected_volume_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "horizon_ends_on": {
+          "name": "horizon_ends_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "contract_renewal_assumption_contract_id_contract_id_fk": {
+          "name": "contract_renewal_assumption_contract_id_contract_id_fk",
+          "tableFrom": "contract_renewal_assumption",
+          "columnsFrom": [
+            "contract_id"
+          ],
+          "tableTo": "contract",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "contract_renewal_assumption_contract_id_unique": {
+          "name": "contract_renewal_assumption_contract_id_unique",
+          "columns": [
+            "contract_id"
+          ],
+          "nullsNotDistinct": false
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "contract_renewal_assumption_probability_range": {
+          "name": "contract_renewal_assumption_probability_range",
+          "value": "\"contract_renewal_assumption\".\"probability\" >= 0 and \"contract_renewal_assumption\".\"probability\" <= 1"
+        },
+        "contract_renewal_assumption_volume_non_negative": {
+          "name": "contract_renewal_assumption_volume_non_negative",
+          "value": "\"contract_renewal_assumption\".\"expected_volume_minor_units\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.document": {
       "name": "document",
       "schema": "",
@@ -2088,72 +1982,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.push_subscription": {
-      "name": "push_subscription",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "endpoint": {
-          "name": "endpoint",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "p256dh": {
-          "name": "p256dh",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "auth": {
-          "name": "auth",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_email": {
-          "name": "user_email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "push_subscription_endpoint_key": {
-          "name": "push_subscription_endpoint_key",
-          "columns": [
-            "endpoint"
-          ],
-          "nullsNotDistinct": false
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.rate_card": {
       "name": "rate_card",
       "schema": "",
@@ -2465,14 +2293,6 @@
     }
   },
   "enums": {
-    "public.alert_delivery_channel": {
-      "name": "alert_delivery_channel",
-      "schema": "public",
-      "values": [
-        "push",
-        "digest"
-      ]
-    },
     "public.backup_run_status": {
       "name": "backup_run_status",
       "schema": "public",

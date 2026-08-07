@@ -8,6 +8,7 @@ import { db, type DbExecutor } from '$lib/server/db';
 import { contract, invoice } from '$lib/server/db/schema';
 import { defaultRegistry, type PackRegistry } from './registry';
 import { resolveFiscalPackOverRange } from './profile';
+import type { MinorUnits } from './pack';
 import {
 	sumLedgerAcrossPeriods,
 	type LedgerPeriod,
@@ -50,6 +51,25 @@ export async function fetchLedgerRows(executor: DbExecutor = db): Promise<Ledger
 	}));
 }
 
+/** The regime-aware sub-periods `[from, to)` resolves to — the one piece
+ * `fetchRevenueOverRange` and `fetchClientRevenueBreakdown` share, so a
+ * regime change inside the range is read the same way regardless of which
+ * one is asking. */
+async function resolveLedgerPeriods(
+	from: string,
+	to: string,
+	executor: DbExecutor,
+	registry: PackRegistry
+): Promise<LedgerPeriod[]> {
+	const resolvedPeriods = await resolveFiscalPackOverRange(executor, from, to, registry);
+	return resolvedPeriods.map((period) => ({
+		basis: period.pack.basis,
+		from: period.from,
+		to: period.to ?? to,
+		packId: period.pack.id
+	}));
+}
+
 /**
  * Revenue over `[from, to)`, correct across a regime change inside the
  * range (#37's central acceptance bullet): each sub-period is read under
@@ -64,15 +84,59 @@ export async function fetchRevenueOverRange(
 	executor: DbExecutor = db,
 	registry: PackRegistry = defaultRegistry
 ): Promise<LedgerRegimeFigure> {
-	const [rows, resolvedPeriods] = await Promise.all([
+	const [rows, periods] = await Promise.all([
 		fetchLedgerRows(executor),
-		resolveFiscalPackOverRange(executor, from, to, registry)
+		resolveLedgerPeriods(from, to, executor, registry)
 	]);
-	const periods: LedgerPeriod[] = resolvedPeriods.map((period) => ({
-		basis: period.pack.basis,
-		from: period.from,
-		to: period.to ?? to,
-		packId: period.pack.id
-	}));
 	return sumLedgerAcrossPeriods(rows, periods);
+}
+
+/** One client's own revenue over `[from, to)`, part of a
+ * `ClientRevenueBreakdown`. */
+export interface ClientRevenueShare {
+	readonly clientId: string;
+	readonly amount: MinorUnits;
+}
+
+/** Revenue over `[from, to)`, split by client (#59's concentration
+ * screen), alongside the same total `fetchRevenueOverRange` would give
+ * for the whole practice. */
+export interface ClientRevenueBreakdown {
+	readonly from: string;
+	readonly to: string;
+	readonly total: MinorUnits;
+	readonly byClient: readonly ClientRevenueShare[];
+}
+
+/**
+ * `fetchRevenueOverRange`, split per client (#59): the same regime-aware
+ * reading, `rows` filtered to one client before `sumLedgerAcrossPeriods`
+ * runs for each — never a second summation loop with its own basis logic,
+ * and the sub-period resolution (`resolveLedgerPeriods`) happens once and
+ * is shared across every client rather than repeated per client. A client
+ * with no revenue in the range is left out of `byClient` rather than
+ * listed at zero.
+ */
+export async function fetchClientRevenueBreakdown(
+	from: string,
+	to: string,
+	executor: DbExecutor = db,
+	registry: PackRegistry = defaultRegistry
+): Promise<ClientRevenueBreakdown> {
+	const [rows, periods] = await Promise.all([
+		fetchLedgerRows(executor),
+		resolveLedgerPeriods(from, to, executor, registry)
+	]);
+	const clientIds = [...new Set(rows.map((row) => row.clientId))];
+	const byClient = clientIds
+		.map((clientId) => ({
+			clientId,
+			amount: sumLedgerAcrossPeriods(
+				rows.filter((row) => row.clientId === clientId),
+				periods
+			).amount
+		}))
+		.filter((share) => share.amount > 0);
+
+	return { from, to, total: sumLedgerAcrossPeriods(rows, periods).amount, byClient };
 }

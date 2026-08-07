@@ -9,9 +9,10 @@ import { document } from './document';
  * How an approval came to exist: typed by a human reading the mailbox
  * (`manual`), or by the ACP runner proposing an interpretation that a
  * human then confirmed (`agent`, invariant 3 — the runner itself never
- * writes here). `proposalReference` is an opaque id into the proposal
- * store (out of scope in this wave); kept as data here, not a foreign
- * key, the same way `document.ownerId` is.
+ * writes here). `proposalReference` is a `proposal.id` (#83,
+ * `db/schema/proposal.ts`), kept as data here rather than a foreign key,
+ * the same way `document.ownerId` is: nothing in this table's own
+ * lifecycle depends on that row still existing.
  */
 export type ApprovalOrigin = { kind: 'manual' } | { kind: 'agent'; proposalReference: string };
 

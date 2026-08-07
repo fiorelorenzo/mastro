@@ -69,6 +69,22 @@ test('below the ceiling, no alert level is active and it has not crossed', () =>
 	expect(evaluated.activeAlertLevels).toEqual([]);
 });
 
+test('an absolute-amount ceiling of exactly zero is crossed the moment any revenue exists against it', () => {
+	const zeroCeiling: Ceiling = { ...packCeiling, value: 0 };
+	const evaluated = evaluateCeiling(zeroCeiling, rows, '2024-10-01');
+	expect(evaluated.limitValue).toBe(0);
+	expect(evaluated.currentValue).toBe(125_000);
+	expect(evaluated.crossed).toBe(true);
+});
+
+test('an absolute-amount ceiling of exactly zero is not crossed with no revenue against it either', () => {
+	const zeroCeiling: Ceiling = { ...packCeiling, value: 0 };
+	const evaluated = evaluateCeiling(zeroCeiling, [], '2024-10-01');
+	expect(evaluated.limitValue).toBe(0);
+	expect(evaluated.currentValue).toBe(0);
+	expect(evaluated.crossed).toBe(false);
+});
+
 test("a percentage-share ceiling scoped to one client computes that client's share of the correct total", () => {
 	const shareCeiling: Ceiling = {
 		id: 'client-a-share-cap',

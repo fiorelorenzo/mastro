@@ -168,10 +168,14 @@
 					groupKey: group.groupKey,
 					client: group.client,
 					contract: group.contract,
-					files: group.files.map((file) => file.filename)
+					files: group.files.map((file) => ({
+						filename: file.filename,
+						invoiceIndex: file.invoiceIndex
+					}))
 				})),
 				invoices: recognisedFiles.map((file) => ({
 					filename: file.filename,
+					invoiceIndex: file.invoiceIndex,
 					contractId: file.contractId,
 					attachments: file.attachments,
 					lineWorkUnitIds: file.lines.map((line) =>
@@ -255,7 +259,7 @@
 					<p class="mt-2 text-sm opacity-70">{m.import_recognised_empty()}</p>
 				{:else}
 					<div class="mt-2 flex flex-col gap-4">
-						{#each recognisedFiles as file (file.filename)}
+						{#each recognisedFiles as file (file.filename + ':' + file.invoiceIndex)}
 							<div class="flex flex-col gap-2 border p-4 text-sm">
 								<div class="flex flex-wrap items-baseline justify-between gap-2">
 									<p class="font-semibold">
@@ -323,7 +327,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each review.alreadyPresent as row (row.filename)}
+							{#each review.alreadyPresent as row (row.filename + ':' + row.invoiceIndex)}
 								<tr class="border-b">
 									<td class="py-2 pr-4">{row.filename}</td>
 									<td class="py-2 pr-4"
@@ -362,7 +366,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each review.conflicts as row (row.filename)}
+							{#each review.conflicts as row (row.filename + ':' + row.invoiceIndex)}
 								<tr class="border-b">
 									<td class="py-2 pr-4">{row.filename}</td>
 									<td class="py-2 pr-4"
@@ -491,7 +495,7 @@
 							</tr>
 						</thead>
 						<tbody>
-							{#each review.skipped as row (row.filename)}
+							{#each review.skipped as row (row.filename + ':' + row.invoiceIndex)}
 								<tr class="border-b">
 									<td class="py-2 pr-4">{row.filename}</td>
 									<td class="py-2">{skipReasonLabel(row.reason)}</td>
@@ -546,7 +550,7 @@
 						})}
 					</p>
 					<ul class="list-disc pl-5">
-						{#each confirmResult.invoicesFailed as failure (failure.filename)}
+						{#each confirmResult.invoicesFailed as failure (failure.filename + ':' + failure.invoiceIndex)}
 							<li>{failure.filename}: {failure.message}</li>
 						{/each}
 					</ul>

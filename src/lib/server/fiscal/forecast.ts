@@ -9,16 +9,20 @@ import { contract, rateCard, workUnit } from '$lib/server/db/schema';
 import { decimalStringToMinorUnits } from '$lib/server/import/decimal';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
 import { recurringFeeOccurrences, type RecurringFeeCard } from '$lib/server/domain/recurring-fee';
+import { listRenewalAssumptionsWithContract } from '$lib/server/repositories/contract-renewal-assumption';
 import { fetchLedgerRows } from './revenue';
+import type { MinorUnits } from './pack';
 import {
 	certaintyBreakdown,
 	collectedAmount,
 	committedAmount,
 	projectedAmount,
+	renewalAssumptionContribution,
 	type ApprovedWorkUnit,
 	type CertaintyBreakdown,
 	type CertaintyFigure,
-	type RecurringFeeContract
+	type RecurringFeeContract,
+	type RenewalAssumption
 } from './certainty';
 
 /**
@@ -78,7 +82,23 @@ async function fetchRecurringFeeContracts(
 	to: string,
 	executor: DbExecutor
 ): Promise<RecurringFeeContract[]> {
-	const contractRows = await executor.select().from(contract);
+	const [contractRows, assumptionRows] = await Promise.all([
+		executor.select().from(contract),
+		listRenewalAssumptionsWithContract(executor)
+	]);
+	// Keyed here rather than joined per-contract below: one query for
+	// every recorded assumption, same reasoning as the rate-card fetch
+	// beneath it batching by contract id instead of querying per row.
+	const assumptionByContract = new Map(
+		assumptionRows.map((row) => [
+			row.contractId,
+			{
+				probability: row.probability,
+				expectedVolumeMinorUnits: row.expectedVolumeMinorUnits,
+				horizonEndsOn: row.horizonEndsOn
+			} satisfies RenewalAssumption
+		])
+	);
 
 	return Promise.all(
 		contractRows.map(async (row) => {
@@ -93,9 +113,66 @@ async function fetchRecurringFeeContracts(
 				}))
 			);
 
-			return { terminationNoticeDays: row.terminationNoticeDays, endsOn: row.endsOn, occurrences };
+			return {
+				contractId: row.id,
+				terminationNoticeDays: row.terminationNoticeDays,
+				endsOn: row.endsOn,
+				occurrences,
+				renewalAssumption: assumptionByContract.get(row.id) ?? null
+			};
 		})
 	);
+}
+
+/**
+ * Every recorded renewal assumption (#39), each paired with the exact
+ * figure it produced over `[from, to)` through
+ * `renewalAssumptionContribution` — the same function the aggregate
+ * `projectedAmount` total above runs through for the same contract,
+ * never a second calculation. The query surface a screen reads to show
+ * an assumption's own probability, expected volume and horizon directly
+ * next to the number it produced: one entry per contract that has an
+ * assumption recorded, every other contract simply absent — #39's
+ * "visible wherever its output is shown".
+ */
+export interface ContractRenewalAssumptionForecast {
+	readonly contractId: string;
+	readonly contractTitle: string;
+	readonly assumption: RenewalAssumption;
+	readonly contribution: MinorUnits;
+}
+
+export async function forecastRenewalAssumptions(
+	asOfDate: string,
+	from: string,
+	to: string,
+	executor: DbExecutor = db
+): Promise<ContractRenewalAssumptionForecast[]> {
+	const rows = await listRenewalAssumptionsWithContract(executor);
+	return rows.map((row) => {
+		const assumption: RenewalAssumption = {
+			probability: row.probability,
+			expectedVolumeMinorUnits: row.expectedVolumeMinorUnits,
+			horizonEndsOn: row.horizonEndsOn
+		};
+		const contribution = renewalAssumptionContribution(
+			{
+				terminationNoticeDays: row.contract.terminationNoticeDays,
+				endsOn: row.contract.endsOn,
+				occurrences: [],
+				renewalAssumption: assumption
+			},
+			asOfDate,
+			from,
+			to
+		);
+		return {
+			contractId: row.contractId,
+			contractTitle: row.contract.title,
+			assumption,
+			contribution
+		};
+	});
 }
 
 /** All three certainty levels over `[from, to)`, as of `asOfDate` (#38).
@@ -151,4 +228,75 @@ export async function forecastProjected(
 ): Promise<CertaintyFigure> {
 	const recurringContracts = await fetchRecurringFeeContracts(from, to, executor);
 	return projectedAmount(recurringContracts, asOfDate, from, to);
+}
+
+/** One calendar-month bucket, half-open `[from, to)`. */
+interface MonthBucket {
+	readonly from: string;
+	readonly to: string;
+}
+
+function assertMonthStart(date: string, label: string): void {
+	if (!/^\d{4}-\d{2}-01$/.test(date)) {
+		throw new Error(`${label} must be the first day of a calendar month, got '${date}'`);
+	}
+}
+
+/** `[from, to)` split into consecutive calendar months — both bounds must
+ * already fall on the first of a month, which every caller here controls
+ * (the dashboard's rolling window is built from month starts). */
+export function monthlyBuckets(from: string, to: string): readonly MonthBucket[] {
+	assertMonthStart(from, 'from');
+	assertMonthStart(to, 'to');
+	const buckets: MonthBucket[] = [];
+	let cursor = from;
+	let [year, month] = cursor.split('-').map(Number);
+	while (cursor < to) {
+		month += 1;
+		if (month > 12) {
+			month = 1;
+			year += 1;
+		}
+		const next = `${year}-${String(month).padStart(2, '0')}-01`;
+		buckets.push({ from: cursor, to: next });
+		cursor = next;
+	}
+	return buckets;
+}
+
+/** One calendar month's `CertaintyBreakdown` (#58's cash calendar). */
+export interface MonthlyCertaintyBreakdown extends CertaintyBreakdown {
+	readonly month: string;
+}
+
+/**
+ * `forecastRevenue`, bucketed into calendar months across `[from, to)`
+ * (#58): the three raw datasets (`fetchLedgerRows`,
+ * `fetchApprovedWorkUnits`, `fetchRecurringFeeContracts`) are fetched once
+ * for the whole window, then `certaintyBreakdown` — the pure function, the
+ * same one `forecastRevenue` calls — runs once per month bucket. Never a
+ * database round trip per month.
+ */
+export async function forecastRevenueByMonth(
+	asOfDate: string,
+	from: string,
+	to: string,
+	executor: DbExecutor = db
+): Promise<readonly MonthlyCertaintyBreakdown[]> {
+	const [rows, approvedWorkUnits, recurringContracts] = await Promise.all([
+		fetchLedgerRows(executor),
+		fetchApprovedWorkUnits(from, to, executor),
+		fetchRecurringFeeContracts(from, to, executor)
+	]);
+	return monthlyBuckets(from, to).map((bucket) => ({
+		month: bucket.from,
+		...certaintyBreakdown(
+			rows,
+			approvedWorkUnits,
+			recurringContracts,
+			asOfDate,
+			bucket.from,
+			bucket.to
+		)
+	}));
 }
