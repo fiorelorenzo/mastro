@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import TemplateForm from '../../TemplateForm.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -26,26 +26,21 @@
 	><title>{m.mail_template_edit_page_title({ name: data.template.name })}</title></svelte:head
 >
 
-<main class="mx-auto max-w-3xl p-8">
-	<PageHeader
-		crumbs={data.crumbs}
-		title={m.mail_template_edit_heading({ name: data.template.name })}
-	>
-		{#snippet actions()}
-			<a
-				href={resolve('/mail/contracts/[id]/templates/[templateId]/send', {
-					id: data.template.contractId,
-					templateId: data.template.id
-				})}
-				class="text-sm underline"
-			>
-				{m.mail_template_send_link()}
-			</a>
-		{/snippet}
-	</PageHeader>
+<Page crumbs={data.crumbs} title={m.mail_template_edit_heading({ name: data.template.name })}>
+	{#snippet actions()}
+		<a
+			href={resolve('/mail/contracts/[id]/templates/[templateId]/send', {
+				id: data.template.contractId,
+				templateId: data.template.id
+			})}
+			class="text-sm underline"
+		>
+			{m.mail_template_send_link()}
+		</a>
+	{/snippet}
 	<TemplateForm
 		{values}
 		errors={form?.errors ?? {}}
 		submitLabel={m.mail_template_form_submit_save()}
 	/>
-</main>
+</Page>

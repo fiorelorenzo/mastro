@@ -4,7 +4,7 @@
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { formatDate } from '$lib/i18n/format';
 	import LanguageSwitch from '$lib/components/LanguageSwitch.svelte';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -14,9 +14,7 @@
 
 <svelte:head><title>{m.settings_page_title()}</title></svelte:head>
 
-<main class="mx-auto max-w-3xl p-8">
-	<PageHeader title={m.settings_heading()} />
-
+<Page title={m.settings_heading()}>
 	<section class="mt-8">
 		<h2 class="text-lg font-medium">{m.settings_fiscal_heading()}</h2>
 		{#if data.fiscalProfile}
@@ -45,4 +43,4 @@
 			>{m.settings_alerts_link()}</a
 		>
 	</section>
-</main>
+</Page>

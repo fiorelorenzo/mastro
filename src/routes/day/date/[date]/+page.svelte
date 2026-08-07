@@ -2,7 +2,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate } from '$lib/i18n/format';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import DayStateBadge from '../../DayStateBadge.svelte';
 	import type { PageProps } from './$types';
 
@@ -13,12 +13,7 @@
 	><title>{m.day_date_list_page_title({ date: formatDate(data.date) })}</title></svelte:head
 >
 
-<main class="mx-auto max-w-xl p-4 sm:p-8">
-	<PageHeader
-		crumbs={data.crumbs}
-		title={m.day_date_list_heading({ date: formatDate(data.date) })}
-	/>
-
+<Page crumbs={data.crumbs} title={m.day_date_list_heading({ date: formatDate(data.date) })}>
 	<ul class="mt-6 flex flex-col gap-3">
 		{#each data.entries as entry (entry.id)}
 			<li>
@@ -35,4 +30,4 @@
 			{m.day_date_list_add_another({ date: formatDate(data.date) })}
 		</a>
 	</p>
-</main>
+</Page>

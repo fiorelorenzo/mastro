@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import type { MailSendFormValues } from '$lib/server/repositories/mail-send-form';
 	import type { ActionData, PageData } from './$types';
 
@@ -26,20 +26,18 @@
 
 <svelte:head><title>{m.mail_send_page_title({ name: data.template.name })}</title></svelte:head>
 
-<main class="mx-auto max-w-3xl p-8">
-	<PageHeader crumbs={data.crumbs} title={m.mail_send_heading({ name: data.template.name })}>
-		{#snippet actions()}
-			<a
-				href={resolve('/mail/contracts/[id]/templates/[templateId]/edit', {
-					id: data.template.contractId,
-					templateId: data.template.id
-				})}
-				class="text-sm underline"
-			>
-				{m.mail_template_edit_link()}
-			</a>
-		{/snippet}
-	</PageHeader>
+<Page crumbs={data.crumbs} title={m.mail_send_heading({ name: data.template.name })}>
+	{#snippet actions()}
+		<a
+			href={resolve('/mail/contracts/[id]/templates/[templateId]/edit', {
+				id: data.template.contractId,
+				templateId: data.template.id
+			})}
+			class="text-sm underline"
+		>
+			{m.mail_template_edit_link()}
+		</a>
+	{/snippet}
 
 	{#if form?.sent}
 		<p class="mt-4 border border-current p-3 text-sm">{m.mail_send_success()}</p>
@@ -153,4 +151,4 @@
 			</form>
 		</section>
 	{/if}
-</main>
+</Page>

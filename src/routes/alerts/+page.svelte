@@ -4,7 +4,7 @@
 	import * as m from '$lib/paraglide/messages';
 	import { formatDateTime } from '$lib/i18n/format';
 	import { StatusIndicator, type StatusLevel } from '$lib/design';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -18,14 +18,12 @@
 
 <svelte:head><title>{m.alerts_page_title()}</title></svelte:head>
 
-<main class="mx-auto max-w-3xl p-8">
-	<PageHeader title={m.alerts_page_heading()}>
-		{#snippet actions()}
-			<a href={resolve('/alerts/settings')} class="text-sm underline"
-				>{m.alerts_page_settings_link()}</a
-			>
-		{/snippet}
-	</PageHeader>
+<Page title={m.alerts_page_heading()}>
+	{#snippet actions()}
+		<a href={resolve('/alerts/settings')} class="text-sm underline"
+			>{m.alerts_page_settings_link()}</a
+		>
+	{/snippet}
 
 	{#if data.alerts.length === 0}
 		<p class="mt-4 text-sm opacity-70">{m.alerts_page_empty()}</p>
@@ -60,4 +58,4 @@
 			{/each}
 		</ul>
 	{/if}
-</main>
+</Page>

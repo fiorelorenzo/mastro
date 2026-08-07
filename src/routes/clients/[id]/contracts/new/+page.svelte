@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import ContractForm from '../ContractForm.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -35,14 +35,10 @@
 	><title>{m.contract_new_page_title({ client: data.client.legalName })}</title></svelte:head
 >
 
-<main class="mx-auto max-w-3xl p-8">
-	<PageHeader
-		crumbs={data.crumbs}
-		title={m.contract_new_heading({ client: data.client.legalName })}
-	/>
+<Page crumbs={data.crumbs} title={m.contract_new_heading({ client: data.client.legalName })}>
 	<ContractForm
 		{values}
 		errors={form?.errors ?? {}}
 		submitLabel={m.contract_form_submit_create()}
 	/>
-</main>
+</Page>
