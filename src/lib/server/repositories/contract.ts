@@ -38,6 +38,19 @@ export async function getContract(id: string) {
 	return db.query.contract.findFirst({ where: eq(contract.id, id) });
 }
 
+/** For screens that need to show which client a contract belongs to
+ * (#71/#72's mail hub) without a second round trip per row. */
+export async function listContractsWithClient() {
+	return db.query.contract.findMany({
+		with: { client: true },
+		orderBy: asc(contract.title)
+	});
+}
+
+export async function getContractWithClient(id: string) {
+	return db.query.contract.findFirst({ where: eq(contract.id, id), with: { client: true } });
+}
+
 export async function createContract(input: ContractInput) {
 	const [row] = await db.insert(contract).values(input).returning();
 	return row;
@@ -45,5 +58,17 @@ export async function createContract(input: ContractInput) {
 
 export async function updateContract(id: string, input: ContractInput) {
 	const [row] = await db.update(contract).set(input).where(eq(contract.id, id)).returning();
+	return row;
+}
+
+/** #72's per-contract auto-send flag, set independently of the rest of
+ * the contract — a mail concern, not a domain one, so it gets its own
+ * narrow setter rather than joining `ContractInput`. */
+export async function setContractAutoSendMail(id: string, autoSendMail: boolean) {
+	const [row] = await db
+		.update(contract)
+		.set({ autoSendMail })
+		.where(eq(contract.id, id))
+		.returning();
 	return row;
 }
