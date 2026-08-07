@@ -5,8 +5,9 @@
 //
 // The scan is intentionally narrow rather than clever: it flags a small set
 // of shapes verified (below, and by this file's own tests) to have exactly
-// one legitimate home today — src/lib/server/fiscal/packs/ — and nowhere
-// else. It does not try to parse an AST or understand "logic": a country
+// two legitimate homes today — src/lib/server/fiscal/packs/ and the
+// invoice format adapters under src/lib/server/import/formats/ — and
+// nowhere else. It does not try to parse an AST or understand "logic": a country
 // identifier, a national scheme name or a statutory figure has no business
 // appearing as a literal outside a pack at all, whether it is inside an
 // `if` or just sitting in an object. Exempt: the packs directory itself
@@ -31,7 +32,13 @@ const EXEMPT_DIR_NAMES: Record<string, true> = {
 	// language, not country logic (see AGENTS.md's i18n section).
 	paraglide: true,
 	// Where every one of these things is supposed to live.
-	packs: true
+	packs: true,
+	// The other sanctioned home. An invoice format adapter is a national
+	// concept by definition (#41: "keep every national concept inside the
+	// adapter", so adding a country is adding an adapter rather than
+	// editing the importer), exactly as a pack is. The importer itself is
+	// scanned, and naming a format there would still fail.
+	formats: true
 };
 
 // .ts only, not .svelte: template markup is full of hyphenated
@@ -146,9 +153,14 @@ describe('the detector itself', () => {
 describe('the shipped tree', () => {
 	const files = listScannedFiles(SRC_ROOT);
 
-	test('the packs directory and every test file are excluded from the scan', () => {
+	test('the two sanctioned homes and every test file are excluded from the scan', () => {
 		expect(files.some((f) => f.includes(join('fiscal', 'packs') + '/'))).toBe(false);
+		expect(files.some((f) => f.includes(join('import', 'formats') + '/'))).toBe(false);
 		expect(files.some((f) => f.endsWith('.test.ts') || f.endsWith('.spec.ts'))).toBe(false);
+	});
+
+	test('the importer itself is still scanned, so naming a format there fails', () => {
+		expect(files.some((f) => f.endsWith(join('import', 'importer.ts')))).toBe(true);
 	});
 
 	test('the packs themselves do contain the flagged shapes — the rules are not vacuous', () => {
@@ -161,16 +173,18 @@ describe('the shipped tree', () => {
 		expect(violations.length).toBeGreaterThan(0);
 	});
 
-	test('no country identifier, national scheme name or hardcoded statutory figure appears outside the packs directory', () => {
+	test('no country identifier, national scheme name or hardcoded statutory figure appears outside a pack or a format adapter', () => {
 		const violations = files.flatMap((file) => findViolations(readFileSync(file, 'utf8'), file));
 		const report = violations
 			.map(
 				(v) =>
 					`${v.file}: found ${v.what} (${JSON.stringify(v.match)}).\n` +
-					'  A jurisdiction pack is the only place this belongs — move it into (or add it ' +
-					'to) a pack under src/lib/server/fiscal/packs/. If the pack interface cannot ' +
-					'express what you need, extend FiscalPack in src/lib/server/fiscal/pack.ts instead ' +
-					'of branching on a country here (AGENTS.md invariant 1).'
+					'  This belongs in a jurisdiction pack under src/lib/server/fiscal/packs/, or, ' +
+					'if it is a detail of a national invoice format, inside that format adapter ' +
+					'under src/lib/server/import/formats/. If neither can express what you need, ' +
+					'extend FiscalPack in src/lib/server/fiscal/pack.ts or the adapter interface in ' +
+					'src/lib/server/import/adapter.ts, instead of branching on a country here ' +
+					'(AGENTS.md invariant 1).'
 			)
 			.join('\n\n');
 		expect(violations, report).toEqual([]);

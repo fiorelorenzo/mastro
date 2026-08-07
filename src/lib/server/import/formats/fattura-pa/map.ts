@@ -2,7 +2,7 @@
 // (#42). Pure: no I/O, so every case is a fixture and an assertion, no
 // mocking required.
 
-import { legalText } from '$lib/server/fiscal/label';
+import { legalText } from '$lib/legal/legal-text';
 import { decimalStringToMinorUnits } from '../../decimal';
 import type {
 	Invoice,

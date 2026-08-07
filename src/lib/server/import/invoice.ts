@@ -13,7 +13,7 @@
 // carries it, so no adapter could ever fill it in — it is exclusively
 // human input, entered after import.
 
-import type { LegalText } from '$lib/server/fiscal/label';
+import type { LegalText } from '$lib/legal/legal-text';
 
 /** An amount in the currency's minor unit (cents for EUR), matching
  * `MinorUnits` in `fiscal/pack.ts`. Never a float — see `decimal.ts`. */
