@@ -101,30 +101,49 @@ export interface LedgerRegimeFigure {
  * Reuses `sumLedger` once per sub-period — never a parallel
  * "multi-period" summation loop with its own basis logic.
  *
- * That alone leaves a gap (#122): an invoice issued under a cash-basis
- * period, still unpaid when that period's own window ends, is invisible
- * to `sumLedger` there (no `paidOn` yet) and invisible to whatever comes
- * after (its `issueDate` is not in that later window either), so its
- * revenue is silently absent from the total — not double-counted, not
- * miscounted, just missing. The second pass below closes exactly that
- * gap and nothing else: for each row `sumLedger` did not already pick up
- * anywhere above, if the pack that governed at issuance is `'cash'` and
- * declares `unresolvedRevenue: 'carries_forward'`, and the row has since
- * been paid, it is attributed — still read by `paidOn`, under the
- * issuing pack's own basis, never the destination period's — to
- * whichever period's window actually contains that payment date. A row
- * `sumLedger` already counted is left alone, so a pack whose own window
- * already reads `paidOn` (a later cash-basis period) never sees a row
- * added twice.
+ * **One invoice is revenue once.** Sub-periods are walked oldest first
+ * and each row is claimed by the first period whose own basis resolves
+ * it, so a row an earlier period already recognised is invisible to
+ * every later one. Without that (#129), an invoice issued under an
+ * accrual period and paid under a later cash one was counted twice: once
+ * by `issueDate` there, once by `paidOn` here, inflating the total and
+ * able to make a ceiling look crossed when it is not. Accrual resolves
+ * revenue at issuance, unconditionally, so the earlier period is the one
+ * that keeps it.
+ *
+ * The mirror direction leaves the opposite gap (#122): an invoice issued
+ * under a cash-basis period, still unpaid when that period's own window
+ * ends, is invisible to `sumLedger` there (no `paidOn` yet) and
+ * invisible to whatever comes after (its `issueDate` is not in that
+ * later window either), so its revenue would be silently absent — not
+ * double-counted, just missing. The second pass below closes exactly
+ * that gap and nothing else: for each row no period claimed, if the pack
+ * that governed at issuance is `'cash'` and declares
+ * `unresolvedRevenue: 'carries_forward'`, and the row has since been
+ * paid, it is attributed — still read by `paidOn`, under the issuing
+ * pack's own basis, never the destination period's — to whichever
+ * period's window actually contains that payment date.
  */
 export function sumLedgerAcrossPeriods(
 	rows: readonly LedgerRow[],
 	periods: readonly LedgerPeriod[]
 ): LedgerRegimeFigure {
-	const subFigures: (LedgerFigure & { packId: string })[] = periods.map((period) => ({
-		...sumLedger(rows, period.basis, period.from, period.to),
-		packId: period.packId
-	}));
+	// Oldest first, so "the first period that resolves a row keeps it"
+	// means the earlier regime, whatever order the caller passed.
+	const ordered = [...periods].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+	const claimed = new Set<string>();
+	const subFigures: (LedgerFigure & { packId: string })[] = ordered.map((period) => {
+		const resolvedHere = rows.filter((row) => {
+			if (claimed.has(row.invoiceId)) return false;
+			const date = period.basis === 'cash' ? row.paidOn : row.issueDate;
+			return date !== null && date >= period.from && date < period.to;
+		});
+		for (const row of resolvedHere) claimed.add(row.invoiceId);
+		return {
+			...sumLedger(resolvedHere, period.basis, period.from, period.to),
+			packId: period.packId
+		};
+	});
 
 	// #122: `origin.packId` + `destination.from` groups every straddling
 	// row landing in the same place into one figure, the same shape as
@@ -132,12 +151,7 @@ export function sumLedgerAcrossPeriods(
 	// one per invoice.
 	const carriedForward = new Map<string, LedgerFigure & { packId: string }>();
 	for (const row of rows) {
-		const alreadyCounted = periods.some((period) =>
-			period.basis === 'cash'
-				? row.paidOn !== null && row.paidOn >= period.from && row.paidOn < period.to
-				: row.issueDate >= period.from && row.issueDate < period.to
-		);
-		if (alreadyCounted) continue;
+		if (claimed.has(row.invoiceId)) continue;
 
 		const origin = periods.find(
 			(period) => row.issueDate >= period.from && row.issueDate < period.to
