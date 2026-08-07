@@ -34,6 +34,20 @@ jobs:
           --health-interval 2s
           --health-timeout 3s
           --health-retries 30
+      # #72's real SMTP + IMAP round trip, not a mock — see
+      # compose.mail-test.yaml for the same container run locally. Ports
+      # match src/lib/server/mail/smtp-imap.test.ts and send.test.ts.
+      greenmail:
+        image: greenmail/standalone:2.1.8
+        env:
+          GREENMAIL_OPTS: >-
+            -Dgreenmail.setup.test.smtp
+            -Dgreenmail.setup.test.imap
+            -Dgreenmail.hostname=0.0.0.0
+            -Dgreenmail.users=mastro@mastro.test:test-app-password
+        ports:
+          - 34025:3025
+          - 34143:3143
 
     env:
       DATABASE_URL: postgres://mastro:mastro@localhost:5432/mastro

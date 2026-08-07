@@ -13,6 +13,7 @@ export * from './backup';
 export * from './client';
 export * from './contract';
 export * from './document';
+export * from './email-template';
 export * from './fiscal';
 export * from './invoice';
 export * from './rate-card';
