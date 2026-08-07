@@ -190,6 +190,20 @@
       "when": 1786091612033,
       "tag": "0026_document_invoice_owner",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1786093472645,
+      "tag": "0027_alert_and_push",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1786093506915,
+      "tag": "0028_alert_and_push_constraints",
+      "breakpoints": true
     }
   ]
 }
