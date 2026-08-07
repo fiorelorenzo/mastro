@@ -1,6 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
-import type { Crumb } from '$lib/nav/crumbs';
+import { invoicesCrumbs } from '$lib/nav/crumbs';
 import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
 import { listContractsWithClient } from '$lib/server/repositories/contract';
 import { createInvoice } from '$lib/server/repositories/invoice';
@@ -16,7 +16,7 @@ export const load: PageServerLoad = async ({ url }) => {
 	const contracts = await listContractsWithClient();
 	const contractId = url.searchParams.get('contractId') ?? '';
 	const eligibleDays = contractId ? await listEligibleWorkUnitsForInvoicing(contractId) : [];
-	const crumbs: Crumb[] = [{ href: '/invoices', label: m.invoices_heading() }];
+	const crumbs = invoicesCrumbs();
 	return { contracts, selectedContractId: contractId, eligibleDays, crumbs };
 };
 

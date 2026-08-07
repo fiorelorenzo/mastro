@@ -1,5 +1,5 @@
 import { error, fail } from '@sveltejs/kit';
-import type { Crumb } from '$lib/nav/crumbs';
+import { clientCrumbs } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import { renewalWindowOpensOn } from '$lib/server/domain/contract';
 import { getContractWithClient } from '$lib/server/repositories/contract';
@@ -31,10 +31,10 @@ export const load: PageServerLoad = async ({ params }) => {
 
 	// The trail is built here because only this query knows the client's name
 	// — the same reasoning as `rate-cards/new`'s loader.
-	const crumbs: Crumb[] = [
-		{ href: '/clients', label: m.clients_heading() },
-		{ href: `/clients/${contract.clientId}`, label: contract.client.legalName }
-	];
+	const crumbs = clientCrumbs({
+		id: contract.clientId,
+		legalName: contract.client.legalName
+	});
 
 	return {
 		contract,

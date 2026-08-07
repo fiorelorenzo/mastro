@@ -1,5 +1,5 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import type { Crumb } from '$lib/nav/crumbs';
+import { mailContractCrumbs } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import { getContract } from '$lib/server/repositories/contract';
 import { createEmailTemplate } from '$lib/server/repositories/email-template';
@@ -10,10 +10,7 @@ export const load: PageServerLoad = async ({ params }) => {
 	const contract = await getContract(params.id);
 	if (!contract) error(404, m.mail_contract_not_found());
 
-	const crumbs: Crumb[] = [
-		{ href: '/mail', label: m.nav_communications() },
-		{ href: `/mail/contracts/${contract.id}`, label: contract.title }
-	];
+	const crumbs = mailContractCrumbs(contract);
 	return { contract, crumbs };
 };
 

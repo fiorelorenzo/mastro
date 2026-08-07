@@ -1,5 +1,5 @@
 import { error } from '@sveltejs/kit';
-import type { Crumb } from '$lib/nav/crumbs';
+import { mailContractCrumbs } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import { getContract } from '$lib/server/repositories/contract';
 import { buildRegister } from '$lib/server/repositories/register';
@@ -22,9 +22,6 @@ export const load: PageServerLoad = async ({ params, url }) => {
 
 	const register = await buildRegister(params.id, from, to);
 
-	const crumbs: Crumb[] = [
-		{ href: '/mail', label: m.nav_communications() },
-		{ href: `/mail/contracts/${contract.id}`, label: contract.title }
-	];
+	const crumbs = mailContractCrumbs(contract);
 	return { contract, register, from, to, crumbs };
 };
