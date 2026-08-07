@@ -142,3 +142,61 @@ un-ignored as the templates).
 docker compose -f compose.prod.yaml --env-file .env.prod down     # keep the volumes
 docker compose -f compose.prod.yaml --env-file .env.prod down -v  # also destroy them
 ```
+
+## Releasing: push a tag, the pipeline does the rest
+
+The instance on `prodbox` is deployed by CI, not by hand. There is one path and it
+starts with a tag:
+
+```bash
+git switch main && git pull
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+`.github/workflows/deploy-prod.yml` picks that up, refuses to go any further unless
+`ci.yml` is a completed success **for that exact commit**, and then runs
+`scripts/deploy-prod.sh` on a self-hosted runner living on the box. The script
+rsyncs the tag's source into `/opt/apps/mastro`, builds the image there, brings
+`db` and `web` up, and gates the result on two separate facts: `/health` answers
+`{"status":"ok","database":"ok"}`, and the container that answered is running the
+image this run just built. A green `/health` alone would pass just as happily
+against yesterday's container, which is the whole reason the second check exists.
+
+If either check fails after the containers were recreated, the script puts the
+previous image back, brings the stack up on it and exits non-zero. Nothing before
+that point changes anything live.
+
+**`/opt/apps/mastro/DEPLOYED.json` is what is actually running.** The deploy
+directory is not a git checkout, so there is nothing else on the box to ask:
+
+```bash
+ssh prodbox 'cat /opt/apps/mastro/DEPLOYED.json'
+```
+
+**Rolling back** is a tag, not a special mechanism: push a tag on the commit you
+want back and let the same pipeline deploy it. To do it by hand in a hurry, the
+previous image is still on the box (`docker image ls mastro-prod-web`), and
+`docker tag <id> mastro-prod-web:latest` followed by
+`docker compose -f compose.prod.yaml --env-file .env.prod up -d --no-build
+--force-recreate web` puts it back.
+
+### Two host shapes, and which one prodbox uses
+
+`compose.prod.yaml` ships its own `proxy` service, and that is the right default
+for a self-hoster whose box runs nothing else: one `docker compose up` and TLS is
+handled.
+
+`prodbox` is the other shape. It already runs Caddy on the host as the single edge
+for every application on it, and two processes cannot both hold 443, so the deploy
+script starts `db` and `web` only. The host Caddy has a vhost for
+`mastro.lorenzofiore.io` that reverse-proxies to `127.0.0.1:5187`, which is the
+loopback port `WEB_PORT` publishes. Nothing about the app changes between the two
+shapes; only who terminates TLS does.
+
+### The runner service
+
+`scripts/deploy-prod.sh` starts the ACP runner only when `.env.prod` sets
+`RUNNER_LOCAL_AGENT_COMMAND`. With no model agent configured it would have nothing
+to do, and a container restarting forever is worse than an absent one: #82's own
+acceptance is that the product degrades to manual entry when the runner is not
+there. Configure the command and the next deploy brings it up.

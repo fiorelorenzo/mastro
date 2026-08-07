@@ -1,0 +1,76 @@
+name: deploy-prod
+
+# Ships an exact tagged commit to the production host. Push a `vX.Y.Z` tag
+# on main and this takes it from there; docs/deploy.md has the full flow,
+# what to check once it is live, and how to roll back by hand.
+on:
+  push:
+    tags: ['v*']
+
+# Serialized against other prod deploys, and deliberately not cancellable:
+# by the time the deploy job is running it may already have recreated the
+# web container, and killing it there would leave prod half-updated with no
+# health gate having run and no rollback triggered. The script rolls itself
+# back on failure but cannot recover from being killed outright. A second
+# tag pushed meanwhile queues instead.
+concurrency:
+  group: prod-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read # the deploy job reads this commit's CI conclusion before touching prod
+
+jobs:
+  deploy:
+    name: deploy to prodbox
+    runs-on: [self-hosted, prodbox]
+    steps:
+      # Tags are pushed by hand and nothing stops someone tagging a commit
+      # CI never ran on, or already failed on. This is the one automated
+      # gate between an untested commit and production, so it runs before
+      # anything else touches the box.
+      #
+      # curl and jq rather than `gh`: this runner's PATH is
+      # /usr/local/bin:/usr/bin:/bin and has no gh, while curl and jq are
+      # both there. Scoped to ci.yml specifically rather than the repo-wide
+      # run list, so an unrelated workflow's run for the same commit can
+      # neither block nor excuse a deploy.
+      - name: Verify CI passed for this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          url="https://api.github.com/repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${SHA}&per_page=10"
+          resp="$(curl -fsS \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$url")"
+          run="$(echo "$resp" | jq -c '.workflow_runs | sort_by(.created_at) | last // empty')"
+          if [ -z "$run" ]; then
+            echo "::error::No ci.yml run found for $SHA. Refusing to deploy an untested tag."
+            exit 1
+          fi
+          status="$(echo "$run" | jq -r '.status')"
+          conclusion="$(echo "$run" | jq -r '.conclusion')"
+          html_url="$(echo "$run" | jq -r '.html_url')"
+          echo "ci.yml for $SHA: status=$status conclusion=$conclusion ($html_url)"
+          if [ "$status" != completed ] || [ "$conclusion" != success ]; then
+            echo "::error::CI is not a completed success for $SHA. See $html_url. Refusing to deploy."
+            exit 1
+          fi
+
+      - name: Checkout tag
+        uses: actions/checkout@v5
+
+      # No node, no pnpm: the image is built by docker on the box from the
+      # source this checkout leaves behind, so the deploy needs nothing on
+      # PATH beyond docker, rsync, curl and jq, none of which this runner
+      # would otherwise have a reason to install.
+      - name: Deploy
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: scripts/deploy-prod.sh "${{ github.ref_name }}"
