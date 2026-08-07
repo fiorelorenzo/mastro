@@ -15,7 +15,9 @@ import {
 	forecastCommitted,
 	forecastProjected,
 	forecastRenewalAssumptions,
-	forecastRevenue
+	forecastRevenue,
+	forecastRevenueByMonth,
+	monthlyBuckets
 } from './forecast';
 
 afterAll(async () => {
@@ -245,6 +247,30 @@ test('forecastProjected stays empty for an indefinite contract with no renewal a
 	).rejects.toThrow();
 });
 
+test('forecastRevenueByMonth places a paid invoice in the month it was actually paid, not issued', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const contractRow = await insertContract(tx);
+			const invoiceRow = await createInvoice(
+				invoiceInput(contractRow.id, { issueDate: '2024-01-15' }),
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'test fixture',
+				tx
+			);
+			await tx.update(invoice).set({ paidOn: '2024-03-10' }).where(eq(invoice.id, invoiceRow.id));
+
+			const months = await forecastRevenueByMonth('2024-06-01', '2024-01-01', '2024-04-01', tx);
+
+			expect(months.map((m) => m.month)).toEqual(['2024-01-01', '2024-02-01', '2024-03-01']);
+			expect(months[0].collected.amount).toBe(0);
+			expect(months[1].collected.amount).toBe(0);
+			expect(months[2].collected.amount).toBe(100_000);
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
 test('forecastRenewalAssumptions pairs a recorded assumption with the contribution it produces, matching forecastProjected (#39)', async () => {
 	await expect(
 		db.transaction(async (tx) => {
@@ -288,4 +314,32 @@ test('forecastRenewalAssumptions pairs a recorded assumption with the contributi
 			tx.rollback();
 		})
 	).rejects.toThrow();
+});
+
+test('forecastRevenueByMonth places an issued unpaid invoice as committed in the month it was issued', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const contractRow = await insertContract(tx);
+			await createInvoice(
+				invoiceInput(contractRow.id, { issueDate: '2024-02-01' }),
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'test fixture',
+				tx
+			);
+
+			const months = await forecastRevenueByMonth('2024-02-15', '2024-01-01', '2024-04-01', tx);
+
+			expect(months[0].committed.amount).toBe(0);
+			expect(months[1].committed.amount).toBe(100_000);
+			expect(months[2].committed.amount).toBe(0);
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('monthlyBuckets requires both bounds on the first of a calendar month', () => {
+	expect(() => monthlyBuckets('2024-01-15', '2024-04-01')).toThrow(/first day of a calendar month/);
+	expect(() => monthlyBuckets('2024-01-01', '2024-04-15')).toThrow(/first day of a calendar month/);
+	expect(monthlyBuckets('2024-01-01', '2024-01-01')).toEqual([]);
 });
