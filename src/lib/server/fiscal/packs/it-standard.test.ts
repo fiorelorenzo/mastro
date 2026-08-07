@@ -83,26 +83,33 @@ test(
 					})
 					.returning();
 
-				// Flat-rate applies through 2024, standard from 2025 on — a
+				// Flat-rate applies through 2043, standard from 2044 on: a
 				// regime change with no bearing on the contract itself.
+				//
+				// The years are far in the future on purpose. `fiscal_profile`
+				// carries a database-wide EXCLUDE constraint on the validity
+				// period, so two test files inserting overlapping periods at the
+				// same time block each other even though both roll back, and
+				// vitest runs files in parallel. Every file that writes a profile
+				// keeps to its own era; profile.test.ts owns 2023 to 2025.
 				await tx.insert(fiscalProfile).values({
 					packId: 'it-flat-rate',
 					packVersion: '1',
-					validFrom: '2023-01-01',
-					validTo: '2025-01-01'
+					validFrom: '2043-01-01',
+					validTo: '2044-01-01'
 				});
 				await tx.insert(fiscalProfile).values({
 					packId: 'it-standard',
 					packVersion: '1',
-					validFrom: '2025-01-01',
+					validFrom: '2044-01-01',
 					validTo: null
 				});
 
-				const underFlatRate = await resolveActiveFiscalPack(tx, '2024-06-01', defaultRegistry);
+				const underFlatRate = await resolveActiveFiscalPack(tx, '2043-06-01', defaultRegistry);
 				expect(underFlatRate?.pack.id).toBe('it-flat-rate');
 				expect(underFlatRate?.pack.ceilings.length).toBeGreaterThan(0);
 
-				const underStandard = await resolveActiveFiscalPack(tx, '2025-06-01', defaultRegistry);
+				const underStandard = await resolveActiveFiscalPack(tx, '2044-06-01', defaultRegistry);
 				expect(underStandard?.pack.id).toBe('it-standard');
 				expect(underStandard?.pack.ceilings).toEqual([]);
 

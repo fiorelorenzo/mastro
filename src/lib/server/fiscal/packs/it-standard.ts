@@ -1,5 +1,5 @@
 import type { FiscalPack } from '../pack';
-import { legalText } from '../label';
+import { legalText } from '$lib/legal/legal-text';
 
 /**
  * Italy's standard regime: accrual basis, no revenue ceiling, ordinary VAT.
