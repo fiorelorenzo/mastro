@@ -1,5 +1,5 @@
 import { error, fail } from '@sveltejs/kit';
-import type { Crumb } from '$lib/nav/crumbs';
+import { mailContractCrumbs } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import { getClientWithContacts } from '$lib/server/repositories/client';
 import { getEmailTemplate } from '$lib/server/repositories/email-template';
@@ -19,11 +19,7 @@ export const load: PageServerLoad = async ({ params }) => {
 	const client = await getClientWithContacts(template.contract.clientId);
 	const defaultRecipients = client?.contacts.map((contact) => contact.email).join(', ') ?? '';
 
-	const crumbs: Crumb[] = [
-		{ href: '/mail', label: m.nav_communications() },
-		{ href: `/mail/contracts/${params.id}`, label: template.contract.title },
-		{ href: `/mail/contracts/${params.id}?template=${params.templateId}`, label: template.name }
-	];
+	const crumbs = mailContractCrumbs({ id: params.id, title: template.contract.title });
 	return { template, defaultRecipients, crumbs };
 };
 

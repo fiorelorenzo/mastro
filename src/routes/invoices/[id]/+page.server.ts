@@ -1,6 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
-import type { Crumb } from '$lib/nav/crumbs';
+import { invoicesCrumbs } from '$lib/nav/crumbs';
 import { daysLate, isOverdue } from '$lib/server/domain/invoice';
 import { getInvoiceWithLines, recordPayment } from '$lib/server/repositories/invoice';
 import type { Actions, PageServerLoad } from './$types';
@@ -8,7 +8,7 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ params }) => {
 	const invoiceRow = await getInvoiceWithLines(params.id);
 	if (!invoiceRow) error(404, m.invoice_not_found());
-	const crumbs: Crumb[] = [{ href: '/invoices', label: m.invoices_heading() }];
+	const crumbs = invoicesCrumbs();
 	return {
 		invoice: invoiceRow,
 		// Today, at UTC midnight as an ISO date — what the "paid on" field

@@ -1,5 +1,5 @@
 import { error, fail, redirect } from '@sveltejs/kit';
-import type { Crumb } from '$lib/nav/crumbs';
+import { contractCrumbs } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import {
 	getContractWithClient,
@@ -24,11 +24,7 @@ export const load: PageServerLoad = async ({ params }) => {
 		? await getDocument(contract.hostedExtractionConsentDocumentId)
 		: null;
 
-	const crumbs: Crumb[] = [
-		{ href: '/clients', label: m.clients_heading() },
-		{ href: `/clients/${contract.clientId}`, label: contract.client.legalName },
-		{ href: `/clients/${contract.clientId}/contracts/${contract.id}`, label: contract.title }
-	];
+	const crumbs = contractCrumbs(contract);
 
 	return { contract, hostedExtractionConsentDocument, crumbs };
 };

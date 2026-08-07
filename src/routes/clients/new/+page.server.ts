@@ -1,5 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
-import type { Crumb } from '$lib/nav/crumbs';
+import { clientsCrumbs } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
 import { createClient } from '$lib/server/repositories/client';
@@ -7,7 +7,7 @@ import { parseClientForm } from '$lib/server/repositories/client-form';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = () => {
-	const crumbs: Crumb[] = [{ href: '/clients', label: m.clients_heading() }];
+	const crumbs = clientsCrumbs();
 	return { crumbs };
 };
 

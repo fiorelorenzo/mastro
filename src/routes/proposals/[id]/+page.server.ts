@@ -1,6 +1,6 @@
 import { error, fail } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
-import type { Crumb } from '$lib/nav/crumbs';
+import { proposalsCrumbs } from '$lib/nav/crumbs';
 import { getContract } from '$lib/server/repositories/contract';
 import {
 	acceptProposal,
@@ -49,7 +49,7 @@ export const load: PageServerLoad = async ({ params }) => {
 	if (!row) error(404, m.proposal_detail_not_found());
 
 	const contract = await getContract(row.contractId);
-	const crumbs: Crumb[] = [{ href: '/proposals', label: m.proposal_list_heading() }];
+	const crumbs = proposalsCrumbs();
 
 	return {
 		proposal: {

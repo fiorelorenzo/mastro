@@ -1,6 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
-import type { Crumb } from '$lib/nav/crumbs';
+import { calendarCrumbs } from '$lib/nav/crumbs';
 import { listApprovalsForContract } from '$lib/server/repositories/approval';
 import { listClients } from '$lib/server/repositories/client';
 import { listContracts } from '$lib/server/repositories/contract';
@@ -65,7 +65,7 @@ export const load: PageServerLoad = async ({ url }) => {
 			? requestedDate
 			: new Date().toISOString().slice(0, 10);
 
-	const crumbs: Crumb[] = [{ href: '/day/calendar', label: m.nav_calendar() }];
+	const crumbs = calendarCrumbs();
 
 	return { contracts, approvalsByContract, defaultContractId, defaultDate, crumbs };
 };
