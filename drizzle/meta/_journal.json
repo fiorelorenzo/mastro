@@ -218,6 +218,20 @@
       "when": 1786097297732,
       "tag": "0030_proposal_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1786097652912,
+      "tag": "0031_alert_and_push",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1786097654535,
+      "tag": "0032_alert_and_push_constraints",
+      "breakpoints": true
     }
   ]
 }

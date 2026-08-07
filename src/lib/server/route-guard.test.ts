@@ -9,6 +9,7 @@ const EXPECTED_PUBLIC_ROUTE_IDS = new Set([
 	'/api/auth/[...all]',
 	'/sign-in',
 	'/health',
+	'/api/alerts/run/[job]',
 	'/offline'
 ]);
 

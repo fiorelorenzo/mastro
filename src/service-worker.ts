@@ -133,6 +133,52 @@ sw.addEventListener('fetch', (event) => {
 });
 
 /**
+ * Displays a push notification (#63). The payload is `push/send.ts`'s
+ * `PushPayload` — `{ title, body, url }`, JSON-encoded before it left the
+ * server — so a garbled or empty push (a service delivering a malformed
+ * message) is treated as nothing to show rather than a thrown handler.
+ * Touches no cache: push handling is orthogonal to the caching rule at
+ * the top of this file, which is only ever about what `fetch` may serve.
+ */
+sw.addEventListener('push', (event) => {
+	let payload: { title?: string; body?: string; url?: string } = {};
+	try {
+		if (event.data) payload = event.data.json();
+	} catch {
+		return;
+	}
+	if (!payload.title) return;
+
+	event.waitUntil(
+		sw.registration.showNotification(payload.title, {
+			body: payload.body,
+			data: { url: payload.url ?? `${base}/alerts` },
+			tag: 'mastro-alert'
+		})
+	);
+});
+
+/** Focuses an already-open tab on the notification's target URL if one
+ * exists, opens a new one otherwise. */
+sw.addEventListener('notificationclick', (event) => {
+	event.notification.close();
+	const url = (event.notification.data as { url?: string } | undefined)?.url ?? `${base}/alerts`;
+	event.waitUntil(
+		(async () => {
+			const clientList = await sw.clients.matchAll({ type: 'window', includeUncontrolled: true });
+			const targetUrl = new URL(url, sw.location.href).href;
+			for (const client of clientList) {
+				if (client.url === targetUrl && 'focus' in client) {
+					await client.focus();
+					return;
+				}
+			}
+			await sw.clients.openWindow(targetUrl);
+		})()
+	);
+});
+
+/**
  * Network first, since a document is never cached (see the rule at the top
  * of this file): the only fallback is the precached, stateless offline
  * page, never a previous visitor's rendered HTML.

@@ -24,13 +24,17 @@ function writeFlag(key: string): void {
 	if (browser) localStorage.setItem(key, 'true');
 }
 
-function isIosDevice(): boolean {
+/** iOS Safari only detects a home screen launch through `navigator.
+ * standalone`; exported so `$lib/server`-adjacent push UI (#63) can reuse
+ * the exact same check for "push only works once installed on iOS"
+ * rather than a second copy of it. */
+export function isIosDevice(): boolean {
 	// The `standalone` property only ever exists on iOS Safari's navigator; unlike
 	// user-agent sniffing it is not spoofed by a desktop-site toggle.
 	return browser && 'standalone' in navigator;
 }
 
-function isRunningStandalone(): boolean {
+export function isRunningStandalone(): boolean {
 	if (!browser) return false;
 	return (
 		window.matchMedia('(display-mode: standalone)').matches ||
