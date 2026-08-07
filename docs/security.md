@@ -25,7 +25,7 @@ Drive, or any other Google data. Verified in code and by a passing test.
 `!.env.prod.example`). `docs/deploy.md` confirms `.dockerignore` excludes every
 `.env*` file from the build context, and `Dockerfile`'s build stage uses literal
 placeholder values (`build-time-placeholder`), never a real secret, for the
-postbuild analysis step that needs *some* value.
+postbuild analysis step that needs _some_ value.
 
 **If it leaks.** The client secret alone lets someone stand up a second OAuth client
 using this app's identity in Google's consent screen (phishing risk: a user seeing
@@ -171,7 +171,7 @@ not a two-line diff folded into this one. Filed as **#114**.
 `docs/backup.md`'s rehearsal verifies a restored file's contents match exactly.
 
 **Recoverable if lost.** Only if backed up. Invariant 4's whole premise is that this
-*is* the source of truth for a disputed day — there is no secondary copy to fall
+_is_ the source of truth for a disputed day — there is no secondary copy to fall
 back to if both the live directory and its backups are gone.
 
 ## Session cookie attributes behind the reverse proxy
@@ -240,15 +240,15 @@ does not apply here — nothing rotatable was found.
 
 ## Summary table
 
-| Item | Grants | Backed up | Lost/leaked recovery |
-| --- | --- | --- | --- |
-| Google OAuth client | Identity only (`openid email profile`) | No | Reissue in Console |
-| `drive.file` | Not yet implemented on this branch | — | — |
-| IMAP/SMTP app password | Full mailbox (provider-level, not mastro-scoped) | No | Revoke + reissue |
-| `BETTER_AUTH_SECRET` | Forge any session | **Yes** | Lost: unrecoverable, sessions die. Leaked: rotate to invalidate |
-| `AUTH_ALLOWED_EMAILS` | Not a credential; discloses allowed identities | No | Re-enter from records |
-| Database password | Full ledger read/write, not internet-reachable on its own | No | Change password; data is in the `pg_dump` backup |
-| Document blobs | Original evidentiary documents | **Yes** | Only if backed up — no secondary source |
+| Item                   | Grants                                                    | Backed up | Lost/leaked recovery                                            |
+| ---------------------- | --------------------------------------------------------- | --------- | --------------------------------------------------------------- |
+| Google OAuth client    | Identity only (`openid email profile`)                    | No        | Reissue in Console                                              |
+| `drive.file`           | Not yet implemented on this branch                        | —         | —                                                               |
+| IMAP/SMTP app password | Full mailbox (provider-level, not mastro-scoped)          | No        | Revoke + reissue                                                |
+| `BETTER_AUTH_SECRET`   | Forge any session                                         | **Yes**   | Lost: unrecoverable, sessions die. Leaked: rotate to invalidate |
+| `AUTH_ALLOWED_EMAILS`  | Not a credential; discloses allowed identities            | No        | Re-enter from records                                           |
+| Database password      | Full ledger read/write, not internet-reachable on its own | No        | Change password; data is in the `pg_dump` backup                |
+| Document blobs         | Original evidentiary documents                            | **Yes**   | Only if backed up — no secondary source                         |
 
 ## Small fixes made in this PR
 
