@@ -9,7 +9,10 @@
 		formatNumber
 	} from '$lib/i18n/format';
 	import { factLine } from '$lib/nav/crumbs';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
+	import Section from '$lib/layout/Section.svelte';
+	import RecordList from '$lib/layout/RecordList.svelte';
+	import type { RecordColumn } from '$lib/layout/types';
 	import {
 		expensePolicyKindLabel,
 		invoicingCadenceLabel,
@@ -22,8 +25,7 @@
 		rateCardKindLabel,
 		rateUnitLabel
 	} from './rate-cards/rate-card-enums';
-	import ReimbursableBadge from './expenses/ReimbursableBadge.svelte';
-	import type { ActionData, PageProps } from './$types';
+	import type { ActionData, PageData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
@@ -35,38 +37,134 @@
 			m.contract_subtitle_notice_period({ days: formatDays(contract.terminationNoticeDays) })
 		])
 	);
+
+	type RateCardRow = PageData['rateCards'][number];
+	type ClauseNoteRow = PageData['clauseNotes'][number];
+	type ExpenseRow = PageData['expenses'][number];
+
+	const rateCardColumns: readonly RecordColumn<RateCardRow>[] = $derived([
+		{
+			key: 'validFrom',
+			label: m.rate_card_column_validity(),
+			format: (card: RateCardRow) =>
+				`${formatDate(card.validFrom)} – ${card.validTo ? formatDate(card.validTo) : m.rate_card_valid_to_open()}`
+		},
+		{
+			key: 'kind',
+			label: m.rate_card_column_kind(),
+			format: (card: RateCardRow) => rateCardKindLabel(card.kind)
+		},
+		{
+			key: 'amount',
+			label: m.rate_card_column_amount(),
+			align: 'end',
+			// `rate_card.amount` is a plain decimal amount, not `MinorUnits` — a
+			// rate card is priced in whole currency, unlike an expense or an
+			// invoice line, so `formatAmount` is the correct formatter here and
+			// `formatMinorUnits` would understate it a hundredfold (#164).
+			format: (card: RateCardRow) => {
+				const perUnit = `${formatAmount(card.amount, contract.currency)} / ${rateUnitLabel(card.unit)}`;
+				return card.disbursementPeriod
+					? `${perUnit} (${disbursementPeriodLabel(card.disbursementPeriod)})`
+					: perUnit;
+			}
+		}
+	]);
+
+	// Reuses the create/edit form's own field labels (`ContractForm`'s
+	// clause-note fieldset has no on-page twin) rather than inventing a
+	// second set of column headers for the same four facts.
+	const clauseNoteColumns: readonly RecordColumn<ClauseNoteRow>[] = $derived([
+		{ key: 'clauseReference', label: m.clause_note_form_clause_reference_label() },
+		{
+			key: 'verbatimText',
+			label: m.clause_note_form_verbatim_text_label(),
+			format: (note: ClauseNoteRow) => `"${note.verbatimText}"`
+		},
+		{
+			key: 'interpretationAdopted',
+			label: m.clause_note_form_interpretation_adopted_label()
+		},
+		{
+			key: 'notes',
+			label: m.clause_note_form_notes_label(),
+			format: (note: ClauseNoteRow) => note.notes ?? ''
+		}
+	]);
+
+	const expenseColumns: readonly RecordColumn<ExpenseRow>[] = $derived([
+		{
+			key: 'date',
+			label: m.expense_column_date(),
+			format: (row: ExpenseRow) => formatDate(row.date)
+		},
+		{ key: 'description', label: m.expense_column_description() },
+		{
+			key: 'amount',
+			label: m.expense_column_amount(),
+			align: 'end',
+			// `expense.amount` is `MinorUnits` (integer cents), the same
+			// convention `invoice`/`invoice_line` use — see the schema comment
+			// on `expense.ts`. `formatMinorUnits` is the only correct formatter.
+			format: (row: ExpenseRow) => formatMinorUnits(row.amount, contract.currency)
+		},
+		{
+			key: 'reimbursable',
+			label: m.expense_column_reimbursable(),
+			format: (row: ExpenseRow) =>
+				row.reimbursable ? m.expense_reimbursable_label() : m.expense_non_reimbursable_label()
+		},
+		{
+			key: 'rebilled',
+			label: m.expense_column_rebilled(),
+			format: (row: ExpenseRow) =>
+				row.invoiceLineId ? m.expense_rebilled_yes() : m.expense_rebilled_no()
+		}
+	]);
+
+	// The one row action `RecordList` cannot express: rebilling posts a form
+	// with an invoice-line picker, not a plain cell value. It stays a small
+	// list of its own beneath the record list, offered only for the rows it
+	// applies to (reimbursable, not yet rebilled, and there is somewhere to
+	// rebill it onto) — the same set the old inline form used.
+	const pendingRebill = $derived(
+		data.invoiceLines.length > 0
+			? data.expenses.filter((row) => row.reimbursable && !row.invoiceLineId)
+			: []
+	);
 </script>
 
 <svelte:head><title>{m.contract_detail_page_title({ title: contract.title })}</title></svelte:head>
 
-<main class="mx-auto max-w-3xl p-8">
-	<PageHeader crumbs={data.crumbs} title={contract.title} {subtitle}>
-		{#snippet actions()}
-			<a
-				href={resolve('/clients/[id]/contracts/[contractId]/edit', {
-					id: contract.client.id,
-					contractId: contract.id
-				})}
-				class="text-sm underline">{m.contract_edit_link()}</a
-			>
-		{/snippet}
-	</PageHeader>
+<Page title={contract.title} {subtitle} crumbs={data.crumbs}>
+	{#snippet actions()}
+		<a
+			href={resolve('/clients/[id]/contracts/[contractId]/edit', {
+				id: contract.client.id,
+				contractId: contract.id
+			})}
+			class="underline">{m.contract_edit_link()}</a
+		>
+	{/snippet}
 
-	<section class="mt-6">
-		<h2 class="text-lg font-semibold">{m.contract_form_identity_legend()}</h2>
-		<dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+	<!--
+		Identity and term merged: on its own "Identity" was two facts (status,
+		an optional signed-document reference), thinner than every section
+		around it, and both it and "term" are the same kind of thing — static
+		facts about this contract's own state and timeline, as opposed to
+		payment (money) or approval/expenses (workflow). Clause notes used to
+		nest inside "term" with hand-rolled indentation; it is a record list
+		now, so it gets its own section instead, the same standing rate cards
+		and expenses have.
+	-->
+	<Section title={m.contract_form_identity_legend()}>
+		<dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
 			<dt class="opacity-70">{m.contract_form_status_label()}</dt>
 			<dd>{statusLabel(contract.status)}</dd>
 			{#if contract.signedDocumentReference}
 				<dt class="opacity-70">{m.contract_form_signed_document_reference_label()}</dt>
 				<dd>{contract.signedDocumentReference}</dd>
 			{/if}
-		</dl>
-	</section>
-
-	<section class="mt-6">
-		<h2 class="text-lg font-semibold">{m.contract_form_term_legend()}</h2>
-		<dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
 			<dt class="opacity-70">{m.contract_form_starts_on_label()}</dt>
 			<dd>{formatDate(contract.startsOn)}</dd>
 			<dt class="opacity-70">{m.contract_form_ends_on_label()}</dt>
@@ -84,57 +182,39 @@
 			<dt class="opacity-70">{m.contract_form_termination_notice_days_label()}</dt>
 			<dd>{formatNumber(contract.terminationNoticeDays)}</dd>
 		</dl>
+	</Section>
 
-		<!--
-			#20's whole point: a clause note sits right here, next to the
-			renewal fields it affects, on the same single page — this app has
-			no detail tabs to bury it in.
-		-->
-		<div class="mt-4 border-l-2 pl-4">
-			<div class="flex items-center justify-between">
-				<h3 class="text-sm font-semibold">{m.clause_note_section_heading()}</h3>
-				<a
-					href={resolve('/clients/[id]/contracts/[contractId]/clause-notes/new', {
+	<Section title={m.clause_note_section_heading()}>
+		{#snippet actions()}
+			<a
+				href={resolve('/clients/[id]/contracts/[contractId]/clause-notes/new', {
+					id: contract.client.id,
+					contractId: contract.id
+				})}
+				class="underline">{m.clause_note_new_link()}</a
+			>
+		{/snippet}
+
+		{#if data.clauseNotes.length === 0}
+			<p class="text-sm opacity-70">{m.clause_note_empty()}</p>
+		{:else}
+			<RecordList
+				columns={clauseNoteColumns}
+				rows={data.clauseNotes}
+				caption={m.clause_note_section_heading()}
+				rowKey={(note) => note.id}
+				rowHref={(note) =>
+					resolve('/clients/[id]/contracts/[contractId]/clause-notes/[clauseNoteId]/edit', {
 						id: contract.client.id,
-						contractId: contract.id
+						contractId: contract.id,
+						clauseNoteId: note.id
 					})}
-					class="text-sm underline">{m.clause_note_new_link()}</a
-				>
-			</div>
-			{#if data.clauseNotes.length === 0}
-				<p class="mt-2 text-sm opacity-70">{m.clause_note_empty()}</p>
-			{:else}
-				<ul class="mt-2 flex flex-col gap-3">
-					{#each data.clauseNotes as note (note.id)}
-						<li class="text-sm">
-							<p class="font-semibold">{note.clauseReference}</p>
-							<p class="mt-1 italic opacity-80">"{note.verbatimText}"</p>
-							<p class="mt-1">
-								{m.clause_note_interpretation_prefix()}
-								{note.interpretationAdopted}
-							</p>
-							{#if note.notes}<p class="mt-1 opacity-70">{note.notes}</p>{/if}
-							<a
-								href={resolve(
-									'/clients/[id]/contracts/[contractId]/clause-notes/[clauseNoteId]/edit',
-									{
-										id: contract.client.id,
-										contractId: contract.id,
-										clauseNoteId: note.id
-									}
-								)}
-								class="text-xs underline">{m.clause_note_edit_link()}</a
-							>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-		</div>
-	</section>
+			/>
+		{/if}
+	</Section>
 
-	<section class="mt-6">
-		<h2 class="text-lg font-semibold">{m.contract_form_payment_legend()}</h2>
-		<dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+	<Section title={m.contract_form_payment_legend()}>
+		<dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
 			<dt class="opacity-70">{m.contract_form_payment_terms_kind_label()}</dt>
 			<dd>
 				{paymentTermsKindLabel(contract.paymentTerms.kind)}
@@ -151,11 +231,10 @@
 			<dt class="opacity-70">{m.contract_form_tax_treatment_label()}</dt>
 			<dd>{contract.taxTreatment}</dd>
 		</dl>
-	</section>
+	</Section>
 
-	<section class="mt-6">
-		<h2 class="text-lg font-semibold">{m.contract_form_approval_and_expenses_legend()}</h2>
-		<dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+	<Section title={m.contract_form_approval_and_expenses_legend()}>
+		<dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
 			<dt class="opacity-70">{m.contract_form_requires_prior_approval_label()}</dt>
 			<dd>{contract.requiresPriorApproval ? m.contract_boolean_yes() : m.contract_boolean_no()}</dd>
 			<dt class="opacity-70">{m.contract_form_expense_policy_kind_label()}</dt>
@@ -172,129 +251,85 @@
 					: m.contract_boolean_no()}
 			</dd>
 		</dl>
-	</section>
+	</Section>
 
-	<section class="mt-6">
-		<div class="flex items-center justify-between">
-			<h2 class="text-lg font-semibold">{m.rate_card_section_heading()}</h2>
+	<Section title={m.rate_card_section_heading()}>
+		{#snippet actions()}
 			<a
 				href={resolve('/clients/[id]/contracts/[contractId]/rate-cards/new', {
 					id: contract.client.id,
 					contractId: contract.id
 				})}
-				class="text-sm underline">{m.rate_card_new_link()}</a
+				class="underline">{m.rate_card_new_link()}</a
 			>
-		</div>
-		{#if data.rateCards.length === 0}
-			<p class="mt-2 text-sm opacity-70">{m.rate_card_empty()}</p>
-		{:else}
-			<table class="mt-2 w-full border-collapse text-sm">
-				<thead>
-					<tr class="border-b text-left">
-						<th class="py-2 pr-4">{m.rate_card_column_validity()}</th>
-						<th class="py-2 pr-4">{m.rate_card_column_kind()}</th>
-						<th class="py-2 pr-4">{m.rate_card_column_amount()}</th>
-						<th class="py-2"></th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each data.rateCards as card (card.id)}
-						<tr class="border-b">
-							<td class="py-2 pr-4"
-								>{formatDate(card.validFrom)} – {card.validTo
-									? formatDate(card.validTo)
-									: m.rate_card_valid_to_open()}</td
-							>
-							<td class="py-2 pr-4">{rateCardKindLabel(card.kind)}</td>
-							<td class="py-2 pr-4">
-								{formatAmount(card.amount, contract.currency)} / {rateUnitLabel(card.unit)}
-								{#if card.disbursementPeriod}
-									({disbursementPeriodLabel(card.disbursementPeriod)})
-								{/if}
-							</td>
-							<td class="py-2">
-								<a
-									href={resolve(
-										'/clients/[id]/contracts/[contractId]/rate-cards/[rateCardId]/edit',
-										{ id: contract.client.id, contractId: contract.id, rateCardId: card.id }
-									)}
-									class="underline">{m.rate_card_edit_link()}</a
-								>
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		{/if}
-	</section>
+		{/snippet}
 
-	<section class="mt-6">
-		<div class="flex items-center justify-between">
-			<h2 class="text-lg font-semibold">{m.expense_section_heading()}</h2>
+		{#if data.rateCards.length === 0}
+			<p class="text-sm opacity-70">{m.rate_card_empty()}</p>
+		{:else}
+			<RecordList
+				columns={rateCardColumns}
+				rows={data.rateCards}
+				caption={m.rate_card_section_heading()}
+				rowKey={(card) => card.id}
+				rowHref={(card) =>
+					resolve('/clients/[id]/contracts/[contractId]/rate-cards/[rateCardId]/edit', {
+						id: contract.client.id,
+						contractId: contract.id,
+						rateCardId: card.id
+					})}
+			/>
+		{/if}
+	</Section>
+
+	<Section title={m.expense_section_heading()}>
+		{#snippet actions()}
 			<a
 				href={resolve('/clients/[id]/contracts/[contractId]/expenses/new', {
 					id: contract.client.id,
 					contractId: contract.id
 				})}
-				class="text-sm underline">{m.expense_new_link()}</a
+				class="underline">{m.expense_new_link()}</a
 			>
-		</div>
-		{#if form?.rebillError}<p class="mt-2 text-xs font-semibold">{form.rebillError}</p>{/if}
+		{/snippet}
+
+		{#if form?.rebillError}<p class="text-xs font-semibold">{form.rebillError}</p>{/if}
 		{#if data.expenses.length === 0}
-			<p class="mt-2 text-sm opacity-70">{m.expense_empty()}</p>
+			<p class="text-sm opacity-70">{m.expense_empty()}</p>
 		{:else}
-			<table class="mt-2 w-full border-collapse text-sm">
-				<thead>
-					<tr class="border-b text-left">
-						<th class="py-2 pr-4">{m.expense_column_date()}</th>
-						<th class="py-2 pr-4">{m.expense_column_description()}</th>
-						<th class="py-2 pr-4">{m.expense_column_amount()}</th>
-						<th class="py-2 pr-4">{m.expense_column_reimbursable()}</th>
-						<th class="py-2 pr-4">{m.expense_column_rebilled()}</th>
-						<th class="py-2"></th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each data.expenses as row (row.id)}
-						<tr class="border-b align-top">
-							<td class="py-2 pr-4">{formatDate(row.date)}</td>
-							<td class="py-2 pr-4">{row.description}</td>
-							<td class="py-2 pr-4">{formatMinorUnits(row.amount, contract.currency)}</td>
-							<td class="py-2 pr-4"><ReimbursableBadge reimbursable={row.reimbursable} /></td>
-							<td class="py-2 pr-4">
-								{#if row.invoiceLineId}
-									{m.expense_rebilled_yes()}
-								{:else if row.reimbursable && data.invoiceLines.length > 0}
-									<form method="POST" action="?/rebill" class="flex items-center gap-2">
-										<input type="hidden" name="expenseId" value={row.id} />
-										<select name="invoiceLineId" class="border px-1 py-0.5 text-xs" required>
-											<option value="" disabled selected>{m.expense_rebill_placeholder()}</option>
-											{#each data.invoiceLines as line (line.id)}
-												<option value={line.id}>{line.invoiceNumber} — {line.description}</option>
-											{/each}
-										</select>
-										<button type="submit" class="border px-2 py-0.5 text-xs"
-											>{m.expense_rebill_submit()}</button
-										>
-									</form>
-								{:else}
-									{m.expense_rebilled_no()}
-								{/if}
-							</td>
-							<td class="py-2">
-								<a
-									href={resolve('/clients/[id]/contracts/[contractId]/expenses/[expenseId]/edit', {
-										id: contract.client.id,
-										contractId: contract.id,
-										expenseId: row.id
-									})}
-									class="underline">{m.expense_edit_link()}</a
+			<RecordList
+				columns={expenseColumns}
+				rows={data.expenses}
+				caption={m.expense_section_heading()}
+				rowKey={(row) => row.id}
+				rowHref={(row) =>
+					resolve('/clients/[id]/contracts/[contractId]/expenses/[expenseId]/edit', {
+						id: contract.client.id,
+						contractId: contract.id,
+						expenseId: row.id
+					})}
+			/>
+			{#if pendingRebill.length > 0}
+				<ul class="mt-3 flex flex-col gap-2 text-sm">
+					{#each pendingRebill as row (row.id)}
+						<li>
+							<form method="POST" action="?/rebill" class="flex flex-wrap items-center gap-2">
+								<span class="opacity-70">{formatDate(row.date)} — {row.description}</span>
+								<input type="hidden" name="expenseId" value={row.id} />
+								<select name="invoiceLineId" class="border px-1 py-0.5 text-xs" required>
+									<option value="" disabled selected>{m.expense_rebill_placeholder()}</option>
+									{#each data.invoiceLines as line (line.id)}
+										<option value={line.id}>{line.invoiceNumber} — {line.description}</option>
+									{/each}
+								</select>
+								<button type="submit" class="border px-2 py-0.5 text-xs"
+									>{m.expense_rebill_submit()}</button
 								>
-							</td>
-						</tr>
+							</form>
+						</li>
 					{/each}
-				</tbody>
-			</table>
+				</ul>
+			{/if}
 		{/if}
-	</section>
-</main>
+	</Section>
+</Page>
