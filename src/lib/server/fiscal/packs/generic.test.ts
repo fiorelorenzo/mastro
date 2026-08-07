@@ -28,7 +28,7 @@ test('the generic pack declares every capability, with the fiscal ones empty', (
 });
 
 test('a consumer reading ceilings off the generic pack gets an empty set, never an error', () => {
-	expect(() => genericPack.ceilings.map((c) => c.amount)).not.toThrow();
+	expect(() => genericPack.ceilings.map((c) => c.value)).not.toThrow();
 	expect(genericPack.ceilings.length).toBe(0);
 });
 

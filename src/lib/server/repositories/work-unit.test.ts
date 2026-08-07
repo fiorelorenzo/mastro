@@ -1,9 +1,11 @@
+import { eq } from 'drizzle-orm';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract, workUnit } from '$lib/server/db/schema';
+import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { createApproval } from './approval';
 import {
@@ -196,6 +198,96 @@ test('getWorkUnit reads a single day back by id', async () => {
 			const fetched = await getWorkUnit(created.id, tx);
 			expect(fetched?.quantity).toBe(0.5);
 			expect(fetched?.scope).toBe('Half day of QA.');
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('#62: replaying createWorkUnit with the same client-generated id is a no-op that returns the existing day, not a duplicate or an error', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const contractRow = await insertContract(tx, false);
+			const id = crypto.randomUUID();
+			const input = {
+				id,
+				contractId: contractRow.id,
+				date: '2024-06-10',
+				quantity: 1,
+				scope: 'Migrated the API.'
+			};
+
+			const first = await createWorkUnit(
+				input,
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'recorded offline, first sync attempt',
+				tx
+			);
+			expect(first.id).toBe(id);
+
+			// The offline queue replays the exact same fields under the exact
+			// same id — a dropped connection right after the first attempt
+			// succeeded means the client cannot tell it apart from one that
+			// never reached the server, so it resends unconditionally.
+			const replay = await createWorkUnit(
+				input,
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'replayed after reconnecting',
+				tx
+			);
+			expect(replay).toEqual(first);
+
+			const rows = await tx.select().from(workUnit).where(eq(workUnit.id, id));
+			expect(rows).toHaveLength(1);
+
+			// The conflict suppressed the whole INSERT, so the AFTER INSERT
+			// logging trigger never ran a second time either.
+			const log = await listWorkUnitTransitions(id, tx);
+			expect(log).toHaveLength(1);
+			expect(log[0].reason).toBe('recorded offline, first sync attempt');
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('#62: a second day for the same contract and date under a different id still trips the one-active-per-date constraint', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const contractRow = await insertContract(tx, false);
+
+			await createWorkUnit(
+				{
+					id: crypto.randomUUID(),
+					contractId: contractRow.id,
+					date: '2024-06-10',
+					quantity: 1,
+					scope: 'Migrated the API.'
+				},
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'first day',
+				tx
+			);
+
+			// Only a conflict on `id` is targeted — a genuinely different
+			// mutation that happens to collide on contract and date is not
+			// mistaken for a replay of the first one.
+			await expect(
+				createWorkUnit(
+					{
+						id: crypto.randomUUID(),
+						contractId: contractRow.id,
+						date: '2024-06-10',
+						quantity: 1,
+						scope: 'A different day entirely.'
+					},
+					{ kind: 'human', email: 'lorenzo@example.com' },
+					'second, unrelated day',
+					tx
+				)
+			).rejects.toSatisfy((error) =>
+				isPostgresConstraintViolation(error, '23505', 'work_unit_one_active_per_contract_date')
+			);
 
 			tx.rollback();
 		})

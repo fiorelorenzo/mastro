@@ -4,6 +4,7 @@ import {
 	contract,
 	type ContractRenewalType,
 	type ContractStatus,
+	type ContractTemplateLanguage,
 	type ExpensePolicy,
 	type InvoicingCadence,
 	type PaymentTerms
@@ -23,7 +24,12 @@ export type ContractInput = {
 	currency: string;
 	taxTreatment: string;
 	requiresPriorApproval: boolean;
+	// The language every email_template renders in for this contract
+	// (#69) — a property of the counterparty, not of whoever is filling in
+	// this form.
+	templateLanguage: ContractTemplateLanguage;
 	expensePolicy: ExpensePolicy;
+	requiresExpensePreAuthorisation: boolean;
 	status: ContractStatus;
 };
 
@@ -69,6 +75,24 @@ export async function setContractAutoSendMail(id: string, autoSendMail: boolean)
 	const [row] = await db
 		.update(contract)
 		.set({ autoSendMail })
+		.where(eq(contract.id, id))
+		.returning();
+	return row;
+}
+
+/** #69's per-contract template language, set independently of the rest of
+ * the contract from the mail hub — the one screen that can act on it today,
+ * pending a full contract create/edit form. Mirrors
+ * `setContractAutoSendMail`'s narrow-setter shape for the same reason: a
+ * property that already exists on `ContractInput` but has, so far, exactly
+ * one place in the product that lets a human change it. */
+export async function setContractTemplateLanguage(
+	id: string,
+	templateLanguage: ContractTemplateLanguage
+) {
+	const [row] = await db
+		.update(contract)
+		.set({ templateLanguage })
 		.where(eq(contract.id, id))
 		.returning();
 	return row;

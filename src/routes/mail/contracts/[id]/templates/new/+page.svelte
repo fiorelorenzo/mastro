@@ -12,7 +12,8 @@
 			body: '',
 			attachmentKinds: [] as string[],
 			triggerKind: 'manual',
-			triggerDays: ''
+			triggerDays: '',
+			triggerDaysAfterDue: ''
 		}
 	);
 </script>

@@ -28,7 +28,8 @@ test('substitutes every occurrence of a known placeholder', () => {
 		amount: '',
 		due_date: '',
 		day_list: '',
-		day_total: ''
+		day_total: '',
+		days_late: ''
 	});
 	expect(rendered).toBe('INV-1 / INV-1');
 });
@@ -38,7 +39,13 @@ test('throws rather than leaving a raw token when no value was supplied', () => 
 		substitutePlaceholders(
 			'{{invoice_number}}',
 			{} as unknown as Record<
-				'invoice_number' | 'period' | 'amount' | 'due_date' | 'day_list' | 'day_total',
+				| 'invoice_number'
+				| 'period'
+				| 'amount'
+				| 'due_date'
+				| 'day_list'
+				| 'day_total'
+				| 'days_late',
 				string
 			>
 		)

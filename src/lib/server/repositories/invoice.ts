@@ -6,6 +6,7 @@ import {
 	client,
 	contract,
 	document,
+	expense,
 	invoice,
 	invoiceLine,
 	workUnit,
@@ -144,20 +145,39 @@ export async function getInvoiceWithLines(id: string) {
 	});
 	if (!invoiceRow) return null;
 
-	const rows = await db
+	// Days and rebilled expenses are fetched as two separate left joins,
+	// not one combined query: a line can carry several of each, and
+	// joining both against `invoice_line` in a single query would produce
+	// their cartesian product per line instead of two independent lists.
+	const dayRows = await db
 		.select({ line: invoiceLine, day: workUnit })
 		.from(invoiceLine)
 		.leftJoin(workUnit, eq(workUnit.invoiceLineId, invoiceLine.id))
 		.where(eq(invoiceLine.invoiceId, id))
 		.orderBy(asc(invoiceLine.createdAt), asc(workUnit.date));
 
+	const expenseRows = await db
+		.select({ line: invoiceLine, expense })
+		.from(invoiceLine)
+		.leftJoin(expense, eq(expense.invoiceLineId, invoiceLine.id))
+		.where(eq(invoiceLine.invoiceId, id))
+		.orderBy(asc(invoiceLine.createdAt), asc(expense.date));
+
 	const linesById = new Map<
 		string,
-		typeof invoiceLine.$inferSelect & { days: (typeof workUnit.$inferSelect)[] }
+		typeof invoiceLine.$inferSelect & {
+			days: (typeof workUnit.$inferSelect)[];
+			expenses: (typeof expense.$inferSelect)[];
+		}
 	>();
-	for (const { line, day } of rows) {
-		const existing = linesById.get(line.id) ?? { ...line, days: [] };
+	for (const { line, day } of dayRows) {
+		const existing = linesById.get(line.id) ?? { ...line, days: [], expenses: [] };
 		if (day) existing.days.push(day);
+		linesById.set(line.id, existing);
+	}
+	for (const { line, expense: expenseRow } of expenseRows) {
+		const existing = linesById.get(line.id) ?? { ...line, days: [], expenses: [] };
+		if (expenseRow) existing.expenses.push(expenseRow);
 		linesById.set(line.id, existing);
 	}
 

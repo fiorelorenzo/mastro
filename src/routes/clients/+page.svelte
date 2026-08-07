@@ -33,7 +33,11 @@
 			<tbody>
 				{#each data.clients as client (client.id)}
 					<tr class="border-b">
-						<td class="py-2 pr-4">{client.legalName}</td>
+						<td class="py-2 pr-4">
+							<a href={resolve('/clients/[id]', { id: client.id })} class="underline"
+								>{client.legalName}</a
+							>
+						</td>
 						<td class="py-2 pr-4">{client.taxId}</td>
 						<td class="py-2 pr-4">{client.country}</td>
 						<td class="py-2 pr-4">{noticeChannelLabel(client.noticeChannel)}</td>

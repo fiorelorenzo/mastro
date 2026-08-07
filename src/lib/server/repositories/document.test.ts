@@ -5,7 +5,13 @@ import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
-import { getDocument, listDocumentsForOwner, readDocumentBytes, storeDocument } from './document';
+import {
+	getDocument,
+	listDocumentsForOwner,
+	readDocumentBytes,
+	setDocumentRemoteFileId,
+	storeDocument
+} from './document';
 
 // Needs a migrated database: `pnpm db:up && pnpm db:migrate`. Postgres work
 // happens inside a transaction that is always rolled back, same pattern as
@@ -131,6 +137,36 @@ test('a document is reachable by id and its owner is reachable in the other dire
 
 			const forOwner = await listDocumentsForOwner('contract', contractRow.id, tx);
 			expect(forOwner.map((d) => d.id)).toContain(stored.id);
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('setDocumentRemoteFileId records the mirror id without touching anything else', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const contractRow = await insertContract(tx);
+			const stored = await storeDocument(
+				{
+					bytes: new TextEncoder().encode('signed contract'),
+					mime: 'application/pdf',
+					originalName: 'contract-signed.pdf',
+					provenance: 'upload',
+					contractId: contractRow.id,
+					confidential: false,
+					ownerType: 'contract',
+					ownerId: contractRow.id
+				},
+				tx
+			);
+			expect(stored.remoteFileId).toBeNull();
+
+			const updated = await setDocumentRemoteFileId(stored.id, 'Contracts/Acme/doc.pdf', tx);
+
+			expect(updated.remoteFileId).toBe('Contracts/Acme/doc.pdf');
+			expect(updated.originalName).toBe(stored.originalName);
+			expect(updated.hash).toBe(stored.hash);
 
 			tx.rollback();
 		})

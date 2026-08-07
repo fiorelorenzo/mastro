@@ -17,15 +17,14 @@ export type DocumentProvenance = (typeof documentProvenance.enumValues)[number];
  * constraint's allowed list when a new owner lands is a metadata-only
  * change that touches no existing row — unlike `ALTER TYPE ... ADD VALUE`,
  * whose new value cannot even be used inside the transaction that adds it.
- * `invoice` was added in #44, once the `invoice` table (#26) existed to
- * validate it against: the structured document an import parses and any
- * PDF attached alongside it (a re-issue, a scan of the signed original)
- * both land here, owned by the invoice they evidence. `expense` does not
- * exist yet and stays out of this list until it does. See the
- * accompanying custom migration for the constraint and the trigger that
- * validates `ownerId` actually exists for `ownerType`.
+ * `expense` was added in #28 and `invoice` in #44, each once the table it
+ * points at existed to validate against: for an invoice, the structured
+ * document an import parses and any PDF attached alongside it (a re-issue,
+ * a scan of the signed original) both land here, owned by the invoice they
+ * evidence. See the accompanying custom migrations for the constraint and
+ * the trigger that validates `ownerId` actually exists for `ownerType`.
  */
-export type DocumentOwnerType = 'contract' | 'approval' | 'invoice';
+export type DocumentOwnerType = 'contract' | 'approval' | 'expense' | 'invoice';
 
 /**
  * Content-addressed storage on disk (`src/lib/server/documents/blob-store.ts`),

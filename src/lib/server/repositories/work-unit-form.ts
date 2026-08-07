@@ -1,7 +1,10 @@
 import * as m from '$lib/paraglide/messages';
 import type { WorkUnitInput } from './work-unit';
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export type DayEntryFormValues = {
+	workUnitId: string;
 	date: string;
 	quantity: string;
 	scope: string;
@@ -23,6 +26,14 @@ export type DayEntryFormResult =
  * rendered with, so a submission naming a contract or approval the form
  * never offered is rejected the same way a stale or tampered request
  * would be, not trusted at face value.
+ *
+ * `workUnitId` (#62) is a hidden field the page generates for every
+ * attempt, live or queued offline: it becomes the new day's id and is how
+ * a replayed offline mutation is told apart from a genuinely new one (see
+ * createWorkUnit). It is plumbing, not user input, so a missing or
+ * malformed value is never a validation error shown to the user — it just
+ * falls back to letting the database assign one, same as any submission
+ * from before #62.
  */
 export function parseDayEntryForm(
 	formData: FormData,
@@ -44,6 +55,9 @@ export function parseDayEntryForm(
 	const scope = string('scope');
 	if (!scope) errors.scope = m.day_validation_scope_required();
 
+	const workUnitIdRaw = string('workUnitId');
+	const workUnitId = UUID.test(workUnitIdRaw) ? workUnitIdRaw : undefined;
+
 	const contractId = string('contractId');
 	if (!contractId) {
 		errors.contractId = m.day_validation_contract_required();
@@ -60,6 +74,7 @@ export function parseDayEntryForm(
 	}
 
 	const values: DayEntryFormValues = {
+		workUnitId: workUnitIdRaw,
 		date,
 		quantity: quantityRaw,
 		scope,
@@ -72,6 +87,7 @@ export function parseDayEntryForm(
 	return {
 		ok: true,
 		input: {
+			id: workUnitId,
 			contractId,
 			date,
 			quantity,

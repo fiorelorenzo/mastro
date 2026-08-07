@@ -113,6 +113,7 @@ test('assembles exactly the attachment kinds requested, generated fresh from the
 				['day_register_pdf', 'day_register_csv'],
 				contractRow.id,
 				period,
+				'en',
 				tx
 			);
 			expect(both.map((a) => a.filename).sort()).toEqual([
@@ -122,12 +123,18 @@ test('assembles exactly the attachment kinds requested, generated fresh from the
 			expect(both.find((a) => a.filename.endsWith('.pdf'))?.contentType).toBe('application/pdf');
 			expect(both.find((a) => a.filename.endsWith('.csv'))?.contentType).toBe('text/csv');
 
-			const csvOnly = await assembleAttachments(['day_register_csv'], contractRow.id, period, tx);
+			const csvOnly = await assembleAttachments(
+				['day_register_csv'],
+				contractRow.id,
+				period,
+				'en',
+				tx
+			);
 			expect(csvOnly).toHaveLength(1);
 			const register = await buildRegister(contractRow.id, period.from, period.to, tx);
-			expect(csvOnly[0].content.toString('utf8')).toBe(renderRegisterCsv(register));
+			expect(csvOnly[0].content.toString('utf8')).toBe(renderRegisterCsv(register, 'en'));
 
-			const none = await assembleAttachments([], contractRow.id, period, tx);
+			const none = await assembleAttachments([], contractRow.id, period, 'en', tx);
 			expect(none).toEqual([]);
 
 			tx.rollback();

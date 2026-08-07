@@ -1,5 +1,5 @@
 {
-  "id": "85476674-5063-4719-9c8c-8f57184b4c64",
+  "id": "173abc17-c881-495f-b108-e0b69e4a03b7",
   "prevId": "13c7ae09-6366-4449-ab95-05aa8a51a02f",
   "version": "7",
   "dialect": "postgresql",
@@ -84,28 +84,28 @@
         "approval_contract_id_contract_id_fk": {
           "name": "approval_contract_id_contract_id_fk",
           "tableFrom": "approval",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "approval_document_id_document_id_fk": {
           "name": "approval_document_id_document_id_fk",
           "tableFrom": "approval",
+          "tableTo": "document",
           "columnsFrom": [
             "document_id"
           ],
-          "tableTo": "document",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -205,26 +205,26 @@
         "account_user_id_user_id_fk": {
           "name": "account_user_id_user_id_fk",
           "tableFrom": "account",
+          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
-          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "account_provider_account_id_unique": {
           "name": "account_provider_account_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "provider_id",
             "account_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -292,25 +292,25 @@
         "session_user_id_user_id_fk": {
           "name": "session_user_id_user_id_fk",
           "tableFrom": "session",
+          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
-          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "session_token_unique": {
           "name": "session_token_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "token"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -374,10 +374,10 @@
       "uniqueConstraints": {
         "user_email_unique": {
           "name": "user_email_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "email"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -489,6 +489,139 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.ceiling": {
+      "name": "ceiling",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "contract_id": {
+          "name": "contract_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "legal_basis": {
+          "name": "legal_basis",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "measure": {
+          "name": "measure",
+          "type": "ceiling_measure",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "absolute_value_minor_units": {
+          "name": "absolute_value_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "share_ratio": {
+          "name": "share_ratio",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "basis": {
+          "name": "basis",
+          "type": "ceiling_basis",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alert_levels": {
+          "name": "alert_levels",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "consequence": {
+          "name": "consequence",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "ceiling_contract_id_contract_id_fk": {
+          "name": "ceiling_contract_id_contract_id_fk",
+          "tableFrom": "ceiling",
+          "tableTo": "contract",
+          "columnsFrom": [
+            "contract_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "ceiling_contract_code_unique": {
+          "name": "ceiling_contract_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "contract_id",
+            "code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "ceiling_value_matches_measure": {
+          "name": "ceiling_value_matches_measure",
+          "value": "(\"ceiling\".\"measure\" = 'absolute_amount' and \"ceiling\".\"absolute_value_minor_units\" is not null and \"ceiling\".\"share_ratio\" is null)\n\t\t\t\tor (\"ceiling\".\"measure\" = 'percentage_share' and \"ceiling\".\"share_ratio\" is not null and \"ceiling\".\"absolute_value_minor_units\" is null)"
+        },
+        "ceiling_absolute_value_non_negative": {
+          "name": "ceiling_absolute_value_non_negative",
+          "value": "\"ceiling\".\"absolute_value_minor_units\" is null or \"ceiling\".\"absolute_value_minor_units\" >= 0"
+        },
+        "ceiling_share_ratio_range": {
+          "name": "ceiling_share_ratio_range",
+          "value": "\"ceiling\".\"share_ratio\" is null or (\"ceiling\".\"share_ratio\" > 0 and \"ceiling\".\"share_ratio\" <= 1)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.client": {
       "name": "client",
       "schema": "",
@@ -582,10 +715,10 @@
       "uniqueConstraints": {
         "client_tax_id_unique": {
           "name": "client_tax_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "tax_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -660,15 +793,15 @@
         "client_contact_client_id_client_id_fk": {
           "name": "client_contact_client_id_client_id_fk",
           "tableFrom": "client_contact",
+          "tableTo": "client",
           "columnsFrom": [
             "client_id"
           ],
-          "tableTo": "client",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -810,15 +943,15 @@
         "contract_client_id_client_id_fk": {
           "name": "contract_client_id_client_id_fk",
           "tableFrom": "contract",
+          "tableTo": "client",
           "columnsFrom": [
             "client_id"
           ],
-          "tableTo": "client",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -919,15 +1052,15 @@
         "document_contract_id_contract_id_fk": {
           "name": "document_contract_id_contract_id_fk",
           "tableFrom": "document",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1003,15 +1136,15 @@
         "email_template_contract_id_contract_id_fk": {
           "name": "email_template_contract_id_contract_id_fk",
           "tableFrom": "email_template",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1087,28 +1220,28 @@
         "sent_email_contract_id_contract_id_fk": {
           "name": "sent_email_contract_id_contract_id_fk",
           "tableFrom": "sent_email",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "sent_email_email_template_id_email_template_id_fk": {
           "name": "sent_email_email_template_id_email_template_id_fk",
           "tableFrom": "sent_email",
+          "tableTo": "email_template",
           "columnsFrom": [
             "email_template_id"
           ],
-          "tableTo": "email_template",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1329,26 +1462,26 @@
         "invoice_contract_id_contract_id_fk": {
           "name": "invoice_contract_id_contract_id_fk",
           "tableFrom": "invoice",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "invoice_contract_number_unique": {
           "name": "invoice_contract_number_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "contract_id",
             "number"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -1449,15 +1582,15 @@
         "invoice_line_invoice_id_invoice_id_fk": {
           "name": "invoice_line_invoice_id_invoice_id_fk",
           "tableFrom": "invoice_line",
+          "tableTo": "invoice",
           "columnsFrom": [
             "invoice_id"
           ],
-          "tableTo": "invoice",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1571,15 +1704,15 @@
         "rate_card_contract_id_contract_id_fk": {
           "name": "rate_card_contract_id_contract_id_fk",
           "tableFrom": "rate_card",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1669,41 +1802,41 @@
         "work_unit_contract_id_contract_id_fk": {
           "name": "work_unit_contract_id_contract_id_fk",
           "tableFrom": "work_unit",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "work_unit_approval_id_approval_id_fk": {
           "name": "work_unit_approval_id_approval_id_fk",
           "tableFrom": "work_unit",
+          "tableTo": "approval",
           "columnsFrom": [
             "approval_id"
           ],
-          "tableTo": "approval",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "work_unit_invoice_line_id_invoice_line_id_fk": {
           "name": "work_unit_invoice_line_id_invoice_line_id_fk",
           "tableFrom": "work_unit",
+          "tableTo": "invoice_line",
           "columnsFrom": [
             "invoice_line_id"
           ],
-          "tableTo": "invoice_line",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1775,15 +1908,15 @@
         "work_unit_transition_work_unit_id_work_unit_id_fk": {
           "name": "work_unit_transition_work_unit_id_work_unit_id_fk",
           "tableFrom": "work_unit_transition",
+          "tableTo": "work_unit",
           "columnsFrom": [
             "work_unit_id"
           ],
-          "tableTo": "work_unit",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1800,6 +1933,23 @@
       "values": [
         "success",
         "failure"
+      ]
+    },
+    "public.ceiling_basis": {
+      "name": "ceiling_basis",
+      "schema": "public",
+      "values": [
+        "cash_received_calendar_year",
+        "invoiced_calendar_year",
+        "cash_received_contract_year"
+      ]
+    },
+    "public.ceiling_measure": {
+      "name": "ceiling_measure",
+      "schema": "public",
+      "values": [
+        "absolute_amount",
+        "percentage_share"
       ]
     },
     "public.notice_channel": {
@@ -1922,10 +2072,10 @@
     }
   },
   "schemas": {},
-  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
+  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},

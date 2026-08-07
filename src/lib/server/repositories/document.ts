@@ -76,3 +76,23 @@ export async function listDocumentsForOwner(
 export async function readDocumentBytes(doc: { hash: string }) {
 	return readBlob(storageRoot(), doc.hash);
 }
+
+/** Records the id the mirror (#50) published this document under. The
+ * immutability trigger (`document_forbid_retrofit`,
+ * `0010_document_constraints.sql`) is the only thing that would reject
+ * this write, and it explicitly leaves `remote_file_id` mutable — see
+ * the comment on that column in `db/schema/document.ts`. Called only by
+ * `drive/publish.ts`, after a `MirrorTarget.publish` call actually
+ * succeeds; never called with a guess. */
+export async function setDocumentRemoteFileId(
+	id: string,
+	remoteFileId: string,
+	executor: DbExecutor = db
+) {
+	const [row] = await executor
+		.update(document)
+		.set({ remoteFileId })
+		.where(eq(document.id, id))
+		.returning();
+	return row;
+}

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import { formatAmount, formatDate } from '$lib/i18n/format';
+	import { formatAmount, formatDate, formatMinorUnits } from '$lib/i18n/format';
 	import LegalText from '$lib/legal/LegalText.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -31,6 +31,15 @@
 	<p class="text-sm opacity-70">
 		{invoice.contract.client.legalName} — {invoice.contract.title}
 	</p>
+
+	{#if data.overdue}
+		<a
+			href={resolve('/invoices/[id]/remind', { id: invoice.id })}
+			class="mt-2 inline-block text-sm underline"
+		>
+			{m.invoice_detail_remind_link()}
+		</a>
+	{/if}
 
 	<dl class="mt-6 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
 		<dt class="opacity-70">{m.invoice_detail_issue_date_label()}</dt>
@@ -151,6 +160,34 @@
 								<td class="py-2"
 									>{invoice.paidOn ? m.invoice_day_status_paid() : dayStateLabel(day.state)}</td
 								>
+							</tr>
+						{/each}
+					{/each}
+				</tbody>
+			</table>
+		{/if}
+	</section>
+
+	<section id="expenses" class="mt-6">
+		<h2 class="text-sm font-semibold">{m.invoice_detail_expenses_heading()}</h2>
+		{#if invoice.lines.every((line) => line.expenses.length === 0)}
+			<p class="mt-2 text-sm opacity-70">{m.invoice_detail_no_expenses()}</p>
+		{:else}
+			<table class="mt-2 w-full border-collapse text-sm">
+				<thead>
+					<tr class="border-b text-left">
+						<th class="py-2 pr-4">{m.expense_column_date()}</th>
+						<th class="py-2 pr-4">{m.expense_column_description()}</th>
+						<th class="py-2">{m.expense_column_amount()}</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each invoice.lines as line (line.id)}
+						{#each line.expenses as expenseRow (expenseRow.id)}
+							<tr class="border-b">
+								<td class="py-2 pr-4">{formatDate(expenseRow.date)}</td>
+								<td class="py-2 pr-4">{expenseRow.description}</td>
+								<td class="py-2">{formatMinorUnits(expenseRow.amount, invoice.currency)}</td>
 							</tr>
 						{/each}
 					{/each}

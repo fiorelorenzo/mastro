@@ -11,6 +11,22 @@ export const contractRenewalType = pgEnum('contract_renewal_type', [
 ]);
 export type ContractRenewalType = (typeof contractRenewalType.enumValues)[number];
 
+/**
+ * The language templates for this contract render in (#69), independent of
+ * whoever is signed in and what they have their interface set to: the
+ * interface language is a preference of the person using mastro, the
+ * language a client is written to is a property of the contract. Values
+ * mirror `project.inlang/settings.json`'s `locales` exactly —
+ * `contract.test.ts` asserts the two never drift apart, the same way
+ * `messages.test.ts` guards the message catalogues. Defaults to the
+ * interface's own base locale (`'en'`) only because nothing here can ask a
+ * human at insert time (an import confirmation, a test fixture); every real
+ * contract should have this set deliberately, on the mail hub screen where
+ * it lives today (`setContractTemplateLanguage`).
+ */
+export const contractTemplateLanguage = pgEnum('contract_template_language', ['en', 'it']);
+export type ContractTemplateLanguage = (typeof contractTemplateLanguage.enumValues)[number];
+
 /** How often the contract is invoiced, independent of how a rate card's own
  * `disbursementPeriod` splits a recurring fee. */
 export const invoicingCadence = pgEnum('invoicing_cadence', [
@@ -88,7 +104,21 @@ export const contract = pgTable('contract', {
 	// the message first (#72). The manual trigger always requires the
 	// explicit send action regardless of this flag.
 	autoSendMail: boolean('auto_send_mail').notNull().default(false),
+	// The language every email_template renders in for this contract
+	// (#69) — never the signed-in operator's interface locale. See
+	// `contractTemplateLanguage`'s own doc comment above.
+	templateLanguage: contractTemplateLanguage('template_language').notNull().default('en'),
 	expensePolicy: jsonb('expense_policy').$type<ExpensePolicy>().notNull(),
+	// Whether an expense on this contract needs written pre-authorisation
+	// to be reimbursable, independent of `requiresPriorApproval` (days) —
+	// a contract can require one, the other, both or neither. Read by the
+	// `expense` table's own trigger (#28's custom migration), which flags
+	// an expense non-reimbursable rather than rejecting it, the same way
+	// an unapproved day becomes `worked_without_approval` rather than
+	// being rejected outright.
+	requiresExpensePreAuthorisation: boolean('requires_expense_pre_authorisation')
+		.notNull()
+		.default(false),
 	status: contractStatus('status').notNull().default('draft'),
 	...timestamps()
 });

@@ -13,7 +13,7 @@ export async function GET({ params, url }) {
 	if (!from || !to) error(400, 'from and to query parameters are required');
 
 	const register = await buildRegister(params.id, from, to);
-	const pdf = await renderRegisterPdf(register);
+	const pdf = await renderRegisterPdf(register, contract.templateLanguage);
 	return new Response(new Uint8Array(pdf), {
 		headers: {
 			'Content-Type': 'application/pdf',

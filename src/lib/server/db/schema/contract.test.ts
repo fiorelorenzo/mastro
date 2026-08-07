@@ -1,6 +1,7 @@
 import { afterAll, expect, test } from 'vitest';
+import { locales } from '$lib/paraglide/runtime';
 import { client as pool, db } from '$lib/server/db';
-import { client, contract, contractRenewalType } from './index';
+import { client, contract, contractRenewalType, contractTemplateLanguage } from './index';
 import type { ExpensePolicy, PaymentTerms } from './contract';
 
 // Needs a migrated database: `pnpm db:up && pnpm db:migrate`.
@@ -111,4 +112,46 @@ test('all four renewal types are representable', async () => {
 			tx.rollback();
 		})
 	).rejects.toThrow();
+});
+
+test('template language defaults to the interface base locale when not set', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const [row] = await tx.insert(client).values(clientFields()).returning();
+			const [contractRow] = await tx.insert(contract).values(baseContract(row.id)).returning();
+			expect(contractRow.templateLanguage).toBe('en');
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('every supported template language round-trips through the database (#69)', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const [row] = await tx.insert(client).values(clientFields()).returning();
+
+			for (const templateLanguage of contractTemplateLanguage.enumValues) {
+				const [contractRow] = await tx
+					.insert(contract)
+					.values({
+						...baseContract(row.id),
+						title: `Contract in ${templateLanguage}`,
+						templateLanguage
+					})
+					.returning();
+				expect(contractRow.templateLanguage).toBe(templateLanguage);
+			}
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+// Guards the same drift `messages.test.ts` guards for the message
+// catalogues: `contract_template_language` is hand-written to mirror
+// `project.inlang/settings.json`'s `locales` (#69's doc comment on the
+// enum explains why it cannot import that list directly), so nothing
+// silently lets the two diverge.
+test('the contract template language enum matches the interface locales exactly', () => {
+	expect([...contractTemplateLanguage.enumValues].sort()).toEqual([...locales].sort());
 });
