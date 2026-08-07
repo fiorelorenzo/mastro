@@ -1,4 +1,5 @@
 import { error, fail, redirect } from '@sveltejs/kit';
+import type { Crumb } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
 import { getContractWithClient } from '$lib/server/repositories/contract';
@@ -9,7 +10,15 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ params }) => {
 	const contract = await getContractWithClient(params.contractId);
 	if (!contract || contract.clientId !== params.id) error(404, m.contract_not_found());
-	return { contract };
+
+	// The trail is built here because only this query knows the client's name
+	// and the contract's title. Nothing downstream parses the path.
+	const crumbs: Crumb[] = [
+		{ href: '/clients', label: m.clients_heading() },
+		{ href: `/clients/${contract.clientId}`, label: contract.client.legalName },
+		{ href: `/clients/${contract.clientId}/contracts/${contract.id}`, label: contract.title }
+	];
+	return { contract, crumbs };
 };
 
 export const actions: Actions = {

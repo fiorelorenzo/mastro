@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import type { ResolvedPathname } from '$app/types';
 	import * as m from '$lib/paraglide/messages';
+	import { appHref } from './href';
 	import LanguageSwitch from '$lib/components/LanguageSwitch.svelte';
 	import { NAV_GROUPS, isNavItemActive } from './items';
 
@@ -14,14 +14,6 @@
 		unreadAlerts: number;
 		user: { email: string } | null;
 	} = $props();
-
-	// NavItem.href is a plain string by contract (see items.ts), not one of
-	// the literal route ids `resolve()` expects — the values are exactly the
-	// app's own routes, so this is a type-level widening of an otherwise
-	// valid call, kept in one place instead of casting at every call site.
-	function navHref(href: string): ResolvedPathname {
-		return (resolve as (path: string) => string)(href) as ResolvedPathname;
-	}
 </script>
 
 <nav class="sidebar" aria-label={m.nav_primary_label()}>
@@ -33,7 +25,7 @@
 				{@const active = isNavItemActive(item.href, pathname)}
 				<li>
 					<a
-						href={navHref(item.href)}
+						href={appHref(item.href)}
 						class="item"
 						class:active
 						aria-current={active ? 'page' : undefined}
