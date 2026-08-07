@@ -13,29 +13,37 @@
 	} = $props();
 </script>
 
-<table>
-	{#if caption}<caption class="sr-only">{caption}</caption>{/if}
-	<thead>
-		<tr>
-			{#each columns as column (column.key)}
-				<th scope="col" class:text-end={column.align === 'end'}>{column.label}</th>
-			{/each}
-		</tr>
-	</thead>
-	<tbody>
-		{#each rows as row, i (i)}
+<div class="scroll">
+	<table>
+		{#if caption}<caption class="sr-only">{caption}</caption>{/if}
+		<thead>
 			<tr>
 				{#each columns as column (column.key)}
-					<td class:text-end={column.align === 'end'}>
-						{column.format ? column.format(row) : String(row[column.key])}
-					</td>
+					<th scope="col" class:text-end={column.align === 'end'}>{column.label}</th>
 				{/each}
 			</tr>
-		{/each}
-	</tbody>
-</table>
+		</thead>
+		<tbody>
+			{#each rows as row, i (i)}
+				<tr>
+					{#each columns as column (column.key)}
+						<td class:text-end={column.align === 'end'}>
+							{column.format ? column.format(row) : String(row[column.key])}
+						</td>
+					{/each}
+				</tr>
+			{/each}
+		</tbody>
+	</table>
+</div>
 
 <style>
+	/* A data table with more columns than a phone has room for scrolls in
+	   its own box. Letting it push the page sideways instead is what made
+	   /day/[id] scroll horizontally at 320px in Italian. */
+	.scroll {
+		overflow-x: auto;
+	}
 	table {
 		width: 100%;
 		border-collapse: collapse;

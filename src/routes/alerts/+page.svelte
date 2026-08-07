@@ -31,7 +31,7 @@
 		<ul class="mt-4 flex flex-col gap-4">
 			{#each data.alerts as alert (alert.key)}
 				<li class="border p-4">
-					<div class="flex items-start justify-between gap-4">
+					<div class="flex flex-wrap items-start justify-between gap-4">
 						<div>
 							<StatusIndicator level={alert.severity} label={severityLabel(alert.severity)} />
 							<p class="mt-1 font-medium">{alert.title}</p>
