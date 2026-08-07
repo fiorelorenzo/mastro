@@ -158,14 +158,34 @@ alongside every extracted figure. Written content-addressed under
 `DOCUMENT_STORAGE_ROOT` (dev) / `DOCUMENTS_DIR` (prod, bind-mounted into the `web`
 container), by `src/lib/server/documents/blob-store.ts`.
 
-**A gap I found, not fixed here.** `writeBlob` writes with Node's default file mode
-(subject to the process umask) — there is no explicit restrictive permission set on
-a blob. Inside the production container this is scoped by the non-root `mastro`
-user the `Dockerfile` creates (`USER mastro`), but the bind-mounted host directory's
-own permissions are whatever the host's umask produces, not something this codebase
-controls or verifies. I have not fixed this: it is a design decision (what mode,
-whether to `chmod` explicitly after write) that belongs in its own reviewed change,
-not a two-line diff folded into this one. Filed as **#114**.
+**Fixed in this change (#114).** `writeBlob` now passes an explicit mode
+to every file and directory it creates — `0o600` for a blob, `0o700` for
+its two shard directories — instead of relying on whatever the process
+umask happens to be. The kernel ANDs a requested mode with `~umask`, so a
+restrictive request can only ever be narrowed further by umask, never
+widened past it; `blob-store.test.ts` proves this directly by forcing
+umask to `0` (the most permissive a host could hand the process) before
+writing and asserting the resulting file and directory modes anyway.
+
+**What this does not fix.** A blob already on disk from before this
+change, written under whatever umask the process had at the time, is left
+exactly as it was — `writeBlob` only chooses the mode for bytes it writes
+itself, and a blob content-addressed under an existing hash is left
+untouched on a repeat write (see its own doc comment), so nothing here
+ever touches a file it did not just create. A self-hoster upgrading onto
+this version with an existing `DOCUMENTS_DIR` should retighten it once by
+hand:
+
+```sh
+find "$DOCUMENTS_DIR" -type f -exec chmod 600 {} +
+find "$DOCUMENTS_DIR" -type d -exec chmod 700 {} +
+```
+
+No migration script runs this automatically: doing so from application
+code would mean the server silently rewriting permissions on a
+bind-mounted host directory it does not own outright, the first time it
+happens to start after an upgrade — worth a human running it deliberately
+instead.
 
 **Backup set.** Yes — `scripts/backup.sh` `tar`s `DOCUMENTS_DIR` in full, and
 `docs/backup.md`'s rehearsal verifies a restored file's contents match exactly.

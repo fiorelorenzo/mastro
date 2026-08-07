@@ -23,6 +23,16 @@ export function blobPath(root: string, hash: string): string {
 	return join(root, hash.slice(0, 2), hash.slice(2, 4), hash);
 }
 
+/** Owner-only: these blobs are the evidentiary documents invariant 4
+ * exists to protect (signed contracts, approval emails, imported
+ * invoices) — never group- or world-readable, regardless of the
+ * process umask. Passed explicitly to `mkdir`/`writeFile` rather than
+ * relied on implicitly: the kernel ANDs a requested mode with
+ * `~umask`, so umask can only ever narrow these further, never widen
+ * them past what is requested here (#114). */
+const FILE_MODE = 0o600;
+const DIR_MODE = 0o700;
+
 /**
  * Writes `bytes` to content-addressed storage under `root`, returning the
  * hash and size. If a blob for this hash already exists, it is left
@@ -30,6 +40,13 @@ export function blobPath(root: string, hash: string): string {
  * "the same file uploaded twice stores one copy and two references" —
  * the "two references" half is two `document` rows in Postgres, one per
  * call, both naming the same hash (see `storeDocument`).
+ *
+ * A blob already on disk from before #114 landed, written under a looser
+ * umask, is left exactly as it was found — this function only ever
+ * chooses the mode for bytes it writes itself, never retroactively
+ * tightens a file it did not create this call. A self-hoster upgrading
+ * onto this version with an existing `DOCUMENTS_DIR` should retighten it
+ * once by hand; the exact command is in `docs/security.md`.
  */
 export async function writeBlob(
 	root: string,
@@ -43,12 +60,14 @@ export async function writeBlob(
 		.catch(() => false);
 
 	if (!alreadyStored) {
-		await mkdir(dirname(path), { recursive: true });
+		await mkdir(dirname(path), { recursive: true, mode: DIR_MODE });
 		// Write to a temp file first and rename into place: a concurrent
 		// second upload of the same content that loses the mkdir/write race
 		// still ends up with one complete file, never a half-written one.
+		// `rename` carries the temp file's own mode across, so the mode
+		// only needs setting once, at creation.
 		const tmpPath = `${path}.${process.pid}.${Date.now()}.tmp`;
-		await writeFile(tmpPath, bytes);
+		await writeFile(tmpPath, bytes, { mode: FILE_MODE });
 		await rename(tmpPath, path);
 	}
 
