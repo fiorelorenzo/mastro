@@ -60,6 +60,13 @@ jobs:
       # Direction detection (#45) needs this to tell an outgoing invoice
       # from an incoming one; not a real tax id.
       ACCOUNT_HOLDER_TAX_ID: IT01234567890
+      # The ACP runner's own role (#82, drizzle/0035_acp_runner_role.sql).
+      # `pnpm db:migrate` rotates mastro_runner's password from
+      # RUNNER_DB_PASSWORD on every run; RUNNER_DATABASE_URL must carry
+      # the same value for db-privilege.test.ts and friends to connect as
+      # that role. Not a real secret, never reused anywhere else.
+      RUNNER_DB_PASSWORD: ci-runner-password-not-used-anywhere-else
+      RUNNER_DATABASE_URL: postgres://mastro_runner:ci-runner-password-not-used-anywhere-else@localhost:5432/mastro
 
     steps:
       - uses: actions/checkout@v5
