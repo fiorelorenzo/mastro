@@ -1,0 +1,14 @@
+# The only service in compose.prod.yaml that faces the network (#76).
+# `{$MASTRO_SITE_ADDRESS}` and `{$MASTRO_TLS_ARG}` are set as environment
+# variables on the `proxy` service; see compose.prod.yaml and
+# docs/deploy.md for the two ways to fill them in — a real domain and an
+# email address for a publicly trusted certificate, or `localhost` and
+# `internal` for the self-signed one this was rehearsed against.
+{$MASTRO_SITE_ADDRESS} {
+	tls {$MASTRO_TLS_ARG}
+
+	# `web` is the compose service name: this is the only path from the
+	# proxy to the app, over the internal network, never through the
+	# loopback-only host port web also publishes for direct debugging.
+	reverse_proxy web:3000
+}

@@ -50,6 +50,20 @@
       "when": 1786057551718,
       "tag": "0006_auth_set_updated_at_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786058680223,
+      "tag": "0007_backup_run",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786058702817,
+      "tag": "0008_backup_run_set_updated_at",
+      "breakpoints": true
     }
   ]
 }
