@@ -8,6 +8,7 @@ import { isEndpointRoute, isPublicRoute, PUBLIC_ROUTE_IDS } from './route-guard'
 const EXPECTED_PUBLIC_ROUTE_IDS = new Set([
 	'/api/auth/[...all]',
 	'/sign-in',
+	'/sign-in/google',
 	'/health',
 	'/api/alerts/run/[job]',
 	'/api/mail/poll',
@@ -57,4 +58,12 @@ test('a page route is not classified as an endpoint', () => {
 
 test('a route id with no matching file is not classified as an endpoint', () => {
 	expect(isEndpointRoute('/does-not-exist')).toBe(false);
+});
+
+test('the sign-in page and its Google button are both public, and nothing else under /sign-in is', () => {
+	expect(isPublicRoute('/sign-in')).toBe(true);
+	expect(isPublicRoute('/sign-in/google')).toBe(true);
+	// A route added under /sign-in later is protected like everything else:
+	// the list is exact ids, never a prefix match (#54).
+	expect(isPublicRoute('/sign-in/something-new')).toBe(false);
 });

@@ -775,6 +775,10 @@
 	"register_period_to_label": "Al",
 	"register_title": "Registro giornate — {from} - {to}",
 	"register_totals_label": "Totale",
+	"sign_in_allowlist_note": "Questa e un'istanza privata. Possono accedere solo gli indirizzi autorizzati da chi la gestisce.",
+	"sign_in_rejected": "Questo account non puo accedere a questa istanza.",
+	"sign_in_title": "Accedi - mastro",
+	"sign_in_with_google": "Continua con Google",
 	"sign_out": "Esci",
 	"signed_in_as": "Accesso effettuato come {email}."
 }

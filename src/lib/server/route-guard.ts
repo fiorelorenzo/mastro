@@ -9,8 +9,11 @@ export const PUBLIC_ROUTE_IDS: ReadonlySet<string> = new Set([
 	// the OAuth callback, session lookup, sign-out. One SvelteKit route id
 	// covers this whole family; Better Auth does its own internal routing.
 	'/api/auth/[...all]',
-	// Redirects straight to Google's consent screen.
+	// The sign-in page itself, and the button on it that redirects to
+	// Google's consent screen (#140). Both public for the obvious reason:
+	// a visitor with no session has to be able to reach them.
 	'/sign-in',
+	'/sign-in/google',
 	// Liveness probe for compose and the reverse proxy.
 	'/health',
 	// The alert engine's cron-driven push/digest runs (#74, #75, #63): the
