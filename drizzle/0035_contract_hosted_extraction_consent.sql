@@ -1,0 +1,2 @@
+ALTER TABLE "contract" ADD COLUMN "hosted_extraction_consent_document_id" uuid;--> statement-breakpoint
+ALTER TABLE "contract" ADD CONSTRAINT "contract_hosted_extraction_consent_document_id_document_id_fk" FOREIGN KEY ("hosted_extraction_consent_document_id") REFERENCES "public"."document"("id") ON DELETE restrict ON UPDATE no action;

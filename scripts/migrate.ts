@@ -37,6 +37,36 @@ const client = postgres(url, { max: 1, onnotice: () => {} });
 try {
 	await migrate(drizzle(client), { migrationsFolder: 'drizzle' });
 	console.log(`migrations applied to ${target}`);
+
+	// #82: `mastro_runner` (0035_acp_runner_role.sql) is created without a
+	// password — a committed migration is public, so the password cannot
+	// live there. Rotating it here, after every migration run, means the
+	// same boot path that already applies schema changes (locally via
+	// `pnpm db:migrate`, in production via the image's entrypoint) is also
+	// what makes the role usable, with no second deploy step to forget.
+	// `ALTER ROLE ... PASSWORD` is idempotent: running it again with the
+	// same value is a no-op change, so a restart never breaks the runner's
+	// existing credential.
+	//
+	// `PASSWORD` takes a string literal in Postgres' own grammar, not a
+	// bind parameter — `ALTER ROLE ... PASSWORD $1` is a syntax error on
+	// any driver, not a `postgres`-package limitation. `format(...)` runs
+	// server-side, inside an ordinary parameterised SELECT, so the actual
+	// password value never touches string concatenation in this script;
+	// `%L` quotes it exactly the way Postgres quotes any literal,
+	// including one containing a quote character.
+	const runnerPassword = process.env.RUNNER_DB_PASSWORD;
+	if (runnerPassword) {
+		const [{ stmt }] = await client<[{ stmt: string }]>`
+			SELECT format('ALTER ROLE mastro_runner WITH PASSWORD %L', ${runnerPassword}::text) AS stmt
+		`;
+		await client.unsafe(stmt);
+		console.log('mastro_runner password set from RUNNER_DB_PASSWORD');
+	} else {
+		console.warn(
+			'RUNNER_DB_PASSWORD is not set: mastro_runner has no usable password, so the ACP runner cannot connect. This is fine if the runner is not deployed yet.'
+		);
+	}
 } finally {
 	await client.end();
 }
