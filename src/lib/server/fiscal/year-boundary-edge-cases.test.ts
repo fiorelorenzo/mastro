@@ -405,3 +405,91 @@ test('a contract terminated mid-period commits only what notice still guarantees
 	expect(committed.amount).toBe(100_000);
 	expect(projected.amount).toBe(0);
 });
+
+// #129, the mirror of the straddle #122 covers. Accrual first, cash
+// second: the invoice is issued while the accrual regime governs and paid
+// after the switch to a cash one. Accrual recognises revenue at issuance,
+// unconditionally, so the invoice is already revenue of the first
+// sub-period; a later cash period reading `paidOn` must not recognise it
+// a second time. Legge 190/2014 art. 1 comma 72 says the same in the
+// other direction ("corrispondenti criteri si applicano per l'ipotesi
+// inversa"), and no jurisdiction counts one invoice's revenue twice.
+//
+// Arithmetic, worked by hand:
+//   accrual sub-period [2024-01-01, 2024-07-01): issueDate 2024-03-01 is
+//     inside it, so 50,000 is recognised here.
+//   cash sub-period [2024-07-01, 2025-01-01): paidOn 2024-08-01 is inside
+//     it, but the row was already recognised above, so 0 here.
+//   carry-forward pass: the row was claimed, so nothing to attribute.
+//   total = 50,000 + 0 = 50,000, not the 100,000 the old code returned.
+test('an invoice issued under accrual and paid under a later cash regime is revenue exactly once', () => {
+	const rows: LedgerRow[] = [
+		{
+			invoiceId: 'issued-under-accrual-paid-under-cash',
+			contractId: 'c1',
+			clientId: 'client-a',
+			issueDate: '2024-03-01',
+			paidOn: '2024-08-01',
+			amount: 50_000
+		}
+	];
+	const periods: LedgerPeriod[] = [
+		{
+			basis: 'accrual',
+			from: '2024-01-01',
+			to: '2024-07-01',
+			packId: 'accrual-first',
+			unresolvedRevenue: 'carries_forward'
+		},
+		{
+			basis: 'cash',
+			from: '2024-07-01',
+			to: '2025-01-01',
+			packId: 'cash-second',
+			unresolvedRevenue: 'carries_forward'
+		}
+	];
+
+	const total = sumLedgerAcrossPeriods(rows, periods);
+
+	expect(total.amount).toBe(50_000);
+	expect(total.subFigures.find((figure) => figure.packId === 'accrual-first')?.amount).toBe(50_000);
+	expect(total.subFigures.find((figure) => figure.packId === 'cash-second')?.amount).toBe(0);
+});
+
+// The claim goes to the earlier regime whatever order the caller passes
+// the sub-periods in: `resolvePackOverRange` returns them in order today,
+// and a total that depended on that would be a trap for the next caller.
+test('the earlier regime keeps a straddling invoice even when the periods arrive out of order', () => {
+	const rows: LedgerRow[] = [
+		{
+			invoiceId: 'issued-under-accrual-paid-under-cash',
+			contractId: 'c1',
+			clientId: 'client-a',
+			issueDate: '2024-03-01',
+			paidOn: '2024-08-01',
+			amount: 50_000
+		}
+	];
+	const periods: LedgerPeriod[] = [
+		{
+			basis: 'cash',
+			from: '2024-07-01',
+			to: '2025-01-01',
+			packId: 'cash-second',
+			unresolvedRevenue: 'carries_forward'
+		},
+		{
+			basis: 'accrual',
+			from: '2024-01-01',
+			to: '2024-07-01',
+			packId: 'accrual-first',
+			unresolvedRevenue: 'carries_forward'
+		}
+	];
+
+	const total = sumLedgerAcrossPeriods(rows, periods);
+
+	expect(total.amount).toBe(50_000);
+	expect(total.subFigures.find((figure) => figure.packId === 'accrual-first')?.amount).toBe(50_000);
+});
