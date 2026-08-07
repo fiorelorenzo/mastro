@@ -82,30 +82,64 @@ AGENTS.md's commit-conventions section calls this out for the same reason: it is
 one of the few things here that is genuinely lost, not merely inconvenient to
 replace, if it goes missing.
 
-## 4. Not yet applicable: mail and the Drive mirror
+## 4. Mail: an app password over IMAP/SMTP, not the Gmail API
 
-Neither of these has a route, a worker, or a config value read anywhere in the
-code as of this writing. There is nothing to set up. What follows is the shape the
-design (AGENTS.md, README.md) already commits to, so you know what to expect and
-why, without configuring anything that does nothing today.
+Mailbox access (`SMTP_HOST`/`SMTP_PORT`/... and `IMAP_HOST`/`IMAP_PORT`/... in
+`.env.example`) is a per-provider app password, not OAuth and not the Gmail API.
+The reason is the same Testing-status mechanics as section 1, working against you
+instead of for you: `gmail.readonly` is a **restricted** scope, not merely
+sensitive, so routing mail through the Gmail API would both break weekly in
+Testing (the seven-day refresh-token expiry that section 1 explains you currently
+avoid) and require every self-hoster to pass Google's full verification with a
+security assessment just to keep reading their own inbox. IMAP/SMTP with an app
+password sidesteps that entirely, and works with any mail provider, not only
+Google's. For Gmail specifically: enable 2-Step Verification, then generate an
+app password at myaccount.google.com/apppasswords.
 
-**Mail: an app password over IMAP/SMTP, not the Gmail API.** When the mail worker
-lands, mailbox access will be a per-provider app password (Google, or any other
-IMAP/SMTP provider — the design is deliberately provider-agnostic), not OAuth and
-not the Gmail API. The reason is the same Testing-status mechanics as section 1,
-working against you instead of for you: `gmail.readonly` is a **restricted**
-scope, not merely sensitive, so routing mail through the Gmail API would both
-break weekly in Testing (the seven-day refresh-token expiry that section 1
-explains you currently avoid) and require every self-hoster to pass Google's full
-verification with a security assessment just to keep reading their own inbox.
-IMAP/SMTP with an app password sidesteps that entirely, and works with any mail
-provider, not only Google's.
+## 5. The Drive mirror: `drive.file`, or skip it entirely
 
-**Drive mirror: `drive.file`, or skip it.** If you never configure this, the
-product works with no mirror at all — it is optional. When it lands, it will
-request only the `drive.file` scope, which grants access solely to files the
-application itself created, never your whole Drive. `drive.file` is Google's
-correct, least-privilege classification for what a mirror of documents this
-application generated actually needs — not a workaround, the right scope for the
-job — and, like the sign-in scopes in section 1, it is non-sensitive, so it never
-forces you out of Testing status either.
+If you never set `DRIVE_MIRROR_LOCAL_ROOT` or `DRIVE_MIRROR_REFRESH_TOKEN`, the
+product works with no mirror at all — this is a supported configuration, not a
+degraded one, and nothing on startup or in the interface mentions the mirror when
+it is unset.
+
+**A local directory needs nothing from Google.** Set `DRIVE_MIRROR_LOCAL_ROOT` to
+any directory this instance can write to — a synced folder (Syncthing, an
+rclone or cloud-drive mount) works as well as a plain path on the backup volume.
+Every publish writes one file under
+`<DRIVE_MIRROR_LOCAL_ROOT>/<DRIVE_MIRROR_CONTRACTS_FOLDER or "Contracts">/<client legal name>/`.
+
+**Google Drive requests only the `drive.file` scope** — access limited to files
+the application itself created, never your whole Drive. It is Google's
+least-privilege classification for what a mirror of documents this application
+generated actually needs, and, like the sign-in scopes in section 1, it is
+non-sensitive, so it never forces you out of Testing status either. The
+application code has no way to request a broader scope: nothing in its
+configuration accepts one.
+
+What Drive needs that this application cannot obtain for you is
+`DRIVE_MIRROR_REFRESH_TOKEN` — getting it is a one-time, human-in-the-browser step:
+
+1. Open [Google's OAuth 2.0 Playground](https://developers.google.com/oauthplayground).
+2. Click the gear icon (top right) and check **Use your own OAuth credentials**.
+   Enter the same `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` from section 1 — the
+   Drive mirror reuses that OAuth client rather than asking you to create a second
+   one, since `drive.file` is non-sensitive and does not change what publishing
+   status the project needs.
+3. In Cloud Console, add `https://developers.google.com/oauthplayground` to that
+   OAuth client's **Authorized redirect URIs** — temporarily, if you prefer; it is
+   only needed for this one exchange.
+4. In the Playground's left panel, find **Drive API v3** and select exactly one
+   scope: `https://www.googleapis.com/auth/drive.file`. Do not select a broader
+   Drive scope.
+5. **Authorize APIs**, sign in with the Google account this instance's Drive
+   documents should land in, and consent.
+6. **Exchange authorization code for tokens.** Copy the **Refresh token** shown —
+   that value is `DRIVE_MIRROR_REFRESH_TOKEN`.
+7. Remove the Playground redirect URI from the OAuth client again if you added it
+   temporarily in step 3.
+
+The refresh token does not expire under Testing status as long as the consent it
+came from only ever covered `drive.file` (the same non-sensitive-scope rule as
+section 1) — this is exactly why the mirror reuses the sign-in OAuth client
+instead of asking for a wider grant "while you're at it".
