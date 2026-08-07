@@ -775,6 +775,10 @@
 	"register_period_to_label": "To",
 	"register_title": "Day register — {from} to {to}",
 	"register_totals_label": "Total",
+	"sign_in_allowlist_note": "This is a private instance. Only addresses its owner has allowed can sign in.",
+	"sign_in_rejected": "That account cannot sign in to this instance.",
+	"sign_in_title": "Sign in - mastro",
+	"sign_in_with_google": "Continue with Google",
 	"sign_out": "Sign out",
 	"signed_in_as": "Signed in as {email}."
 }

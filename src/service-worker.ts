@@ -183,13 +183,38 @@ sw.addEventListener('notificationclick', (event) => {
  * of this file): the only fallback is the precached, stateless offline
  * page, never a previous visitor's rendered HTML.
  */
+/**
+ * A full-page navigation: always the network, never a cached document (see
+ * the caching rule at the top of this file), with `/offline` as the only
+ * fallback.
+ *
+ * **`redirect: 'manual'` is load-bearing, not a detail.** A navigation
+ * fetched with the default `follow` makes the service worker follow the
+ * chain itself, and this app's very first chain leaves the origin: `/`
+ * redirects to `/sign-in`, whose button redirects to Google. A worker
+ * cannot return a cross-origin response for a same-origin navigation, so
+ * that fetch rejects outright ("Unsafe attempt to load URL ... from frame
+ * with URL .../service-worker.js") and lands in the catch below, meaning
+ * every visitor with the worker installed got the offline page instead of
+ * the sign-in they asked for. With `manual` the 3xx comes back as an
+ * opaque redirect that the *browser* follows, off-origin or not, which is
+ * what would have happened with no worker at all.
+ *
+ * The fallback redirects to `/offline` rather than answering with its HTML
+ * under the requested URL. Serving one page's markup at another page's
+ * address leaves the address bar lying and hands SvelteKit a document that
+ * does not match the route it is hydrating.
+ */
 async function handleNavigate(request: Request): Promise<Response> {
 	try {
-		return await fetch(request);
+		return await fetch(request.url, {
+			method: request.method,
+			headers: request.headers,
+			credentials: 'include',
+			redirect: 'manual'
+		});
 	} catch {
-		const cache = await caches.open(SHELL_CACHE);
-		const offline = await cache.match(OFFLINE_URL);
-		return offline ?? Response.error();
+		return Response.redirect(new URL(OFFLINE_URL, self.location.origin).href, 303);
 	}
 }
 

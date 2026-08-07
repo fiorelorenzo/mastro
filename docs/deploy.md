@@ -180,6 +180,16 @@ previous image is still on the box (`docker image ls mastro-prod-web`), and
 `docker compose -f compose.prod.yaml --env-file .env.prod up -d --no-build
 --force-recreate web` puts it back.
 
+### `ORIGIN`, and the 403 that hides behind a reverse proxy
+
+Set `ORIGIN` in `.env.prod` to the public URL, exactly as a browser sees it.
+`adapter-node` compares it against the `Origin` header on every form POST and
+answers 403 when they disagree. Behind a proxy that terminates TLS the app only
+ever sees plain HTTP on a loopback port, so it guesses the wrong origin and
+**every form in the product fails**: recording a day, creating a client, marking
+an invoice paid. A GET-only smoke test cannot see this, which is exactly how it
+survived the first deploy.
+
 ### Two host shapes, and which one prodbox uses
 
 `compose.prod.yaml` ships its own `proxy` service, and that is the right default
