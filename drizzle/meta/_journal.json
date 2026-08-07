@@ -204,6 +204,20 @@
       "when": 1786093023210,
       "tag": "0028_contract_renewal_assumption_set_updated_at",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1786097296032,
+      "tag": "0029_proposal",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1786097297732,
+      "tag": "0030_proposal_constraints",
+      "breakpoints": true
     }
   ]
 }
