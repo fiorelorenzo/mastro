@@ -59,5 +59,11 @@
 	"client_validation_contacts_required": "È richiesto almeno un contatto.",
 	"client_validation_contact_name_required": "Il nome del contatto è obbligatorio.",
 	"client_validation_contact_email_required": "{name} ha bisogno di un indirizzo email.",
-	"client_validation_tax_id_duplicate": "Esiste già un cliente con questo codice fiscale."
+	"client_validation_tax_id_duplicate": "Esiste già un cliente con questo codice fiscale.",
+	"offline_page_title": "Offline — mastro",
+	"offline_page_heading": "Sei offline",
+	"offline_page_body": "mastro ha bisogno di una connessione per verificare chi ha effettuato l'accesso prima di mostrare i dati del registro. Qui non si indovina né si mostra nulla a memoria.",
+	"offline_page_retry": "Riprova",
+	"data_freshness_banner_offline_label": "Offline — dati salvati il {time}.",
+	"data_freshness_banner_unreachable_label": "Dati salvati il {time} — impossibile aggiornare."
 }

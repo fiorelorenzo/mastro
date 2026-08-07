@@ -59,5 +59,11 @@
 	"client_validation_contacts_required": "At least one contact is required.",
 	"client_validation_contact_name_required": "Contact name is required.",
 	"client_validation_contact_email_required": "{name} needs an email address.",
-	"client_validation_tax_id_duplicate": "A client with this tax id already exists."
+	"client_validation_tax_id_duplicate": "A client with this tax id already exists.",
+	"offline_page_title": "Offline — mastro",
+	"offline_page_heading": "You're offline",
+	"offline_page_body": "mastro needs a connection to check who is signed in before it can show any ledger data. Nothing here is guessed or shown from memory.",
+	"offline_page_retry": "Try again",
+	"data_freshness_banner_offline_label": "Offline — showing data saved on {time}.",
+	"data_freshness_banner_unreachable_label": "Showing data saved on {time} — the latest could not be fetched."
 }

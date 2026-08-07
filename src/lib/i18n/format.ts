@@ -65,3 +65,17 @@ export function formatDate(date: string | Date, locale: Locale = getLocale()): s
 	const value = typeof date === 'string' ? new Date(`${date}T00:00:00Z`) : date;
 	return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(value);
 }
+
+/**
+ * A precise moment (an ISO instant or a `Date`) in the active locale's own
+ * order, including the time of day — e.g. `Mar 1, 2024, 2:32 PM` in English
+ * and `1 mar 2024, 14:32` in Italian. `formatDate` above deliberately reads
+ * a bare calendar day at UTC midnight; this one reads an actual instant in
+ * the reader's own time zone, because the whole point of a timestamp such
+ * as "data saved at" (#61) is to say how long ago that was for the person
+ * looking at it.
+ */
+export function formatDateTime(date: string | Date, locale: Locale = getLocale()): string {
+	const value = typeof date === 'string' ? new Date(date) : date;
+	return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(value);
+}
