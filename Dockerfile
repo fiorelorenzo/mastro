@@ -37,7 +37,8 @@ ENV DATABASE_URL=postgres://build:build@build-time-placeholder/build \
 	BETTER_AUTH_URL=http://localhost:5187 \
 	GOOGLE_CLIENT_ID=build-time-placeholder \
 	GOOGLE_CLIENT_SECRET=build-time-placeholder \
-	AUTH_ALLOWED_EMAILS=
+	AUTH_ALLOWED_EMAILS= \
+	ACCOUNT_HOLDER_TAX_ID=build-time-placeholder
 RUN pnpm build
 
 # Runtime-only dependency set: a second, independent `pnpm install` rather
@@ -68,3 +69,25 @@ EXPOSE 3000
 # committed SQL that `pnpm db:migrate` runs locally, so there is no second
 # migration path to keep in sync.
 CMD ["sh", "-c", "node scripts/migrate.ts && exec node build"]
+
+# The ACP runner (#82): a second image built from the same source, on the
+# same base as `runtime`, but a different CMD and a much smaller slice of
+# the tree — `scripts/runner.ts` and `src/lib/server/runner/` are the only
+# files it needs, since that module's own internal imports carry explicit
+# `.ts` extensions and touch nothing else under `src/lib/server/` (see
+# `scripts/runner.ts`'s own comment for why that matters under plain
+# node). No `build/` directory, no SvelteKit, no Better Auth secret, no
+# DATABASE_URL — this container never receives the app's own database
+# credentials, only `RUNNER_DATABASE_URL` for the read-only role
+# `drizzle/0035_acp_runner_role.sql` creates. See docs/agent-runner.md for
+# every variable a self-hoster configures on this service.
+FROM node:24-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+RUN addgroup -S mastro && adduser -S mastro -G mastro
+COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=build /app/scripts/runner.ts ./scripts/runner.ts
+COPY --from=build /app/src/lib/server/runner ./src/lib/server/runner
+COPY --from=build /app/package.json ./package.json
+USER mastro
+CMD ["node", "scripts/runner.ts", "watch"]

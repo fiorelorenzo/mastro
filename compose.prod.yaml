@@ -55,6 +55,34 @@ services:
     volumes:
       - ${DOCUMENTS_DIR:-./data/documents}:/app/data/documents
 
+  # The ACP runner (#82): its own credentials, its own database role
+  # (mastro_runner, drizzle/0035_acp_runner_role.sql), no published port
+  # at all — it never accepts inbound connections, only reads a local job
+  # queue directory and reaches out to whichever local or hosted model
+  # agent command it is configured with. Optional: comment this whole
+  # service out (or leave RUNNER_LOCAL_AGENT_COMMAND unset) and the rest
+  # of the stack is unaffected — see docs/agent-runner.md, invariant 3's
+  # other half ("a runner failure degrades to manual entry, never breaks
+  # the ledger") is what this absence is supposed to prove.
+  runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env.prod
+    environment:
+      # A distinct, read-only role — never web's DATABASE_URL. See
+      # drizzle/0035_acp_runner_role.sql for exactly what mastro_runner
+      # can and cannot do.
+      RUNNER_DATABASE_URL: postgres://mastro_runner:${RUNNER_DB_PASSWORD}@db:5432/${POSTGRES_DB:-mastro}
+    volumes:
+      - runner_queue:/app/data/runner-queue
+
   # The reverse proxy: the only thing in this stack facing the network,
   # terminating TLS. Caddy always listens on the standard 80 (redirect)
   # and 443 (TLS) *inside* the container; PROXY_HTTP_PORT/PROXY_HTTPS_PORT
@@ -87,3 +115,7 @@ volumes:
   pgdata:
   caddy_data:
   caddy_config:
+  # The runner's own durable job queue (queue.ts), on disk deliberately —
+  # never in the database, see #82's design. Losing it loses only
+  # not-yet-processed jobs, never anything already recorded in the ledger.
+  runner_queue:

@@ -26,6 +26,8 @@
 		"db:generate:custom": "drizzle-kit generate --custom",
 		"db:migrate": "node --env-file-if-exists=.env scripts/migrate.ts",
 		"db:studio": "drizzle-kit studio",
+		"runner:watch": "node --env-file-if-exists=.env scripts/runner.ts watch",
+		"runner:once": "node --env-file-if-exists=.env scripts/runner.ts once",
 		"pwa:generate": "node scripts/generate-pwa-assets.ts"
 	},
 	"devDependencies": {
@@ -58,6 +60,7 @@
 		"vitest": "^4.1.8"
 	},
 	"dependencies": {
+		"@agentclientprotocol/sdk": "^1.3.0",
 		"better-auth": "^1.6.26",
 		"drizzle-orm": "^0.45.2",
 		"fast-xml-parser": "^5.10.1",

@@ -232,6 +232,27 @@
       "when": 1786097654535,
       "tag": "0032_alert_and_push_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1786099522302,
+      "tag": "0033_contract_hosted_extraction_consent",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1786099530195,
+      "tag": "0034_contract_hosted_extraction_consent_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1786099546305,
+      "tag": "0035_acp_runner_role",
+      "breakpoints": true
     }
   ]
 }
