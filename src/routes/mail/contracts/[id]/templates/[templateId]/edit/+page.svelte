@@ -13,7 +13,9 @@
 			attachmentKinds: data.template.attachmentKinds,
 			triggerKind: data.template.trigger.kind,
 			triggerDays:
-				data.template.trigger.kind === 'days_before_due' ? String(data.template.trigger.days) : ''
+				data.template.trigger.kind === 'days_before_due' ? String(data.template.trigger.days) : '',
+			triggerDaysAfterDue:
+				data.template.trigger.kind === 'days_after_due' ? String(data.template.trigger.days) : ''
 		}
 	);
 </script>

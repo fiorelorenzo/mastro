@@ -8,10 +8,11 @@ import { contract } from './contract';
  * substitutes, named after the epic's own list. `period`, `dayList` and
  * `dayTotal` come from the day register the contract's ledger produces for
  * the send (#70); `invoiceNumber`, `amount` and `dueDate` come from the
- * neutral `Invoice` shape in `src/lib/server/import/invoice.ts` — #26 turns
- * that into the `invoice` table this wave, so until a persisted invoice
- * exists to read, a caller supplies this context by hand (see
- * `EmailTemplateContext` in `src/lib/server/mail/render.ts`).
+ * persisted `invoice` row (#26). `daysLate` is never stored: it is
+ * `domain/invoice.ts`'s `daysLate` function, the exact derivation #27
+ * already runs for the ageing table, recomputed at render time — #73's
+ * dunning template reads it the same way every other placeholder reads a
+ * live figure, not a batch job's stale snapshot.
  */
 export const EMAIL_TEMPLATE_PLACEHOLDERS = [
 	'invoice_number',
@@ -19,21 +20,28 @@ export const EMAIL_TEMPLATE_PLACEHOLDERS = [
 	'amount',
 	'due_date',
 	'day_list',
-	'day_total'
+	'day_total',
+	'days_late'
 ] as const;
 export type EmailTemplatePlaceholder = (typeof EMAIL_TEMPLATE_PLACEHOLDERS)[number];
 
 /**
  * When a draft should be produced. `on_issue` and `days_before_due` name
- * events on the invoice lifecycle (#26, out of scope here) — this field
- * only records the intent. Nothing in this wave schedules a job against
- * it: there is no `invoice` table yet to react to, and building that
- * reaction is a future issue's job, not a silent addition to this one.
- * `manual` is the only trigger this wave can act on end to end, from the
- * compose screen (#72).
+ * events on the invoice lifecycle (#26, landed this wave) — this field
+ * only records the intent; nothing schedules a job against any of the
+ * three (there is no worker process — see docs/self-hosting.md).
+ * `days_after_due` is the dunning counterpart (#73): a template meant to
+ * chase an overdue invoice names itself with this trigger, purely as
+ * metadata a future scheduler could read — never as a batch job this
+ * issue builds. `manual` is the only trigger every wave so far can act on
+ * end to end, from a compose screen (#72, #73): a human always presses
+ * Send.
  */
 export type EmailTemplateTrigger =
-	{ kind: 'on_issue' } | { kind: 'days_before_due'; days: number } | { kind: 'manual' };
+	| { kind: 'on_issue' }
+	| { kind: 'days_before_due'; days: number }
+	| { kind: 'days_after_due'; days: number }
+	| { kind: 'manual' };
 
 /**
  * What `src/lib/server/mail/attachments.ts` can assemble fresh from the

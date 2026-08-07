@@ -15,6 +15,7 @@ export type EmailTemplateFormValues = {
 	attachmentKinds: string[];
 	triggerKind: string;
 	triggerDays: string;
+	triggerDaysAfterDue: string;
 };
 
 export type EmailTemplateFormResult =
@@ -54,6 +55,7 @@ export function parseEmailTemplateForm(formData: FormData): EmailTemplateFormRes
 
 	const triggerKind = string('triggerKind');
 	const triggerDaysRaw = string('triggerDays');
+	const triggerDaysAfterDueRaw = string('triggerDaysAfterDue');
 	let trigger: EmailTemplateTrigger | null = null;
 	if (triggerKind === 'manual' || triggerKind === 'on_issue') {
 		trigger = { kind: triggerKind };
@@ -63,6 +65,13 @@ export function parseEmailTemplateForm(formData: FormData): EmailTemplateFormRes
 			errors.triggerDays = m.mail_template_validation_days_before_due_invalid();
 		} else {
 			trigger = { kind: 'days_before_due', days };
+		}
+	} else if (triggerKind === 'days_after_due') {
+		const days = Number(triggerDaysAfterDueRaw);
+		if (!Number.isInteger(days) || days <= 0) {
+			errors.triggerDays = m.mail_template_validation_days_after_due_invalid();
+		} else {
+			trigger = { kind: 'days_after_due', days };
 		}
 	} else {
 		errors.triggerKind = m.mail_template_validation_trigger_invalid();
@@ -82,7 +91,8 @@ export function parseEmailTemplateForm(formData: FormData): EmailTemplateFormRes
 		body,
 		attachmentKinds,
 		triggerKind,
-		triggerDays: triggerDaysRaw
+		triggerDays: triggerDaysRaw,
+		triggerDaysAfterDue: triggerDaysAfterDueRaw
 	};
 
 	if (Object.keys(errors).length > 0 || !trigger) {
