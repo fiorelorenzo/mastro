@@ -9,16 +9,20 @@ import { contract, rateCard, workUnit } from '$lib/server/db/schema';
 import { decimalStringToMinorUnits } from '$lib/server/import/decimal';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
 import { recurringFeeOccurrences, type RecurringFeeCard } from '$lib/server/domain/recurring-fee';
+import { listRenewalAssumptionsWithContract } from '$lib/server/repositories/contract-renewal-assumption';
 import { fetchLedgerRows } from './revenue';
+import type { MinorUnits } from './pack';
 import {
 	certaintyBreakdown,
 	collectedAmount,
 	committedAmount,
 	projectedAmount,
+	renewalAssumptionContribution,
 	type ApprovedWorkUnit,
 	type CertaintyBreakdown,
 	type CertaintyFigure,
-	type RecurringFeeContract
+	type RecurringFeeContract,
+	type RenewalAssumption
 } from './certainty';
 
 /**
@@ -78,7 +82,23 @@ async function fetchRecurringFeeContracts(
 	to: string,
 	executor: DbExecutor
 ): Promise<RecurringFeeContract[]> {
-	const contractRows = await executor.select().from(contract);
+	const [contractRows, assumptionRows] = await Promise.all([
+		executor.select().from(contract),
+		listRenewalAssumptionsWithContract(executor)
+	]);
+	// Keyed here rather than joined per-contract below: one query for
+	// every recorded assumption, same reasoning as the rate-card fetch
+	// beneath it batching by contract id instead of querying per row.
+	const assumptionByContract = new Map(
+		assumptionRows.map((row) => [
+			row.contractId,
+			{
+				probability: row.probability,
+				expectedVolumeMinorUnits: row.expectedVolumeMinorUnits,
+				horizonEndsOn: row.horizonEndsOn
+			} satisfies RenewalAssumption
+		])
+	);
 
 	return Promise.all(
 		contractRows.map(async (row) => {
@@ -93,9 +113,66 @@ async function fetchRecurringFeeContracts(
 				}))
 			);
 
-			return { terminationNoticeDays: row.terminationNoticeDays, endsOn: row.endsOn, occurrences };
+			return {
+				contractId: row.id,
+				terminationNoticeDays: row.terminationNoticeDays,
+				endsOn: row.endsOn,
+				occurrences,
+				renewalAssumption: assumptionByContract.get(row.id) ?? null
+			};
 		})
 	);
+}
+
+/**
+ * Every recorded renewal assumption (#39), each paired with the exact
+ * figure it produced over `[from, to)` through
+ * `renewalAssumptionContribution` — the same function the aggregate
+ * `projectedAmount` total above runs through for the same contract,
+ * never a second calculation. The query surface a screen reads to show
+ * an assumption's own probability, expected volume and horizon directly
+ * next to the number it produced: one entry per contract that has an
+ * assumption recorded, every other contract simply absent — #39's
+ * "visible wherever its output is shown".
+ */
+export interface ContractRenewalAssumptionForecast {
+	readonly contractId: string;
+	readonly contractTitle: string;
+	readonly assumption: RenewalAssumption;
+	readonly contribution: MinorUnits;
+}
+
+export async function forecastRenewalAssumptions(
+	asOfDate: string,
+	from: string,
+	to: string,
+	executor: DbExecutor = db
+): Promise<ContractRenewalAssumptionForecast[]> {
+	const rows = await listRenewalAssumptionsWithContract(executor);
+	return rows.map((row) => {
+		const assumption: RenewalAssumption = {
+			probability: row.probability,
+			expectedVolumeMinorUnits: row.expectedVolumeMinorUnits,
+			horizonEndsOn: row.horizonEndsOn
+		};
+		const contribution = renewalAssumptionContribution(
+			{
+				terminationNoticeDays: row.contract.terminationNoticeDays,
+				endsOn: row.contract.endsOn,
+				occurrences: [],
+				renewalAssumption: assumption
+			},
+			asOfDate,
+			from,
+			to
+		);
+		return {
+			contractId: row.contractId,
+			contractTitle: row.contract.title,
+			assumption,
+			contribution
+		};
+	});
 }
 
 /** All three certainty levels over `[from, to)`, as of `asOfDate` (#38).

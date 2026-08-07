@@ -5,9 +5,11 @@ import {
 	committedAmount,
 	irrevocabilityWindowEnd,
 	projectedAmount,
+	renewalAssumptionContribution,
 	type ApprovedWorkUnit,
 	type RecurringFeeContract,
-	type RecurringFeeOccurrence
+	type RecurringFeeOccurrence,
+	type RenewalAssumption
 } from './certainty';
 import type { LedgerRow } from './ledger';
 
@@ -198,4 +200,182 @@ test('the three levels are separately queryable and also composable into one bre
 		committedAmount(rows, approvedWorkUnits, [contract], asOfDate, from, to)
 	);
 	expect(breakdown.projected).toEqual(projectedAmount([contract], asOfDate, from, to));
+});
+
+// #39: explicit per-contract renewal assumptions. Beyond a contract's
+// known term (its own `endsOn`, or the irrevocability window when it has
+// none) any number is an assumption, so it is recorded rather than
+// inferred — these tests are the acceptance criteria themselves: empty
+// with nothing recorded, and, once recorded, feeding the projected band
+// only, scaled by probability and prorated across its own horizon.
+
+test("with no renewal assumption recorded, nothing projects past a fixed-term contract's own end date — not even a stray occurrence dated after it", () => {
+	const occurrences: RecurringFeeOccurrence[] = [
+		{ date: '2024-05-20', amount: 7_000 }, // between the window and endsOn: scheduled
+		{ date: '2024-06-15', amount: 9_000 } // after endsOn: never scheduled, never guessed
+	];
+	const contract: RecurringFeeContract = {
+		terminationNoticeDays: 15,
+		endsOn: '2024-05-31',
+		occurrences
+	};
+	const projected = projectedAmount([contract], '2024-05-01', '2024-01-01', '2025-01-01');
+	// Window: notice from 2024-05-01 runs to 2024-05-16. Scheduled beyond
+	// it, through endsOn (2024-05-31): only the 05-20 occurrence, 7,000.
+	// The 06-15 occurrence is dated after endsOn and contributes nothing —
+	// with no renewalAssumption, that is the whole figure.
+	expect(projected.amount).toBe(7_000);
+});
+
+test('renewalAssumptionContribution is zero with none recorded', () => {
+	const contract: RecurringFeeContract = {
+		terminationNoticeDays: 30,
+		endsOn: null,
+		occurrences: []
+	};
+	expect(renewalAssumptionContribution(contract, '2024-06-15', '2024-01-01', '2025-01-01')).toBe(0);
+});
+
+test('a renewal assumption fills exactly its own horizon when the query window fully contains it', () => {
+	const assumption: RenewalAssumption = {
+		probability: 0.4,
+		expectedVolumeMinorUnits: 100_000,
+		horizonEndsOn: '2024-02-10'
+	};
+	const contract: RecurringFeeContract = {
+		terminationNoticeDays: 30,
+		endsOn: null,
+		occurrences: [],
+		renewalAssumption: assumption
+	};
+	// asOfDate 2024-01-01 + 30 days' notice = window through 2024-01-31, so
+	// the assumption's own horizon starts 2024-02-01. It runs 10 days
+	// (Feb 1 through Feb 10 inclusive) — 100,000 * 0.4 = 40,000 spread
+	// evenly across those 10 days is 4,000/day, and the query window below
+	// contains the whole horizon: 10 * 4,000 = 40,000.
+	const contribution = renewalAssumptionContribution(
+		contract,
+		'2024-01-01',
+		'2024-01-01',
+		'2025-01-01'
+	);
+	expect(contribution).toBe(40_000);
+	expect(projectedAmount([contract], '2024-01-01', '2024-01-01', '2025-01-01').amount).toBe(40_000);
+});
+
+test('a renewal assumption prorates by day when the query window only partly overlaps its horizon', () => {
+	const assumption: RenewalAssumption = {
+		probability: 0.4,
+		expectedVolumeMinorUnits: 100_000,
+		horizonEndsOn: '2024-02-10'
+	};
+	const contract: RecurringFeeContract = {
+		terminationNoticeDays: 30,
+		endsOn: null,
+		occurrences: [],
+		renewalAssumption: assumption
+	};
+	// Same 10-day, 4,000/day horizon as above, but the query window here
+	// is [2024-02-01, 2024-02-06) — the first 5 of the 10 days — so it
+	// gets half: 5 * 4,000 = 20,000.
+	const contribution = renewalAssumptionContribution(
+		contract,
+		'2024-01-01',
+		'2024-02-01',
+		'2024-02-06'
+	);
+	expect(contribution).toBe(20_000);
+});
+
+test('a renewal assumption contributes nothing to a query window that misses its horizon entirely', () => {
+	const assumption: RenewalAssumption = {
+		probability: 0.4,
+		expectedVolumeMinorUnits: 100_000,
+		horizonEndsOn: '2024-02-10'
+	};
+	const contract: RecurringFeeContract = {
+		terminationNoticeDays: 30,
+		endsOn: null,
+		occurrences: [],
+		renewalAssumption: assumption
+	};
+	const contribution = renewalAssumptionContribution(
+		contract,
+		'2024-01-01',
+		'2024-03-01',
+		'2024-04-01'
+	);
+	expect(contribution).toBe(0);
+});
+
+test('a renewal assumption already past its own horizon by the query window contributes nothing', () => {
+	const assumption: RenewalAssumption = {
+		probability: 1,
+		expectedVolumeMinorUnits: 50_000,
+		horizonEndsOn: '2024-01-15' // before the window even opens (2024-02-01)
+	};
+	const contract: RecurringFeeContract = {
+		terminationNoticeDays: 30,
+		endsOn: null,
+		occurrences: [],
+		renewalAssumption: assumption
+	};
+	const contribution = renewalAssumptionContribution(
+		contract,
+		'2024-01-01',
+		'2024-01-01',
+		'2025-01-01'
+	);
+	expect(contribution).toBe(0);
+});
+
+test('a renewal assumption never reaches committedAmount — it feeds the projected band only', () => {
+	const assumption: RenewalAssumption = {
+		probability: 1,
+		expectedVolumeMinorUnits: 1_000_000,
+		horizonEndsOn: '2025-12-31'
+	};
+	const occurrences: RecurringFeeOccurrence[] = [{ date: '2024-06-20', amount: 4_000 }];
+	const contract: RecurringFeeContract = {
+		terminationNoticeDays: 30,
+		endsOn: null,
+		occurrences,
+		renewalAssumption: assumption
+	};
+	const committed = committedAmount([], [], [contract], '2024-06-15', '2024-01-01', '2025-01-01');
+	// The 06-20 occurrence falls inside the notice window (2024-06-15
+	// through 2024-07-15) and is the only thing committedAmount reads off
+	// a recurring contract — a huge assumption sitting on the same
+	// contract must not leak into it.
+	expect(committed.amount).toBe(4_000);
+});
+
+test("a fixed-term contract's renewal assumption starts the day after its own end date, not the day after the notice window", () => {
+	// Notice from 2024-06-01 (10 days) runs only to 2024-06-11, well
+	// before the contract's own end on 2024-06-30 — so the known,
+	// scheduled fee between the two is still `projectedAmount`'s own
+	// territory, and the assumption must not double-count it by starting
+	// at 2024-06-12.
+	const assumption: RenewalAssumption = {
+		probability: 1,
+		expectedVolumeMinorUnits: 31_000, // 1,000/day over the 31-day horizon below
+		horizonEndsOn: '2024-07-31'
+	};
+	const occurrences: RecurringFeeOccurrence[] = [
+		{ date: '2024-06-15', amount: 5_000 }, // between the window and endsOn: scheduled
+		{ date: '2024-07-01', amount: 9_999 } // after endsOn: excluded from "scheduled"
+	];
+	const contract: RecurringFeeContract = {
+		terminationNoticeDays: 10,
+		endsOn: '2024-06-30',
+		occurrences,
+		renewalAssumption: assumption
+	};
+	const projected = projectedAmount([contract], '2024-06-01', '2024-01-01', '2025-01-01');
+	// Scheduled: 5,000 (06-15, the only occurrence in (06-11, 06-30]).
+	// Assumed: the horizon runs 2024-07-01 through 2024-07-31, 31 days,
+	// fully inside the query window — the whole 31,000 at probability 1.
+	// 5,000 + 31,000 = 36,000, and the 9,999 stray occurrence is in
+	// neither figure.
+	expect(projected.amount).toBe(5_000 + 31_000);
 });
