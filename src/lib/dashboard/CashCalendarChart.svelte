@@ -5,9 +5,10 @@
 	import type { SeriesEntry, TableColumn, TooltipRow } from '$lib/design';
 	import {
 		CASH_CALENDAR_TIER,
-		markerLabel,
 		type CashCalendarMarker,
-		type CashCalendarMonth
+		type CashCalendarMonth,
+		cashCalendarYTicks,
+		markerLabel
 	} from './cash-calendar';
 	import { renewalAssumptionLine, type RenewalAssumptionContribution } from './renewal-assumption';
 
@@ -49,7 +50,7 @@
 			)
 		) * 1.1
 	);
-	const yTickValues = $derived([0, yMax / 2, yMax]);
+	const yTickValues = $derived(cashCalendarYTicks(yMax));
 	function yScale(amount: number): number {
 		return plotHeight - (amount / yMax) * plotHeight;
 	}

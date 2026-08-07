@@ -12,9 +12,11 @@
 	} = $props();
 </script>
 
-<!-- Decorative: recessive hairline grid, one step off the surface, never dashed. -->
+<!-- Decorative: recessive hairline grid, one step off the surface, never
+     dashed. Keyed by index: two lines can coincide when a scale collapses,
+     and a duplicate key would take the page down with it (#143). -->
 <g class="grid" aria-hidden="true">
-	{#each lines as position (position)}
+	{#each lines as position, i (i)}
 		{#if orientation === 'horizontal'}
 			<line x1="0" y1={position} x2={length} y2={position} />
 		{:else}
