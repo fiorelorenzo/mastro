@@ -1,4 +1,7 @@
 <script lang="ts">
+	import * as m from '$lib/paraglide/messages';
+	import { noticeChannelLabel, noticeChannels } from './notice-channel';
+
 	type ContactSlot = {
 		name: string;
 		email: string;
@@ -29,29 +32,27 @@
 		errors?: Record<string, string>;
 		submitLabel: string;
 	} = $props();
-
-	const noticeChannels = ['email', 'certified_mail', 'registered_mail', 'courier', 'other'];
 </script>
 
 <form method="POST" class="mt-6 flex flex-col gap-6">
 	<fieldset class="flex flex-col gap-3">
-		<legend class="text-sm font-semibold">Legal identity</legend>
+		<legend class="text-sm font-semibold">{m.client_form_legal_identity_legend()}</legend>
 		<label class="flex flex-col gap-1 text-sm">
-			Legal name
+			{m.client_form_legal_name_label()}
 			<input name="legalName" value={values.legalName} class="border px-2 py-1" required />
 			{#if errors.legalName}<span class="text-xs font-semibold">{errors.legalName}</span>{/if}
 		</label>
 		<label class="flex flex-col gap-1 text-sm">
-			Tax id
+			{m.client_form_tax_id_label()}
 			<input name="taxId" value={values.taxId} class="border px-2 py-1" required />
 			{#if errors.taxId}<span class="text-xs font-semibold">{errors.taxId}</span>{/if}
 		</label>
 		<label class="flex flex-col gap-1 text-sm">
-			VAT id
+			{m.client_form_vat_id_label()}
 			<input name="vatId" value={values.vatId} class="border px-2 py-1" />
 		</label>
 		<label class="flex flex-col gap-1 text-sm">
-			Country (ISO alpha-2)
+			{m.client_form_country_label()}
 			<input
 				name="country"
 				value={values.country}
@@ -64,23 +65,23 @@
 	</fieldset>
 
 	<fieldset class="flex flex-col gap-3">
-		<legend class="text-sm font-semibold">Registered address</legend>
+		<legend class="text-sm font-semibold">{m.client_form_address_legend()}</legend>
 		<label class="flex flex-col gap-1 text-sm">
-			Address line 1
+			{m.client_form_address_line1_label()}
 			<input name="addressLine1" value={values.addressLine1} class="border px-2 py-1" required />
 			{#if errors.addressLine1}<span class="text-xs font-semibold">{errors.addressLine1}</span>{/if}
 		</label>
 		<label class="flex flex-col gap-1 text-sm">
-			Address line 2
+			{m.client_form_address_line2_label()}
 			<input name="addressLine2" value={values.addressLine2} class="border px-2 py-1" />
 		</label>
 		<label class="flex flex-col gap-1 text-sm">
-			City
+			{m.client_form_city_label()}
 			<input name="addressCity" value={values.addressCity} class="border px-2 py-1" required />
 			{#if errors.addressCity}<span class="text-xs font-semibold">{errors.addressCity}</span>{/if}
 		</label>
 		<label class="flex flex-col gap-1 text-sm">
-			Postal code
+			{m.client_form_postal_code_label()}
 			<input
 				name="addressPostalCode"
 				value={values.addressPostalCode}
@@ -92,19 +93,23 @@
 				>{/if}
 		</label>
 		<label class="flex flex-col gap-1 text-sm">
-			Region / province
+			{m.client_form_region_label()}
 			<input name="addressRegion" value={values.addressRegion} class="border px-2 py-1" />
 		</label>
 	</fieldset>
 
 	<fieldset class="flex flex-col gap-3">
-		<legend class="text-sm font-semibold">Notices</legend>
+		<legend class="text-sm font-semibold">{m.client_form_notices_legend()}</legend>
 		<label class="flex flex-col gap-1 text-sm">
-			Notice channel
+			{m.client_form_notice_channel_label()}
 			<select name="noticeChannel" value={values.noticeChannel} class="border px-2 py-1" required>
-				<option value="" disabled selected={values.noticeChannel === ''}>Choose a channel</option>
+				<option value="" disabled selected={values.noticeChannel === ''}
+					>{m.client_form_notice_channel_placeholder()}</option
+				>
 				{#each noticeChannels as channel (channel)}
-					<option value={channel} selected={values.noticeChannel === channel}>{channel}</option>
+					<option value={channel} selected={values.noticeChannel === channel}
+						>{noticeChannelLabel(channel)}</option
+					>
 				{/each}
 			</select>
 			{#if errors.noticeChannel}<span class="text-xs font-semibold">{errors.noticeChannel}</span
@@ -113,20 +118,20 @@
 	</fieldset>
 
 	<fieldset class="flex flex-col gap-4">
-		<legend class="text-sm font-semibold">Contacts</legend>
+		<legend class="text-sm font-semibold">{m.client_form_contacts_legend()}</legend>
 		{#if errors.contacts}<span class="text-xs font-semibold">{errors.contacts}</span>{/if}
 		<input type="hidden" name="contactCount" value={contactSlots.length} />
 		{#each contactSlots as contact, i (i)}
 			<div class="flex flex-col gap-1 border p-3 text-sm">
 				<label class="flex flex-col gap-1">
-					Name
+					{m.client_form_contact_name_label()}
 					<input name="contactName_{i}" value={contact.name} class="border px-2 py-1" />
 					{#if errors[`contactName_${i}`]}<span class="text-xs font-semibold"
 							>{errors[`contactName_${i}`]}</span
 						>{/if}
 				</label>
 				<label class="flex flex-col gap-1">
-					Email
+					{m.client_form_contact_email_label()}
 					<input
 						name="contactEmail_{i}"
 						value={contact.email}
@@ -138,16 +143,16 @@
 						>{/if}
 				</label>
 				<label class="flex flex-col gap-1">
-					Phone
+					{m.client_form_contact_phone_label()}
 					<input name="contactPhone_{i}" value={contact.phone} class="border px-2 py-1" />
 				</label>
 				<label class="flex flex-col gap-1">
-					Role
+					{m.client_form_contact_role_label()}
 					<input name="contactRole_{i}" value={contact.role} class="border px-2 py-1" />
 				</label>
 				<label class="flex items-center gap-2">
 					<input type="checkbox" name="contactCanApprove_{i}" checked={contact.canApprove} />
-					Can approve
+					{m.client_form_contact_can_approve_label()}
 				</label>
 			</div>
 		{/each}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import * as m from '$lib/paraglide/messages';
 	import ClientForm from '../ClientForm.svelte';
 	import type { ActionData } from './$types';
 
@@ -24,9 +25,14 @@
 	);
 </script>
 
-<svelte:head><title>New client — mastro</title></svelte:head>
+<svelte:head><title>{m.client_new_page_title()}</title></svelte:head>
 
 <main class="mx-auto max-w-3xl p-8">
-	<h1 class="text-2xl font-semibold">New client</h1>
-	<ClientForm {values} {contactSlots} errors={form?.errors ?? {}} submitLabel="Create client" />
+	<h1 class="text-2xl font-semibold">{m.client_new_heading()}</h1>
+	<ClientForm
+		{values}
+		{contactSlots}
+		errors={form?.errors ?? {}}
+		submitLabel={m.client_form_submit_create()}
+	/>
 </main>

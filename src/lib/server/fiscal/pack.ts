@@ -5,7 +5,8 @@
 // interface below is missing a capability and should grow one, per
 // AGENTS.md invariant 1.
 
-import type { LabelBundle, LegalText } from './label';
+import type { LegalText } from '$lib/legal/legal-text';
+import type { LabelBundle } from './label';
 
 export type FiscalBasis = 'cash' | 'accrual';
 
