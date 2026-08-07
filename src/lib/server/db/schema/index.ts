@@ -9,6 +9,7 @@
 
 export * from './approval';
 export * from './auth';
+export * from './backup';
 export * from './client';
 export * from './contract';
 export * from './document';

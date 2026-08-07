@@ -1,6 +1,6 @@
 {
-  "id": "b0ed16d1-4337-4f09-a28b-277ab6654226",
-  "prevId": "9def7baf-fe3c-4ff0-9645-c9cefe7be6d4",
+  "id": "eba69e27-6cc2-4c8d-ad6f-ac626fecfa7b",
+  "prevId": "2367f885-94dd-4f0e-a714-bd64cfb78e4c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -412,6 +412,59 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.backup_run": {
+      "name": "backup_run",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "status": {
+          "name": "status",
+          "type": "backup_run_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "detail": {
+          "name": "detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "acknowledged_at": {
+          "name": "acknowledged_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -1244,6 +1297,14 @@
     }
   },
   "enums": {
+    "public.backup_run_status": {
+      "name": "backup_run_status",
+      "schema": "public",
+      "values": [
+        "success",
+        "failure"
+      ]
+    },
     "public.notice_channel": {
       "name": "notice_channel",
       "schema": "public",

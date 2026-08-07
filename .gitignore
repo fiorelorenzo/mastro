@@ -2,6 +2,7 @@ node_modules/
 .env
 .env.*
 !.env.example
+!.env.prod.example
 build/
 .svelte-kit/
 dist/
@@ -11,7 +12,9 @@ coverage/
 # Paraglide
 src/lib/paraglide
 project.inlang/cache/
-# Document store (#49): content-addressed blobs written by the default
-# DOCUMENT_STORAGE_ROOT. Never committed; real client documents never enter
-# this repository.
+# The content-addressed document blobs (#49) written under
+# DOCUMENT_STORAGE_ROOT, the bind-mounted documents directory and the backup
+# archives of the production compose rehearsal (#76, #77). Never committed:
+# real client documents never enter this repository.
 /data/
+/backups/
