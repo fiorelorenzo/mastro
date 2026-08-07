@@ -22,8 +22,9 @@ test('cash basis, calendar fiscal year', () => {
 
 test('the soft ceiling is 85,000 EUR and loses the regime only from the following year', () => {
 	const ceiling = itFlatRatePack.ceilings.find((c) => c.id === 'it-flat-rate-revenue-ceiling');
-	expect(ceiling?.amount).toBe(8_500_000);
-	expect(ceiling?.period).toBe('fiscal_year');
+	expect(ceiling?.value).toBe(8_500_000);
+	expect(ceiling?.measure).toBe('absolute_amount');
+	expect(ceiling?.basis).toBe('cash_received_calendar_year');
 	expect(ceiling?.consequence.en).toMatch(/following fiscal year/);
 	expect(ceiling?.legalBasis?.language).toBe('it');
 });
@@ -32,7 +33,7 @@ test('the hard ceiling is 100,000 EUR and loses the regime immediately, with VAT
 	const ceiling = itFlatRatePack.ceilings.find(
 		(c) => c.id === 'it-flat-rate-immediate-exit-ceiling'
 	);
-	expect(ceiling?.amount).toBe(10_000_000);
+	expect(ceiling?.value).toBe(10_000_000);
 	expect(ceiling?.consequence.en).toMatch(/immediately/);
 	expect(ceiling?.consequence.en).toMatch(/VAT/);
 });
