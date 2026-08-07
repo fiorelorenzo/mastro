@@ -229,3 +229,74 @@ export async function forecastProjected(
 	const recurringContracts = await fetchRecurringFeeContracts(from, to, executor);
 	return projectedAmount(recurringContracts, asOfDate, from, to);
 }
+
+/** One calendar-month bucket, half-open `[from, to)`. */
+interface MonthBucket {
+	readonly from: string;
+	readonly to: string;
+}
+
+function assertMonthStart(date: string, label: string): void {
+	if (!/^\d{4}-\d{2}-01$/.test(date)) {
+		throw new Error(`${label} must be the first day of a calendar month, got '${date}'`);
+	}
+}
+
+/** `[from, to)` split into consecutive calendar months — both bounds must
+ * already fall on the first of a month, which every caller here controls
+ * (the dashboard's rolling window is built from month starts). */
+export function monthlyBuckets(from: string, to: string): readonly MonthBucket[] {
+	assertMonthStart(from, 'from');
+	assertMonthStart(to, 'to');
+	const buckets: MonthBucket[] = [];
+	let cursor = from;
+	let [year, month] = cursor.split('-').map(Number);
+	while (cursor < to) {
+		month += 1;
+		if (month > 12) {
+			month = 1;
+			year += 1;
+		}
+		const next = `${year}-${String(month).padStart(2, '0')}-01`;
+		buckets.push({ from: cursor, to: next });
+		cursor = next;
+	}
+	return buckets;
+}
+
+/** One calendar month's `CertaintyBreakdown` (#58's cash calendar). */
+export interface MonthlyCertaintyBreakdown extends CertaintyBreakdown {
+	readonly month: string;
+}
+
+/**
+ * `forecastRevenue`, bucketed into calendar months across `[from, to)`
+ * (#58): the three raw datasets (`fetchLedgerRows`,
+ * `fetchApprovedWorkUnits`, `fetchRecurringFeeContracts`) are fetched once
+ * for the whole window, then `certaintyBreakdown` — the pure function, the
+ * same one `forecastRevenue` calls — runs once per month bucket. Never a
+ * database round trip per month.
+ */
+export async function forecastRevenueByMonth(
+	asOfDate: string,
+	from: string,
+	to: string,
+	executor: DbExecutor = db
+): Promise<readonly MonthlyCertaintyBreakdown[]> {
+	const [rows, approvedWorkUnits, recurringContracts] = await Promise.all([
+		fetchLedgerRows(executor),
+		fetchApprovedWorkUnits(from, to, executor),
+		fetchRecurringFeeContracts(from, to, executor)
+	]);
+	return monthlyBuckets(from, to).map((bucket) => ({
+		month: bucket.from,
+		...certaintyBreakdown(
+			rows,
+			approvedWorkUnits,
+			recurringContracts,
+			asOfDate,
+			bucket.from,
+			bucket.to
+		)
+	}));
+}

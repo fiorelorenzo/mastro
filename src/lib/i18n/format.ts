@@ -114,6 +114,22 @@ export function formatMonth(monthStart: string, locale: Locale = getLocale()): s
 }
 
 /**
+ * A month, abbreviated, e.g. `Feb 2026` in English and `feb 2026` in
+ * Italian — the cash calendar's own x-axis (#58), where twelve
+ * `formatMonth`-length labels in a row would overlap. Still carries the
+ * full year: the window can cross a calendar year boundary (December
+ * into January), and a two-digit year would blur that.
+ */
+export function formatMonthShort(monthStart: string, locale: Locale = getLocale()): string {
+	const value = new Date(`${monthStart}T00:00:00Z`);
+	return new Intl.DateTimeFormat(locale, {
+		year: 'numeric',
+		month: 'short',
+		timeZone: 'UTC'
+	}).format(value);
+}
+
+/**
  * A precise instant in time — an approval's `receivedAt`, a work-unit
  * transition's `createdAt` — in the active locale's own date and time
  * convention, e.g. `Mar 1, 2024, 9:00 AM`. Unlike `formatDate`, this reads
