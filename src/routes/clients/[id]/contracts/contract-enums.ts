@@ -87,3 +87,8 @@ export function expensePolicyKindLabel(value: ExpensePolicyKindValue): string {
 			return m.contract_expense_policy_kind_reimbursed_with_cap();
 	}
 }
+
+/** The languages a contract's templates can be written in (#69), mirroring
+ * the `contract_template_language` enum. The option renders as the language
+ * tag itself: a language names itself, so there is nothing to translate. */
+export const templateLanguages = ['en', 'it'] as const;

@@ -3,9 +3,11 @@ import { decimalStringToMinorUnits } from '$lib/server/import/decimal';
 import {
 	contractRenewalType,
 	contractStatus,
+	contractTemplateLanguage,
 	invoicingCadence,
 	type ContractRenewalType,
 	type ContractStatus,
+	type ContractTemplateLanguage,
 	type ExpensePolicy,
 	type InvoicingCadence,
 	type PaymentTerms
@@ -30,6 +32,7 @@ export type ContractFormValues = {
 	expensePolicyKind: string;
 	expensePolicyCapAmount: string;
 	requiresExpensePreAuthorisation: boolean;
+	templateLanguage: string;
 	status: string;
 };
 
@@ -158,6 +161,16 @@ export function parseContractForm(formData: FormData): ContractFormResult {
 		errors.status = m.contract_validation_status_invalid();
 	}
 
+	// The language this client is written to (#69). A property of the
+	// counterparty, not of whoever is looking at the screen, so it is stored
+	// on the contract and never read from the active interface locale.
+	const templateLanguageRaw = string('templateLanguage');
+	if (
+		!contractTemplateLanguage.enumValues.includes(templateLanguageRaw as ContractTemplateLanguage)
+	) {
+		errors.templateLanguage = m.contract_validation_template_language_invalid();
+	}
+
 	const values: ContractFormValues = {
 		title,
 		signedDocumentReference,
@@ -176,6 +189,7 @@ export function parseContractForm(formData: FormData): ContractFormResult {
 		expensePolicyKind,
 		expensePolicyCapAmount: expensePolicyCapAmountRaw,
 		requiresExpensePreAuthorisation,
+		templateLanguage: templateLanguageRaw,
 		status: statusRaw
 	};
 
@@ -201,6 +215,7 @@ export function parseContractForm(formData: FormData): ContractFormResult {
 			requiresPriorApproval,
 			expensePolicy,
 			requiresExpensePreAuthorisation,
+			templateLanguage: templateLanguageRaw as ContractTemplateLanguage,
 			status: statusRaw as ContractStatus
 		}
 	};

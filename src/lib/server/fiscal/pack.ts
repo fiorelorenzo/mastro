@@ -26,13 +26,76 @@ export interface FiscalYearDefinition {
  * fiscal amounts must not lose precision to binary rounding. */
 export type MinorUnits = number;
 
-/** A revenue ceiling the pack imposes. Enforcement is the ceiling engine's
- * job (#36); this is the declaration it reads. */
-export interface Ceiling {
+/** Which side of AGENTS.md invariant 2 a ceiling came from: a `pack`
+ * ceiling follows the money and vanishes when the fiscal profile changes
+ * regime; a `contract` ceiling follows the counterparty and survives any
+ * such change. Both normalise into the same `Ceiling` shape below and run
+ * through the same evaluator (`fiscal/ceiling.ts`) — this field is what a
+ * dashboard reads to label the two differently, never a reason to branch
+ * on how one is computed. */
+export type CeilingOrigin = 'pack' | 'contract';
+
+/** `absolute_amount`: `value` is a `MinorUnits` cap, compared directly
+ * against revenue. `percentage_share`: `value` is a ratio (`0.3` for
+ * 30%), compared against one client's share of the perimeter's total —
+ * see `perimeter` and `fiscal/ceiling.ts`'s `evaluateCeiling`. */
+export type CeilingMeasure = 'absolute_amount' | 'percentage_share';
+
+export type CeilingLimit =
+	| { readonly measure: 'absolute_amount'; readonly value: MinorUnits }
+	| { readonly measure: 'percentage_share'; readonly value: number };
+
+/**
+ * Which reading of the ledger a ceiling resets over (#36/#37). The
+ * `_calendar_year` bases reset every January 1st regardless of which pack
+ * is active; `cash_received_contract_year` resets on the owning
+ * contract's own start-date anniversary instead — the shape a contract
+ * ceiling needs, since a client-share cap has no reason to reset on the
+ * calendar rather than the relationship's own anniversary.
+ * `cash_received_*` reads the ledger by payment date, `invoiced_*` by
+ * issue date — see `fiscal/ledger.ts`'s `LedgerBasis`, which this maps
+ * onto one-to-one.
+ */
+export type CeilingBasis =
+	'cash_received_calendar_year' | 'invoiced_calendar_year' | 'cash_received_contract_year';
+
+/** Whose revenue a ceiling counts: everyone (`all_clients`, what every
+ * pack ceiling today uses — the practitioner's whole regime is at stake)
+ * or one named client (`client`, what a contract's own share cap uses —
+ * it is that client's relationship being capped, not the practitioner's
+ * total). */
+export type CeilingPerimeter =
+	{ readonly kind: 'all_clients' } | { readonly kind: 'client'; readonly clientId: string };
+
+/** One threshold a ceiling's usage ratio can cross, each with its own
+ * label — "approaching" reads differently from "reached". Enforcement and
+ * notification are the alert engine's job (#74, next wave); this is the
+ * data it will read, declared here so a pack or a contract ceiling
+ * carries its own thresholds rather than the alert engine inventing
+ * one-size-fits-all defaults. */
+export interface CeilingAlertLevel {
+	/** 0–1, e.g. `0.8` for "80% of the way to the ceiling". */
+	readonly ratio: number;
+	readonly label: LabelBundle;
+}
+
+/**
+ * A revenue ceiling, from a pack or a contract (#36). Enforcement is the
+ * ceiling engine's job (`fiscal/ceiling.ts`'s `evaluateCeiling`, the one
+ * function both origins run through — AGENTS.md invariant 2's acceptance
+ * test); this is the declaration it reads. A contract ceiling normalises
+ * into exactly this same shape (`fiscal/ceiling.ts`'s
+ * `ceilingFromContractRow`) rather than a parallel type, so the evaluator
+ * never needs to know which origin it is looking at.
+ */
+export type Ceiling = {
 	readonly id: string;
+	readonly origin: CeilingOrigin;
 	readonly label: LabelBundle;
 	readonly legalBasis?: LegalText;
-	readonly amount: MinorUnits;
+	readonly basis: CeilingBasis;
+	readonly perimeter: CeilingPerimeter;
+	readonly alertLevels: readonly CeilingAlertLevel[];
 	/**
 	 * What crossing the ceiling does, in plain interface-language copy —
 	 * e.g. "the regime is lost from the following year" versus "the regime
@@ -49,10 +112,7 @@ export interface Ceiling {
 	 * belongs here, not as a per-pack workaround.
 	 */
 	readonly consequence: LabelBundle;
-	/** The period the ceiling resets over. One member today; add more here,
-	 * never as a special case in a consumer. */
-	readonly period: 'fiscal_year';
-}
+} & CeilingLimit;
 
 /** A tax treatment code the pack defines, with the legal text an invoice
  * under it must carry verbatim. */

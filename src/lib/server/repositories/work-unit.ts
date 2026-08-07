@@ -9,6 +9,11 @@ import {
 } from '$lib/server/db/schema';
 
 export type WorkUnitInput = {
+	// A client-generated uuid (#62's offline queue), or omitted to take the
+	// column default. This is the idempotency key a replay of the same
+	// queued mutation relies on — see createWorkUnit below for what
+	// happens when it names a row that already exists.
+	id?: string;
 	contractId: string;
 	date: string;
 	quantity: number;
@@ -50,7 +55,20 @@ async function withActorAndReason<T>(
  * (e.g. importing a day already known to have been worked) is legal too —
  * see the state machine trigger for the full set of legal insert states —
  * and lands in `worked_without_approval` automatically if the contract
- * requires an approval this call did not supply (#23). */
+ * requires an approval this call did not supply (#23).
+ *
+ * `input.id`, when supplied, is #62's replay contract: the insert targets
+ * a conflict on that column specifically (`ON CONFLICT (id) DO NOTHING`),
+ * so resubmitting a mutation the server already recorded once — the
+ * offline queue replaying the same client-generated uuid after a
+ * connection drop, or before it ever finds out the first attempt
+ * succeeded — is a no-op that returns the existing row rather than
+ * inserting a second time or raising. Only that one constraint is
+ * targeted: a genuine second day for the same contract and date, under a
+ * different id, still trips `work_unit_one_active_per_contract_date`
+ * exactly as before. Because the conflict suppresses the whole INSERT, the
+ * state machine and logging triggers never run a second time either — a
+ * replay produces no second `work_unit_transition` row. */
 export async function createWorkUnit(
 	input: WorkUnitInput,
 	actor: TransitionActor,
@@ -58,8 +76,21 @@ export async function createWorkUnit(
 	tx?: DbExecutor
 ) {
 	return withActorAndReason(tx, actor, reason, async (executor) => {
-		const [row] = await executor.insert(workUnit).values(input).returning();
-		return row;
+		if (!input.id) {
+			const [row] = await executor.insert(workUnit).values(input).returning();
+			return row;
+		}
+		const [row] = await executor
+			.insert(workUnit)
+			.values(input)
+			.onConflictDoNothing({ target: workUnit.id })
+			.returning();
+		if (row) return row;
+		const existing = await getWorkUnit(input.id, executor);
+		if (!existing) {
+			throw new Error(`work_unit ${input.id} conflicted on insert but cannot be found`);
+		}
+		return existing;
 	});
 }
 

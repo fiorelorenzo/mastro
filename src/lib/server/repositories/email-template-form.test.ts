@@ -81,6 +81,38 @@ test('days_before_due requires a positive integer day count', () => {
 	expect(valid.input.trigger).toEqual({ kind: 'days_before_due', days: 5 });
 });
 
+test('days_after_due requires a positive integer day count, independent of triggerDays (#73)', () => {
+	const invalid = parseEmailTemplateForm(
+		formData({
+			contractId: 'contract-1',
+			name: 'Payment reminder',
+			subject: 'Subject',
+			body: 'Body',
+			triggerKind: 'days_after_due',
+			triggerDaysAfterDue: '0'
+		})
+	);
+	expect(invalid.ok).toBe(false);
+
+	const valid = parseEmailTemplateForm(
+		formData({
+			contractId: 'contract-1',
+			name: 'Payment reminder',
+			subject: 'Subject',
+			body: 'Body {{days_late}}',
+			triggerKind: 'days_after_due',
+			// A stale value left in the sibling "days before due" field must
+			// never leak into a days_after_due trigger — the two fields are
+			// independent inputs precisely so this cannot happen.
+			triggerDays: '999',
+			triggerDaysAfterDue: '7'
+		})
+	);
+	expect(valid.ok).toBe(true);
+	if (!valid.ok) return;
+	expect(valid.input.trigger).toEqual({ kind: 'days_after_due', days: 7 });
+});
+
 test('an attachment kind outside the known set is dropped rather than accepted', () => {
 	const result = parseEmailTemplateForm(
 		formData({

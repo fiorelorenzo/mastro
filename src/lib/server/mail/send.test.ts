@@ -184,7 +184,8 @@ const template = {
 
 const context = {
 	invoice: { number: 'INV-1', total: 100000, currency: 'EUR', dueDate: '2024-04-30' },
-	period: { from: '2024-03-01', to: '2024-03-31' }
+	period: { from: '2024-03-01', to: '2024-03-31' },
+	language: 'en' as const
 };
 
 test('auto-send off: prepares nothing sent, touches neither SMTP nor IMAP', async () => {

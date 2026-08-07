@@ -1,5 +1,6 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
+import { isOverdue } from '$lib/server/domain/invoice';
 import { getInvoiceWithLines, recordPayment } from '$lib/server/repositories/invoice';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -11,7 +12,11 @@ export const load: PageServerLoad = async ({ params }) => {
 		// Today, at UTC midnight as an ISO date — what the "paid on" field
 		// defaults to (#27's "defaults to today"), computed once here so the
 		// form and any later reasoning about it agree on the same instant.
-		today: new Date().toISOString().slice(0, 10)
+		today: new Date().toISOString().slice(0, 10),
+		// Whether the "draft a reminder" link (#73) shows at all — the same
+		// derivation the ageing table uses, recomputed here rather than
+		// read off a stored flag.
+		overdue: isOverdue(invoiceRow.dueDate, invoiceRow.paidOn)
 	};
 };
 

@@ -1,5 +1,5 @@
 {
-  "id": "6d109315-91a4-4ffc-946b-96f5218011d4",
+  "id": "173abc17-c881-495f-b108-e0b69e4a03b7",
   "prevId": "13c7ae09-6366-4449-ab95-05aa8a51a02f",
   "version": "7",
   "dialect": "postgresql",
@@ -489,8 +489,8 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.clause_note": {
-      "name": "clause_note",
+    "public.ceiling": {
+      "name": "ceiling",
       "schema": "",
       "columns": {
         "id": {
@@ -506,29 +506,62 @@
           "primaryKey": false,
           "notNull": true
         },
-        "clause_reference": {
-          "name": "clause_reference",
+        "code": {
+          "name": "code",
           "type": "text",
           "primaryKey": false,
           "notNull": true
         },
-        "verbatim_text": {
-          "name": "verbatim_text",
-          "type": "text",
+        "label": {
+          "name": "label",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": true
         },
-        "interpretation_adopted": {
-          "name": "interpretation_adopted",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "notes": {
-          "name": "notes",
-          "type": "text",
+        "legal_basis": {
+          "name": "legal_basis",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
+        },
+        "measure": {
+          "name": "measure",
+          "type": "ceiling_measure",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "absolute_value_minor_units": {
+          "name": "absolute_value_minor_units",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "share_ratio": {
+          "name": "share_ratio",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "basis": {
+          "name": "basis",
+          "type": "ceiling_basis",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "alert_levels": {
+          "name": "alert_levels",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "consequence": {
+          "name": "consequence",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
         },
         "created_at": {
           "name": "created_at",
@@ -547,9 +580,9 @@
       },
       "indexes": {},
       "foreignKeys": {
-        "clause_note_contract_id_contract_id_fk": {
-          "name": "clause_note_contract_id_contract_id_fk",
-          "tableFrom": "clause_note",
+        "ceiling_contract_id_contract_id_fk": {
+          "name": "ceiling_contract_id_contract_id_fk",
+          "tableFrom": "ceiling",
           "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
@@ -557,14 +590,36 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "restrict",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "ceiling_contract_code_unique": {
+          "name": "ceiling_contract_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "contract_id",
+            "code"
+          ]
+        }
+      },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "ceiling_value_matches_measure": {
+          "name": "ceiling_value_matches_measure",
+          "value": "(\"ceiling\".\"measure\" = 'absolute_amount' and \"ceiling\".\"absolute_value_minor_units\" is not null and \"ceiling\".\"share_ratio\" is null)\n\t\t\t\tor (\"ceiling\".\"measure\" = 'percentage_share' and \"ceiling\".\"share_ratio\" is not null and \"ceiling\".\"absolute_value_minor_units\" is null)"
+        },
+        "ceiling_absolute_value_non_negative": {
+          "name": "ceiling_absolute_value_non_negative",
+          "value": "\"ceiling\".\"absolute_value_minor_units\" is null or \"ceiling\".\"absolute_value_minor_units\" >= 0"
+        },
+        "ceiling_share_ratio_range": {
+          "name": "ceiling_share_ratio_range",
+          "value": "\"ceiling\".\"share_ratio\" is null or (\"ceiling\".\"share_ratio\" > 0 and \"ceiling\".\"share_ratio\" <= 1)"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.client": {
@@ -859,13 +914,6 @@
           "type": "jsonb",
           "primaryKey": false,
           "notNull": true
-        },
-        "requires_expense_pre_authorisation": {
-          "name": "requires_expense_pre_authorisation",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "status": {
           "name": "status",
@@ -1188,117 +1236,6 @@
           "tableTo": "email_template",
           "columnsFrom": [
             "email_template_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.expense": {
-      "name": "expense",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "contract_id": {
-          "name": "contract_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "date": {
-          "name": "date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "amount": {
-          "name": "amount",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "pre_authorised": {
-          "name": "pre_authorised",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "authorisation_reference": {
-          "name": "authorisation_reference",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reimbursable": {
-          "name": "reimbursable",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "invoice_line_id": {
-          "name": "invoice_line_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "expense_contract_id_contract_id_fk": {
-          "name": "expense_contract_id_contract_id_fk",
-          "tableFrom": "expense",
-          "tableTo": "contract",
-          "columnsFrom": [
-            "contract_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "expense_invoice_line_id_invoice_line_id_fk": {
-          "name": "expense_invoice_line_id_invoice_line_id_fk",
-          "tableFrom": "expense",
-          "tableTo": "invoice_line",
-          "columnsFrom": [
-            "invoice_line_id"
           ],
           "columnsTo": [
             "id"
@@ -1996,6 +1933,23 @@
       "values": [
         "success",
         "failure"
+      ]
+    },
+    "public.ceiling_basis": {
+      "name": "ceiling_basis",
+      "schema": "public",
+      "values": [
+        "cash_received_calendar_year",
+        "invoiced_calendar_year",
+        "cash_received_contract_year"
+      ]
+    },
+    "public.ceiling_measure": {
+      "name": "ceiling_measure",
+      "schema": "public",
+      "values": [
+        "absolute_amount",
+        "percentage_share"
       ]
     },
     "public.notice_channel": {

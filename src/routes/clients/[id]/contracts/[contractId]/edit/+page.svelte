@@ -33,6 +33,7 @@
 					? minorUnitsToDecimalString(data.contract.expensePolicy.capAmount)
 					: '',
 			requiresExpensePreAuthorisation: data.contract.requiresExpensePreAuthorisation,
+			templateLanguage: data.contract.templateLanguage,
 			status: data.contract.status
 		}
 	);

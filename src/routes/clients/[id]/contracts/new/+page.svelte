@@ -25,6 +25,7 @@
 			expensePolicyKind: 'not_reimbursed',
 			expensePolicyCapAmount: '',
 			requiresExpensePreAuthorisation: false,
+			templateLanguage: 'en',
 			status: 'draft'
 		}
 	);

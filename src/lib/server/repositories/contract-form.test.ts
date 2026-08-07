@@ -23,6 +23,7 @@ const validBase = {
 	taxTreatment: 'generic',
 	expensePolicyKind: 'not_reimbursed',
 	expensePolicyCapAmount: '',
+	templateLanguage: 'en',
 	status: 'draft'
 };
 
@@ -97,4 +98,18 @@ test('rejects a currency that is not a three-letter code', () => {
 	expect(result.ok).toBe(false);
 	if (result.ok) throw new Error('expected errors');
 	expect(result.errors.currency).toBeDefined();
+});
+
+test('rejects a template language the enum does not carry', () => {
+	const result = parseContractForm(formData({ ...validBase, templateLanguage: 'de' }));
+	expect(result.ok).toBe(false);
+	if (result.ok) throw new Error('expected a rejection');
+	expect(result.errors.templateLanguage).toBeTruthy();
+});
+
+test('carries the contract-level template language through to the input', () => {
+	const result = parseContractForm(formData({ ...validBase, templateLanguage: 'it' }));
+	expect(result.ok).toBe(true);
+	if (!result.ok) throw new Error('expected ok');
+	expect(result.input.templateLanguage).toBe('it');
 });

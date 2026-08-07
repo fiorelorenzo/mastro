@@ -11,7 +11,8 @@
 		invoicingCadenceLabel,
 		paymentTermsKindLabel,
 		renewalTypeLabel,
-		statusLabel
+		statusLabel,
+		templateLanguages
 	} from './contract-enums';
 
 	let {
@@ -55,6 +56,20 @@
 				{/each}
 			</select>
 			{#if errors.status}<span class="text-xs font-semibold">{errors.status}</span>{/if}
+		</label>
+		<label class="flex flex-col gap-1 text-sm">
+			{m.mail_contract_template_language_legend()}
+			<select name="templateLanguage" class="border px-2 py-1" required>
+				{#each templateLanguages as language (language)}
+					<option value={language} selected={values.templateLanguage === language}>
+						{language}
+					</option>
+				{/each}
+			</select>
+			<span class="text-xs opacity-70">{m.mail_contract_template_language_hint()}</span>
+			{#if errors.templateLanguage}<span class="text-xs font-semibold"
+					>{errors.templateLanguage}</span
+				>{/if}
 		</label>
 	</fieldset>
 

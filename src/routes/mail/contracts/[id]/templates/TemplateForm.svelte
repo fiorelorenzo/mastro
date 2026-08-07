@@ -13,6 +13,7 @@
 			attachmentKinds: string[];
 			triggerKind: string;
 			triggerDays: string;
+			triggerDaysAfterDue: string;
 		};
 		errors?: Record<string, string>;
 		submitLabel: string;
@@ -98,6 +99,22 @@
 				name="triggerDays"
 				min="1"
 				value={values.triggerDays}
+				class="w-20 border px-2 py-1"
+			/>
+		</label>
+		<label class="flex items-center gap-2 text-sm">
+			<input
+				type="radio"
+				name="triggerKind"
+				value="days_after_due"
+				checked={values.triggerKind === 'days_after_due'}
+			/>
+			{m.mail_template_form_trigger_days_after_due_label()}
+			<input
+				type="number"
+				name="triggerDaysAfterDue"
+				min="1"
+				value={values.triggerDaysAfterDue}
 				class="w-20 border px-2 py-1"
 			/>
 		</label>

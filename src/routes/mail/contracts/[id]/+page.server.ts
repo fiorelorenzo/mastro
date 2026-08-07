@@ -1,6 +1,11 @@
 import { error } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
-import { getContractWithClient, setContractAutoSendMail } from '$lib/server/repositories/contract';
+import { isLocale } from '$lib/paraglide/runtime';
+import {
+	getContractWithClient,
+	setContractAutoSendMail,
+	setContractTemplateLanguage
+} from '$lib/server/repositories/contract';
 import { listEmailTemplatesForContract } from '$lib/server/repositories/email-template';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -18,6 +23,18 @@ export const actions: Actions = {
 		const formData = await request.formData();
 		const autoSendMail = formData.get('autoSendMail') === 'on';
 		await setContractAutoSendMail(params.id, autoSendMail);
+		return { ok: true };
+	},
+
+	templateLanguage: async ({ request, params }) => {
+		const contract = await getContractWithClient(params.id);
+		if (!contract) error(404, m.mail_contract_not_found());
+		const formData = await request.formData();
+		const templateLanguage = String(formData.get('templateLanguage') ?? '');
+		if (!isLocale(templateLanguage)) {
+			return { ok: false, templateLanguageError: m.mail_contract_template_language_invalid() };
+		}
+		await setContractTemplateLanguage(params.id, templateLanguage);
 		return { ok: true };
 	}
 };

@@ -42,6 +42,7 @@ export async function prepareEmail(
 		template.attachmentKinds,
 		template.contractId,
 		context.period,
+		context.language,
 		executor
 	);
 	return {

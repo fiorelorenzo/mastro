@@ -5,6 +5,7 @@
 // for the fuller justification.
 import PDFDocument from 'pdfkit';
 import * as m from '$lib/paraglide/messages';
+import type { ContractTemplateLanguage } from '$lib/server/db/schema';
 import { formatApprovalReference } from './format';
 import type { Register } from './types';
 
@@ -27,12 +28,17 @@ function drawRow(doc: PDFKit.PDFDocument, y: number, cells: readonly string[], b
 	return y + rowHeight;
 }
 
-/** Renders `register` as a PDF buffer: a header row, one row per entry,
- * and a totals row — the same cell values `renderRegisterCsv` writes, so
- * the two agree (`equivalence.test.ts`). A new page starts whenever the
- * next row would overflow the current one, so the register is never
- * silently truncated regardless of how many days a period holds. */
-export function renderRegisterPdf(register: Register): Promise<Buffer> {
+/** Renders `register` as a PDF buffer in `language` — the contract's own
+ * template language (#69), never the operator's active interface locale —
+ * a header row, one row per entry, and a totals row: the same cell values
+ * `renderRegisterCsv` writes, so the two agree (`equivalence.test.ts`). A
+ * new page starts whenever the next row would overflow the current one,
+ * so the register is never silently truncated regardless of how many days
+ * a period holds. */
+export function renderRegisterPdf(
+	register: Register,
+	language: ContractTemplateLanguage
+): Promise<Buffer> {
 	const doc = new PDFDocument({ size: 'A4', margin: PAGE_MARGIN });
 	const chunks: Buffer[] = [];
 	doc.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -44,7 +50,11 @@ export function renderRegisterPdf(register: Register): Promise<Buffer> {
 	doc
 		.font('Helvetica-Bold')
 		.fontSize(14)
-		.text(m.register_title({ from: register.from, to: register.to }), PAGE_MARGIN, PAGE_MARGIN);
+		.text(
+			m.register_title({ from: register.from, to: register.to }, { locale: language }),
+			PAGE_MARGIN,
+			PAGE_MARGIN
+		);
 	doc.moveDown();
 
 	let y = doc.y;
@@ -52,10 +62,10 @@ export function renderRegisterPdf(register: Register): Promise<Buffer> {
 		doc,
 		y,
 		[
-			m.register_column_date(),
-			m.register_column_quantity(),
-			m.register_column_scope(),
-			m.register_column_approval()
+			m.register_column_date({}, { locale: language }),
+			m.register_column_quantity({}, { locale: language }),
+			m.register_column_scope({}, { locale: language }),
+			m.register_column_approval({}, { locale: language })
 		],
 		true
 	);
@@ -82,7 +92,12 @@ export function renderRegisterPdf(register: Register): Promise<Buffer> {
 	}
 	doc.moveTo(PAGE_MARGIN, y).lineTo(TABLE_RIGHT_EDGE, y).strokeColor('#000000').stroke();
 	y += ROW_PADDING;
-	drawRow(doc, y, ['', String(register.totalQuantity), m.register_totals_label(), ''], true);
+	drawRow(
+		doc,
+		y,
+		['', String(register.totalQuantity), m.register_totals_label({}, { locale: language }), ''],
+		true
+	);
 
 	doc.end();
 	return done;
