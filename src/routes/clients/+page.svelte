@@ -2,61 +2,56 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatNumber } from '$lib/i18n/format';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
+	import RecordList from '$lib/layout/RecordList.svelte';
+	import type { RecordColumn } from '$lib/layout/types';
 	import { noticeChannelLabel } from './notice-channel';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	type Row = PageData['clients'][number];
+
+	// One column list, two renderings. The edit link that used to be a sixth
+	// column is gone: the name leads to the client, and editing is a link on
+	// that page, which is one less column to fit on a phone.
+	const columns: readonly RecordColumn<Row>[] = $derived([
+		{ key: 'legalName', label: m.clients_column_legal_name() },
+		{ key: 'taxId', label: m.clients_column_tax_id() },
+		{ key: 'country', label: m.clients_column_country() },
+		{
+			key: 'noticeChannel',
+			label: m.clients_column_notice_channel(),
+			format: (client: Row) => noticeChannelLabel(client.noticeChannel)
+		},
+		{
+			key: 'contacts',
+			label: m.clients_column_contacts(),
+			align: 'end',
+			format: (client: Row) =>
+				client.contacts.some((contact) => contact.canApprove)
+					? `${formatNumber(client.contacts.length)} ${m.clients_can_approve_suffix()}`
+					: formatNumber(client.contacts.length)
+		}
+	]);
 </script>
 
 <svelte:head><title>{m.clients_page_title()}</title></svelte:head>
 
-<main class="mx-auto max-w-3xl p-8">
-	<PageHeader title={m.clients_heading()}>
-		{#snippet actions()}
-			<a href={resolve('/clients/new')} class="text-sm underline">{m.clients_new_link()}</a>
-		{/snippet}
-	</PageHeader>
+<Page title={m.clients_heading()}>
+	{#snippet actions()}
+		<a href={resolve('/clients/new')} class="underline">{m.clients_new_link()}</a>
+	{/snippet}
 
 	{#if data.clients.length === 0}
-		<p class="mt-4 text-sm opacity-70">{m.clients_empty()}</p>
+		<p class="text-sm opacity-70">{m.clients_empty()}</p>
 	{:else}
-		<table class="mt-4 w-full border-collapse text-sm">
-			<thead>
-				<tr class="border-b text-left">
-					<th class="py-2 pr-4">{m.clients_column_legal_name()}</th>
-					<th class="py-2 pr-4">{m.clients_column_tax_id()}</th>
-					<th class="py-2 pr-4">{m.clients_column_country()}</th>
-					<th class="py-2 pr-4">{m.clients_column_notice_channel()}</th>
-					<th class="py-2 pr-4">{m.clients_column_contacts()}</th>
-					<th class="py-2"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each data.clients as client (client.id)}
-					<tr class="border-b">
-						<td class="py-2 pr-4">
-							<a href={resolve('/clients/[id]', { id: client.id })} class="underline"
-								>{client.legalName}</a
-							>
-						</td>
-						<td class="py-2 pr-4">{client.taxId}</td>
-						<td class="py-2 pr-4">{client.country}</td>
-						<td class="py-2 pr-4">{noticeChannelLabel(client.noticeChannel)}</td>
-						<td class="py-2 pr-4">
-							{formatNumber(client.contacts.length)}
-							{#if client.contacts.some((contact) => contact.canApprove)}
-								<span class="opacity-70">{m.clients_can_approve_suffix()}</span>
-							{/if}
-						</td>
-						<td class="py-2">
-							<a href={resolve('/clients/[id]/edit', { id: client.id })} class="underline"
-								>{m.clients_edit_link()}</a
-							>
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
+		<RecordList
+			{columns}
+			rows={data.clients}
+			caption={m.clients_heading()}
+			rowKey={(client) => client.id}
+			rowHref={(client) => `/clients/${client.id}`}
+		/>
 	{/if}
-</main>
+</Page>
