@@ -6,7 +6,10 @@ import type { DisbursementPeriod, RateCardKind } from '$lib/server/db/schema/rat
  * flat monthly retainer (amount already denominated monthly, disbursed
  * monthly) pays out `1 / 1 = 1` time, i.e. unchanged. */
 const UNIT_MONTHS: Partial<Record<'month' | 'year', number>> = { month: 1, year: 12 };
-const DISBURSEMENT_MONTHS: Record<DisbursementPeriod, number> = {
+/** Exported for `domain/recurring-fee.ts`, which needs to know how often
+ * a `fixed_recurring` card disburses in order to step through its
+ * occurrences — never a second copy of this table. */
+export const DISBURSEMENT_MONTHS: Record<DisbursementPeriod, number> = {
 	monthly: 1,
 	quarterly: 3,
 	annual: 12,
