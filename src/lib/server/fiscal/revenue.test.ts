@@ -172,7 +172,8 @@ test('fetchRevenueOverRange sums under the sole pack in force for a range with n
 				ceilings: [],
 				treatments: [],
 				charges: [],
-				formats: []
+				formats: [],
+				unresolvedRevenue: 'carries_forward'
 			};
 			const registry: PackRegistry = buildRegistry([cashPack]);
 			// Years far in the future so this profile cannot collide with
@@ -251,7 +252,8 @@ test('fetchRevenueOverRange sums each sub-period under its own basis across a re
 				ceilings: [],
 				treatments: [],
 				charges: [],
-				formats: []
+				formats: [],
+				unresolvedRevenue: 'carries_forward'
 			};
 			const accrualPack: FiscalPack = { ...cashPack, id: 'test-regime-accrual', basis: 'accrual' };
 			const registry: PackRegistry = buildRegistry([cashPack, accrualPack]);
@@ -342,7 +344,8 @@ test('fetchClientRevenueBreakdown splits revenue by client under the pack in for
 				ceilings: [],
 				treatments: [],
 				charges: [],
-				formats: []
+				formats: [],
+				unresolvedRevenue: 'carries_forward'
 			};
 			const registry: PackRegistry = buildRegistry([cashPack]);
 			// Its own distant era, so it cannot collide with another test

@@ -135,7 +135,8 @@ test('a pack ceiling and a persisted contract ceiling both appear, evaluated by 
 				],
 				treatments: [],
 				charges: [],
-				formats: []
+				formats: [],
+				unresolvedRevenue: 'carries_forward'
 			};
 			const registry: PackRegistry = buildRegistry([pack]);
 			await tx.insert(fiscalProfile).values({
@@ -194,7 +195,8 @@ test('a contract ceiling survives a fiscal profile switch with no pack ceilings,
 				ceilings: [],
 				treatments: [],
 				charges: [],
-				formats: []
+				formats: [],
+				unresolvedRevenue: 'carries_forward'
 			};
 			const registry: PackRegistry = buildRegistry([packWithoutCeilings]);
 			await tx.insert(fiscalProfile).values({

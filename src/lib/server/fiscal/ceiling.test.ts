@@ -196,7 +196,8 @@ test('changing the fiscal profile changes which pack ceilings apply, with no cod
 		ceilings: [packCeiling],
 		treatments: [],
 		charges: [],
-		formats: []
+		formats: [],
+		unresolvedRevenue: 'carries_forward'
 	};
 	const packWithoutCeiling: FiscalPack = { ...packWithCeiling, id: 'test-standard', ceilings: [] };
 	const registry = buildRegistry([packWithCeiling, packWithoutCeiling]);

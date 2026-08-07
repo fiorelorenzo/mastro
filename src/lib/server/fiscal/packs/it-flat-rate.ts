@@ -48,6 +48,24 @@ import { legalText } from '$lib/legal/legal-text';
  *   practitioners for it counting towards ricavi/compensi despite not
  *   being taxable income — not read directly, corroborated by multiple
  *   independent practitioner guides quoting it consistently.
+ * - `unresolvedRevenue: 'carries_forward'` (#122): an invoice issued
+ *   under this regime but still unpaid when a fiscal profile switches
+ *   to a different pack keeps being governed by this regime's cash
+ *   principle — recognised, by its payment date, whenever it is
+ *   eventually collected. Legge 190/2014, art. 1, comma 72 (in force
+ *   since 01/01/2015, unaffected by any amendment to date): "i ricavi e
+ *   i compensi che ... non hanno concorso a formare il reddito
+ *   imponibile del periodo assumono rilevanza nei periodi di imposta
+ *   successivi nel corso dei quali si verificano i presupposti previsti
+ *   dal regime forfetario" — read in the Agenzia delle Entrate PDF
+ *   consolidating commi 54-89 (agenziaentrate.gov.it, read in full on
+ *   2026-08-07), corroborated by Agenzia delle Entrate's own "Regime
+ *   forfetario (le regole 2020)" guidance page, "Conseguenze della
+ *   fuoriuscita" (same domain, same read date), which restates the same
+ *   outcome for the immediate-exit case: "ai fini delle imposte dirette
+ *   ... rileva il momento di incasso della fattura", taxed "con la
+ *   dichiarazione dell'anno successivo" under ordinary rules. This is
+ *   the concrete case #122 was filed for.
  */
 export const itFlatRatePack: FiscalPack = {
 	id: 'it-flat-rate',
@@ -173,5 +191,7 @@ export const itFlatRatePack: FiscalPack = {
 	// FatturaPA, format id 'FPR12' (fattura verso privati) — shared with
 	// it-standard, coordinated with #41 (the format adapter, out of scope
 	// here): both regimes' consultants file the same national format.
-	formats: ['FPR12']
+	formats: ['FPR12'],
+	// #122: see the header comment's last source entry.
+	unresolvedRevenue: 'carries_forward'
 };
