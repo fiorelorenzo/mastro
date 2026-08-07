@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatAmount, formatDate, formatDateTime, formatNumber } from '$lib/i18n/format';
 	import DataTable from '$lib/design/charts/DataTable.svelte';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import type { TableColumn } from '$lib/design/charts/types';
 	import DayStateBadge from '../DayStateBadge.svelte';
 	import { workUnitStateLabel, type WorkUnitStateValue } from '../work-unit-state';
@@ -54,9 +54,10 @@
 >
 
 <main class="mx-auto max-w-2xl p-4 sm:p-8">
-	<h1 class="text-2xl font-semibold">
-		{m.day_detail_heading({ date: formatDate(data.workUnit.date) })}
-	</h1>
+	<PageHeader
+		crumbs={data.crumbs}
+		title={m.day_detail_heading({ date: formatDate(data.workUnit.date) })}
+	/>
 	<div class="mt-2"><DayStateBadge state={data.workUnit.state} /></div>
 
 	<dl
@@ -115,8 +116,4 @@
 			</div>
 		</section>
 	{/if}
-
-	<p class="mt-6 text-sm">
-		<a href={resolve('/day/calendar')} class="underline">{m.day_detail_back_to_calendar()}</a>
-	</p>
 </main>

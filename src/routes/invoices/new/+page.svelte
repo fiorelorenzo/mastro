@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate } from '$lib/i18n/format';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import type { InvoiceFormValues } from '$lib/server/repositories/invoice-form';
 	import type { ActionData, PageData } from './$types';
 
@@ -74,7 +74,7 @@
 <svelte:head><title>{m.invoice_new_page_title()}</title></svelte:head>
 
 <main class="mx-auto max-w-3xl p-8">
-	<h1 class="text-2xl font-semibold">{m.invoice_new_heading()}</h1>
+	<PageHeader crumbs={data.crumbs} title={m.invoice_new_heading()} />
 
 	<form method="GET" class="mt-6 flex items-end gap-3">
 		<label class="flex flex-col gap-1 text-sm">
@@ -269,8 +269,4 @@
 			>
 		</form>
 	{/if}
-
-	<p class="mt-6 text-sm">
-		<a href={resolve('/invoices')} class="underline">{m.invoice_form_back_to_ageing()}</a>
-	</p>
 </main>

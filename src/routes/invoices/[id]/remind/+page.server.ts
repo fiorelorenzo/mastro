@@ -5,6 +5,7 @@
 // for dunning (see `src/lib/server/mail/dunning.ts`).
 import { error, fail } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
+import type { Crumb } from '$lib/nav/crumbs';
 import { daysLate, isOverdue } from '$lib/server/domain/invoice';
 import { getClientWithContacts } from '$lib/server/repositories/client';
 import {
@@ -35,11 +36,16 @@ export const load: PageServerLoad = async ({ params }) => {
 	const { invoiceRow, templates } = await loadOverdueInvoice(params.id);
 	const client = await getClientWithContacts(invoiceRow.contract.clientId);
 	const defaultRecipients = client?.contacts.map((contact) => contact.email).join(', ') ?? '';
+	const crumbs: Crumb[] = [
+		{ href: '/invoices', label: m.invoices_heading() },
+		{ href: `/invoices/${invoiceRow.id}`, label: invoiceRow.number }
+	];
 	return {
 		invoice: invoiceRow,
 		templates,
 		defaultRecipients,
-		daysLate: daysLate(invoiceRow.dueDate)
+		daysLate: daysLate(invoiceRow.dueDate),
+		crumbs
 	};
 };
 

@@ -3,6 +3,7 @@
 	import * as m from '$lib/paraglide/messages';
 	import { formatAmount, formatDate, formatDays, formatNumber } from '$lib/i18n/format';
 	import { StatusIndicator } from '$lib/design';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import { ageingStatus } from './status';
 	import type { PageData } from './$types';
 
@@ -14,10 +15,11 @@
 <svelte:head><title>{m.invoices_page_title()}</title></svelte:head>
 
 <main class="mx-auto max-w-5xl p-8">
-	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-semibold">{m.invoices_heading()}</h1>
-		<a href={resolve('/invoices/new')} class="text-sm underline">{m.invoices_new_link()}</a>
-	</div>
+	<PageHeader title={m.invoices_heading()}>
+		{#snippet actions()}
+			<a href={resolve('/invoices/new')} class="text-sm underline">{m.invoices_new_link()}</a>
+		{/snippet}
+	</PageHeader>
 
 	<dl class="mt-4 flex gap-8 text-sm">
 		<div>

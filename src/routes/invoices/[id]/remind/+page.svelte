@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatAmount, formatDate, formatDays } from '$lib/i18n/format';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import type { DunningSendFormValues } from '$lib/server/repositories/dunning-form';
 	import type { ActionData, PageData } from './$types';
 
@@ -18,6 +19,14 @@
 		}
 	);
 	const errors = $derived((form?.errors as Record<string, string> | undefined) ?? {});
+
+	const subtitle = $derived(
+		m.mail_dunning_summary({
+			amount: formatAmount(data.invoice.total / 100, data.invoice.currency),
+			dueDate: formatDate(data.invoice.dueDate),
+			daysLate: formatDays(data.daysLate)
+		})
+	);
 </script>
 
 <svelte:head
@@ -25,21 +34,11 @@
 >
 
 <main class="mx-auto max-w-3xl p-8">
-	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-semibold">
-			{m.mail_dunning_heading({ number: data.invoice.number })}
-		</h1>
-		<a href={resolve('/invoices/[id]', { id: data.invoice.id })} class="text-sm underline">
-			{m.invoice_detail_back_link()}
-		</a>
-	</div>
-	<p class="mt-1 text-sm opacity-70">
-		{m.mail_dunning_summary({
-			amount: formatAmount(data.invoice.total / 100, data.invoice.currency),
-			dueDate: formatDate(data.invoice.dueDate),
-			daysLate: formatDays(data.daysLate)
-		})}
-	</p>
+	<PageHeader
+		crumbs={data.crumbs}
+		title={m.mail_dunning_heading({ number: data.invoice.number })}
+		{subtitle}
+	/>
 
 	{#if form?.sent}
 		<p class="mt-4 border border-current p-3 text-sm">{m.mail_send_success()}</p>

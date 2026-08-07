@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { enhance } from '$app/forms';
-	import { resolve } from '$app/paths';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDateTime } from '$lib/i18n/format';
 	import { StatusIndicator } from '$lib/design';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import { offlineQueue } from '$lib/pwa/offline-queue.svelte';
 	import OfflineQueuePanel from './OfflineQueuePanel.svelte';
 	import type { ActionData, PageProps } from './$types';
@@ -95,7 +95,7 @@
 <svelte:window onkeydown={onKeydown} />
 
 <main class="mx-auto max-w-xl p-4 sm:p-8">
-	<h1 class="text-2xl font-semibold">{m.day_new_heading()}</h1>
+	<PageHeader crumbs={data.crumbs} title={m.day_new_heading()} />
 
 	{#if data.contracts.length === 0}
 		<p class="mt-4 text-sm opacity-70">{m.day_new_no_contracts()}</p>
@@ -216,10 +216,6 @@
 	{/if}
 
 	<OfflineQueuePanel contracts={data.contracts} />
-
-	<p class="mt-6 text-sm">
-		<a href={resolve('/day/calendar')} class="underline">{m.home_calendar_link()}</a>
-	</p>
 </main>
 
 <style>

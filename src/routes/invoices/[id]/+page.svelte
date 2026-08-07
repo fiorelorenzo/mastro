@@ -3,11 +3,25 @@
 	import * as m from '$lib/paraglide/messages';
 	import { formatAmount, formatDate, formatMinorUnits } from '$lib/i18n/format';
 	import LegalText from '$lib/legal/LegalText.svelte';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import { factLine } from '$lib/nav/crumbs';
+	import { ageingStatus } from '../status';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	const invoice = $derived(data.invoice);
+
+	// The status word for the subtitle: `ageingStatus` is the same helper
+	// the ageing table uses, so a due-in/overdue chip reads identically
+	// wherever it appears. `daysLate` stops mattering once the invoice is
+	// paid, so paid is its own branch rather than a fourth ageing band.
+	const statusLabel = $derived(
+		invoice.paidOn ? m.invoice_day_status_paid() : ageingStatus(data.daysLate).label
+	);
+	const subtitle = $derived(
+		factLine([`${invoice.contract.client.legalName} — ${invoice.contract.title}`, statusLabel])
+	);
 
 	function dayStateLabel(state: string): string {
 		switch (state) {
@@ -24,22 +38,17 @@
 <svelte:head><title>{m.invoice_detail_page_title({ number: invoice.number })}</title></svelte:head>
 
 <main class="mx-auto max-w-3xl p-8">
-	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-semibold">{invoice.number}</h1>
-		<a href={resolve('/invoices')} class="text-sm underline">{m.invoice_detail_back_link()}</a>
-	</div>
-	<p class="text-sm opacity-70">
-		{invoice.contract.client.legalName} — {invoice.contract.title}
-	</p>
-
-	{#if data.overdue}
-		<a
-			href={resolve('/invoices/[id]/remind', { id: invoice.id })}
-			class="mt-2 inline-block text-sm underline"
-		>
+	{#snippet remindAction()}
+		<a href={resolve('/invoices/[id]/remind', { id: invoice.id })} class="text-sm underline">
 			{m.invoice_detail_remind_link()}
 		</a>
-	{/if}
+	{/snippet}
+	<PageHeader
+		crumbs={data.crumbs}
+		title={invoice.number}
+		{subtitle}
+		actions={data.overdue ? remindAction : undefined}
+	/>
 
 	<dl class="mt-6 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
 		<dt class="opacity-70">{m.invoice_detail_issue_date_label()}</dt>

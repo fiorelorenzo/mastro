@@ -1,5 +1,6 @@
 import { error, fail } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
+import type { Crumb } from '$lib/nav/crumbs';
 import { getApproval, listApprovalsForContract } from '$lib/server/repositories/approval';
 import { getContract } from '$lib/server/repositories/contract';
 import { listRateCards } from '$lib/server/repositories/rate-card';
@@ -36,6 +37,8 @@ export const load: PageServerLoad = async ({ params }) => {
 				}))
 			: [];
 
+	const crumbs: Crumb[] = [{ href: '/day/calendar', label: m.home_calendar_link() }];
+
 	return {
 		workUnit: {
 			id: workUnit.id,
@@ -60,7 +63,8 @@ export const load: PageServerLoad = async ({ params }) => {
 			reason: t.reason,
 			actor: t.actor,
 			createdAt: t.createdAt.toISOString()
-		}))
+		})),
+		crumbs
 	};
 };
 
