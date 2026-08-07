@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import * as m from '$lib/paraglide/messages';
-import { legalString } from '$lib/legal/legal-string';
+import { legalText } from '$lib/legal/legal-text';
 import { translate } from './translate';
 
 test('translate forwards inputs to the compiled message and returns the localized string', () => {
@@ -15,16 +15,21 @@ test('referencing a message key that does not exist fails the type check', () =>
 	expect(missing).toBeUndefined();
 });
 
-test('passing a legal string into an interpolation slot is a type error', () => {
-	const annotation = legalString(
+test('passing a legal text into an interpolation slot is a type error', () => {
+	const annotation = legalText(
+		'it',
 		"Operazione senza applicazione dell'IVA ai sensi dell'art. 1, commi 54-89, L. 190/2014."
 	);
 
-	// @ts-expect-error a LegalString must never flow into a translation call (invariant 5).
+	// @ts-expect-error a LegalText must never flow into a translation call (invariant 5).
 	const result = translate(m.greeting, { name: annotation }, { locale: 'en' });
 
 	// The type error does not stop the value from being interpolated at
-	// runtime: the guard is compile-time only, which is exactly why the
-	// test above proves it exists rather than merely asserting it.
-	expect(result).toContain(annotation);
+	// runtime: the guard is compile-time only, which is exactly why this
+	// test exercises the runtime call instead of only asserting the
+	// `@ts-expect-error` above. A `LegalText` is an object, not a string, so
+	// it stringifies to "[object Object]" here rather than carrying its
+	// `text` through — further proof that nothing but `LegalText.svelte`
+	// should ever be asked to render one.
+	expect(result).toBe('Hello, [object Object].');
 });
