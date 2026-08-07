@@ -14,14 +14,15 @@ export type DocumentProvenance = (typeof documentProvenance.enumValues)[number];
 /**
  * Who or what a document is evidence for. A plain, CHECK-constrained text
  * column rather than a Postgres enum, on purpose: `invoice` and `expense`
- * do not exist yet (#26, out of scope here), and widening a CHECK
- * constraint's allowed list when they land is a metadata-only change that
- * touches no existing row — unlike `ALTER TYPE ... ADD VALUE`, whose new
- * value cannot even be used inside the transaction that adds it. See the
- * accompanying custom migration for the constraint and the trigger that
- * validates `ownerId` actually exists for `ownerType`.
+ * did not exist yet when this table was first written (#26/#28), and
+ * widening a CHECK constraint's allowed list when one lands is a
+ * metadata-only change that touches no existing row — unlike
+ * `ALTER TYPE ... ADD VALUE`, whose new value cannot even be used inside
+ * the transaction that adds it. See the accompanying custom migrations for
+ * the constraint and the trigger that validates `ownerId` actually exists
+ * for `ownerType`.
  */
-export type DocumentOwnerType = 'contract' | 'approval';
+export type DocumentOwnerType = 'contract' | 'approval' | 'expense';
 
 /**
  * Content-addressed storage on disk (`src/lib/server/documents/blob-store.ts`),

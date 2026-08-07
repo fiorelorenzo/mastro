@@ -24,6 +24,7 @@ export type ContractInput = {
 	taxTreatment: string;
 	requiresPriorApproval: boolean;
 	expensePolicy: ExpensePolicy;
+	requiresExpensePreAuthorisation: boolean;
 	status: ContractStatus;
 };
 
