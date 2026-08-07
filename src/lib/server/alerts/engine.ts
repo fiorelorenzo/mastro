@@ -8,6 +8,7 @@
 
 import { db, type DbExecutor } from '$lib/server/db';
 import { mirrorConfigFromEnv } from '$lib/server/drive/config';
+import { imapConfiguredInEnv } from '$lib/server/mail/config';
 import {
 	detectApprovalUnactioned,
 	detectBackupFailure,
@@ -15,6 +16,7 @@ import {
 	detectCeilingApproaching,
 	detectContractExpiring,
 	detectInvoiceOverdue,
+	detectMailboxPollFailure,
 	detectMirrorFailure,
 	detectRenewalWindowOpen,
 	detectWorkedWithoutApproval,
@@ -27,6 +29,7 @@ import {
 	fetchEvaluatedCeilings,
 	fetchInvoiceOverdueRows,
 	fetchLatestBackupRun,
+	fetchLatestMailboxPollRun,
 	fetchMirrorFailureRows,
 	fetchWorkedWithoutApprovalRows,
 	fetchYearEndOverrunInputs
@@ -53,7 +56,8 @@ export async function detectAlerts(asOfDate: string, executor: DbExecutor = db):
 		invoiceRows,
 		evaluatedCeilings,
 		latestBackupRun,
-		mirrorRows
+		mirrorRows,
+		mailboxPollStatus
 	] = await Promise.all([
 		fetchContractsForDeadlineAlerts(executor),
 		fetchContractsForBillablePeriod(executor),
@@ -62,7 +66,8 @@ export async function detectAlerts(asOfDate: string, executor: DbExecutor = db):
 		fetchInvoiceOverdueRows(),
 		fetchEvaluatedCeilings(asOfDate, executor),
 		fetchLatestBackupRun(executor),
-		fetchMirrorFailureRows(mirrorConfigFromEnv() !== null, executor)
+		fetchMirrorFailureRows(mirrorConfigFromEnv() !== null, executor),
+		fetchLatestMailboxPollRun(imapConfiguredInEnv(), executor)
 	]);
 
 	const yearEndInputs = await fetchYearEndOverrunInputs(evaluatedCeilings, asOfDate, executor);
@@ -77,7 +82,12 @@ export async function detectAlerts(asOfDate: string, executor: DbExecutor = db):
 		...detectCeilingApproaching(evaluatedCeilings),
 		...detectYearEndOverrunRisk(yearEndInputs),
 		...detectBackupFailure(latestBackupRun, asOfInstant),
-		...detectMirrorFailure(mirrorRows, asOfInstant)
+		...detectMirrorFailure(mirrorRows, asOfInstant),
+		...detectMailboxPollFailure(
+			mailboxPollStatus.pollingConfigured,
+			mailboxPollStatus.latestRun,
+			asOfInstant
+		)
 	];
 }
 

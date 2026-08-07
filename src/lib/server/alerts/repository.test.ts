@@ -21,6 +21,7 @@ import {
 	contract,
 	document,
 	documentMirrorRun,
+	mailboxPollRun,
 	type ExpensePolicy,
 	type PaymentTerms
 } from '$lib/server/db/schema';
@@ -33,6 +34,7 @@ import {
 	fetchContractsForBillablePeriod,
 	fetchContractsForDeadlineAlerts,
 	fetchLatestBackupRun,
+	fetchLatestMailboxPollRun,
 	fetchMirrorFailureRows,
 	fetchWorkedWithoutApprovalRows,
 	fetchYearEndOverrunInputs
@@ -334,6 +336,62 @@ test('fetchMirrorFailureRows excludes an already-mirrored document and attaches 
 				status: 'failure',
 				detail: 'second attempt, the latest'
 			});
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+// ── fetchLatestMailboxPollRun ────────────────────────────────────────────
+
+test('fetchLatestMailboxPollRun reports not configured when the mail account is not set up, even with a contract mapped', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			await insertContract(tx, { mailFolder: 'Acme Corp' });
+			await tx.insert(mailboxPollRun).values({ status: 'success', detail: null });
+
+			expect(await fetchLatestMailboxPollRun(false, tx)).toEqual({
+				pollingConfigured: false,
+				latestRun: null
+			});
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('fetchLatestMailboxPollRun reports not configured when the account is set up but no contract has a folder mapped', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			await insertContract(tx); // mailFolder left null
+
+			expect(await fetchLatestMailboxPollRun(true, tx)).toEqual({
+				pollingConfigured: false,
+				latestRun: null
+			});
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('fetchLatestMailboxPollRun returns the most recent row once configured, null when none exist yet', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			await insertContract(tx, { mailFolder: 'Acme Corp' });
+
+			expect(await fetchLatestMailboxPollRun(true, tx)).toEqual({
+				pollingConfigured: true,
+				latestRun: null
+			});
+
+			await tx.insert(mailboxPollRun).values({ status: 'failure', detail: 'first' });
+			await tx.insert(mailboxPollRun).values({ status: 'success', detail: null });
+
+			const result = await fetchLatestMailboxPollRun(true, tx);
+			expect(result.pollingConfigured).toBe(true);
+			expect(result.latestRun?.status).toBe('success');
+			expect(result.latestRun?.detail).toBeNull();
 
 			tx.rollback();
 		})

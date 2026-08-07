@@ -1,5 +1,5 @@
-import { asc, eq } from 'drizzle-orm';
-import { db } from '$lib/server/db';
+import { asc, eq, isNotNull } from 'drizzle-orm';
+import { db, type DbExecutor } from '$lib/server/db';
 import {
 	contract,
 	type ContractRenewalType,
@@ -50,6 +50,22 @@ export async function listContractsWithClient() {
 	});
 }
 
+/** Every contract currently mapped to an inbound mail folder (#84) —
+ * `mail/poll.ts`'s own candidate list for one poll pass. `isNotNull`
+ * rather than a truthy check in application code: `mail_folder` is
+ * never an empty string (`contract_mail_folder_not_blank`, the custom
+ * migration), so this is the same "not polled" test the database
+ * itself enforces. Takes `executor`, unlike this file's other reads,
+ * because `mail/poll.ts` composes it with the rest of one poll pass —
+ * the same reason `repositories/document-mirror.ts`'s `listUnmirrored
+ * Documents` does. */
+export async function listContractsWithMailFolder(executor: DbExecutor = db) {
+	return executor
+		.select({ id: contract.id, mailFolder: contract.mailFolder })
+		.from(contract)
+		.where(isNotNull(contract.mailFolder));
+}
+
 export async function getContract(id: string) {
 	return db.query.contract.findFirst({ where: eq(contract.id, id) });
 }
@@ -93,6 +109,26 @@ export async function setContractTemplateLanguage(
 	const [row] = await db
 		.update(contract)
 		.set({ templateLanguage })
+		.where(eq(contract.id, id))
+		.returning();
+	return row;
+}
+
+/** #84's per-contract inbound mail folder/label, set independently of
+ * the rest of the contract from the mail hub — mirrors `setContract
+ * AutoSendMail`'s and `setContractTemplateLanguage`'s narrow-setter
+ * shape for the same reason. `null` clears the mapping (stops polling
+ * that contract without deleting any history already handed off for
+ * it); the `contract_mail_folder_key` partial unique index (custom
+ * migration) is the actual guarantee against two contracts claiming the
+ * same folder — this function does not pre-check it, the same way
+ * `createContract` does not pre-check any of its own database
+ * constraints, so a caller has to handle the constraint violation either
+ * way. */
+export async function setContractMailFolder(id: string, mailFolder: string | null) {
+	const [row] = await db
+		.update(contract)
+		.set({ mailFolder })
 		.where(eq(contract.id, id))
 		.returning();
 	return row;

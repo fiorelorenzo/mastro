@@ -15,6 +15,7 @@ import {
 	detectCeilingApproaching,
 	detectContractExpiring,
 	detectInvoiceOverdue,
+	detectMailboxPollFailure,
 	detectMirrorFailure,
 	detectRenewalWindowOpen,
 	detectWorkedWithoutApproval,
@@ -539,4 +540,62 @@ test('mirror_failure is silent within the grace period when nothing has been att
 
 test('mirror_failure never sees a document that repository.ts already filtered out for having a remote file id — nothing to construct here proves it, the repository test does', () => {
 	expect(detectMirrorFailure([], asOf)).toEqual([]);
+});
+
+// ── mailbox_poll_failure ─────────────────────────────────────────────────
+
+test('mailbox_poll_failure is silent when polling is not configured, even with no run on file', () => {
+	expect(detectMailboxPollFailure(false, null, asOf)).toEqual([]);
+});
+
+test('mailbox_poll_failure fires critical when configured but no poll has ever run', () => {
+	const alerts = detectMailboxPollFailure(true, null, asOf);
+	expect(alerts).toEqual([
+		expect.objectContaining({
+			key: 'mailbox_poll_failure:global',
+			severity: 'critical',
+			detail: expect.objectContaining({ reason: 'never_run' })
+		})
+	]);
+});
+
+test('mailbox_poll_failure fires critical, with the recorded detail, on an explicit failure — even a recent one', () => {
+	const alerts = detectMailboxPollFailure(
+		true,
+		{
+			status: 'failure',
+			detail: 'connect ECONNREFUSED 127.0.0.1:993',
+			createdAt: new Date('2026-08-07T11:55:00.000Z')
+		},
+		asOf
+	);
+	expect(alerts[0]).toMatchObject({
+		severity: 'critical',
+		detail: { reason: 'failure', detail: 'connect ECONNREFUSED 127.0.0.1:993' }
+	});
+});
+
+test('mailbox_poll_failure fires serious once a successful run is more than 3 hours stale, not before', () => {
+	const stillFresh = detectMailboxPollFailure(
+		true,
+		{ status: 'success', detail: null, createdAt: new Date('2026-08-07T09:30:00.000Z') }, // 2.5h ago
+		asOf
+	);
+	expect(stillFresh).toEqual([]);
+
+	const stale = detectMailboxPollFailure(
+		true,
+		{ status: 'success', detail: null, createdAt: new Date('2026-08-07T08:30:00.000Z') }, // 3.5h ago
+		asOf
+	);
+	expect(stale[0]).toMatchObject({ severity: 'serious', detail: { reason: 'stale' } });
+});
+
+test('mailbox_poll_failure is silent once a recent success is on file', () => {
+	const alerts = detectMailboxPollFailure(
+		true,
+		{ status: 'success', detail: null, createdAt: new Date('2026-08-07T11:00:00.000Z') },
+		asOf
+	);
+	expect(alerts).toEqual([]);
 });
