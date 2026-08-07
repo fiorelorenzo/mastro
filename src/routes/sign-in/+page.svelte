@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import LanguageSwitch from '$lib/components/LanguageSwitch.svelte';
 	import type { PageProps } from './$types';
@@ -32,7 +33,7 @@
 	     (the app still sets ORIGIN in production for every real form). -->
 	<div>
 		<a
-			href="/sign-in/google?callbackURL={encodeURIComponent(data.callbackURL)}"
+			href="{resolve('/sign-in/google')}?callbackURL={encodeURIComponent(data.callbackURL)}"
 			data-sveltekit-reload
 			class="flex min-h-[44px] w-full items-center justify-center gap-3 border px-4 py-3 text-sm font-semibold"
 		>
