@@ -1,24 +1,33 @@
 import { expect, test } from 'vitest';
 import * as m from '$lib/paraglide/messages';
-import { legalString, type LegalString } from './legal-string';
+import { legalText, type LegalText } from './legal-text';
 
-test('legalString brands a plain string without changing its value', () => {
-	const value = 'Regime forfettario ex art. 1, commi 54-89, L. 190/2014.';
+test('legalText carries the language the law was written in alongside the verbatim text', () => {
+	const statute = legalText(
+		'it',
+		"Operazione senza applicazione dell'IVA ai sensi dell'art. 1, commi 54-89, L. 190/2014."
+	);
 
-	expect(legalString(value)).toBe(value);
+	expect(statute.kind).toBe('legal-text');
+	expect(statute.language).toBe('it');
+	expect(statute.text).toBe(
+		"Operazione senza applicazione dell'IVA ai sensi dell'art. 1, commi 54-89, L. 190/2014."
+	);
 });
 
-test('a plain string is not accepted where a LegalString is required', () => {
-	// @ts-expect-error a string has to be vouched for with legalString() first.
-	const value: LegalString = 'not run through legalString()';
+test('an object missing the language a legal text was written in is not a LegalText', () => {
+	// @ts-expect-error `language` is required — a legal text with no known
+	// language defeats the whole point of carrying one.
+	const incomplete: LegalText = { kind: 'legal-text', text: 'no language attached' };
 
-	expect(value).toBe('not run through legalString()');
+	expect(incomplete.text).toBe('no language attached');
 });
 
 test('a mandatory invoice annotation renders identically in English and in Italian', () => {
 	// A jurisdiction pack (#30) will supply the real text; this fixture only
 	// stands in for one so the invariant can be exercised without a pack.
-	const annotation = legalString(
+	const annotation = legalText(
+		'it',
 		"Operazione senza applicazione dell'IVA ai sensi dell'art. 1, commi 54-89, L. 190/2014."
 	);
 
@@ -37,5 +46,5 @@ test('a mandatory invoice annotation renders identically in English and in Itali
 
 	// The annotation itself is the law's text, not interface copy: it never
 	// passes through a message function, so switching locale cannot touch it.
-	expect(renderInItalian.annotation).toBe(renderInEnglish.annotation);
+	expect(renderInItalian.annotation).toEqual(renderInEnglish.annotation);
 });
