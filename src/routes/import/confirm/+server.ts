@@ -34,14 +34,20 @@ interface ConfirmRequestProposal {
 	readonly groupKey: string;
 	readonly client: ClientProposal;
 	readonly contract: ContractProposal;
-	/** Filenames of this group's own invoices, imported once the client and
+	/** File refs for this group's own invoices, imported once the client and
 	 * contract this proposal describes exist — the day #44 lands, a brand
-	 * new client's own invoices no longer wait for a second import run. */
-	readonly files: readonly string[];
+	 * new client's own invoices no longer wait for a second import run.
+	 * `invoiceIndex` picks which invoice within the file when a FatturaPA
+	 * batch file (#101) parses to more than one. */
+	readonly files: readonly { readonly filename: string; readonly invoiceIndex: number }[];
 }
 
 interface ConfirmRequestInvoice {
 	readonly filename: string;
+	/** Which invoice within `filename`'s own parsed array this refers to —
+	 * 0 except for a FatturaPA batch file (#101), which can produce more
+	 * than one. */
+	readonly invoiceIndex: number;
 	readonly contractId: string;
 	/** Companion filenames `review.ts` paired to this one (#44's rule 2). */
 	readonly attachments: readonly string[];
@@ -79,11 +85,13 @@ function todayIsoDate(): string {
  * no recorded days yet for #48 to propose anything from. */
 function emptyLineDecisions(
 	file: ImportableFile,
+	invoiceIndex: number,
 	pack: Pick<FiscalPack, 'formats'>,
 	registry: AdapterRegistry
 ): PersistInvoiceLineDecision[] {
 	const parsed = importFile(pack, registry, file);
-	const lineCount = parsed.kind === 'parsed' ? parsed.invoice.lines.length : 0;
+	const lineCount =
+		parsed.kind === 'parsed' ? (parsed.invoices[invoiceIndex]?.lines.length ?? 0) : 0;
 	return Array.from({ length: lineCount }, () => ({ workUnitIds: [] }));
 }
 
@@ -127,7 +135,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const invoicesCreated: { filename: string; invoiceId: string }[] = [];
 	const invoicesAlreadyPresent: { filename: string }[] = [];
 	const invoicesConflicted: { filename: string; existingInvoiceNumber: string }[] = [];
-	const invoicesFailed: { filename: string; message: string }[] = [];
+	// `invoiceIndex` is only threaded onto `invoicesFailed`: it is the one
+	// array the review page renders in a keyed `{#each}` where the same
+	// `filename` can appear twice, for a FatturaPA batch file's several
+	// invoices (#101) — `invoicesCreated`/`invoicesAlreadyPresent`/
+	// `invoicesConflicted` are shown only by count on that page today.
+	const invoicesFailed: { filename: string; invoiceIndex: number; message: string }[] = [];
 
 	function recordOutcome(filename: string, outcome: PersistInvoiceOutcome): void {
 		if (outcome.kind === 'created')
@@ -151,11 +164,12 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			continue;
 		}
 
-		for (const filename of proposal.files) {
-			const file = filesByName.get(filename);
+		for (const fileRef of proposal.files) {
+			const file = filesByName.get(fileRef.filename);
 			if (!file) {
 				invoicesFailed.push({
-					filename,
+					filename: fileRef.filename,
+					invoiceIndex: fileRef.invoiceIndex,
 					message: 'file bytes were not resent with the confirm request'
 				});
 				continue;
@@ -164,9 +178,10 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 				const outcome = await persistImportedInvoice(
 					{
 						file,
+						invoiceIndex: fileRef.invoiceIndex,
 						attachments: [],
 						contractId,
-						lineDecisions: emptyLineDecisions(file, pack, registry)
+						lineDecisions: emptyLineDecisions(file, fileRef.invoiceIndex, pack, registry)
 					},
 					pack,
 					registry,
@@ -175,9 +190,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 					actor,
 					`imported after creating ${proposal.client.legalName} from the same folder`
 				);
-				recordOutcome(filename, outcome);
+				recordOutcome(fileRef.filename, outcome);
 			} catch (error) {
-				invoicesFailed.push({ filename, message: errorMessage(error) });
+				invoicesFailed.push({
+					filename: fileRef.filename,
+					invoiceIndex: fileRef.invoiceIndex,
+					message: errorMessage(error)
+				});
 			}
 		}
 	}
@@ -187,6 +206,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		if (!file) {
 			invoicesFailed.push({
 				filename: item.filename,
+				invoiceIndex: item.invoiceIndex,
 				message: 'file bytes were not resent with the confirm request'
 			});
 			continue;
@@ -198,6 +218,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			const outcome = await persistImportedInvoice(
 				{
 					file,
+					invoiceIndex: item.invoiceIndex,
 					attachments,
 					contractId: item.contractId,
 					lineDecisions: item.lineWorkUnitIds.map((workUnitIds) => ({ workUnitIds }))
@@ -211,7 +232,11 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			);
 			recordOutcome(item.filename, outcome);
 		} catch (error) {
-			invoicesFailed.push({ filename: item.filename, message: errorMessage(error) });
+			invoicesFailed.push({
+				filename: item.filename,
+				invoiceIndex: item.invoiceIndex,
+				message: errorMessage(error)
+			});
 		}
 	}
 

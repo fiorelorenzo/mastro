@@ -61,7 +61,7 @@ function fakeFile(filename: string, marker: string): ImportableFile {
 const imaginaryAdapter: InvoiceFormatAdapter = {
 	id: 'qq-imaginary-format',
 	detect: (file) => new TextDecoder().decode(file.content) === 'imaginary-marker',
-	parse: () => imaginaryInvoice()
+	parse: () => [imaginaryInvoice()]
 };
 
 test('resolveAdapter finds an adapter registered under a format the active pack declares', () => {
@@ -95,12 +95,15 @@ test('importFile reports an unclaimed file clearly, never silently', () => {
 	});
 });
 
-test('importFile returns the invoice the resolved adapter parsed', () => {
+test('importFile returns the invoices the resolved adapter parsed', () => {
 	const registry = buildAdapterRegistry([imaginaryAdapter]);
 	const pack = { formats: ['qq-imaginary-format'] };
-	expect(importFile(pack, registry, fakeFile('doc.bin', 'imaginary-marker'))).toEqual({
+	const result = importFile(pack, registry, fakeFile('doc.bin', 'imaginary-marker'));
+	expect(result).toEqual({
 		kind: 'parsed',
 		adapterId: 'qq-imaginary-format',
-		invoice: imaginaryInvoice()
+		invoices: [imaginaryInvoice()]
 	});
+	if (result.kind !== 'parsed') throw new Error('unreachable');
+	expect(result.invoices).toHaveLength(1);
 });

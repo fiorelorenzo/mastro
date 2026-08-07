@@ -67,20 +67,24 @@ function client(overrides: Partial<ClientMatchCandidate> = {}): ClientMatchCandi
 	};
 }
 
-/** Encodes an `Invoice` as JSON in the file's own bytes, and an adapter
- * that decodes it back — a throwaway "format" whose only job is to hand
- * `buildReview` exactly the invoice a test wants, without a real XML
- * document. `malformed.json` is a magic filename this adapter claims via
- * `detect` but always fails to `parse`, exercising the malformed-document
- * path (see adapter.ts: `parse` may throw on a document that passed
- * `detect`). A file whose name ends `.pdf` is never claimed, exercising
- * the unrecognised/companion-attachment path without a real PDF parser. */
+/** Encodes an `Invoice` array as JSON in the file's own bytes, and an
+ * adapter that decodes it back — a throwaway "format" whose only job is to
+ * hand `buildReview` exactly the invoice(s) a test wants, without a real
+ * XML document. Always an array, matching `InvoiceFormatAdapter.parse`'s
+ * real contract (#101): `jsonFile` wraps a single invoice in a one-element
+ * array for the ordinary case, `jsonFileBatch` hands over more than one
+ * for the FatturaPA-batch-shaped case. `malformed.json` is a magic
+ * filename this adapter claims via `detect` but always fails to `parse`,
+ * exercising the malformed-document path (see adapter.ts: `parse` may
+ * throw on a document that passed `detect`). A file whose name ends
+ * `.pdf` is never claimed, exercising the unrecognised/companion-attachment
+ * path without a real PDF parser. */
 const fakeAdapter: InvoiceFormatAdapter = {
 	id: 'test-json-invoice',
 	detect: (file) => file.filename.endsWith('.json'),
 	parse: (file) => {
 		if (file.filename === 'malformed.json') throw new Error('missing required element');
-		return JSON.parse(new TextDecoder().decode(file.content)) as Invoice;
+		return JSON.parse(new TextDecoder().decode(file.content)) as Invoice[];
 	}
 };
 
@@ -88,7 +92,11 @@ const registry = buildAdapterRegistry([fakeAdapter]);
 const pack = { formats: [fakeAdapter.id] };
 
 function jsonFile(filename: string, value: Invoice): ImportableFile {
-	return { filename, content: new TextEncoder().encode(JSON.stringify(value)) };
+	return { filename, content: new TextEncoder().encode(JSON.stringify([value])) };
+}
+
+function jsonFileBatch(filename: string, values: Invoice[]): ImportableFile {
+	return { filename, content: new TextEncoder().encode(JSON.stringify(values)) };
 }
 
 function pdfFile(filename: string, content = 'pdf bytes'): ImportableFile {
@@ -104,7 +112,7 @@ test('a file no adapter claims is skipped as unrecognised_format', () => {
 		[]
 	);
 	expect(result.skipped).toEqual([
-		{ filename: 'notes.txt', reason: { kind: 'unrecognised_format' } }
+		{ filename: 'notes.txt', invoiceIndex: 0, reason: { kind: 'unrecognised_format' } }
 	]);
 });
 
@@ -119,6 +127,7 @@ test('a document that passes detect but fails to parse is skipped as malformed_d
 	expect(result.skipped).toEqual([
 		{
 			filename: 'malformed.json',
+			invoiceIndex: 0,
 			reason: { kind: 'malformed_document', message: 'missing required element' }
 		}
 	]);
@@ -136,6 +145,7 @@ test('an incoming invoice (supplier is not the account holder) is skipped with t
 	expect(result.skipped).toEqual([
 		{
 			filename: 'supplier-invoice.json',
+			invoiceIndex: 0,
 			reason: {
 				kind: 'incoming_invoice',
 				reason: {
@@ -161,6 +171,7 @@ test('a known customer with one active contract is recognised silently, no clari
 	expect(result.recognised).toEqual([
 		{
 			filename: 'a.json',
+			invoiceIndex: 0,
 			clientId: 'client-1',
 			clientLegalName: 'Rossi Consulting srl',
 			contractId: 'contract-1',
@@ -191,6 +202,7 @@ test('a known customer with no resolvable active contract is skipped as ambiguou
 	expect(result.skipped).toEqual([
 		{
 			filename: 'a.json',
+			invoiceIndex: 0,
 			reason: { kind: 'ambiguous_contract', clientLegalName: 'Rossi Consulting srl' }
 		}
 	]);
@@ -259,6 +271,7 @@ test('a repeated natural key within the batch is already_present (source batch),
 	expect(result.alreadyPresent).toEqual([
 		{
 			filename: 'a-copy.json',
+			invoiceIndex: 0,
 			source: 'batch',
 			duplicateOfFilename: 'a.json',
 			existingInvoiceNumber: null,
@@ -295,6 +308,7 @@ test('a file matching an invoice already imported in the past is already_present
 	expect(result.alreadyPresent).toEqual([
 		{
 			filename: 'a.json',
+			invoiceIndex: 0,
 			source: 'database',
 			duplicateOfFilename: null,
 			existingInvoiceNumber: '1',
@@ -315,6 +329,7 @@ test('the same natural key with different content is a conflict, never merged or
 	expect(result.conflicts).toEqual([
 		{
 			filename: 'a.json',
+			invoiceIndex: 0,
 			existingInvoiceNumber: '1',
 			existingIssueDate: '2024-01-15',
 			invoice: expect.objectContaining({ number: '1' })
@@ -340,9 +355,54 @@ test('an unrecognised file with no matching base name in the batch stays a plain
 		client()
 	]);
 	expect(result.skipped).toEqual([
-		{ filename: 'unrelated.pdf', reason: { kind: 'unrecognised_format' } }
+		{ filename: 'unrelated.pdf', invoiceIndex: 0, reason: { kind: 'unrecognised_format' } }
 	]);
 	expect(result.recognised[0].attachments).toEqual([]);
+});
+
+test('a single file whose adapter parses to two invoices for one known customer produces two recognised entries, invoiceIndex 0 and 1 (#101)', () => {
+	const first = invoice({ number: '1', lines: [line({ description: 'Line A' })] });
+	const second = invoice({ number: '2', lines: [line({ description: 'Line B' })] });
+	const result = buildReview(
+		[jsonFileBatch('batch.json', [first, second])],
+		pack,
+		registry,
+		ACCOUNT_HOLDER_TAX_ID,
+		[client()]
+	);
+	expect(result.recognised).toHaveLength(2);
+	expect(result.recognised[0]).toMatchObject({
+		filename: 'batch.json',
+		invoiceIndex: 0,
+		invoice: expect.objectContaining({ number: '1' })
+	});
+	expect(result.recognised[1]).toMatchObject({
+		filename: 'batch.json',
+		invoiceIndex: 1,
+		invoice: expect.objectContaining({ number: '2' })
+	});
+	expect(result.recognised[0].lines[0].description).toBe('Line A');
+	expect(result.recognised[1].lines[0].description).toBe('Line B');
+});
+
+test('a companion file sharing the base name of a batch file is not paired to any of its invoices, falling through to unrecognised_format (#44 rule 2, #101)', () => {
+	const first = invoice({ number: '1' });
+	const second = invoice({ number: '2' });
+	const structured = jsonFileBatch('2024/batch-invoice.json', [first, second]);
+	const companion = pdfFile('2024/batch-invoice.pdf');
+	const result = buildReview([structured, companion], pack, registry, ACCOUNT_HOLDER_TAX_ID, [
+		client()
+	]);
+	expect(result.recognised).toHaveLength(2);
+	expect(result.recognised[0].attachments).toEqual([]);
+	expect(result.recognised[1].attachments).toEqual([]);
+	expect(result.skipped).toEqual([
+		{
+			filename: '2024/batch-invoice.pdf',
+			invoiceIndex: 0,
+			reason: { kind: 'unrecognised_format' }
+		}
+	]);
 });
 
 test('a line on a day-rate contract carries a day-mapping proposal, an hourly line does not', () => {

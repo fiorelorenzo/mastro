@@ -4,7 +4,8 @@
 // function of that shape, so a hand-built object is exactly as valid a
 // case as one that came from real XML.
 import { expect, test } from 'vitest';
-import { mapFatturaPaToInvoice } from './map';
+import { mapFatturaPaToInvoices } from './map';
+import type { Invoice } from '../../invoice';
 import type { RawFatturaElettronica } from './xml';
 
 function baseRoot(): RawFatturaElettronica {
@@ -58,8 +59,17 @@ function baseRoot(): RawFatturaElettronica {
 	};
 }
 
+/** Every test here wants exactly one invoice back — `mapFatturaPaToInvoices`
+ * always returns an array (#101), so this narrows to the single-body case
+ * the same way the caller would, failing loudly (via array destructuring)
+ * rather than silently if a test root ever grew a second body by mistake. */
+function mapSingle(root: RawFatturaElettronica): Invoice {
+	const [invoice] = mapFatturaPaToInvoices(root);
+	return invoice;
+}
+
 test('the common case: a company customer identified by IdFiscaleIVA', () => {
-	const invoice = mapFatturaPaToInvoice(baseRoot());
+	const invoice = mapSingle(baseRoot());
 	expect(invoice.number).toBe('1');
 	expect(invoice.issueDate).toBe('2026-01-01');
 	expect(invoice.documentType).toBe('invoice');
@@ -76,7 +86,7 @@ test('an individual customer identified only by CodiceFiscale maps using the fis
 		CodiceFiscale: 'RSSMRA80A01H501U',
 		Anagrafica: { Nome: 'Mario', Cognome: 'Rossi' }
 	};
-	const invoice = mapFatturaPaToInvoice(root);
+	const invoice = mapSingle(root);
 	expect(invoice.customer.taxId).toBe('RSSMRA80A01H501U');
 	expect(invoice.customer.legalName).toBe('Mario Rossi');
 	expect(invoice.customer.nationalIdentifier).toBeUndefined();
@@ -87,13 +97,13 @@ test('a customer with neither IdFiscaleIVA nor CodiceFiscale is rejected rather 
 	root.FatturaElettronicaHeader.CessionarioCommittente.DatiAnagrafici = {
 		Anagrafica: { Denominazione: 'Nobody' }
 	};
-	expect(() => mapFatturaPaToInvoice(root)).toThrow(/IdFiscaleIVA nor CodiceFiscale/);
+	expect(() => mapSingle(root)).toThrow(/IdFiscaleIVA nor CodiceFiscale/);
 });
 
 test('an unrecognised TipoDocumento is rejected rather than guessed', () => {
 	const root = baseRoot();
 	root.FatturaElettronicaBody[0].DatiGenerali.DatiGeneraliDocumento.TipoDocumento = 'TD99';
-	expect(() => mapFatturaPaToInvoice(root)).toThrow(/unrecognised TipoDocumento/);
+	expect(() => mapSingle(root)).toThrow(/unrecognised TipoDocumento/);
 });
 
 test('a document missing ImportoTotaleDocumento is rejected rather than deriving a total', () => {
@@ -104,16 +114,26 @@ test('a document missing ImportoTotaleDocumento is rejected rather than deriving
 		Data: '2026-01-01',
 		Numero: '1'
 	};
-	expect(() => mapFatturaPaToInvoice(root)).toThrow(/ImportoTotaleDocumento/);
+	expect(() => mapSingle(root)).toThrow(/ImportoTotaleDocumento/);
 });
 
-test('a batch file with more than one FatturaElettronicaBody is rejected rather than parsing only the first', () => {
+test('a batch file with more than one FatturaElettronicaBody produces one invoice per body, in order, sharing the header transmission (#101)', () => {
 	const root = baseRoot();
-	root.FatturaElettronicaBody = [root.FatturaElettronicaBody[0], root.FatturaElettronicaBody[0]];
-	expect(() => mapFatturaPaToInvoice(root)).toThrow(/FatturaElettronicaBody/);
+	const secondBody = structuredClone(root.FatturaElettronicaBody[0]);
+	secondBody.DatiGenerali.DatiGeneraliDocumento.Numero = '2';
+	root.FatturaElettronicaBody = [root.FatturaElettronicaBody[0], secondBody];
+
+	const invoices = mapFatturaPaToInvoices(root);
+
+	expect(invoices).toHaveLength(2);
+	expect(invoices[0].number).toBe('1');
+	expect(invoices[1].number).toBe('2');
+	// `DatiTrasmissione` lives on the shared header, not per body, so both
+	// invoices carry an identical transmission.
+	expect(invoices[0].transmission).toEqual(invoices[1].transmission);
 });
 
-test('a payment instalment without an explicit due date is rejected rather than one being computed', () => {
+test('a payment instalment with neither an explicit due date nor computable relative terms is rejected rather than guessed', () => {
 	const root = baseRoot();
 	root.FatturaElettronicaBody[0].DatiPagamento = [
 		{
@@ -121,7 +141,35 @@ test('a payment instalment without an explicit due date is rejected rather than 
 			DettaglioPagamento: [{ ModalitaPagamento: 'MP05', ImportoPagamento: '122.00' }]
 		}
 	];
-	expect(() => mapFatturaPaToInvoice(root)).toThrow(/DataScadenzaPagamento/);
+	expect(() => mapSingle(root)).toThrow(
+		/neither DataScadenzaPagamento nor DataRiferimentoTerminiPagamento\/GiorniTerminiPagamento/
+	);
+});
+
+test('a payment instalment expressed only as relative terms produces a due date computed from them, recorded as computed', () => {
+	const root = baseRoot();
+	root.FatturaElettronicaBody[0].DatiPagamento = [
+		{
+			CondizioniPagamento: 'TP02',
+			DettaglioPagamento: [
+				{
+					ModalitaPagamento: 'MP05',
+					DataRiferimentoTerminiPagamento: '2026-01-01',
+					GiorniTerminiPagamento: '30',
+					ImportoPagamento: '122.00'
+				}
+			]
+		}
+	];
+	const invoice = mapSingle(root);
+	// 2026-01-01 + 30 days = 2026-01-31.
+	expect(invoice.paymentTerms[0].installments[0]).toEqual({
+		dueDate: '2026-01-31',
+		dueDateSource: 'computed',
+		amount: 12200,
+		method: 'MP05',
+		iban: undefined
+	});
 });
 
 test('every payment-terms block keeps its own condition code and instalments', () => {
@@ -149,23 +197,37 @@ test('every payment-terms block keeps its own condition code and instalments', (
 			]
 		}
 	];
-	const invoice = mapFatturaPaToInvoice(root);
+	const invoice = mapSingle(root);
 	expect(invoice.paymentTerms).toEqual([
 		{
 			conditionCode: 'TP01',
 			installments: [
-				{ dueDate: '2026-02-01', amount: 6100, method: 'MP05', iban: 'IT60X0542811101000000123456' }
+				{
+					dueDate: '2026-02-01',
+					dueDateSource: 'document',
+					amount: 6100,
+					method: 'MP05',
+					iban: 'IT60X0542811101000000123456'
+				}
 			]
 		},
 		{
 			conditionCode: 'TP03',
-			installments: [{ dueDate: '2026-01-15', amount: 6100, method: 'MP08', iban: undefined }]
+			installments: [
+				{
+					dueDate: '2026-01-15',
+					dueDateSource: 'document',
+					amount: 6100,
+					method: 'MP08',
+					iban: undefined
+				}
+			]
 		}
 	]);
 });
 
 test('stamp duty and the social charge are absent, not defaulted to zero, when the document carries none', () => {
-	const invoice = mapFatturaPaToInvoice(baseRoot());
+	const invoice = mapSingle(baseRoot());
 	expect(invoice.stampDuty).toBeUndefined();
 	expect(invoice.socialSecurityCharges).toEqual([]);
 });
@@ -184,7 +246,7 @@ test('stamp duty and the social charge survive when the document carries them', 
 			AliquotaIVA: '22.00'
 		}
 	];
-	const invoice = mapFatturaPaToInvoice(root);
+	const invoice = mapSingle(root);
 	expect(invoice.stampDuty).toBe(200);
 	expect(invoice.socialSecurityCharges).toEqual([
 		{ fundCode: 'TC22', rate: 4, amount: 400, taxableAmount: 10000, taxRateOnCharge: 22 }
@@ -203,7 +265,7 @@ test('taxableAmount and taxAmount sum every tax summary block, for a mixed-rate 
 			RiferimentoNormativo: 'Art. 1'
 		}
 	];
-	const invoice = mapFatturaPaToInvoice(root);
+	const invoice = mapSingle(root);
 	expect(invoice.taxableAmount).toBe(14000);
 	expect(invoice.taxAmount).toBe(2200);
 	expect(invoice.taxSummary).toHaveLength(2);
