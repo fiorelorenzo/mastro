@@ -81,6 +81,13 @@ export const contract = pgTable('contract', {
 	// interpreted here.
 	taxTreatment: text('tax_treatment').notNull(),
 	requiresPriorApproval: boolean('requires_prior_approval').notNull().default(false),
+	// Whether a draft produced by a non-manual email_template trigger (#71)
+	// goes out unattended. Per-contract, not per-template, because it
+	// follows the counterparty relationship (invariant 2): off by default,
+	// so a new contract never emails a client without a human looking at
+	// the message first (#72). The manual trigger always requires the
+	// explicit send action regardless of this flag.
+	autoSendMail: boolean('auto_send_mail').notNull().default(false),
 	expensePolicy: jsonb('expense_policy').$type<ExpensePolicy>().notNull(),
 	status: contractStatus('status').notNull().default('draft'),
 	...timestamps()
