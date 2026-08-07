@@ -41,6 +41,6 @@ export const load: PageServerLoad = async ({ params }) => {
 					: entry.contractId
 			};
 		}),
-		crumbs: [{ href: '/day/calendar', label: m.home_calendar_link() }] as Crumb[]
+		crumbs: [{ href: '/day/calendar', label: m.nav_calendar() }] as Crumb[]
 	};
 };

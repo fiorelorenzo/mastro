@@ -65,7 +65,7 @@ export const load: PageServerLoad = async ({ url }) => {
 			? requestedDate
 			: new Date().toISOString().slice(0, 10);
 
-	const crumbs: Crumb[] = [{ href: '/day/calendar', label: m.home_calendar_link() }];
+	const crumbs: Crumb[] = [{ href: '/day/calendar', label: m.nav_calendar() }];
 
 	return { contracts, approvalsByContract, defaultContractId, defaultDate, crumbs };
 };
