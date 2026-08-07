@@ -3,6 +3,7 @@ import { date, jsonb, numeric, pgEnum, pgTable, text, uuid } from 'drizzle-orm/p
 import { id, timestamps } from '../columns';
 import { approval } from './approval';
 import { contract } from './contract';
+import { invoiceLine } from './invoice';
 
 /**
  * The day lifecycle described on epic #2:
@@ -44,9 +45,9 @@ export type WorkUnitState = (typeof workUnitState.enumValues)[number];
  * one applies is resolved against the contract's rate card at pricing
  * time, not validated here. `approvalId` is the proof this day was
  * authorised in writing before it was worked (#22); `invoiceLineId` is
- * where it lands once billed — no foreign key yet, `invoice_line` does not
- * exist (#26, out of scope here), the same situation `document.ownerId`
- * and `approval.proposalReference` are already in.
+ * where it lands once billed (#26) — restricted, not cascaded, the same
+ * choice `approvalId` makes: a line cannot be deleted out from under a
+ * day that is already `invoiced` or `paid`.
  */
 export const workUnit = pgTable('work_unit', {
 	id: id(),
@@ -58,7 +59,7 @@ export const workUnit = pgTable('work_unit', {
 	scope: text('scope').notNull(),
 	state: workUnitState('state').notNull().default('proposed'),
 	approvalId: uuid('approval_id').references(() => approval.id, { onDelete: 'restrict' }),
-	invoiceLineId: uuid('invoice_line_id'),
+	invoiceLineId: uuid('invoice_line_id').references(() => invoiceLine.id, { onDelete: 'restrict' }),
 	notes: text('notes'),
 	...timestamps()
 });
@@ -97,6 +98,7 @@ export const workUnitTransition = pgTable('work_unit_transition', {
 export const workUnitRelations = relations(workUnit, ({ one, many }) => ({
 	contract: one(contract, { fields: [workUnit.contractId], references: [contract.id] }),
 	approval: one(approval, { fields: [workUnit.approvalId], references: [approval.id] }),
+	invoiceLine: one(invoiceLine, { fields: [workUnit.invoiceLineId], references: [invoiceLine.id] }),
 	transitions: many(workUnitTransition)
 }));
 

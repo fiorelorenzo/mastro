@@ -3,6 +3,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import LanguageSwitch from '$lib/components/LanguageSwitch.svelte';
 	import InstallPrompt from '$lib/pwa/InstallPrompt.svelte';
+	import OfflineDataBanner from '$lib/pwa/OfflineDataBanner.svelte';
 	import { SURFACE_DARK, SURFACE_LIGHT } from '$lib/pwa/colors';
 
 	let { children } = $props();
@@ -22,6 +23,7 @@
 	<!-- iOS ignores short_name too, and shows this under the home screen icon instead. -->
 	<meta name="apple-mobile-web-app-title" content="mastro" />
 </svelte:head>
+<OfflineDataBanner />
 <div class="flex justify-end p-4">
 	<LanguageSwitch />
 </div>

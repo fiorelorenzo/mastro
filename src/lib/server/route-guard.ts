@@ -12,7 +12,12 @@ export const PUBLIC_ROUTE_IDS: ReadonlySet<string> = new Set([
 	// Redirects straight to Google's consent screen.
 	'/sign-in',
 	// Liveness probe for compose and the reverse proxy.
-	'/health'
+	'/health',
+	// The offline fallback the service worker serves for a failed navigation
+	// (#61). Prerendered and stateless — it never reads locals.user — which
+	// is exactly why it is safe to precache and hand to a visitor the
+	// service worker cannot otherwise tell apart from a signed-out one.
+	'/offline'
 ]);
 
 /**

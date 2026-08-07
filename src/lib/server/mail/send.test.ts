@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { ImapFlow } from 'imapflow';
-import { afterAll, afterEach, beforeAll, beforeEach, expect, test } from 'vitest';
+import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract, sentEmail, workUnit } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
@@ -54,7 +54,6 @@ const unreachableConfig: MailConfig = {
 	imap: { host: '192.0.2.1', port: 1, secure: false, user: 'x', password: 'x', sentMailbox: 'Sent' }
 };
 
-let mailboxAvailable = false;
 async function probeMailbox(): Promise<boolean> {
 	const probe = new ImapFlow({
 		host: realConfig.imap.host,
@@ -74,15 +73,18 @@ async function probeMailbox(): Promise<boolean> {
 
 let root: string;
 
-beforeAll(async () => {
-	mailboxAvailable = await probeMailbox();
-	if (!mailboxAvailable) {
-		console.warn(
-			'send.test.ts: no test mailbox at 127.0.0.1:34025/34143 — the real-send test is skipped. ' +
-				'Run `docker compose -p mastro-mail-test -f compose.mail-test.yaml up -d` first.'
-		);
-	}
-});
+// Top-level await: the availability check has to happen before `test.skipIf`
+// is evaluated at collection time, not inside a `beforeAll`, which runs too
+// late to gate which tests are even registered. A test that returned early
+// instead would report as passing while asserting nothing, which
+// `expect.requireAssertions` rightly treats as a failure.
+const mailboxAvailable = await probeMailbox();
+if (!mailboxAvailable) {
+	console.warn(
+		'send.test.ts: no test mailbox at 127.0.0.1:34025/34143 — the real-send tests are skipped. ' +
+			'Run `docker compose -p mastro-mail-test -f compose.mail-test.yaml up -d` first.'
+	);
+}
 
 beforeEach(async () => {
 	root = await mkdtemp(join(tmpdir(), 'mastro-send-'));
@@ -213,81 +215,93 @@ test('auto-send off: prepares nothing sent, touches neither SMTP nor IMAP', asyn
 	).rejects.toThrow();
 });
 
-test('auto-send on: sends for real, appends to Sent, and logs the send', async () => {
-	if (!mailboxAvailable) return;
+test.skipIf(!mailboxAvailable)(
+	'auto-send on: sends for real, appends to Sent, and logs the send',
+	async () => {
+		await expect(
+			db.transaction(async (tx) => {
+				const contractRow = await seed(tx);
+				const prepared = await prepareEmail(
+					{
+						...template,
+						contractId: contractRow.id,
+						subject: `${template.subject} ${crypto.randomUUID()}`
+					},
+					{
+						...context,
+						register: {
+							contractId: contractRow.id,
+							...context.period,
+							entries: [],
+							totalQuantity: 0
+						}
+					},
+					[realConfig.smtp.user],
+					tx
+				);
 
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await seed(tx);
-			const prepared = await prepareEmail(
-				{
-					...template,
-					contractId: contractRow.id,
-					subject: `${template.subject} ${crypto.randomUUID()}`
-				},
-				{
-					...context,
-					register: { contractId: contractRow.id, ...context.period, entries: [], totalQuantity: 0 }
-				},
-				[realConfig.smtp.user],
-				tx
-			);
+				const result = await composeForAutomaticTrigger(prepared, true, realConfig, tx);
+				expect(result.sent).toBe(true);
+				if (!result.sent) return;
+				expect(result.messageId).toBeTruthy();
 
-			const result = await composeForAutomaticTrigger(prepared, true, realConfig, tx);
-			expect(result.sent).toBe(true);
-			if (!result.sent) return;
-			expect(result.messageId).toBeTruthy();
+				const [logged] = await tx
+					.select()
+					.from(sentEmail)
+					.where(eq(sentEmail.contractId, contractRow.id));
+				expect(logged.autoSent).toBe(true);
+				expect(logged.messageId).toBe(result.messageId);
+				expect(logged.subject).toBe(prepared.subject);
 
-			const [logged] = await tx
-				.select()
-				.from(sentEmail)
-				.where(eq(sentEmail.contractId, contractRow.id));
-			expect(logged.autoSent).toBe(true);
-			expect(logged.messageId).toBe(result.messageId);
-			expect(logged.subject).toBe(prepared.subject);
+				tx.rollback();
+			})
+		).rejects.toThrow();
+	}
+);
 
-			tx.rollback();
-		})
-	).rejects.toThrow();
-});
+test.skipIf(!mailboxAvailable)(
+	'a manual send always requires dispatchEmail explicitly, regardless of the auto-send flag',
+	async () => {
+		await expect(
+			db.transaction(async (tx) => {
+				const contractRow = await seed(tx);
+				const prepared = await prepareEmail(
+					{
+						...template,
+						contractId: contractRow.id,
+						subject: `${template.subject} ${crypto.randomUUID()}`
+					},
+					{
+						...context,
+						register: {
+							contractId: contractRow.id,
+							...context.period,
+							entries: [],
+							totalQuantity: 0
+						}
+					},
+					[realConfig.smtp.user],
+					tx
+				);
 
-test('a manual send always requires dispatchEmail explicitly, regardless of the auto-send flag', async () => {
-	if (!mailboxAvailable) return;
+				// Nothing sent yet: dispatchEmail was never called.
+				const before = await tx
+					.select()
+					.from(sentEmail)
+					.where(eq(sentEmail.contractId, contractRow.id));
+				expect(before).toEqual([]);
 
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await seed(tx);
-			const prepared = await prepareEmail(
-				{
-					...template,
-					contractId: contractRow.id,
-					subject: `${template.subject} ${crypto.randomUUID()}`
-				},
-				{
-					...context,
-					register: { contractId: contractRow.id, ...context.period, entries: [], totalQuantity: 0 }
-				},
-				[realConfig.smtp.user],
-				tx
-			);
+				const result = await dispatchEmail(prepared, realConfig, false, tx);
+				expect(result.messageId).toBeTruthy();
 
-			// Nothing sent yet: dispatchEmail was never called.
-			const before = await tx
-				.select()
-				.from(sentEmail)
-				.where(eq(sentEmail.contractId, contractRow.id));
-			expect(before).toEqual([]);
+				const [logged] = await tx
+					.select()
+					.from(sentEmail)
+					.where(eq(sentEmail.contractId, contractRow.id));
+				expect(logged.autoSent).toBe(false);
 
-			const result = await dispatchEmail(prepared, realConfig, false, tx);
-			expect(result.messageId).toBeTruthy();
-
-			const [logged] = await tx
-				.select()
-				.from(sentEmail)
-				.where(eq(sentEmail.contractId, contractRow.id));
-			expect(logged.autoSent).toBe(false);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
-});
+				tx.rollback();
+			})
+		).rejects.toThrow();
+	}
+);

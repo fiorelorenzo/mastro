@@ -103,15 +103,29 @@
     {
       "idx": 14,
       "version": "7",
-      "when": 1786064283062,
-      "tag": "0014_email_template",
+      "when": 1786063913215,
+      "tag": "0014_invoice",
       "breakpoints": true
     },
     {
       "idx": 15,
       "version": "7",
-      "when": 1786064312625,
-      "tag": "0015_email_template_constraints",
+      "when": 1786063931140,
+      "tag": "0015_invoice_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786068405398,
+      "tag": "0016_email_template",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1786068406999,
+      "tag": "0017_email_template_constraints",
       "breakpoints": true
     }
   ]

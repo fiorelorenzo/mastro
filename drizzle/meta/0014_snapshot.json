@@ -1,5 +1,5 @@
 {
-  "id": "748eb4ba-bb6b-490d-956b-732724c2d43b",
+  "id": "53b37ace-6185-4cd1-8d68-7b6e41a0b45e",
   "prevId": "308cd40d-77cc-4000-9c43-a47b6bab2ef1",
   "version": "7",
   "dialect": "postgresql",
@@ -769,13 +769,6 @@
           "notNull": true,
           "default": false
         },
-        "auto_send_mail": {
-          "name": "auto_send_mail",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "expense_policy": {
           "name": "expense_policy",
           "type": "jsonb",
@@ -936,187 +929,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.email_template": {
-      "name": "email_template",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "contract_id": {
-          "name": "contract_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject": {
-          "name": "subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "body": {
-          "name": "body",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "attachment_kinds": {
-          "name": "attachment_kinds",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "trigger": {
-          "name": "trigger",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "email_template_contract_id_contract_id_fk": {
-          "name": "email_template_contract_id_contract_id_fk",
-          "tableFrom": "email_template",
-          "tableTo": "contract",
-          "columnsFrom": [
-            "contract_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.sent_email": {
-      "name": "sent_email",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "contract_id": {
-          "name": "contract_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "email_template_id": {
-          "name": "email_template_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "recipients": {
-          "name": "recipients",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "subject": {
-          "name": "subject",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "message_id": {
-          "name": "message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "auto_sent": {
-          "name": "auto_sent",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "sent_email_contract_id_contract_id_fk": {
-          "name": "sent_email_contract_id_contract_id_fk",
-          "tableFrom": "sent_email",
-          "tableTo": "contract",
-          "columnsFrom": [
-            "contract_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "sent_email_email_template_id_email_template_id_fk": {
-          "name": "sent_email_email_template_id_email_template_id_fk",
-          "tableFrom": "sent_email",
-          "tableTo": "email_template",
-          "columnsFrom": [
-            "email_template_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.fiscal_profile": {
       "name": "fiscal_profile",
       "schema": "",
@@ -1183,6 +995,302 @@
         "fiscal_profile_valid_range": {
           "name": "fiscal_profile_valid_range",
           "value": "\"fiscal_profile\".\"valid_to\" is null or \"fiscal_profile\".\"valid_from\" < \"fiscal_profile\".\"valid_to\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.invoice": {
+      "name": "invoice",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "contract_id": {
+          "name": "contract_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "number": {
+          "name": "number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issue_date": {
+          "name": "issue_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "document_type": {
+          "name": "document_type",
+          "type": "invoice_document_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'invoice'"
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "taxable_amount": {
+          "name": "taxable_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tax_amount": {
+          "name": "tax_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "total": {
+          "name": "total",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tax_treatment_code": {
+          "name": "tax_treatment_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "statutory_reference": {
+          "name": "statutory_reference",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stamp_duty": {
+          "name": "stamp_duty",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "social_charge": {
+          "name": "social_charge",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "due_date": {
+          "name": "due_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "due_date_source": {
+          "name": "due_date_source",
+          "type": "invoice_due_date_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payment_method": {
+          "name": "payment_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "iban": {
+          "name": "iban",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "transmission_id": {
+          "name": "transmission_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "paid_on": {
+          "name": "paid_on",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "invoice_contract_id_contract_id_fk": {
+          "name": "invoice_contract_id_contract_id_fk",
+          "tableFrom": "invoice",
+          "tableTo": "contract",
+          "columnsFrom": [
+            "contract_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "invoice_contract_number_unique": {
+          "name": "invoice_contract_number_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "contract_id",
+            "number"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "invoice_taxable_amount_non_negative": {
+          "name": "invoice_taxable_amount_non_negative",
+          "value": "\"invoice\".\"taxable_amount\" >= 0"
+        },
+        "invoice_tax_amount_non_negative": {
+          "name": "invoice_tax_amount_non_negative",
+          "value": "\"invoice\".\"tax_amount\" >= 0"
+        },
+        "invoice_total_non_negative": {
+          "name": "invoice_total_non_negative",
+          "value": "\"invoice\".\"total\" >= 0"
+        },
+        "invoice_stamp_duty_non_negative": {
+          "name": "invoice_stamp_duty_non_negative",
+          "value": "\"invoice\".\"stamp_duty\" is null or \"invoice\".\"stamp_duty\" >= 0"
+        },
+        "invoice_social_charge_non_negative": {
+          "name": "invoice_social_charge_non_negative",
+          "value": "\"invoice\".\"social_charge\" is null or \"invoice\".\"social_charge\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.invoice_line": {
+      "name": "invoice_line",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "invoice_id": {
+          "name": "invoice_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "numeric(6, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit_price": {
+          "name": "unit_price",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tax_rate": {
+          "name": "tax_rate",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tax_treatment_code": {
+          "name": "tax_treatment_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "invoice_line_invoice_id_invoice_id_fk": {
+          "name": "invoice_line_invoice_id_invoice_id_fk",
+          "tableFrom": "invoice_line",
+          "tableTo": "invoice",
+          "columnsFrom": [
+            "invoice_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "invoice_line_quantity_positive": {
+          "name": "invoice_line_quantity_positive",
+          "value": "\"invoice_line\".\"quantity\" > 0"
+        },
+        "invoice_line_unit_price_non_negative": {
+          "name": "invoice_line_unit_price_non_negative",
+          "value": "\"invoice_line\".\"unit_price\" >= 0"
+        },
+        "invoice_line_amount_non_negative": {
+          "name": "invoice_line_amount_non_negative",
+          "value": "\"invoice_line\".\"amount\" >= 0"
+        },
+        "invoice_line_tax_rate_range": {
+          "name": "invoice_line_tax_rate_range",
+          "value": "\"invoice_line\".\"tax_rate\" >= 0 and \"invoice_line\".\"tax_rate\" <= 100"
         }
       },
       "isRLSEnabled": false
@@ -1395,6 +1503,19 @@
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
+        },
+        "work_unit_invoice_line_id_invoice_line_id_fk": {
+          "name": "work_unit_invoice_line_id_invoice_line_id_fk",
+          "tableFrom": "work_unit",
+          "tableTo": "invoice_line",
+          "columnsFrom": [
+            "invoice_line_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1542,6 +1663,26 @@
         "mail",
         "upload",
         "generated"
+      ]
+    },
+    "public.invoice_document_type": {
+      "name": "invoice_document_type",
+      "schema": "public",
+      "values": [
+        "invoice",
+        "advance_on_invoice",
+        "advance_on_fee_note",
+        "credit_note",
+        "debit_note",
+        "fee_note"
+      ]
+    },
+    "public.invoice_due_date_source": {
+      "name": "invoice_due_date_source",
+      "schema": "public",
+      "values": [
+        "document",
+        "computed"
       ]
     },
     "public.disbursement_period": {

@@ -34,17 +34,18 @@ export async function listContracts(clientId?: string) {
 	});
 }
 
-export async function getContract(id: string) {
-	return db.query.contract.findFirst({ where: eq(contract.id, id) });
-}
-
-/** For screens that need to show which client a contract belongs to
- * (#71/#72's mail hub) without a second round trip per row. */
+/** Contracts with their client, for any screen that shows the client's
+ * name next to a contract rather than its id: the invoice picker (#26) and
+ * the mail hub (#71, #72) both read this one query. */
 export async function listContractsWithClient() {
 	return db.query.contract.findMany({
 		with: { client: true },
-		orderBy: asc(contract.title)
+		orderBy: asc(contract.startsOn)
 	});
+}
+
+export async function getContract(id: string) {
+	return db.query.contract.findFirst({ where: eq(contract.id, id) });
 }
 
 export async function getContractWithClient(id: string) {

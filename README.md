@@ -5,9 +5,14 @@ _From the Italian **libro mastro** — the general ledger._
 A self-hosted ledger for independent consultants who bill by the **day**, and whose
 days have to be **approved in writing before they are worked**.
 
-> **Status: early.** The design is settled and the work is broken down on the
-> [project board](https://github.com/users/fiorelorenzo/projects). There is no
-> runnable code yet. The board is the roadmap and the source of truth.
+## Who this is for
+
+You, if: you invoice on a day rate, your contracts require written pre-approval
+before a day counts, you have to submit a register of worked days with every
+invoice, and at least one client's payment terms, renewal clause or fiscal ceiling
+is not something you want to track by memory. If you invoice hourly with no
+approval step and no ceiling to watch, this is more machinery than you need — a
+plain timesheet will serve you better.
 
 ## The problem
 
@@ -33,55 +38,99 @@ weekly and retrospective — the exact inverse of the requirement. Invoicing too
 cover invoice to payment but know nothing of the day that precedes it. National
 e-invoicing suites stop at issuing the invoice and never look forward.
 
-## What mastro does
+## What makes it different: approval first
 
-- **A day ledger with proof.** Every day carries the reference to the written
-  approval that authorised it, and the state `worked_without_approval` exists
-  precisely so that the risk is visible rather than discovered at invoicing time.
-- **Contracts as data.** Day rates, fixed recurring fees and hourly work; renewal
-  that is explicit, tacit, at the counterparty's option or absent; payment terms that
-  are net-N or by day N of the following month; notice periods that bound how far
-  ahead anything is actually certain.
-- **Ceilings as first-class citizens.** Fiscal ceilings arrive as **jurisdiction
-  packs**, declarative modules that carry a country and regime's accounting basis,
-  thresholds, tax treatments and invoice formats. The core contains no
-  country-specific logic; a `generic` pack leaves the whole product working with no
-  ceilings at all. Contract-level constraints attach to the contract and outlive any
-  change of regime.
-- **Import instead of integration.** Point it at a folder and it reads structured
-  e-invoices deterministically (FatturaPA first, more via format adapters), skipping
-  incoming invoices and never duplicating on a re-run. That is also how you load
-  history on day one.
-- **Agents propose, you confirm.** Contract PDFs and approval threads written in
-  ordinary prose are read by an ACP agent that emits a proposed diff, never a write.
-  Because a renewal clause can be ambiguous to an expert human, and a system that
-  silently picks an interpretation produces wrong numbers wearing the face of right
-  ones.
-- **A PWA.** Installable, mobile-first, with an offline queue for recording a day and
-  web push for the alerts that matter.
+Every other tool in this space starts from the day you worked and asks whether it
+gets paid. `mastro` starts from the approval and asks whether a day may be worked at
+all. A day's life is `proposed → approved → worked → invoiced → paid`, and the
+branch that matters most is `worked_without_approval`: a day recorded without a
+prior written approval does not get quietly folded into the ledger as if it were
+fine, it lands in a state that says, in the data itself, "this one is a risk." That
+state is enforced by database triggers, not application code that a bug or a rushed
+change could bypass.
 
-Interface in English and Italian. Code, comments and documentation in English.
+## What works today
+
+- **Clients, contracts and rate cards.** Legal identity, notice channel, day rates,
+  fixed recurring fees and hourly work, renewal that is explicit, tacit, at the
+  counterparty's option or absent, payment terms that are net-N or by day N of the
+  following month. Reachable at `/clients` today.
+- **The day lifecycle and approval model.** The state machine above, an immutable
+  `approval` record carrying the proof (channel, sender, message id, excerpt,
+  archived document), and the database triggers that enforce every transition,
+  including the automatic fall into `worked_without_approval`. This is built and
+  tested end to end at the domain and database layer; the screen to record a day
+  from a phone is on the board, not merged yet.
+- **Jurisdiction packs.** A pack interface with no country-specific logic in the
+  core, a `generic` pack that leaves the whole product working with no ceilings at
+  all, and `it-flat-rate` and `it-standard` packs for the Italian regimes they name.
+  Contract-level constraints (a clause capping one client's share of your income)
+  attach to the contract and outlive any change of regime.
+- **Import parsing.** A neutral `Invoice` type and format adapters, with FatturaPA
+  1.2 as the first one, plus direction detection so an incoming and an outgoing
+  invoice are never confused. Parsing is real and tested; writing a parsed invoice
+  into the ledger is the next piece of work, not this one.
+- **Sign-in.** Google OAuth through Better Auth, a mandatory email allowlist, and
+  deny-by-default routing: a route is protected unless it is explicitly listed as
+  public, so adding a route without thinking about auth is safe by construction.
+- **English and Italian**, through a compile-time-checked i18n layer — a missing
+  translation key fails the build rather than shipping a blank string. Legal
+  citations and statutory figures never pass through translation; they render
+  verbatim in the language the law requires.
+- **A PWA.** Installable, with a service worker that precaches the app shell,
+  serves already-fetched data stale-while-revalidate and marks it as such rather
+  than passing a saved figure off as current, and shows an honest "you're offline"
+  page instead of a broken one when there is nothing to fall back on. A new
+  deployment replaces the running worker rather than pinning an old build.
+- **A production deployment path.** Docker Compose with a Caddy reverse proxy
+  terminating TLS, a documented backup and restore procedure that has actually been
+  rehearsed, and a self-hosting guide covering every credential you need to create.
 
 ## What it deliberately does not do
 
 It does not issue invoices, talk to any tax authority, do accounting, compute tax
 due, or reconcile bank accounts. It reads what your invoicing service already issued
-and tells you what it means for the work ahead.
+and tells you what it means for the work ahead. It also does not, yet, read your
+contracts or approval emails for you — an ACP agent that proposes a diff for you to
+confirm is designed for (agents propose, humans confirm; nothing reaches the ledger
+without a human accepting it) but not built.
 
-## Self-hosting
+## Running it
 
-SvelteKit (`adapter-node`) and Postgres, single tenant, behind a reverse proxy that
-terminates TLS. [`docs/deploy.md`](docs/deploy.md) is the production Compose
-runbook, [`docs/backup.md`](docs/backup.md) covers backup and a rehearsed restore,
-and [`docs/self-hosting.md`](docs/self-hosting.md) walks through every credential a
-self-hoster has to create.
+Requirements: Node 24 (pinned in `.nvmrc`), pnpm, Docker with the Compose plugin.
 
-Sign-in is Better Auth over Google, with a mandatory allowlist of permitted
-addresses. Everything else it needs is deliberately chosen to avoid Google's
-verification process: mail will be read and sent over **IMAP/SMTP with an app
-password** rather than the Gmail API, and the Drive mirror will ask only for
-`drive.file` — neither is implemented yet. You should never have to submit your own
-instance for a security assessment just to read your own inbox.
+```bash
+git clone https://github.com/fiorelorenzo/mastro.git
+cd mastro
+cp .env.example .env     # once; .env is never committed
+pnpm install
+pnpm dev                 # starts Postgres, applies migrations, then Vite on :5187
+```
+
+`pnpm dev` is the whole story: it brings up Postgres via Compose, applies every
+migration, and starts Vite. From a clean checkout it produces a working database
+and a running app, and `GET /health` returns `{"status":"ok"}` only once the
+database actually answers. Google sign-in needs a real OAuth client to go past the
+sign-in screen; `docs/self-hosting.md` walks through creating one.
+
+For running this for real, `docs/deploy.md` is the production Compose runbook (a
+separate stack from the one `pnpm dev` uses, so the two never collide),
+`docs/backup.md` covers backup and a rehearsed restore, and `docs/self-hosting.md`
+walks through every credential a self-hoster has to create and why each one is
+shaped the way it is.
+
+Full command reference, migration conventions and the five invariants the codebase
+does not bend on live in [`AGENTS.md`](AGENTS.md).
+
+## Where the design lives
+
+There is deliberately no SPEC.md. The design lives on the
+[project board](https://github.com/users/fiorelorenzo/projects/8): each epic
+carries the architecture for its area, and every issue states its own acceptance
+criteria. `AGENTS.md` is the source of truth for how the codebase is built —
+conventions, invariants, migration rules; the board is the source of truth for what
+is built and where it stands. If an epic is missing context an implementer needed,
+that is treated as a defect in the board, not a reason to start a parallel document.
 
 ## Contributing
 

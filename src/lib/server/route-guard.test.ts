@@ -5,7 +5,12 @@ import { isEndpointRoute, isPublicRoute, PUBLIC_ROUTE_IDS } from './route-guard'
 // deliberate act that has to accompany making a new route public in
 // route-guard.ts: the two are asserted equal below, so editing one without
 // the other fails the suite.
-const EXPECTED_PUBLIC_ROUTE_IDS = new Set(['/api/auth/[...all]', '/sign-in', '/health']);
+const EXPECTED_PUBLIC_ROUTE_IDS = new Set([
+	'/api/auth/[...all]',
+	'/sign-in',
+	'/health',
+	'/offline'
+]);
 
 function routeIdFromLeafFile(path: string): string {
 	return (

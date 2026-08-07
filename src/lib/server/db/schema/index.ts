@@ -15,5 +15,6 @@ export * from './contract';
 export * from './document';
 export * from './email-template';
 export * from './fiscal';
+export * from './invoice';
 export * from './rate-card';
 export * from './work-unit';
