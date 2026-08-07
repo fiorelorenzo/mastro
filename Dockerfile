@@ -52,6 +52,10 @@ RUN pnpm install --prod --frozen-lockfile --ignore-scripts
 # Final layer: adapter-node's bundle, the committed SQL migrations and the
 # plain-node migration runner (scripts/migrate.ts), production
 # node_modules. Nothing else — no source, no devDependencies, no .env file.
+# Two final stages, `runtime` and `runner`. Nothing may depend on which one
+# comes last: docker builds the last stage when no `--target` is given, and
+# compose.prod.yaml names the stage it wants on both services precisely so
+# that reordering this file cannot change what production runs.
 FROM node:24-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
@@ -61,6 +65,12 @@ COPY --from=build /app/build ./build
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/scripts/migrate.ts ./scripts/migrate.ts
 COPY --from=build /app/scripts/record-backup-run.ts ./scripts/record-backup-run.ts
+# migrate.ts imports this one module to say which database it is about to
+# touch. Node resolves that import at runtime, inside this image, so the
+# file has to be here: without it the container cannot migrate and
+# therefore cannot boot at all. Anything else migrate.ts ever imports from
+# src/ has to be added here too, which is why it imports almost nothing.
+COPY --from=build /app/src/lib/server/db/target.ts ./src/lib/server/db/target.ts
 COPY --from=build /app/package.json ./package.json
 USER mastro
 EXPOSE 3000
