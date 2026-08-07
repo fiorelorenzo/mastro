@@ -17,6 +17,17 @@ export default defineConfig({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 			adapter: adapter(),
+			// Absolute hrefs, not page-relative ones. SvelteKit defaults
+			// `paths.relative` to true, which makes `resolve()` return a path
+			// relative to the page it is called from ("../day/calendar"). That is
+			// fine for an href rendered straight into markup, and wrong the moment
+			// a resolved path is carried in load data and resolved again on the way
+			// out: the second call rejects a non-absolute pathname and the page
+			// 500s. A breadcrumb trail is exactly that shape, built in a loader and
+			// rendered by PageHeader. This app is served from a domain root and has
+			// no `paths.base`, so root-relative hrefs are always correct here and
+			// relative ones buy nothing.
+			paths: { relative: false },
 			typescript: {
 				config: (config) => {
 					config.include.push('../drizzle.config.ts', '../scripts/**/*.ts');
