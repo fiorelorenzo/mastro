@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
 	approval,
@@ -15,6 +15,10 @@ export type WorkUnitInput = {
 	scope: string;
 	state?: (typeof workUnit.$inferInsert)['state'];
 	approvalId?: string | null;
+	// Set when a line bills this day (#26); the state machine trigger is
+	// what actually enforces that only a legal transition (worked/disputed
+	// -> invoiced) may accompany it — this type does not pre-validate that.
+	invoiceLineId?: string | null;
 	notes?: string | null;
 };
 
@@ -147,4 +151,28 @@ export async function listWorkedWithoutApprovalEvents(
 				: eq(workUnitTransition.toState, 'worked_without_approval')
 		)
 		.orderBy(asc(workUnitTransition.createdAt));
+}
+
+/**
+ * Days a contract can still bill: `worked` or `disputed` (both carry the
+ * `-> invoiced` edge the state machine allows) with no line already
+ * covering them. This is the picker `routes/invoices/new` builds an
+ * invoice's lines from (#26) — a day proposed, approved but not yet
+ * worked, or already invoiced, is never offered.
+ */
+export async function listEligibleWorkUnitsForInvoicing(
+	contractId: string,
+	executor: DbExecutor = db
+) {
+	return executor
+		.select()
+		.from(workUnit)
+		.where(
+			and(
+				eq(workUnit.contractId, contractId),
+				inArray(workUnit.state, ['worked', 'disputed']),
+				isNull(workUnit.invoiceLineId)
+			)
+		)
+		.orderBy(asc(workUnit.date));
 }

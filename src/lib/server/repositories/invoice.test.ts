@@ -1,0 +1,423 @@
+import { afterAll, expect, test } from 'vitest';
+import { sql } from 'drizzle-orm';
+import { client as pool, db } from '$lib/server/db';
+import { client, contract, invoice, invoiceLine } from '$lib/server/db/schema';
+import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
+import { createInvoice, getInvoiceWithLines, listUnpaidInvoices, recordPayment } from './invoice';
+import { createWorkUnit, getWorkUnit } from './work-unit';
+
+// Needs a migrated database: `pnpm db:up && pnpm db:migrate`. Postgres work
+// happens inside a transaction that is always rolled back, same pattern as
+// `repositories/work-unit.test.ts`. `createInvoice`'s totals trigger is
+// deferred to commit (0015_invoice_constraints.sql), so a test that wants
+// to observe it reject something forces early evaluation with `SET
+// CONSTRAINTS ... IMMEDIATE` instead of actually committing.
+
+afterAll(async () => {
+	await pool.end();
+});
+
+async function insertContract(
+	tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+	paymentTerms: PaymentTerms = { kind: 'net', days: 30 }
+) {
+	const [clientRow] = await tx
+		.insert(client)
+		.values({
+			legalName: `Test Client ${crypto.randomUUID()}`,
+			taxId: `TEST-TAX-${crypto.randomUUID()}`,
+			country: 'IT',
+			addressLine1: 'Via Roma 1',
+			addressCity: 'Milano',
+			addressPostalCode: '20100',
+			noticeChannel: 'email' as const
+		})
+		.returning();
+	const [contractRow] = await tx
+		.insert(contract)
+		.values({
+			clientId: clientRow.id,
+			title: 'Test contract',
+			startsOn: '2024-01-01',
+			renewalType: 'none' as const,
+			terminationNoticeDays: 30,
+			paymentTerms,
+			invoicingCadence: 'monthly' as const,
+			currency: 'EUR',
+			taxTreatment: 'generic',
+			expensePolicy: { kind: 'not_reimbursed' } satisfies ExpensePolicy,
+			requiresPriorApproval: false
+		})
+		.returning();
+	return contractRow;
+}
+
+test('an invoice created manually with lines whose amounts add up succeeds, and each linked day moves to invoiced', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const contractRow = await insertContract(tx);
+			const day1 = await createWorkUnit(
+				{
+					contractId: contractRow.id,
+					date: '2024-06-10',
+					quantity: 1,
+					scope: 'Day one.',
+					state: 'worked'
+				},
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'worked as agreed',
+				tx
+			);
+			const day2 = await createWorkUnit(
+				{
+					contractId: contractRow.id,
+					date: '2024-06-11',
+					quantity: 1,
+					scope: 'Day two.',
+					state: 'worked'
+				},
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'worked as agreed',
+				tx
+			);
+
+			const invoiceRow = await createInvoice(
+				{
+					contractId: contractRow.id,
+					number: 'INV-0001',
+					issueDate: '2024-06-30',
+					documentType: 'invoice',
+					currency: 'EUR',
+					taxTreatmentCode: null,
+					statutoryReference: null,
+					stampDuty: null,
+					socialCharge: null,
+					dueDate: null,
+					paymentMethod: null,
+					iban: null,
+					transmissionId: null,
+					lines: [
+						{
+							description: 'Two days of consulting',
+							quantity: 2,
+							unitPrice: 50000,
+							amount: 100000,
+							taxRate: 22,
+							taxTreatmentCode: null,
+							workUnitIds: [day1.id, day2.id]
+						}
+					]
+				},
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'invoiced end of month',
+				tx
+			);
+
+			expect(invoiceRow.taxableAmount).toBe(100000);
+			expect(invoiceRow.taxAmount).toBe(22000);
+			expect(invoiceRow.total).toBe(122000);
+			// No due date supplied: computed from the contract's net-30 terms,
+			// with the source visible on the row, not just inferred by absence.
+			expect(invoiceRow.dueDate).toBe('2024-07-30');
+			expect(invoiceRow.dueDateSource).toBe('computed');
+
+			const refreshedDay1 = await getWorkUnit(day1.id, tx);
+			const refreshedDay2 = await getWorkUnit(day2.id, tx);
+			expect(refreshedDay1.state).toBe('invoiced');
+			expect(refreshedDay2.state).toBe('invoiced');
+
+			const withLines = await getInvoiceWithLines(invoiceRow.id);
+			expect(withLines?.lines).toHaveLength(1);
+			expect(withLines?.lines[0].days.map((d) => d.id).sort()).toEqual([day1.id, day2.id].sort());
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('a supplied due date is stored verbatim, sourced as "document"', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const contractRow = await insertContract(tx);
+			const invoiceRow = await createInvoice(
+				{
+					contractId: contractRow.id,
+					number: 'INV-0002',
+					issueDate: '2024-06-30',
+					documentType: 'invoice',
+					currency: 'EUR',
+					taxTreatmentCode: null,
+					statutoryReference: null,
+					stampDuty: null,
+					socialCharge: null,
+					dueDate: '2024-08-15',
+					paymentMethod: null,
+					iban: null,
+					transmissionId: null,
+					lines: [
+						{
+							description: 'Flat fee',
+							quantity: 1,
+							unitPrice: 100000,
+							amount: 100000,
+							taxRate: 0,
+							taxTreatmentCode: 'N2.2',
+							workUnitIds: []
+						}
+					]
+				},
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'invoiced',
+				tx
+			);
+
+			expect(invoiceRow.dueDate).toBe('2024-08-15');
+			expect(invoiceRow.dueDateSource).toBe('document');
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('the database rejects an invoice whose lines do not sum to its stated taxable amount', async () => {
+	const failure = await db
+		.transaction(async (tx) => {
+			const contractRow = await insertContract(tx);
+			const [invoiceRow] = await tx
+				.insert(invoice)
+				.values({
+					contractId: contractRow.id,
+					number: 'INV-BAD',
+					issueDate: '2024-06-30',
+					currency: 'EUR',
+					taxableAmount: 100000,
+					taxAmount: 22000,
+					total: 122000,
+					dueDate: '2024-07-30',
+					dueDateSource: 'computed'
+				})
+				.returning();
+
+			// Only 40000 of lines against a stated taxable_amount of 100000.
+			await tx.insert(invoiceLine).values({
+				invoiceId: invoiceRow.id,
+				description: 'Understated line',
+				quantity: 1,
+				unitPrice: 40000,
+				amount: 40000,
+				taxRate: 22
+			});
+
+			// The check is a deferred constraint trigger: force it to run now
+			// instead of waiting for a commit this test never performs. The
+			// raised message lands on the driver error's `.cause`, same as
+			// every Postgres error `postgres-error.ts` unwraps.
+			await tx.execute(sql`set constraints all immediate`);
+		})
+		.catch((error: { cause?: { message?: string } }) => error);
+
+	expect(failure).toBeInstanceOf(Error);
+	expect((failure as Error & { cause?: { message?: string } }).cause?.message).toMatch(
+		/does not match the sum of its lines/
+	);
+});
+
+test('the database rejects an invoice whose total does not equal taxable + tax + stamp duty + social charge', async () => {
+	const failure = await db
+		.transaction(async (tx) => {
+			const contractRow = await insertContract(tx);
+			const [invoiceRow] = await tx
+				.insert(invoice)
+				.values({
+					contractId: contractRow.id,
+					number: 'INV-BAD-TOTAL',
+					issueDate: '2024-06-30',
+					currency: 'EUR',
+					taxableAmount: 100000,
+					taxAmount: 22000,
+					total: 999999,
+					dueDate: '2024-07-30',
+					dueDateSource: 'computed'
+				})
+				.returning();
+
+			await tx.insert(invoiceLine).values({
+				invoiceId: invoiceRow.id,
+				description: 'Line',
+				quantity: 1,
+				unitPrice: 100000,
+				amount: 100000,
+				taxRate: 22
+			});
+
+			await tx.execute(sql`set constraints all immediate`);
+		})
+		.catch((error: { cause?: { message?: string } }) => error);
+
+	expect(failure).toBeInstanceOf(Error);
+	expect((failure as Error & { cause?: { message?: string } }).cause?.message).toMatch(
+		/does not equal taxable_amount/
+	);
+});
+
+test('recording a payment sets paid_on, and the invoice no longer appears in the unpaid list', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const contractRow = await insertContract(tx);
+			const invoiceRow = await createInvoice(
+				{
+					contractId: contractRow.id,
+					number: 'INV-0003',
+					issueDate: '2024-01-01',
+					documentType: 'invoice',
+					currency: 'EUR',
+					taxTreatmentCode: null,
+					statutoryReference: null,
+					stampDuty: null,
+					socialCharge: null,
+					dueDate: '2024-01-15',
+					paymentMethod: null,
+					iban: null,
+					transmissionId: null,
+					lines: [
+						{
+							description: 'Flat fee',
+							quantity: 1,
+							unitPrice: 50000,
+							amount: 50000,
+							taxRate: 0,
+							taxTreatmentCode: null,
+							workUnitIds: []
+						}
+					]
+				},
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'invoiced',
+				tx
+			);
+
+			const unpaidBefore = await listUnpaidInvoices();
+			expect(unpaidBefore.some((row) => row.invoice.id === invoiceRow.id)).toBe(true);
+
+			const paid = await recordPayment(invoiceRow.id, '2024-02-01');
+			expect(paid.paidOn).toBe('2024-02-01');
+
+			const unpaidAfter = await listUnpaidInvoices();
+			expect(unpaidAfter.some((row) => row.invoice.id === invoiceRow.id)).toBe(false);
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('a day linked to an unpaid invoice line is not itself transitioned to "paid": paid is derived from the invoice, not stored on the day', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const contractRow = await insertContract(tx);
+			const day = await createWorkUnit(
+				{
+					contractId: contractRow.id,
+					date: '2024-01-05',
+					quantity: 1,
+					scope: 'Work.',
+					state: 'worked'
+				},
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'worked',
+				tx
+			);
+			const invoiceRow = await createInvoice(
+				{
+					contractId: contractRow.id,
+					number: 'INV-0004',
+					issueDate: '2024-01-01',
+					documentType: 'invoice',
+					currency: 'EUR',
+					taxTreatmentCode: null,
+					statutoryReference: null,
+					stampDuty: null,
+					socialCharge: null,
+					dueDate: '2024-01-15',
+					paymentMethod: null,
+					iban: null,
+					transmissionId: null,
+					lines: [
+						{
+							description: 'A day of work',
+							quantity: 1,
+							unitPrice: 50000,
+							amount: 50000,
+							taxRate: 0,
+							taxTreatmentCode: null,
+							workUnitIds: [day.id]
+						}
+					]
+				},
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'invoiced',
+				tx
+			);
+
+			await recordPayment(invoiceRow.id, '2024-02-01');
+
+			const refreshedDay = await getWorkUnit(day.id, tx);
+			// The row itself is unchanged by paying the invoice — no cascade
+			// wrote 'paid' onto it. `routes/invoices/[id]` derives the display
+			// status from the invoice's own paidOn instead.
+			expect(refreshedDay.state).toBe('invoiced');
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('linking a line to a day still on "proposed" is rejected by the existing state machine, not pre-validated here', async () => {
+	const failure = await db
+		.transaction(async (tx) => {
+			const contractRow = await insertContract(tx);
+			const day = await createWorkUnit(
+				{ contractId: contractRow.id, date: '2024-01-05', quantity: 1, scope: 'Not yet worked.' },
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'proposed',
+				tx
+			);
+
+			await createInvoice(
+				{
+					contractId: contractRow.id,
+					number: 'INV-0005',
+					issueDate: '2024-01-01',
+					documentType: 'invoice',
+					currency: 'EUR',
+					taxTreatmentCode: null,
+					statutoryReference: null,
+					stampDuty: null,
+					socialCharge: null,
+					dueDate: '2024-01-15',
+					paymentMethod: null,
+					iban: null,
+					transmissionId: null,
+					lines: [
+						{
+							description: 'A day not yet worked',
+							quantity: 1,
+							unitPrice: 50000,
+							amount: 50000,
+							taxRate: 0,
+							taxTreatmentCode: null,
+							workUnitIds: [day.id]
+						}
+					]
+				},
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'invoiced',
+				tx
+			);
+		})
+		.catch((error: { cause?: { message?: string } }) => error);
+
+	expect(failure).toBeInstanceOf(Error);
+	expect((failure as Error & { cause?: { message?: string } }).cause?.message).toMatch(
+		/illegal work_unit transition/
+	);
+});
