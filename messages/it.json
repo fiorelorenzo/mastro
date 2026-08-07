@@ -683,6 +683,8 @@
 	"offline_page_heading": "Sei offline",
 	"offline_page_retry": "Riprova",
 	"offline_page_title": "Offline — mastro",
+	"page_header_back_to": "Torna a {parent}",
+	"page_header_breadcrumb_label": "Percorso",
 	"proposal_detail_accept_submit": "Accetta",
 	"proposal_detail_already_decided": "Questa proposta è già stata decisa.",
 	"proposal_detail_back_to_list": "Torna alle proposte",

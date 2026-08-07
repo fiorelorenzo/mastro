@@ -683,6 +683,8 @@
 	"offline_page_heading": "You're offline",
 	"offline_page_retry": "Try again",
 	"offline_page_title": "Offline — mastro",
+	"page_header_back_to": "Back to {parent}",
+	"page_header_breadcrumb_label": "Breadcrumb",
 	"proposal_detail_accept_submit": "Accept",
 	"proposal_detail_already_decided": "This proposal has already been decided.",
 	"proposal_detail_back_to_list": "Back to proposals",
