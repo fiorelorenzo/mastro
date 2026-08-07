@@ -29,6 +29,7 @@ export type ContractInput = {
 	// this form.
 	templateLanguage: ContractTemplateLanguage;
 	expensePolicy: ExpensePolicy;
+	requiresExpensePreAuthorisation: boolean;
 	status: ContractStatus;
 };
 

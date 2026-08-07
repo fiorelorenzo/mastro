@@ -169,6 +169,20 @@
       "when": 1786090489149,
       "tag": "0023_email_template_days_after_due",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1786090843985,
+      "tag": "0024_clause_note_and_expense",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786090845712,
+      "tag": "0025_expense_and_clause_note_constraints",
+      "breakpoints": true
     }
   ]
 }
