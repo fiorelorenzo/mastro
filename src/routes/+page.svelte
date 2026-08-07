@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import CeilingMeter from '$lib/dashboard/CeilingMeter.svelte';
 	import CashCalendarChart from '$lib/dashboard/CashCalendarChart.svelte';
 	import ConcentrationChart from '$lib/dashboard/ConcentrationChart.svelte';
@@ -29,26 +30,23 @@
 <svelte:head><title>mastro</title></svelte:head>
 
 <main class="page">
-	<header class="intro">
-		<h1 class="text-2xl font-semibold">mastro</h1>
-		<p class="tagline">{m.landing_tagline()}</p>
+	<PageHeader title="mastro" subtitle={m.landing_tagline()} />
 
-		<div class="mt-4 flex flex-wrap gap-3">
-			<a href={resolve('/day/new')} class="record-day-cta">{m.home_record_day_cta()}</a>
-			<a href={resolve('/proposals')} class="proposals-cta">
-				{m.home_proposals_cta()}
-				{#if data.pendingProposalsCount > 0}
-					<span class="proposals-badge"
-						>{m.home_proposals_pending_badge({ count: data.pendingProposalsCount })}</span
-					>
-				{/if}
-			</a>
-		</div>
-		<p class="mt-2 text-xs opacity-60">{m.home_record_day_shortcut_hint()}</p>
-		<p class="mt-3 text-sm">
-			<a href={resolve('/day/calendar')} class="underline">{m.home_calendar_link()}</a>
-		</p>
-	</header>
+	<div class="mt-4 flex flex-wrap gap-3">
+		<a href={resolve('/day/new')} class="record-day-cta">{m.home_record_day_cta()}</a>
+		<a href={resolve('/proposals')} class="proposals-cta">
+			{m.home_proposals_cta()}
+			{#if data.pendingProposalsCount > 0}
+				<span class="proposals-badge"
+					>{m.home_proposals_pending_badge({ count: data.pendingProposalsCount })}</span
+				>
+			{/if}
+		</a>
+	</div>
+	<p class="mt-2 text-xs opacity-60">{m.home_record_day_shortcut_hint()}</p>
+	<p class="mt-3 text-sm">
+		<a href={resolve('/day/calendar')} class="underline">{m.home_calendar_link()}</a>
+	</p>
 
 	<!-- #57 — the ceiling meter disappears entirely, not as an empty
 	     widget, the moment there is no active whole-practice ceiling to
@@ -98,14 +96,6 @@
 		padding: 2rem 1.25rem 4rem;
 		background: var(--surface-page);
 		color: var(--text-primary);
-	}
-	.intro {
-		margin-bottom: 2rem;
-	}
-	.tagline {
-		margin-top: 0.5rem;
-		color: var(--text-secondary);
-		font-size: 0.875rem;
 	}
 	.record-day-cta {
 		display: inline-flex;

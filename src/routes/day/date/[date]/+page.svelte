@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate } from '$lib/i18n/format';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import DayStateBadge from '../../DayStateBadge.svelte';
 	import type { PageProps } from './$types';
 
@@ -13,7 +14,10 @@
 >
 
 <main class="mx-auto max-w-xl p-4 sm:p-8">
-	<h1 class="text-2xl font-semibold">{m.day_date_list_heading({ date: formatDate(data.date) })}</h1>
+	<PageHeader
+		crumbs={data.crumbs}
+		title={m.day_date_list_heading({ date: formatDate(data.date) })}
+	/>
 
 	<ul class="mt-6 flex flex-col gap-3">
 		{#each data.entries as entry (entry.id)}

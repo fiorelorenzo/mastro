@@ -9,6 +9,7 @@
 		formatWeekday
 	} from '$lib/i18n/format';
 	import ChartFrame from '$lib/design/charts/ChartFrame.svelte';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import type { TableColumn } from '$lib/design/charts/types';
 	import DayStateBadge from '../DayStateBadge.svelte';
 	import { mostAttentionNeedingState, workUnitStateLabel } from '../work-unit-state';
@@ -60,29 +61,28 @@
 >
 
 <main class="mx-auto max-w-3xl p-4 sm:p-8">
-	<div class="flex flex-wrap items-center justify-between gap-4">
-		<h1 class="text-2xl font-semibold">
-			{m.day_calendar_heading({ month: formatMonth(data.monthStart) })}
-		</h1>
-		<nav
-			class="flex items-center gap-3 text-sm"
-			aria-label={m.day_calendar_heading({ month: formatMonth(data.monthStart) })}
-		>
-			<a
-				href={resolve(`/day/calendar?month=${shiftMonth(data.monthStart, -1).slice(0, 7)}`)}
-				class="underline"
+	<PageHeader title={m.day_calendar_heading({ month: formatMonth(data.monthStart) })}>
+		{#snippet actions()}
+			<nav
+				class="flex items-center gap-3 text-sm"
+				aria-label={m.day_calendar_heading({ month: formatMonth(data.monthStart) })}
 			>
-				{m.day_calendar_prev_month()}
-			</a>
-			<a href={resolve('/day/calendar')} class="underline">{m.day_calendar_today_link()}</a>
-			<a
-				href={resolve(`/day/calendar?month=${shiftMonth(data.monthStart, 1).slice(0, 7)}`)}
-				class="underline"
-			>
-				{m.day_calendar_next_month()}
-			</a>
-		</nav>
-	</div>
+				<a
+					href={resolve(`/day/calendar?month=${shiftMonth(data.monthStart, -1).slice(0, 7)}`)}
+					class="underline"
+				>
+					{m.day_calendar_prev_month()}
+				</a>
+				<a href={resolve('/day/calendar')} class="underline">{m.day_calendar_today_link()}</a>
+				<a
+					href={resolve(`/day/calendar?month=${shiftMonth(data.monthStart, 1).slice(0, 7)}`)}
+					class="underline"
+				>
+					{m.day_calendar_next_month()}
+				</a>
+			</nav>
+		{/snippet}
+	</PageHeader>
 
 	<p class="mt-4 flex flex-wrap gap-6 text-sm">
 		<span

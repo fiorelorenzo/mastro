@@ -2,9 +2,9 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDateTime, formatPercent } from '$lib/i18n/format';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import { proposalTargetTypeLabel, type ProposalStatusValue } from './proposal-status';
 	import type { PageData } from './$types';
-
 	let { data }: { data: PageData } = $props();
 
 	const tabs: readonly ProposalStatusValue[] = ['pending', 'accepted', 'rejected'];
@@ -35,7 +35,7 @@
 <svelte:head><title>{m.proposal_list_page_title()}</title></svelte:head>
 
 <main class="mx-auto max-w-4xl p-4 sm:p-8">
-	<h1 class="text-2xl font-semibold">{m.proposal_list_heading()}</h1>
+	<PageHeader title={m.proposal_list_heading()} />
 
 	<nav class="mt-4 flex flex-wrap gap-1 border-b text-sm" aria-label={m.proposal_list_heading()}>
 		{#each tabs as tab (tab)}
