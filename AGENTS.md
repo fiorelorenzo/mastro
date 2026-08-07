@@ -215,6 +215,17 @@ database really answers.
 Ports are fixed (app `5187`, Postgres `5436`) so this project can run beside the
 others on the same box. Postgres is published on `127.0.0.1` only.
 
+**A second checkout needs its own compose project, not just its own port.**
+`compose.yaml` names the project `mastro`, and that name is what every `pnpm db:*`
+script acts on: a worktree that sets only `POSTGRES_PORT` still shares the one
+container and the one `pgdata` volume with every other checkout, so its `db:up`
+recreates the container the checkout next door is testing against, republishes it on
+a port that one is not pointing at, and its `db:down` stops that one too. Give each
+checkout its own `COMPOSE_PROJECT_NAME` in `.env` (`mastro-<worktree>`) alongside its
+own `POSTGRES_PORT`, and each gets its own container, volume and database. The
+variable overrides the compose file's `name:`; only `-p` and a shell variable of the
+same name beat it.
+
 **i18n.** Message catalogues live in `messages/en.json` and `messages/it.json`
 (inlang message format, one key per string), compiled by Paraglide into
 `src/lib/paraglide` — generated, gitignored, never edited by hand. `pnpm dev` and

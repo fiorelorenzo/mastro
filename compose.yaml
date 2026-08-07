@@ -1,3 +1,6 @@
+# Overridden per checkout by COMPOSE_PROJECT_NAME in .env, so that a git
+# worktree gets its own container and volume rather than recreating this
+# one out from under the checkout next door. See .env.example.
 name: mastro
 
 services:
