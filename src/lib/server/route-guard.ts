@@ -13,6 +13,10 @@ export const PUBLIC_ROUTE_IDS: ReadonlySet<string> = new Set([
 	'/sign-in',
 	// Liveness probe for compose and the reverse proxy.
 	'/health',
+	// The alert engine's cron-driven push/digest runs (#74, #75, #63): the
+	// caller is cron, with no browser session to present at all — see the
+	// route's own bearer-token check, which is the actual protection here.
+	'/api/alerts/run/[job]',
 	// The offline fallback the service worker serves for a failed navigation
 	// (#61). Prerendered and stateless — it never reads locals.user — which
 	// is exactly why it is safe to precache and hand to a visitor the
