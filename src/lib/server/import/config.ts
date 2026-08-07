@@ -23,5 +23,17 @@ export function readAccountHolderTaxId(raw: string | undefined | null): string {
 	return trimmed;
 }
 
-/** The account holder's tax id, read once at module load. */
-export const accountHolderTaxId = readAccountHolderTaxId(env.ACCOUNT_HOLDER_TAX_ID);
+/**
+ * The account holder's tax id, read when an import actually needs it.
+ *
+ * Deliberately a function rather than a module-level constant (#133): a
+ * constant runs its throw at import time, and SvelteKit's postbuild
+ * analysis imports every server module, so an unset value failed the whole
+ * build rather than the one feature that needs it. It also meant an
+ * instance that never imports an invoice could not boot. The refusal to
+ * guess is unchanged, it just happens where the guess would have been
+ * made.
+ */
+export function getAccountHolderTaxId(): string {
+	return readAccountHolderTaxId(env.ACCOUNT_HOLDER_TAX_ID);
+}

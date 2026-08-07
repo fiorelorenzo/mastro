@@ -87,5 +87,10 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # No ACCOUNT_HOLDER_TAX_ID here on purpose (#133): the production
+      # image builds without it, and a module-level read of it would fail
+      # this step the way it failed `docker build`.
       - name: Build
+        env:
+          ACCOUNT_HOLDER_TAX_ID: ''
         run: pnpm build
