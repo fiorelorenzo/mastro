@@ -189,9 +189,13 @@ handled.
 `prodbox` is the other shape. It already runs Caddy on the host as the single edge
 for every application on it, and two processes cannot both hold 443, so the deploy
 script starts `db` and `web` only. The host Caddy has a vhost for
-`mastro.lorenzofiore.io` that reverse-proxies to `127.0.0.1:5187`, which is the
-loopback port `WEB_PORT` publishes. Nothing about the app changes between the two
-shapes; only who terminates TLS does.
+`mastro.lorenzofiore.io` that reverse-proxies to `127.0.0.1:5192`, which is the
+loopback port `WEB_PORT` publishes there. Nothing about the app changes between the
+two shapes; only who terminates TLS does.
+
+The port is 5192 rather than this project's own 5187 because that box already gives
+5187 to another application's preview environment. On a box of your own, keep 5187
+and the two match.
 
 ### The runner service
 
