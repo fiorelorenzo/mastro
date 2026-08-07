@@ -587,6 +587,8 @@
 	"mail_contract_not_found": "Contract not found.",
 	"mail_contract_page_title": "Mail — {contractTitle} — mastro",
 	"mail_contract_register_link": "Day register",
+	"mail_contract_subtitle_auto_send_off": "Auto-send off",
+	"mail_contract_subtitle_auto_send_on": "Auto-send on",
 	"mail_contract_template_language_hint": "The language every template for this contract renders in, regardless of your own interface language.",
 	"mail_contract_template_language_invalid": "Choose a valid language.",
 	"mail_contract_template_language_legend": "Template language",

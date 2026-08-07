@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import TemplateForm from '../TemplateForm.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -21,8 +22,7 @@
 <svelte:head><title>{m.mail_template_new_page_title()}</title></svelte:head>
 
 <main class="mx-auto max-w-3xl p-8">
-	<h1 class="text-2xl font-semibold">{m.mail_template_new_heading()}</h1>
-	<p class="mt-1 text-sm opacity-70">{data.contract.title}</p>
+	<PageHeader crumbs={data.crumbs} title={m.mail_template_new_heading()} />
 	<TemplateForm
 		{values}
 		errors={form?.errors ?? {}}

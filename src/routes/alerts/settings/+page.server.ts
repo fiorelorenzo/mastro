@@ -1,3 +1,5 @@
+import type { Crumb } from '$lib/nav/crumbs';
+import * as m from '$lib/paraglide/messages';
 import { ALERT_TYPES } from '$lib/server/db/schema/alert';
 import { vapidPublicKeyFromEnv } from '$lib/server/push/config';
 import { listSubscriptions } from '$lib/server/push/repository';
@@ -22,13 +24,15 @@ export const load: PageServerLoad = async () => {
 		vapidPublicKey = null;
 	}
 
+	const crumbs: Crumb[] = [{ href: '/alerts', label: m.nav_alerts() }];
 	return {
 		preferences: ALERT_TYPES.map((type) => ({
 			type,
 			...(preferences.get(type) ?? DEFAULT_PREFERENCE)
 		})),
 		vapidPublicKey,
-		subscriptionCount: subscriptions.length
+		subscriptionCount: subscriptions.length,
+		crumbs
 	};
 };
 

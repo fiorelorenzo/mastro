@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import TemplateForm from '../../TemplateForm.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -25,9 +27,22 @@
 >
 
 <main class="mx-auto max-w-3xl p-8">
-	<h1 class="text-2xl font-semibold">
-		{m.mail_template_edit_heading({ name: data.template.name })}
-	</h1>
+	<PageHeader
+		crumbs={data.crumbs}
+		title={m.mail_template_edit_heading({ name: data.template.name })}
+	>
+		{#snippet actions()}
+			<a
+				href={resolve('/mail/contracts/[id]/templates/[templateId]/send', {
+					id: data.template.contractId,
+					templateId: data.template.id
+				})}
+				class="text-sm underline"
+			>
+				{m.mail_template_send_link()}
+			</a>
+		{/snippet}
+	</PageHeader>
 	<TemplateForm
 		{values}
 		errors={form?.errors ?? {}}

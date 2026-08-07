@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import type { Crumb } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import { isLocale } from '$lib/paraglide/runtime';
 import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
@@ -15,7 +16,9 @@ export const load: PageServerLoad = async ({ params }) => {
 	const contract = await getContractWithClient(params.id);
 	if (!contract) error(404, m.mail_contract_not_found());
 	const templates = await listEmailTemplatesForContract(params.id);
-	return { contract, templates };
+
+	const crumbs: Crumb[] = [{ href: '/mail', label: m.nav_communications() }];
+	return { contract, templates, crumbs };
 };
 
 export const actions: Actions = {

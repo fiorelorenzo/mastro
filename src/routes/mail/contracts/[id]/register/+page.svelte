@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -25,9 +26,10 @@
 >
 
 <main class="mx-auto max-w-3xl p-8">
-	<h1 class="text-2xl font-semibold">
-		{m.register_heading({ contractTitle: data.contract.title })}
-	</h1>
+	<PageHeader
+		crumbs={data.crumbs}
+		title={m.register_heading({ contractTitle: data.contract.title })}
+	/>
 
 	<form method="GET" class="mt-4 flex flex-wrap items-end gap-3 text-sm">
 		<label class="flex flex-col gap-1">
