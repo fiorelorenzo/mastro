@@ -59,6 +59,7 @@ export const itFlatRatePack: FiscalPack = {
 	ceilings: [
 		{
 			id: 'it-flat-rate-revenue-ceiling',
+			origin: 'pack',
 			label: {
 				en: 'Flat-rate regime revenue ceiling',
 				it: 'Soglia di ricavi e compensi del regime forfettario'
@@ -71,11 +72,27 @@ export const itFlatRatePack: FiscalPack = {
 				'it',
 				"Art. 1, comma 54, lettera a), legge 23 dicembre 2014, n. 190, come modificato dall'art. 1, comma 54, legge 29 dicembre 2022, n. 197"
 			),
-			amount: 8_500_000,
-			period: 'fiscal_year'
+			measure: 'absolute_amount',
+			value: 8_500_000,
+			basis: 'cash_received_calendar_year',
+			perimeter: { kind: 'all_clients' },
+			alertLevels: [
+				{
+					ratio: 0.8,
+					label: {
+						en: 'Approaching the revenue ceiling',
+						it: 'In avvicinamento alla soglia di ricavi'
+					}
+				},
+				{
+					ratio: 1,
+					label: { en: 'Revenue ceiling reached', it: 'Soglia di ricavi raggiunta' }
+				}
+			]
 		},
 		{
 			id: 'it-flat-rate-immediate-exit-ceiling',
+			origin: 'pack',
 			label: {
 				en: 'Flat-rate regime immediate-exit ceiling',
 				it: 'Soglia di fuoriuscita immediata dal regime forfettario'
@@ -88,8 +105,26 @@ export const itFlatRatePack: FiscalPack = {
 				'it',
 				"Art. 1, comma 71, legge 23 dicembre 2014, n. 190, come modificato dall'art. 1, comma 54, legge 29 dicembre 2022, n. 197"
 			),
-			amount: 10_000_000,
-			period: 'fiscal_year'
+			measure: 'absolute_amount',
+			value: 10_000_000,
+			basis: 'cash_received_calendar_year',
+			perimeter: { kind: 'all_clients' },
+			alertLevels: [
+				{
+					ratio: 0.9,
+					label: {
+						en: 'Approaching immediate exit from the regime',
+						it: 'In avvicinamento alla fuoriuscita immediata dal regime'
+					}
+				},
+				{
+					ratio: 1,
+					label: {
+						en: 'Immediate exit ceiling reached',
+						it: 'Soglia di fuoriuscita immediata raggiunta'
+					}
+				}
+			]
 		}
 	],
 	treatments: [

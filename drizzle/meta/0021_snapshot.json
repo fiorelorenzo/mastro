@@ -1,6 +1,6 @@
 {
-  "id": "ccb5409e-635a-4d53-9804-b96e9b4a81f6",
-  "prevId": "173abc17-c881-495f-b108-e0b69e4a03b7",
+  "id": "aefa56fa-3d05-4706-a77e-ed1e32e50eca",
+  "prevId": "94ebb5a9-74ab-42a3-96e3-f6c2feb5ebbe",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1069,6 +1069,79 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.document_mirror_run": {
+      "name": "document_mirror_run",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "document_mirror_run_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "detail": {
+          "name": "detail",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "acknowledged_at": {
+          "name": "acknowledged_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "document_mirror_run_document_id_document_id_fk": {
+          "name": "document_mirror_run_document_id_document_id_fk",
+          "tableFrom": "document_mirror_run",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "tableTo": "document",
+          "columnsTo": [
+            "id"
+          ],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.email_template": {
       "name": "email_template",
       "schema": "",
@@ -2001,6 +2074,14 @@
         "mail",
         "upload",
         "generated"
+      ]
+    },
+    "public.document_mirror_run_status": {
+      "name": "document_mirror_run_status",
+      "schema": "public",
+      "values": [
+        "success",
+        "failure"
       ]
     },
     "public.invoice_document_type": {
