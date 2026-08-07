@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import { formatAmount, formatDate, formatMinorUnits } from '$lib/i18n/format';
+	import { formatDate, formatMinorUnits } from '$lib/i18n/format';
 	import LegalText from '$lib/legal/LegalText.svelte';
 	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import { factLine } from '$lib/nav/crumbs';
@@ -65,22 +65,22 @@
 		</dd>
 
 		<dt class="opacity-70">{m.invoice_detail_taxable_amount_label()}</dt>
-		<dd>{formatAmount(invoice.taxableAmount, invoice.currency)}</dd>
+		<dd>{formatMinorUnits(invoice.taxableAmount, invoice.currency)}</dd>
 
 		<dt class="opacity-70">{m.invoice_detail_tax_amount_label()}</dt>
-		<dd>{formatAmount(invoice.taxAmount, invoice.currency)}</dd>
+		<dd>{formatMinorUnits(invoice.taxAmount, invoice.currency)}</dd>
 
 		{#if invoice.stampDuty}
 			<dt class="opacity-70">{m.invoice_form_stamp_duty_label()}</dt>
-			<dd>{formatAmount(invoice.stampDuty, invoice.currency)}</dd>
+			<dd>{formatMinorUnits(invoice.stampDuty, invoice.currency)}</dd>
 		{/if}
 		{#if invoice.socialCharge}
 			<dt class="opacity-70">{m.invoice_form_social_charge_label()}</dt>
-			<dd>{formatAmount(invoice.socialCharge, invoice.currency)}</dd>
+			<dd>{formatMinorUnits(invoice.socialCharge, invoice.currency)}</dd>
 		{/if}
 
 		<dt class="opacity-70">{m.invoice_detail_total_label()}</dt>
-		<dd class="font-semibold">{formatAmount(invoice.total, invoice.currency)}</dd>
+		<dd class="font-semibold">{formatMinorUnits(invoice.total, invoice.currency)}</dd>
 
 		{#if invoice.taxTreatmentCode}
 			<dt class="opacity-70">{m.invoice_form_tax_treatment_code_label()}</dt>
@@ -138,8 +138,8 @@
 					<tr class="border-b">
 						<td class="py-2 pr-4">{line.description}</td>
 						<td class="py-2 pr-4 text-end">{line.quantity}</td>
-						<td class="py-2 pr-4 text-end">{formatAmount(line.unitPrice, invoice.currency)}</td>
-						<td class="py-2 pr-4 text-end">{formatAmount(line.amount, invoice.currency)}</td>
+						<td class="py-2 pr-4 text-end">{formatMinorUnits(line.unitPrice, invoice.currency)}</td>
+						<td class="py-2 pr-4 text-end">{formatMinorUnits(line.amount, invoice.currency)}</td>
 						<td class="py-2 text-end">{line.taxRate}%</td>
 					</tr>
 				{/each}
