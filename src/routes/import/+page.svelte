@@ -10,6 +10,7 @@
 	// served.
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate, formatMinorUnits, formatNumber } from '$lib/i18n/format';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import {
 		scanDirectoryHandle,
 		scanFileList,
@@ -199,7 +200,7 @@
 <svelte:head><title>{m.import_page_title()}</title></svelte:head>
 
 <main class="mx-auto max-w-3xl p-8">
-	<h1 class="text-2xl font-semibold">{m.import_heading()}</h1>
+	<PageHeader title={m.import_heading()} />
 	<p class="mt-2 text-sm opacity-70">{m.import_intro()}</p>
 
 	{#if stage === 'idle' || stage === 'error'}

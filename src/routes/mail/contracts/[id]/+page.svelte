@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
+	import { factLine } from '$lib/nav/crumbs';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import { locales, type Locale } from '$lib/paraglide/runtime';
 	import type { ActionData, PageData } from './$types';
 
@@ -33,17 +35,25 @@
 >
 
 <main class="mx-auto max-w-3xl p-8">
-	<h1 class="text-2xl font-semibold">
-		{m.mail_contract_heading({ contractTitle: data.contract.title })}
-	</h1>
-	<p class="mt-1 text-sm opacity-70">{data.contract.client.legalName}</p>
-
-	<a
-		href={resolve('/mail/contracts/[id]/register', { id: data.contract.id })}
-		class="mt-4 inline-block text-sm underline"
+	<PageHeader
+		crumbs={data.crumbs}
+		title={m.mail_contract_heading({ contractTitle: data.contract.title })}
+		subtitle={factLine([
+			data.contract.client.legalName,
+			data.contract.autoSendMail
+				? m.mail_contract_subtitle_auto_send_on()
+				: m.mail_contract_subtitle_auto_send_off()
+		])}
 	>
-		{m.mail_contract_register_link()}
-	</a>
+		{#snippet actions()}
+			<a
+				href={resolve('/mail/contracts/[id]/register', { id: data.contract.id })}
+				class="text-sm underline"
+			>
+				{m.mail_contract_register_link()}
+			</a>
+		{/snippet}
+	</PageHeader>
 
 	<form method="POST" action="?/autoSend" class="mt-6 flex flex-col gap-2 border p-4">
 		<span class="text-sm font-semibold">{m.mail_contract_auto_send_legend()}</span>

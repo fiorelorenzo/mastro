@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { enhance } from '$app/forms';
 	import * as m from '$lib/paraglide/messages';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import { pushSubscriptionStore } from '$lib/pwa/push.svelte';
 	import type { AlertType } from '$lib/server/db/schema/alert';
 	import type { PageData } from './$types';
@@ -47,7 +48,7 @@
 <svelte:head><title>{m.alerts_settings_page_title()}</title></svelte:head>
 
 <main class="mx-auto max-w-3xl p-8">
-	<h1 class="text-2xl font-semibold">{m.alerts_settings_heading()}</h1>
+	<PageHeader crumbs={data.crumbs} title={m.alerts_settings_heading()} />
 	<p class="mt-2 text-sm opacity-70">{m.alerts_settings_intro()}</p>
 
 	<section class="mt-8">
