@@ -36,6 +36,11 @@ export interface PersistInvoiceLineDecision {
 export interface PersistInvoiceRequest {
 	/** The structured document — re-parsed here, never trusted pre-parsed. */
 	readonly file: ImportableFile;
+	/** 0-based position within the file's own parsed array of invoices
+	 * (`ImportFileResult.invoices`). 0 for the ordinary case; only nonzero
+	 * for a body other than the first in a FatturaPA batch (`lotto`) file
+	 * (#101). */
+	readonly invoiceIndex: number;
 	/** Companion files (#44's rule 2) to attach to the same invoice as-is,
 	 * never parsed for their own fields. */
 	readonly attachments: readonly ImportableFile[];
@@ -138,7 +143,13 @@ export async function persistImportedInvoice(
 	if (parsed.kind === 'unclaimed') {
 		throw new Error(`${filename}: no adapter recognises this file any more`);
 	}
-	const direction = classifyImportedInvoice(parsed.invoice, accountHolderTaxId);
+	const rawInvoice = parsed.invoices[request.invoiceIndex];
+	if (rawInvoice === undefined) {
+		throw new Error(
+			`${filename}: the document no longer has an invoice at index ${request.invoiceIndex}`
+		);
+	}
+	const direction = classifyImportedInvoice(rawInvoice, accountHolderTaxId);
 	if (direction.kind === 'incoming_skipped') {
 		throw new Error(`${filename}: this is an incoming invoice, never imported as revenue`);
 	}

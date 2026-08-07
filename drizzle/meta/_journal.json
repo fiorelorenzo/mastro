@@ -194,15 +194,29 @@
     {
       "idx": 27,
       "version": "7",
-      "when": 1786093302046,
-      "tag": "0027_familiar_banshee",
+      "when": 1786092995371,
+      "tag": "0027_contract_renewal_assumption",
       "breakpoints": true
     },
     {
       "idx": 28,
       "version": "7",
-      "when": 1786093310798,
-      "tag": "0028_proposal_constraints",
+      "when": 1786093023210,
+      "tag": "0028_contract_renewal_assumption_set_updated_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1786097296032,
+      "tag": "0029_proposal",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1786097297732,
+      "tag": "0030_proposal_constraints",
       "breakpoints": true
     }
   ]

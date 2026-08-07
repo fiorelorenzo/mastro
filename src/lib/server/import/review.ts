@@ -64,6 +64,12 @@ export type SkipReason =
 
 export interface SkippedFile {
 	readonly filename: string;
+	/** See `RecognisedFile`. `malformed_document` and `unrecognised_format`
+	 * are decided before a file's invoices are even parsed, so this is
+	 * always 0 for those two reasons; `incoming_invoice` and
+	 * `ambiguous_contract` are decided per invoice and carry the real
+	 * index. */
+	readonly invoiceIndex: number;
 	readonly reason: SkipReason;
 }
 
@@ -82,6 +88,13 @@ export interface InvoiceLineView {
 
 export interface RecognisedFile {
 	readonly filename: string;
+	/** 0-based position of this invoice within the file's own parsed
+	 * array. Almost always 0 — FatturaPA's batch (`lotto`) shape is the
+	 * one case in this codebase where a single file's `filename` can
+	 * repeat across more than one `RecognisedFile` row, one per
+	 * `FatturaElettronicaBody` the file carries (#101); this is what
+	 * distinguishes them. */
+	readonly invoiceIndex: number;
 	readonly invoice: InvoiceSummary;
 	readonly lines: readonly InvoiceLineView[];
 	readonly clientId: string;
@@ -104,6 +117,8 @@ export type AlreadyPresentSource = 'batch' | 'database';
  * import a second time creates nothing). Never written on confirm. */
 export interface AlreadyPresentFile {
 	readonly filename: string;
+	/** See `RecognisedFile`. */
+	readonly invoiceIndex: number;
 	readonly invoice: InvoiceSummary;
 	readonly source: AlreadyPresentSource;
 	readonly duplicateOfFilename: string | null;
@@ -121,6 +136,8 @@ export interface AlreadyPresentFile {
  * on purpose. */
 export interface ConflictFile {
 	readonly filename: string;
+	/** See `RecognisedFile`. */
+	readonly invoiceIndex: number;
 	readonly invoice: InvoiceSummary;
 	readonly existingInvoiceNumber: string;
 	readonly existingIssueDate: string;
@@ -134,7 +151,12 @@ export interface ConflictFile {
  * file (an already-known client) can carry one. */
 export interface ClarificationGroup extends ClientContractProposal {
 	readonly groupKey: string;
-	readonly files: readonly { readonly filename: string; readonly invoice: InvoiceSummary }[];
+	readonly files: readonly {
+		readonly filename: string;
+		/** See `RecognisedFile`. */
+		readonly invoiceIndex: number;
+		readonly invoice: InvoiceSummary;
+	}[];
 }
 
 export interface ReviewResult {
@@ -202,9 +224,12 @@ interface StructuredTarget {
 }
 
 /**
- * Computes the whole review in one pass over `files`, in the order given,
- * followed by a second pass pairing any unclaimed file (a PDF, most
- * concretely) against a structured file it shares a base name with.
+ * Computes the whole review in one pass over `files`, in the order given
+ * (and, within a file, over every invoice it parses to — almost always
+ * one, but a FatturaPA batch file can carry several, #101, each
+ * classified independently against the same file bytes), followed by a
+ * second pass pairing any unclaimed file (a PDF, most concretely) against
+ * a structured file it shares a base name with.
  *
  * `existingClients` matches a customer to a client already on record;
  * `existingInvoices` seeds cross-run dedup with every invoice already
@@ -227,7 +252,10 @@ export function buildReview(
 	const conflicts: ConflictFile[] = [];
 	const skipped: SkippedFile[] = [];
 	const unclaimed: ImportableFile[] = [];
-	const unknownGroups = new Map<string, { filename: string; invoice: Invoice }[]>();
+	const unknownGroups = new Map<
+		string,
+		{ filename: string; invoiceIndex: number; invoice: Invoice }[]
+	>();
 
 	const keyIndex = new Map<string, KeyEntry>();
 	for (const existing of existingInvoices) {
@@ -254,6 +282,7 @@ export function buildReview(
 		} catch (error) {
 			skipped.push({
 				filename: file.filename,
+				invoiceIndex: 0,
 				reason: { kind: 'malformed_document', message: errorMessage(error) }
 			});
 			continue;
@@ -263,100 +292,130 @@ export function buildReview(
 			continue;
 		}
 
-		const direction = classifyImportedInvoice(result.invoice, accountHolderTaxId);
-		if (direction.kind === 'incoming_skipped') {
-			skipped.push({
-				filename: file.filename,
-				reason: { kind: 'incoming_invoice', reason: direction.reason }
-			});
-			continue;
-		}
-
-		const invoice = direction.invoice;
-		const key = naturalInvoiceKey(invoice);
+		// The file's own bytes, hashed once — every invoice a batch file
+		// carries (#101) shares the same content hash, since they all come
+		// from the same file.
 		const hash = hashContent(file.content);
-		const existingEntry = keyIndex.get(key);
 
-		if (existingEntry) {
-			if (existingEntry.hashes.has(hash)) {
-				const attachments: string[] = [];
-				alreadyPresent.push({
-					filename: file.filename,
-					invoice: summarize(invoice),
-					source: existingEntry.source,
-					duplicateOfFilename: existingEntry.source === 'batch' ? existingEntry.filename : null,
-					existingInvoiceNumber: existingEntry.source === 'database' ? existingEntry.number : null,
-					attachments
-				});
-				structuredTargets.set(fileStem(file.filename), { entry: existingEntry, attachments });
-			} else {
-				conflicts.push({
-					filename: file.filename,
-					invoice: summarize(invoice),
-					existingInvoiceNumber: existingEntry.number,
-					existingIssueDate: existingEntry.issueDate
-				});
-			}
-			continue;
-		}
-
-		const newEntry: KeyEntry = {
-			hashes: new Set([hash]),
-			source: 'batch',
-			filename: file.filename,
-			number: invoice.number,
-			issueDate: invoice.issueDate
-		};
-		keyIndex.set(key, newEntry);
-
-		const match = matchClientByTaxId(invoice.customer, existingClients);
-		if (match) {
-			if (!match.activeContractId) {
+		for (const [invoiceIndex, rawInvoice] of result.invoices.entries()) {
+			const direction = classifyImportedInvoice(rawInvoice, accountHolderTaxId);
+			if (direction.kind === 'incoming_skipped') {
 				skipped.push({
 					filename: file.filename,
-					reason: { kind: 'ambiguous_contract', clientLegalName: match.legalName }
+					invoiceIndex,
+					reason: { kind: 'incoming_invoice', reason: direction.reason }
 				});
 				continue;
 			}
-			const dayMappingContext = dayMappingByContractId.get(match.activeContractId);
-			const attachments: string[] = [];
-			recognised.push({
-				filename: file.filename,
-				invoice: summarize(invoice),
-				lines: invoice.lines.map((line: InvoiceLine) => ({
-					description: line.description,
-					quantity: line.quantity,
-					unitPrice: line.unitPrice,
-					amount: line.amount,
-					taxRate: line.taxRate,
-					dayMapping: dayMappingContext
-						? proposeDayMapping(
-								line,
-								invoice.issueDate,
-								dayMappingContext.eligibleDays,
-								dayMappingContext.rateCards
-							)
-						: null
-				})),
-				clientId: match.id,
-				clientLegalName: match.legalName,
-				contractId: match.activeContractId,
-				attachments
-			});
-			structuredTargets.set(fileStem(file.filename), { entry: newEntry, attachments });
-			continue;
-		}
 
-		const groupKey = normalizedTaxId(invoice.customer.taxId);
-		const group = unknownGroups.get(groupKey) ?? [];
-		group.push({ filename: file.filename, invoice });
-		unknownGroups.set(groupKey, group);
+			const invoice = direction.invoice;
+			const key = naturalInvoiceKey(invoice);
+			const existingEntry = keyIndex.get(key);
+
+			if (existingEntry) {
+				if (existingEntry.hashes.has(hash)) {
+					const attachments: string[] = [];
+					alreadyPresent.push({
+						filename: file.filename,
+						invoiceIndex,
+						invoice: summarize(invoice),
+						source: existingEntry.source,
+						duplicateOfFilename: existingEntry.source === 'batch' ? existingEntry.filename : null,
+						existingInvoiceNumber:
+							existingEntry.source === 'database' ? existingEntry.number : null,
+						attachments
+					});
+					// A companion file only ever pairs with a single-invoice
+					// file (#44's rule 2): which of a batch file's several
+					// bodies (#101) a same-named PDF belongs to cannot be
+					// known from the filename alone, and guessing would be
+					// exactly the invented attribution rule 2 forbids, so a
+					// batch body never registers a `structuredTargets` entry
+					// — any companion sharing its base name falls through to
+					// `unrecognised_format` in the second pass below.
+					if (result.invoices.length === 1) {
+						structuredTargets.set(fileStem(file.filename), { entry: existingEntry, attachments });
+					}
+				} else {
+					conflicts.push({
+						filename: file.filename,
+						invoiceIndex,
+						invoice: summarize(invoice),
+						existingInvoiceNumber: existingEntry.number,
+						existingIssueDate: existingEntry.issueDate
+					});
+				}
+				continue;
+			}
+
+			const newEntry: KeyEntry = {
+				hashes: new Set([hash]),
+				source: 'batch',
+				filename: file.filename,
+				number: invoice.number,
+				issueDate: invoice.issueDate
+			};
+			keyIndex.set(key, newEntry);
+
+			const match = matchClientByTaxId(invoice.customer, existingClients);
+			if (match) {
+				if (!match.activeContractId) {
+					skipped.push({
+						filename: file.filename,
+						invoiceIndex,
+						reason: { kind: 'ambiguous_contract', clientLegalName: match.legalName }
+					});
+					continue;
+				}
+				const dayMappingContext = dayMappingByContractId.get(match.activeContractId);
+				const attachments: string[] = [];
+				recognised.push({
+					filename: file.filename,
+					invoiceIndex,
+					invoice: summarize(invoice),
+					lines: invoice.lines.map((line: InvoiceLine) => ({
+						description: line.description,
+						quantity: line.quantity,
+						unitPrice: line.unitPrice,
+						amount: line.amount,
+						taxRate: line.taxRate,
+						dayMapping: dayMappingContext
+							? proposeDayMapping(
+									line,
+									invoice.issueDate,
+									dayMappingContext.eligibleDays,
+									dayMappingContext.rateCards
+								)
+							: null
+					})),
+					clientId: match.id,
+					clientLegalName: match.legalName,
+					contractId: match.activeContractId,
+					attachments
+				});
+				// See the companion-attachment comment above: same restraint
+				// applies to a newly recognised batch body.
+				if (result.invoices.length === 1) {
+					structuredTargets.set(fileStem(file.filename), { entry: newEntry, attachments });
+				}
+				continue;
+			}
+
+			const groupKey = normalizedTaxId(invoice.customer.taxId);
+			const group = unknownGroups.get(groupKey) ?? [];
+			group.push({ filename: file.filename, invoiceIndex, invoice });
+			unknownGroups.set(groupKey, group);
+		}
 	}
 
 	for (const file of unclaimed) {
 		const target = structuredTargets.get(fileStem(file.filename));
 		if (!target) {
-			skipped.push({ filename: file.filename, reason: { kind: 'unrecognised_format' } });
+			skipped.push({
+				filename: file.filename,
+				invoiceIndex: 0,
+				reason: { kind: 'unrecognised_format' }
+			});
 			continue;
 		}
 		target.attachments.push(file.filename);
@@ -366,7 +425,11 @@ export function buildReview(
 	const clarifications: ClarificationGroup[] = [...unknownGroups.entries()].map(
 		([groupKey, group]) => ({
 			groupKey,
-			files: group.map(({ filename, invoice }) => ({ filename, invoice: summarize(invoice) })),
+			files: group.map(({ filename, invoiceIndex, invoice }) => ({
+				filename,
+				invoiceIndex,
+				invoice: summarize(invoice)
+			})),
 			...buildClientContractProposal(group.map(({ invoice }) => invoice))
 		})
 	);

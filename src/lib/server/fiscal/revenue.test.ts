@@ -9,7 +9,7 @@ import { client, contract, invoice } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { fiscalProfile } from '$lib/server/db/schema/fiscal';
 import { createInvoice, type InvoiceInput } from '$lib/server/repositories/invoice';
-import { fetchLedgerRows, fetchRevenueOverRange } from './revenue';
+import { fetchClientRevenueBreakdown, fetchLedgerRows, fetchRevenueOverRange } from './revenue';
 import { buildRegistry, type PackRegistry } from './registry';
 import type { FiscalPack } from './pack';
 
@@ -288,6 +288,78 @@ test('fetchRevenueOverRange sums each sub-period under its own basis across a re
 				}
 			]);
 			expect(figure.amount).toBe(160_000);
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('fetchClientRevenueBreakdown splits revenue by client under the pack in force, leaving an out-of-range client out', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const { clientRow: clientA, contractRow: contractA } = await insertContract(tx);
+			const { clientRow: clientB, contractRow: contractB } = await insertContract(tx);
+
+			// In range and paid: counted for client A.
+			const invoiceA = await createInvoice(
+				invoiceInput(contractA.id, { issueDate: '2094-03-01' }),
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'test fixture',
+				tx
+			);
+			await tx.update(invoice).set({ paidOn: '2094-03-10' }).where(eq(invoice.id, invoiceA.id));
+
+			// Client B only has revenue before the queried range: left out of
+			// `byClient` entirely rather than listed at zero.
+			const invoiceB = await createInvoice(
+				invoiceInput(contractB.id, {
+					issueDate: '2093-11-01',
+					lines: [
+						{
+							description: 'Consulting',
+							quantity: 1,
+							unitPrice: 60_000,
+							amount: 60_000,
+							taxRate: 0,
+							taxTreatmentCode: null,
+							workUnitIds: []
+						}
+					]
+				}),
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'test fixture',
+				tx
+			);
+			await tx.update(invoice).set({ paidOn: '2093-11-05' }).where(eq(invoice.id, invoiceB.id));
+
+			const cashPack: FiscalPack = {
+				id: 'test-client-breakdown-cash',
+				version: '1',
+				effectiveFrom: '2024-01-01',
+				displayName: { en: 'Test cash', it: 'Test cash' },
+				basis: 'cash',
+				fiscalYear: { startMonth: 1, startDay: 1 },
+				ceilings: [],
+				treatments: [],
+				charges: [],
+				formats: []
+			};
+			const registry: PackRegistry = buildRegistry([cashPack]);
+			// Its own distant era, so it cannot collide with another test
+			// file's fiscal_profile rows under the database-wide exclusion
+			// constraint (see `profile.test.ts`'s comment on the same concern).
+			await tx.insert(fiscalProfile).values({
+				packId: 'test-client-breakdown-cash',
+				packVersion: '1',
+				validFrom: '2094-01-01',
+				validTo: null
+			});
+
+			const breakdown = await fetchClientRevenueBreakdown('2094-01-01', '2095-01-01', tx, registry);
+
+			expect(breakdown.byClient).toEqual([{ clientId: clientA.id, amount: 100_000 }]);
+			expect(breakdown.total).toBe(100_000);
+			expect(breakdown.byClient.some((share) => share.clientId === clientB.id)).toBe(false);
 
 			tx.rollback();
 		})

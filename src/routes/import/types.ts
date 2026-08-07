@@ -29,6 +29,10 @@ export type SkipReason =
 
 export interface SkippedFile {
 	readonly filename: string;
+	/** See `RecognisedFile` in the server-side `review.ts`: distinguishes
+	 * more than one invoice a FatturaPA batch (lotto) file can produce
+	 * from one file (#101). */
+	readonly invoiceIndex: number;
 	readonly reason: SkipReason;
 }
 
@@ -56,6 +60,10 @@ export interface InvoiceLineView {
 
 export interface RecognisedFile {
 	readonly filename: string;
+	/** See `RecognisedFile` in the server-side `review.ts`: distinguishes
+	 * more than one invoice a FatturaPA batch (lotto) file can produce
+	 * from one file (#101). */
+	readonly invoiceIndex: number;
 	readonly invoice: InvoiceSummary;
 	readonly lines: readonly InvoiceLineView[];
 	readonly clientId: string;
@@ -68,6 +76,8 @@ export type AlreadyPresentSource = 'batch' | 'database';
 
 export interface AlreadyPresentFile {
 	readonly filename: string;
+	/** See `RecognisedFile`. */
+	readonly invoiceIndex: number;
 	readonly invoice: InvoiceSummary;
 	readonly source: AlreadyPresentSource;
 	readonly duplicateOfFilename: string | null;
@@ -77,6 +87,8 @@ export interface AlreadyPresentFile {
 
 export interface ConflictFile {
 	readonly filename: string;
+	/** See `RecognisedFile`. */
+	readonly invoiceIndex: number;
 	readonly invoice: InvoiceSummary;
 	readonly existingInvoiceNumber: string;
 	readonly existingIssueDate: string;
@@ -116,7 +128,12 @@ export interface ContractProposal {
 
 export interface ClarificationGroup {
 	readonly groupKey: string;
-	readonly files: readonly { readonly filename: string; readonly invoice: InvoiceSummary }[];
+	readonly files: readonly {
+		readonly filename: string;
+		/** See `RecognisedFile`. */
+		readonly invoiceIndex: number;
+		readonly invoice: InvoiceSummary;
+	}[];
 	client: ClientProposal;
 	contract: ContractProposal;
 	readonly observedRecurringAmount: number;
@@ -144,5 +161,12 @@ export interface ConfirmResponse {
 		readonly filename: string;
 		readonly existingInvoiceNumber: string;
 	}[];
-	readonly invoicesFailed: readonly { readonly filename: string; readonly message: string }[];
+	/** `invoiceIndex` distinguishes two failures against the same
+	 * `filename` — a FatturaPA batch file (#101) whose bodies each failed
+	 * independently. */
+	readonly invoicesFailed: readonly {
+		readonly filename: string;
+		readonly invoiceIndex: number;
+		readonly message: string;
+	}[];
 }

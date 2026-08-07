@@ -8,12 +8,16 @@ import { client as pool, db, type DbExecutor } from '$lib/server/db';
 import { client, contract, invoice, rateCard } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { createInvoice, type InvoiceInput } from '$lib/server/repositories/invoice';
+import { createRenewalAssumption } from '$lib/server/repositories/contract-renewal-assumption';
 import { createWorkUnit, transitionWorkUnit } from '$lib/server/repositories/work-unit';
 import {
 	forecastCollected,
 	forecastCommitted,
 	forecastProjected,
-	forecastRevenue
+	forecastRenewalAssumptions,
+	forecastRevenue,
+	forecastRevenueByMonth,
+	monthlyBuckets
 } from './forecast';
 
 afterAll(async () => {
@@ -220,4 +224,122 @@ test('forecastRevenue combines all three levels, matching the individual calls',
 			tx.rollback();
 		})
 	).rejects.toThrow();
+});
+
+test('forecastProjected stays empty for an indefinite contract with no renewal assumption recorded', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			await insertContract(tx, { terminationNoticeDays: 30, endsOn: null });
+
+			const projected = await forecastProjected('2024-01-01', '2024-01-01', '2025-01-01', tx);
+			expect(projected.amount).toBe(0);
+
+			const assumptions = await forecastRenewalAssumptions(
+				'2024-01-01',
+				'2024-01-01',
+				'2025-01-01',
+				tx
+			);
+			expect(assumptions).toEqual([]);
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('forecastRevenueByMonth places a paid invoice in the month it was actually paid, not issued', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const contractRow = await insertContract(tx);
+			const invoiceRow = await createInvoice(
+				invoiceInput(contractRow.id, { issueDate: '2024-01-15' }),
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'test fixture',
+				tx
+			);
+			await tx.update(invoice).set({ paidOn: '2024-03-10' }).where(eq(invoice.id, invoiceRow.id));
+
+			const months = await forecastRevenueByMonth('2024-06-01', '2024-01-01', '2024-04-01', tx);
+
+			expect(months.map((m) => m.month)).toEqual(['2024-01-01', '2024-02-01', '2024-03-01']);
+			expect(months[0].collected.amount).toBe(0);
+			expect(months[1].collected.amount).toBe(0);
+			expect(months[2].collected.amount).toBe(100_000);
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('forecastRenewalAssumptions pairs a recorded assumption with the contribution it produces, matching forecastProjected (#39)', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const contractRow = await insertContract(tx, { terminationNoticeDays: 30, endsOn: null });
+			await createRenewalAssumption(
+				{
+					contractId: contractRow.id,
+					probability: 0.5,
+					expectedVolumeMinorUnits: 200_000,
+					horizonEndsOn: '2024-02-20'
+				},
+				tx
+			);
+
+			// asOfDate 2024-01-01 + 30 days' notice: window through
+			// 2024-01-31, so the horizon starts 2024-02-01 and runs 20 days
+			// (Feb 1 through Feb 20 inclusive) to 2024-02-20. Fully inside
+			// the query window below: 200,000 * 0.5 = 100,000.
+			const projected = await forecastProjected('2024-01-01', '2024-01-01', '2025-01-01', tx);
+			expect(projected.amount).toBe(100_000);
+
+			const assumptions = await forecastRenewalAssumptions(
+				'2024-01-01',
+				'2024-01-01',
+				'2025-01-01',
+				tx
+			);
+			expect(assumptions).toEqual([
+				{
+					contractId: contractRow.id,
+					contractTitle: 'Test contract',
+					assumption: {
+						probability: 0.5,
+						expectedVolumeMinorUnits: 200_000,
+						horizonEndsOn: '2024-02-20'
+					},
+					contribution: 100_000
+				}
+			]);
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('forecastRevenueByMonth places an issued unpaid invoice as committed in the month it was issued', async () => {
+	await expect(
+		db.transaction(async (tx) => {
+			const contractRow = await insertContract(tx);
+			await createInvoice(
+				invoiceInput(contractRow.id, { issueDate: '2024-02-01' }),
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'test fixture',
+				tx
+			);
+
+			const months = await forecastRevenueByMonth('2024-02-15', '2024-01-01', '2024-04-01', tx);
+
+			expect(months[0].committed.amount).toBe(0);
+			expect(months[1].committed.amount).toBe(100_000);
+			expect(months[2].committed.amount).toBe(0);
+
+			tx.rollback();
+		})
+	).rejects.toThrow();
+});
+
+test('monthlyBuckets requires both bounds on the first of a calendar month', () => {
+	expect(() => monthlyBuckets('2024-01-15', '2024-04-01')).toThrow(/first day of a calendar month/);
+	expect(() => monthlyBuckets('2024-01-01', '2024-04-15')).toThrow(/first day of a calendar month/);
+	expect(monthlyBuckets('2024-01-01', '2024-01-01')).toEqual([]);
 });
