@@ -20,7 +20,10 @@ export type InvoiceDirection =
 	| { readonly kind: 'outgoing' }
 	| { readonly kind: 'incoming'; readonly reason: IncomingInvoiceReason };
 
-function normalizedTaxId(taxId: string): string {
+/** Tax ids are conventionally uppercase but a document is free to transmit
+ * them however its issuer typed them; exported so client matching (#46)
+ * compares the same way direction detection does. */
+export function normalizedTaxId(taxId: string): string {
 	return taxId.trim().toUpperCase();
 }
 

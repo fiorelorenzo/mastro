@@ -4,6 +4,7 @@ import {
 	formatDate,
 	formatDateTime,
 	formatDays,
+	formatMinorUnits,
 	formatNumber,
 	formatPercent
 } from './format';
@@ -24,6 +25,13 @@ test('a bigger figure also renders with each locale’s own thousands separator'
 test('an amount places the currency symbol and separators per locale, never a concatenated symbol', () => {
 	expect(formatAmount(12_345.5, 'EUR', 'en')).toBe('€12,345.50');
 	expect(formatAmount(12_345.5, 'EUR', 'it')).toBe('12.345,50\u00a0€');
+});
+
+test('a minor-units amount converts using the currency\u2019s own decimal digits, never a hardcoded /100', () => {
+	expect(formatMinorUnits(1_234_550, 'EUR', 'en')).toBe(formatAmount(12_345.5, 'EUR', 'en'));
+	// Japanese yen has zero minor-unit digits: the stored integer already is
+	// the major-unit amount, unlike EUR's cents.
+	expect(formatMinorUnits(1234, 'JPY', 'en')).toBe(formatAmount(1234, 'JPY', 'en'));
 });
 
 test('a day quantity pluralizes per locale instead of appending a hand-rolled "s"', () => {
