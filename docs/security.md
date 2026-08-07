@@ -222,13 +222,65 @@ has exercised sign-in-then-submit-a-form against the real proxy stack end to end
 did not find a bug, so I am not filing an issue for this; whoever next touches the
 deploy rehearsal should add that one request to it.
 
-**Also not verified.** Better Auth's own IP-based rate limiting (if enabled by
-default) does not go through SvelteKit's `getClientAddress`/`ADDRESS_HEADER`
-machinery — I could not confirm from the bundled source how it resolves the caller's
-IP behind the proxy, and `ADDRESS_HEADER` is unset in every Compose file here.
-Worst case it rate-limits by the proxy's own address rather than the visitor's,
-which would make the limiter uselessly coarse rather than insecure. Filed as **#113**
-rather than guessed at further.
+## Better Auth's rate limiter behind the reverse proxy (#113)
+
+**Confirmed, not assumed.** #78 could not establish from the bundled source
+whether Better Auth's rate limiter goes through SvelteKit's
+`getClientAddress`/`ADDRESS_HEADER` machinery or resolves the caller's IP some
+other way. It does not go through SvelteKit at all. Read directly from
+`node_modules/.pnpm/@better-auth+core@.../node_modules/@better-auth/core/dist/api/rate-limiter/index.mjs`
+and its `dist/utils/ip.mjs`: `onRequestRateLimit` calls `getIp(req, ctx.options)`,
+which reads `advanced.ipAddress.ipAddressHeaders` (default `['x-forwarded-for']`)
+directly off the raw request headers. `createAuth` in
+`src/lib/server/auth/index.ts` never overrides this, so the rate limiter reads
+`X-Forwarded-For` itself, independent of `adapter-node`'s `ADDRESS_HEADER`/
+`XFF_DEPTH` (which govern `event.getClientAddress()` — grepped the whole `src`
+tree, nothing here ever calls it). **Setting `ADDRESS_HEADER`/`XFF_DEPTH` would
+change nothing about this limiter**, so #113's first acceptance branch applies:
+they are correctly left unset in `compose.prod.yaml`/`.env.prod.example`.
+
+**How `getIp` decides what to trust**, same source: without
+`advanced.ipAddress.trustedProxies` configured (nothing here sets it),
+`getIPFromHeader` trusts a single-value `X-Forwarded-For` verbatim and returns
+`null` — not the proxy's own address, an untrusted-shared-bucket signal — the
+moment the header carries more than one comma-separated value.
+
+**Whether that resolves the proxy's own address or the real visitor's,
+checked against the actual proxy, not assumed**: `compose.xff-test.yaml` runs
+the exact `caddy:2-alpine` image and the exact `deploy/Caddyfile`
+`compose.prod.yaml` uses, fronting a header-echoing backend, and
+`src/lib/server/auth/caddy-xff.test.ts` drives real requests through it
+(skipped when the stack is not running, printing the `docker compose` command
+to start it — same convention as the mail tests). Caddy's default (Caddy 2.7+,
+no `trusted_proxies` directive here) is to overwrite `X-Forwarded-For` with its
+own observation of the immediate connection on every request, never append to
+or trust whatever a client sent: a request with no header, one with a single
+spoofed address, and one with a spoofed multi-hop chain all arrive at the
+backend carrying the identical single real value. #78's worst case — "every
+request behind the proxy resolves to the proxy's own address" — does not
+happen: the value Caddy forwards is always the true visitor's address, single
+value, never client-controlled, matching exactly what `getIPFromHeader`'s
+single-value-trust rule needs to resolve correctly with no configuration at
+all. #113's second acceptance branch applies: nothing to set, documented here
+instead.
+
+**One narrower, already-accepted gap, not fixed by any of the above.**
+`compose.prod.yaml` also publishes `web` on a loopback-only debug port
+(`WEB_PORT`, #76) that bypasses Caddy entirely. Anyone who can reach that port
+directly — which already requires host-level access to this machine — can send
+a single-value `X-Forwarded-For` and have it trusted exactly as if it came
+through Caddy, since `getIPFromHeader`'s single-value rule cannot tell the two
+apart, and `trustedProxies` cannot either: its own doc comment says so
+explicitly ("this only interprets the forwarded header chain and cannot verify
+the direct sender"). Configuring `trustedProxies` to Caddy's own address would
+add complexity for zero effect on the traffic that matters (Caddy already
+strips every incoming value to exactly one, so the multi-hop-skipping half of
+`trustedProxies` never triggers on real traffic) and would not close this
+narrower gap either. Not filing a new issue for this: it is bounded by the
+same host-access trust boundary `docs/security.md`'s database-credentials
+section already accepts for the same debug port, and the only real fix is not
+publishing that port at all, which is #76's own tradeoff to revisit, not
+#113's.
 
 ## Secrets in repository history
 
@@ -277,3 +329,7 @@ does not apply here — nothing rotatable was found.
   claim. The gaps found (document blob permissions, rate-limiter IP resolution
   behind the proxy) are filed as issues rather than patched here, per the review's
   own scope: fix the small ones, file the rest.
+
+**Update.** Both #113 and #114 were resolved in a later change — see their
+own sections above ("Better Auth's rate limiter behind the reverse proxy",
+"Document blobs") for what was found and fixed.
