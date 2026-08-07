@@ -3,32 +3,56 @@
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate } from '$lib/i18n/format';
 	import { factLine } from '$lib/nav/crumbs';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
+	import Section from '$lib/layout/Section.svelte';
+	import RecordList from '$lib/layout/RecordList.svelte';
+	import type { RecordColumn } from '$lib/layout/types';
 	import { noticeChannelLabel } from '../notice-channel';
 	import { renewalTypeLabel, statusLabel } from './contracts/contract-enums';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	type ContractRow = PageData['contracts'][number];
+
+	// The "view" column the old hand-rolled table carried is gone: the title
+	// is the link now, the same convention `/clients` itself already set.
+	const contractColumns: readonly RecordColumn<ContractRow>[] = $derived([
+		{ key: 'title', label: m.contract_form_title_label() },
+		{
+			key: 'status',
+			label: m.contract_form_status_label(),
+			format: (contract: ContractRow) => statusLabel(contract.status)
+		},
+		{
+			key: 'startsOn',
+			label: m.contract_form_starts_on_label(),
+			format: (contract: ContractRow) => formatDate(contract.startsOn)
+		},
+		{
+			key: 'renewalType',
+			label: m.contract_form_renewal_type_label(),
+			format: (contract: ContractRow) => renewalTypeLabel(contract.renewalType)
+		}
+	]);
 </script>
 
 <svelte:head
 	><title>{m.client_detail_page_title({ name: data.client.legalName })}</title></svelte:head
 >
 
-<main class="mx-auto max-w-3xl p-8">
-	<PageHeader
-		crumbs={data.crumbs}
-		title={data.client.legalName}
-		subtitle={factLine([data.client.taxId, noticeChannelLabel(data.client.noticeChannel)])}
-	>
-		{#snippet actions()}
-			<a href={resolve('/clients/[id]/edit', { id: data.client.id })} class="text-sm underline"
-				>{m.clients_edit_link()}</a
-			>
-		{/snippet}
-	</PageHeader>
+<Page
+	title={data.client.legalName}
+	subtitle={factLine([data.client.taxId, noticeChannelLabel(data.client.noticeChannel)])}
+	crumbs={data.crumbs}
+>
+	{#snippet actions()}
+		<a href={resolve('/clients/[id]/edit', { id: data.client.id })} class="underline"
+			>{m.clients_edit_link()}</a
+		>
+	{/snippet}
 
-	<section class="mt-6">
+	<Section title={m.client_form_legal_identity_legend()}>
 		<dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
 			<dt class="opacity-70">{m.client_form_tax_id_label()}</dt>
 			<dd>{data.client.taxId}</dd>
@@ -47,63 +71,43 @@
 				{data.client.addressPostalCode}
 			</dd>
 		</dl>
+	</Section>
 
-		{#if data.client.contacts.length > 0}
-			<h2 class="mt-4 text-sm font-semibold">{m.client_form_contacts_legend()}</h2>
-			<ul class="mt-2 flex flex-col gap-1 text-sm">
+	{#if data.client.contacts.length > 0}
+		<Section title={m.client_form_contacts_legend()}>
+			<ul class="flex flex-col gap-1 text-sm">
 				{#each data.client.contacts as contact (contact.id)}
 					<li>
 						{contact.name} — {contact.email}
-						{#if contact.canApprove}<span class="opacity-70"
-								>({m.clients_can_approve_suffix()})</span
+						{#if contact.canApprove}<span class="opacity-70">{m.clients_can_approve_suffix()}</span
 							>{/if}
 					</li>
 				{/each}
 			</ul>
-		{/if}
-	</section>
+		</Section>
+	{/if}
 
-	<section class="mt-6">
-		<div class="flex items-center justify-between">
-			<h2 class="text-lg font-semibold">{m.contract_section_heading()}</h2>
-			<a
-				href={resolve('/clients/[id]/contracts/new', { id: data.client.id })}
-				class="text-sm underline">{m.contract_new_link()}</a
+	<Section title={m.contract_section_heading()}>
+		{#snippet actions()}
+			<a href={resolve('/clients/[id]/contracts/new', { id: data.client.id })} class="underline"
+				>{m.contract_new_link()}</a
 			>
-		</div>
+		{/snippet}
+
 		{#if data.contracts.length === 0}
-			<p class="mt-2 text-sm opacity-70">{m.contract_empty()}</p>
+			<p class="text-sm opacity-70">{m.contract_empty()}</p>
 		{:else}
-			<table class="mt-2 w-full border-collapse text-sm">
-				<thead>
-					<tr class="border-b text-left">
-						<th class="py-2 pr-4">{m.contract_form_title_label()}</th>
-						<th class="py-2 pr-4">{m.contract_form_status_label()}</th>
-						<th class="py-2 pr-4">{m.contract_form_starts_on_label()}</th>
-						<th class="py-2 pr-4">{m.contract_form_renewal_type_label()}</th>
-						<th class="py-2"></th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each data.contracts as contract (contract.id)}
-						<tr class="border-b">
-							<td class="py-2 pr-4">{contract.title}</td>
-							<td class="py-2 pr-4">{statusLabel(contract.status)}</td>
-							<td class="py-2 pr-4">{formatDate(contract.startsOn)}</td>
-							<td class="py-2 pr-4">{renewalTypeLabel(contract.renewalType)}</td>
-							<td class="py-2">
-								<a
-									href={resolve('/clients/[id]/contracts/[contractId]', {
-										id: data.client.id,
-										contractId: contract.id
-									})}
-									class="underline">{m.contract_view_link()}</a
-								>
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
+			<RecordList
+				columns={contractColumns}
+				rows={data.contracts}
+				caption={m.contract_section_heading()}
+				rowKey={(contract) => contract.id}
+				rowHref={(contract) =>
+					resolve('/clients/[id]/contracts/[contractId]', {
+						id: data.client.id,
+						contractId: contract.id
+					})}
+			/>
 		{/if}
-	</section>
-</main>
+	</Section>
+</Page>
