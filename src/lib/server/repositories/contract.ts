@@ -34,6 +34,16 @@ export async function listContracts(clientId?: string) {
 	});
 }
 
+/** Contracts with their client, for a picker (`routes/invoices/new`) that
+ * needs to show the client's name next to each contract, not just its id
+ * (#26). */
+export async function listContractsWithClient() {
+	return db.query.contract.findMany({
+		with: { client: true },
+		orderBy: asc(contract.startsOn)
+	});
+}
+
 export async function getContract(id: string) {
 	return db.query.contract.findFirst({ where: eq(contract.id, id) });
 }
