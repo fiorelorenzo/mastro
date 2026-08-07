@@ -20,7 +20,7 @@
 	interpolation (equivalent to textContent), never innerHTML.
 -->
 <div class="tooltip" role="status" style:left="{x}px" style:top="{y}px">
-	{#each rows as row (row.label)}
+	{#each rows as row, i (i)}
 		<div class="row">
 			{#if row.color}
 				<span class="key" style:background={row.color}></span>

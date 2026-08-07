@@ -17,6 +17,13 @@
 </script>
 
 <!--
+	Ticks are keyed by index, not by label. A tick has no identity beyond
+	where it sits on the axis, and two labels can legitimately be equal on a
+	degenerate range (an instance with no data yet) — keyed by label that
+	threw each_key_duplicate mid-hydration and left the whole page blank
+	(#143). An axis is redrawn wholesale anyway; there is nothing to
+	preserve across a reorder.
+
 	Hairline axis: solid 1px baseline plus one tick per label, never dashed
 	(dashing reads as "projection" elsewhere in this system, see
 	marks-and-anatomy.md). Values also live in every chart's table view, so
@@ -25,7 +32,7 @@
 <g class="axis axis-{orientation}">
 	{#if orientation === 'x'}
 		<line class="baseline" x1="0" y1="0" x2={length} y2="0" />
-		{#each ticks as tick (tick.label)}
+		{#each ticks as tick, i (i)}
 			<line class="tick" x1={tick.position} y1="0" x2={tick.position} y2={tickLength} />
 			<text class="label" x={tick.position} y={tickLength + 12} text-anchor="middle"
 				>{tick.label}</text
@@ -33,7 +40,7 @@
 		{/each}
 	{:else}
 		<line class="baseline" x1="0" y1="0" x2="0" y2={length} />
-		{#each ticks as tick (tick.label)}
+		{#each ticks as tick, i (i)}
 			<line class="tick" x1={-tickLength} y1={tick.position} x2="0" y2={tick.position} />
 			<text
 				class="label"
