@@ -5,11 +5,18 @@
 // carrying no currency of its own.
 import { evaluateActiveCeilings } from '$lib/server/fiscal/ceiling-status';
 import { irrevocabilityWindowEnd } from '$lib/server/fiscal/certainty';
-import { forecastRevenue, forecastRevenueByMonth } from '$lib/server/fiscal/forecast';
+import {
+	forecastRenewalAssumptions,
+	forecastRevenue,
+	forecastRevenueByMonth,
+	type ContractRenewalAssumptionForecast
+} from '$lib/server/fiscal/forecast';
 import { fetchClientRevenueBreakdown } from '$lib/server/fiscal/revenue';
 import { listClients } from '$lib/server/repositories/client';
 import { listContractsWithClient } from '$lib/server/repositories/contract';
+import { listProposals } from '$lib/server/repositories/proposal';
 import type { CashCalendarMarker } from '$lib/dashboard/cash-calendar';
+import type { RenewalAssumptionContribution } from '$lib/dashboard/renewal-assumption';
 import type { PageServerLoad } from './$types';
 
 const PAST_MONTHS = 6;
@@ -35,6 +42,26 @@ function addDaysIso(date: string, days: number): string {
 	return parsed.toISOString().slice(0, 10);
 }
 
+/** #127: `forecastRenewalAssumptions`'s own return shape, narrowed to the
+ * contracts that actually contribute a positive figure over whichever
+ * window the caller asked it for — the ceiling meters below and the cash
+ * calendar each call the query with their own window, then run it through
+ * this same filter/reshape, never a second fiscal calculation. */
+function toAssumptionViews(
+	forecasted: readonly ContractRenewalAssumptionForecast[]
+): RenewalAssumptionContribution[] {
+	return forecasted
+		.filter((row) => row.contribution > 0)
+		.map((row) => ({
+			contractId: row.contractId,
+			contractTitle: row.contractTitle,
+			probability: row.assumption.probability,
+			expectedVolumeMinorUnits: row.assumption.expectedVolumeMinorUnits,
+			horizonEndsOn: row.assumption.horizonEndsOn,
+			contributionMinorUnits: row.contribution
+		}));
+}
+
 // / is protected by the default guard (src/hooks.server.ts), so locals.user
 // is always set here: an unauthenticated request never reaches this load.
 export const load: PageServerLoad = async ({ locals }) => {
@@ -47,12 +74,26 @@ export const load: PageServerLoad = async ({ locals }) => {
 	const yearFrom = `${currentYear}-01-01`;
 	const yearTo = `${currentYear + 1}-01-01`;
 
-	const [evaluatedCeilings, monthly, contracts, clientRevenue, clients] = await Promise.all([
+	const [
+		evaluatedCeilings,
+		monthly,
+		contracts,
+		clientRevenue,
+		clients,
+		calendarAssumptions,
+		pendingProposals
+	] = await Promise.all([
 		evaluateActiveCeilings(today),
 		forecastRevenueByMonth(today, windowFrom, windowTo),
 		listContractsWithClient(),
 		fetchClientRevenueBreakdown(yearFrom, yearTo),
-		listClients()
+		listClients(),
+		// #127: every recorded renewal assumption paired with the figure
+		// it contributes to the calendar's own rolling window.
+		forecastRenewalAssumptions(today, windowFrom, windowTo),
+		// #64: the review queue's own pending count, so the home
+		// screen's one-tap link can say how many are actually waiting.
+		listProposals('pending')
 	]);
 
 	// #57 — the hero ceiling meter reads whole-practice, pack-origin
@@ -67,9 +108,16 @@ export const load: PageServerLoad = async ({ locals }) => {
 		(evaluated) =>
 			evaluated.ceiling.origin === 'pack' && evaluated.ceiling.perimeter.kind === 'all_clients'
 	);
-	const heroProjections = await Promise.all(
-		heroCeilings.map((evaluated) => forecastRevenue(today, today, evaluated.period.to))
-	);
+	const [heroProjections, heroAssumptions] = await Promise.all([
+		Promise.all(
+			heroCeilings.map((evaluated) => forecastRevenue(today, today, evaluated.period.to))
+		),
+		// #127: the same query, over the same window, for the assumptions
+		// that produced part of that projection.
+		Promise.all(
+			heroCeilings.map((evaluated) => forecastRenewalAssumptions(today, today, evaluated.period.to))
+		)
+	]);
 	const ceilings = heroCeilings.map((evaluated, index) => ({
 		id: evaluated.ceiling.id,
 		label: evaluated.ceiling.label,
@@ -90,7 +138,8 @@ export const load: PageServerLoad = async ({ locals }) => {
 		projectedEnd:
 			evaluated.currentValue +
 			heroProjections[index].committed.amount +
-			heroProjections[index].projected.amount
+			heroProjections[index].projected.amount,
+		assumptions: toAssumptionViews(heroAssumptions[index])
 	}));
 
 	// #58 — vertical markers for contractual dates: a contract's own
@@ -152,7 +201,17 @@ export const load: PageServerLoad = async ({ locals }) => {
 	return {
 		user: locals.user!,
 		ceilings,
-		cashCalendar: { from: windowFrom, to: windowTo, months: monthly, markers },
+		// #64: the record-day CTA's sibling on the home screen — how many
+		// proposals are waiting, so the one tap to `/proposals` carries
+		// context before it's even taken.
+		pendingProposalsCount: pendingProposals.length,
+		cashCalendar: {
+			from: windowFrom,
+			to: windowTo,
+			months: monthly,
+			markers,
+			assumptions: toAssumptionViews(calendarAssumptions)
+		},
 		concentration: {
 			from: yearFrom,
 			to: yearTo,

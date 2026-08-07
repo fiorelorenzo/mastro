@@ -9,17 +9,28 @@
 		type CashCalendarMarker,
 		type CashCalendarMonth
 	} from './cash-calendar';
+	import { renewalAssumptionLine, type RenewalAssumptionContribution } from './renewal-assumption';
 
 	let {
 		months,
 		to,
-		markers
+		markers,
+		assumptions = []
 	}: {
 		months: readonly CashCalendarMonth[];
 		/** The window's own exclusive end — the last bucket's own boundary,
 		 * needed to place a marker that falls in the final month. */
 		to: string;
 		markers: readonly CashCalendarMarker[];
+		/** #127: every recorded renewal assumption contributing to a
+		 * `projected` figure somewhere in this window — empty by default
+		 * for a caller (a test, a story) that has none to show. A month's
+		 * own `projected.amount` is `certainty.ts`'s `projectedAmount`,
+		 * which folds a contributing assumption in directly (never a
+		 * negative figure), so "this month's projected amount is above
+		 * zero" is already the exact, non-recomputed condition under which
+		 * one of these could be part of it — not a guess. */
+		assumptions?: readonly RenewalAssumptionContribution[];
 	} = $props();
 
 	// See `+page.server.ts`'s header comment: the fiscal engine carries no
@@ -89,6 +100,7 @@
 		committed: number;
 		projected: number;
 		total: number;
+		assumptionsText: string;
 		markers: string;
 	}
 	const rows = $derived<MonthRow[]>(
@@ -103,6 +115,14 @@
 				committed: month.committed.amount,
 				projected: month.projected.amount,
 				total: month.collected.amount + month.committed.amount + month.projected.amount,
+				// See the `assumptions` prop doc comment: gated on this exact
+				// month's own projected figure being above zero, the one
+				// condition already computed upstream that means one of
+				// these could be folded into it.
+				assumptionsText:
+					month.projected.amount > 0 && assumptions.length > 0
+						? assumptions.map(renewalAssumptionLine).join(' ')
+						: '',
 				markers: monthMarkers.map(markerLabel).join('; ')
 			};
 		})
@@ -131,6 +151,7 @@
 			align: 'end',
 			format: (r) => formatMinorUnits(r.projected, CURRENCY)
 		},
+		{ key: 'assumptionsText', label: m.dashboard_cash_calendar_column_assumptions() },
 		{
 			key: 'total',
 			label: m.dashboard_cash_calendar_column_total(),
@@ -207,111 +228,184 @@
 	}
 </script>
 
-<ChartFrame
-	title={m.dashboard_cash_calendar_title()}
-	caption={m.dashboard_cash_calendar_caption()}
-	{columns}
-	{rows}
->
-	{#snippet chart()}
-		<div class="plot-wrap">
-			<svg
-				viewBox="-56 -8 {plotWidth + 64} {plotHeight + 40}"
-				width={plotWidth + 64}
-				height={plotHeight + 40}
-				role="img"
-				aria-label={m.dashboard_cash_calendar_title()}
-			>
-				<Grid orientation="horizontal" lines={yTickValues.map(yScale)} length={plotWidth} />
-				{#each months as month, index (month.month)}
-					{@const segments = stack(month)}
-					{@const x = index * (barWidth + barGap)}
-					<g
-						tabindex="0"
-						role="button"
-						aria-label="{formatMonth(month.month)}: {formatMinorUnits(
-							segments.collected.height > 0 ? month.collected.amount : 0,
-							CURRENCY
-						)}"
-						onpointermove={(e) => showMonthTooltip(month, e)}
-						onfocus={(e) => showMonthTooltip(month, e)}
-						onpointerleave={hideTooltip}
-						onblur={hideTooltip}
-					>
-						<rect
-							{x}
-							y={segments.collected.top}
-							width={barWidth}
-							height={segments.collected.height}
-							style:fill="var(--certainty-{CASH_CALENDAR_TIER.collected})"
-						/>
-						<rect
-							{x}
-							y={segments.committed.top}
-							width={barWidth}
-							height={segments.committed.height}
-							style:fill="var(--certainty-{CASH_CALENDAR_TIER.committed})"
-							style:stroke="var(--surface-1)"
-							style:stroke-width="1"
-						/>
-						<rect
-							{x}
-							y={segments.projected.top}
-							width={barWidth}
-							height={segments.projected.height}
-							style:fill="var(--certainty-{CASH_CALENDAR_TIER.projected})"
-							style:stroke="var(--surface-1)"
-							style:stroke-width="1"
-						/>
-					</g>
-				{/each}
-				{#each markers as marker (marker.contractId + marker.kind + marker.date)}
-					{@const x = markerX(marker)}
-					{#if x !== null}
-						<line
-							x1={x}
-							y1={-4}
-							x2={x}
-							y2={plotHeight}
-							class="marker-line"
-							stroke-dasharray={markerDashArray[marker.kind]}
+<!--
+	#64: the twelve-bar chart below is native-sized SVG (see `.plot-wrap
+	svg`'s own comment) — exactly the shape that forces horizontal
+	scrolling at a phone width, and `ChartFrame`'s own chart/table toggle
+	does not save it, because the table twin still carries four
+	non-wrapping currency columns side by side. Below 640px (Tailwind's
+	own `sm`, the same breakpoint `ChartFrame` itself now defaults to a
+	table at) this replaces both with a dedicated vertical list: one row
+	per month, full width, no column that cannot wrap — a genuine
+	different orientation, not a lesser fallback. Both trees render always
+	and a media query picks one, so there is no client-only branch to
+	flash or desync from the server-rendered markup.
+-->
+<div class="calendar-desktop">
+	<ChartFrame
+		title={m.dashboard_cash_calendar_title()}
+		caption={m.dashboard_cash_calendar_caption()}
+		{columns}
+		{rows}
+	>
+		{#snippet chart()}
+			<div class="plot-wrap">
+				<svg
+					viewBox="-56 -8 {plotWidth + 64} {plotHeight + 40}"
+					width={plotWidth + 64}
+					height={plotHeight + 40}
+					role="img"
+					aria-label={m.dashboard_cash_calendar_title()}
+				>
+					<Grid orientation="horizontal" lines={yTickValues.map(yScale)} length={plotWidth} />
+					{#each months as month, index (month.month)}
+						{@const segments = stack(month)}
+						{@const x = index * (barWidth + barGap)}
+						<g
 							tabindex="0"
 							role="button"
-							aria-label={markerLabel(marker)}
-							onpointermove={(e) => showMarkerTooltip(marker, e)}
-							onfocus={(e) => showMarkerTooltip(marker, e)}
+							aria-label="{formatMonth(month.month)}: {formatMinorUnits(
+								segments.collected.height > 0 ? month.collected.amount : 0,
+								CURRENCY
+							)}"
+							onpointermove={(e) => showMonthTooltip(month, e)}
+							onfocus={(e) => showMonthTooltip(month, e)}
 							onpointerleave={hideTooltip}
 							onblur={hideTooltip}
-						/>
-					{/if}
-				{/each}
-				<Axis
-					orientation="y"
-					length={plotHeight}
-					ticks={yTickValues.map((v) => ({
-						position: yScale(v),
-						label: formatMinorUnits(v, CURRENCY)
-					}))}
-				/>
-				<g transform="translate(0, {plotHeight})">
+						>
+							<rect
+								{x}
+								y={segments.collected.top}
+								width={barWidth}
+								height={segments.collected.height}
+								style:fill="var(--certainty-{CASH_CALENDAR_TIER.collected})"
+							/>
+							<rect
+								{x}
+								y={segments.committed.top}
+								width={barWidth}
+								height={segments.committed.height}
+								style:fill="var(--certainty-{CASH_CALENDAR_TIER.committed})"
+								style:stroke="var(--surface-1)"
+								style:stroke-width="1"
+							/>
+							<rect
+								{x}
+								y={segments.projected.top}
+								width={barWidth}
+								height={segments.projected.height}
+								style:fill="var(--certainty-{CASH_CALENDAR_TIER.projected})"
+								style:stroke="var(--surface-1)"
+								style:stroke-width="1"
+							/>
+						</g>
+					{/each}
+					{#each markers as marker (marker.contractId + marker.kind + marker.date)}
+						{@const x = markerX(marker)}
+						{#if x !== null}
+							<line
+								x1={x}
+								y1={-4}
+								x2={x}
+								y2={plotHeight}
+								class="marker-line"
+								stroke-dasharray={markerDashArray[marker.kind]}
+								tabindex="0"
+								role="button"
+								aria-label={markerLabel(marker)}
+								onpointermove={(e) => showMarkerTooltip(marker, e)}
+								onfocus={(e) => showMarkerTooltip(marker, e)}
+								onpointerleave={hideTooltip}
+								onblur={hideTooltip}
+							/>
+						{/if}
+					{/each}
 					<Axis
-						orientation="x"
-						length={plotWidth}
-						ticks={months.map((month, index) => ({
-							position: index * (barWidth + barGap) + barWidth / 2,
-							label: formatMonthShort(month.month)
+						orientation="y"
+						length={plotHeight}
+						ticks={yTickValues.map((v) => ({
+							position: yScale(v),
+							label: formatMinorUnits(v, CURRENCY)
 						}))}
 					/>
-				</g>
-			</svg>
-			{#if tooltip}
-				<Tooltip x={tooltip.x} y={tooltip.y} rows={tooltip.rows} />
-			{/if}
-		</div>
+					<g transform="translate(0, {plotHeight})">
+						<Axis
+							orientation="x"
+							length={plotWidth}
+							ticks={months.map((month, index) => ({
+								position: index * (barWidth + barGap) + barWidth / 2,
+								label: formatMonthShort(month.month)
+							}))}
+						/>
+					</g>
+				</svg>
+				{#if tooltip}
+					<Tooltip x={tooltip.x} y={tooltip.y} rows={tooltip.rows} />
+				{/if}
+			</div>
+			<Legend entries={tierEntries} />
+			<p class="marker-key">{m.dashboard_cash_calendar_marker_key()}</p>
+		{/snippet}
+	</ChartFrame>
+</div>
+
+<div class="calendar-phone">
+	<div class="phone-card">
+		<h3>{m.dashboard_cash_calendar_title()}</h3>
+		<p class="phone-caption">{m.dashboard_cash_calendar_caption()}</p>
+		<ul class="phone-months" aria-label={m.dashboard_cash_calendar_phone_list_label()}>
+			{#each rows as row (row.month)}
+				<li class="phone-month">
+					<div class="phone-month-head">
+						<span class="phone-month-label">{formatMonth(row.month)}</span>
+						<span class="phone-month-total">{formatMinorUnits(row.total, CURRENCY)}</span>
+					</div>
+					<div
+						class="phone-month-bar"
+						role="img"
+						aria-label={m.dashboard_cash_calendar_month_summary({
+							month: formatMonth(row.month),
+							collected: formatMinorUnits(row.collected, CURRENCY),
+							committed: formatMinorUnits(row.committed, CURRENCY),
+							projected: formatMinorUnits(row.projected, CURRENCY)
+						})}
+					>
+						<span
+							class="segment"
+							style:width="{(row.collected / yMax) * 100}%"
+							style:background="var(--certainty-{CASH_CALENDAR_TIER.collected})"
+						></span>
+						<span
+							class="segment"
+							style:width="{(row.committed / yMax) * 100}%"
+							style:background="var(--certainty-{CASH_CALENDAR_TIER.committed})"
+						></span>
+						<span
+							class="segment"
+							style:width="{(row.projected / yMax) * 100}%"
+							style:background="var(--certainty-{CASH_CALENDAR_TIER.projected})"
+						></span>
+					</div>
+					{#if row.markers}<p class="phone-month-note">{row.markers}</p>{/if}
+					{#if row.assumptionsText}<p class="phone-month-note">{row.assumptionsText}</p>{/if}
+				</li>
+			{/each}
+		</ul>
 		<Legend entries={tierEntries} />
 		<p class="marker-key">{m.dashboard_cash_calendar_marker_key()}</p>
-	{/snippet}
-</ChartFrame>
+	</div>
+</div>
+
+{#if assumptions.length > 0}
+	<div class="assumptions-summary">
+		<p class="assumptions-heading">{m.dashboard_assumptions_heading()}</p>
+		<ul>
+			{#each assumptions as assumption (assumption.contractId)}
+				<li>{renewalAssumptionLine(assumption)}</li>
+			{/each}
+		</ul>
+	</div>
+{/if}
 
 <style>
 	.plot-wrap {
@@ -336,5 +430,113 @@
 		margin: 0.625rem 0 0;
 		color: var(--text-muted);
 		font-size: 0.75rem;
+	}
+
+	.calendar-phone {
+		display: none;
+	}
+	.phone-card {
+		background: var(--surface-1);
+		border: 1px solid var(--border-hairline);
+		border-radius: 8px;
+		padding: 1rem;
+	}
+	.phone-card h3 {
+		margin: 0;
+		color: var(--text-primary);
+		font-size: 0.9375rem;
+		font-weight: 600;
+	}
+	.phone-caption {
+		margin: 0.25rem 0 0;
+		color: var(--text-secondary);
+		font-size: 0.8125rem;
+	}
+	.phone-months {
+		margin: 0.875rem 0 0;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+	.phone-month {
+		padding-bottom: 0.75rem;
+		border-bottom: 1px solid var(--grid-line);
+	}
+	.phone-month:last-child {
+		padding-bottom: 0;
+		border-bottom: none;
+	}
+	.phone-month-head {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+	.phone-month-label {
+		color: var(--text-primary);
+		font-size: 0.875rem;
+		font-weight: 600;
+	}
+	.phone-month-total {
+		color: var(--text-primary);
+		font-size: 0.875rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.phone-month-bar {
+		margin-top: 0.375rem;
+		display: flex;
+		height: 0.75rem;
+		border-radius: 4px;
+		background: var(--grid-line);
+		overflow: hidden;
+	}
+	.phone-month-bar .segment {
+		height: 100%;
+	}
+	.phone-month-note {
+		margin: 0.375rem 0 0;
+		color: var(--text-muted);
+		font-size: 0.75rem;
+		overflow-wrap: anywhere;
+	}
+
+	.assumptions-summary {
+		margin-top: 0.875rem;
+		padding: 0.75rem 1rem;
+		background: var(--surface-1);
+		border: 1px solid var(--border-hairline);
+		border-radius: 8px;
+	}
+	.assumptions-heading {
+		margin: 0;
+		color: var(--text-secondary);
+		font-size: 0.6875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.02em;
+	}
+	.assumptions-summary ul {
+		margin: 0.5rem 0 0;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 0.375rem;
+	}
+	.assumptions-summary li {
+		color: var(--text-primary);
+		font-size: 0.8125rem;
+		overflow-wrap: anywhere;
+	}
+
+	@media (max-width: 640px) {
+		.calendar-desktop {
+			display: none;
+		}
+		.calendar-phone {
+			display: block;
+		}
 	}
 </style>
