@@ -37,11 +37,18 @@ export interface InvoiceFormatAdapter {
 	detect(file: ImportableFile): boolean;
 
 	/**
-	 * Parses `file` into the neutral `Invoice` shape. Only ever called
-	 * after `detect` returned `true` for the same file; a document that
-	 * passes `detect` but turns out malformed should throw rather than
-	 * return a partial or guessed `Invoice` — there is no human in this
-	 * path to notice a wrong field.
+	 * Parses `file` into the neutral `Invoice` shape, one array entry per
+	 * invoice the file actually carries. Only ever called after `detect`
+	 * returned `true` for the same file; a document that passes `detect`
+	 * but turns out malformed should throw rather than return a partial or
+	 * guessed `Invoice` — there is no human in this path to notice a wrong
+	 * field.
+	 *
+	 * Most formats and documents produce exactly one entry. A format whose
+	 * documents can be transmitted as a batch of several invoices bundled
+	 * into one file returns one array entry per invoice the file actually
+	 * carries, in document order, rather than parsing only the first and
+	 * dropping the rest (#101).
 	 */
-	parse(file: ImportableFile): Invoice;
+	parse(file: ImportableFile): readonly Invoice[];
 }

@@ -29,7 +29,7 @@ export function resolveAdapter(
 }
 
 export type ImportFileResult =
-	| { readonly kind: 'parsed'; readonly adapterId: string; readonly invoice: Invoice }
+	| { readonly kind: 'parsed'; readonly adapterId: string; readonly invoices: readonly Invoice[] }
 	| { readonly kind: 'unclaimed'; readonly filename: string };
 
 /**
@@ -45,5 +45,5 @@ export function importFile(
 ): ImportFileResult {
 	const adapter = resolveAdapter(pack, registry, file);
 	if (!adapter) return { kind: 'unclaimed', filename: file.filename };
-	return { kind: 'parsed', adapterId: adapter.id, invoice: adapter.parse(file) };
+	return { kind: 'parsed', adapterId: adapter.id, invoices: adapter.parse(file) };
 }

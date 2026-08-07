@@ -120,7 +120,9 @@ test('the payment terms are read from the invoice\u2019s own first instalment', 
 		paymentTerms: [
 			{
 				conditionCode: 'TP02',
-				installments: [{ dueDate: '2024-02-04', amount: 122000, method: 'MP05' }]
+				installments: [
+					{ dueDate: '2024-02-04', dueDateSource: 'document', amount: 122000, method: 'MP05' }
+				]
 			}
 		]
 	});
