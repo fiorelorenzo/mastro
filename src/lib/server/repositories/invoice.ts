@@ -5,6 +5,7 @@ import { db, type DbExecutor } from '$lib/server/db';
 import {
 	client,
 	contract,
+	document,
 	invoice,
 	invoiceLine,
 	workUnit,
@@ -12,6 +13,7 @@ import {
 	type TransitionActor
 } from '$lib/server/db/schema';
 import type { InvoiceDocumentType, MinorUnits } from '$lib/server/import/invoice';
+import type { ExistingInvoiceRecord } from '$lib/server/import/dedup';
 import { transitionWorkUnit } from './work-unit';
 
 export type InvoiceLineInput = {
@@ -203,4 +205,42 @@ export async function listUnpaidInvoices() {
 		.groupBy(invoice.id, contract.id, client.id);
 
 	return rows;
+}
+
+/**
+ * Every invoice on record, each with every content hash currently attached
+ * to it — the structured document import wrote plus any PDF filed
+ * alongside it — for the import pipeline's cross-run dedup (#44).
+ * `contractId` is deliberately absent: the natural key an import compares
+ * against is (supplier tax id, number, year), and the supplier is always
+ * the account holder regardless of which contract an invoice was filed
+ * under (only outgoing invoices are ever persisted), so a number reused
+ * across two different clients' contracts is exactly the collision #44's
+ * conflict bucket exists to catch, never a false negative this query
+ * should filter away by scoping to one contract.
+ *
+ * Two queries rather than one join, the same shape `getInvoiceWithLines`
+ * already uses for its own line/day join: an invoice with two attached
+ * documents would otherwise duplicate every other column of the row once
+ * per hash.
+ */
+export async function listInvoicesForDedup(
+	executor: DbExecutor = db
+): Promise<ExistingInvoiceRecord[]> {
+	const invoiceRows = await executor
+		.select({ id: invoice.id, number: invoice.number, issueDate: invoice.issueDate })
+		.from(invoice);
+	const documentRows = await executor
+		.select({ invoiceId: document.ownerId, hash: document.hash })
+		.from(document)
+		.where(eq(document.ownerType, 'invoice'));
+
+	const hashesByInvoiceId = new Map<string, string[]>();
+	for (const row of documentRows) {
+		const hashes = hashesByInvoiceId.get(row.invoiceId) ?? [];
+		hashes.push(row.hash);
+		hashesByInvoiceId.set(row.invoiceId, hashes);
+	}
+
+	return invoiceRows.map((row) => ({ ...row, hashes: hashesByInvoiceId.get(row.id) ?? [] }));
 }

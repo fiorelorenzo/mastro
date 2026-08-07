@@ -1,11 +1,13 @@
 <script lang="ts">
 	// #43/#46/#47: folder scan, client matching, and the review-and-confirm
-	// screen. Everything here is client-driven — the folder pick and the
-	// recursive walk (`$lib/import/scan.ts`) only exist in the browser — so
-	// this route has no `+page.server.ts`; the auth guard in
-	// `hooks.server.ts` still protects the initial navigation the same way
-	// it protects every other route, since it runs before any page (with or
-	// without server data) is served.
+	// screen. Extended by #44 (dedup against history, conflicts, structured
+	// document plus attachment) and #48 (day-mapping proposal). Everything
+	// here is client-driven — the folder pick and the recursive walk
+	// (`$lib/import/scan.ts`) only exist in the browser — so this route has
+	// no `+page.server.ts`; the auth guard in `hooks.server.ts` still
+	// protects the initial navigation the same way it protects every other
+	// route, since it runs before any page (with or without server data) is
+	// served.
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate, formatMinorUnits, formatNumber } from '$lib/i18n/format';
 	import {
@@ -17,15 +19,32 @@
 	} from '$lib/import/scan';
 	import { invoicingCadenceLabel, invoicingCadences } from './invoicing-cadence';
 	import { skipReasonLabel } from './skip-reason';
-	import type { ClarificationGroup, ConfirmResponse, ReviewResult } from './types';
+	import type {
+		ClarificationGroup,
+		ConfirmResponse,
+		InvoiceLineView,
+		RecognisedFile,
+		ReviewResult
+	} from './types';
 
 	type Stage = 'idle' | 'scanning' | 'analyzing' | 'review' | 'confirming' | 'done' | 'error';
 	type EditableClarification = ClarificationGroup & { include: boolean };
+	// `accepted` defaults to whether a day-mapping proposal exists at all
+	// (#48): a line with none never had anything to accept, and a line with
+	// one starts accepted, but stays a reviewer's decision to uncheck before
+	// confirming — never applied silently.
+	type EditableLine = InvoiceLineView & { accepted: boolean };
+	type EditableRecognised = Omit<RecognisedFile, 'lines'> & { lines: EditableLine[] };
 
 	let stage = $state<Stage>('idle');
 	let scanProgress = $state<ScanProgress | null>(null);
+	// Kept for `confirmImport`: writing an invoice needs the file's own
+	// bytes again, and re-scanning the folder a second time would defeat
+	// the point of a review screen the reviewer can take their time on.
+	let scannedFiles = $state<ScannedFile[]>([]);
 	let review = $state<ReviewResult | null>(null);
 	let clarifications = $state<EditableClarification[]>([]);
+	let recognisedFiles = $state<EditableRecognised[]>([]);
 	let confirmResult = $state<ConfirmResponse | null>(null);
 	let errorText = $state('');
 
@@ -34,13 +53,18 @@
 		typeof (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker ===
 			'function';
 
-	const acceptedCount = $derived(clarifications.filter((group) => group.include).length);
+	const acceptedClarificationCount = $derived(
+		clarifications.filter((group) => group.include).length
+	);
+	const hasWorkToConfirm = $derived(acceptedClarificationCount > 0 || recognisedFiles.length > 0);
 
 	function reset(): void {
 		stage = 'idle';
 		scanProgress = null;
+		scannedFiles = [];
 		review = null;
 		clarifications = [];
+		recognisedFiles = [];
 		confirmResult = null;
 		errorText = '';
 	}
@@ -52,6 +76,7 @@
 
 	async function analyze(files: readonly ScannedFile[]): Promise<void> {
 		stage = 'analyzing';
+		scannedFiles = [...files];
 		const formData = new FormData();
 		for (const file of files) {
 			formData.append('file', new Blob([Uint8Array.from(file.content)]), file.path);
@@ -64,6 +89,10 @@
 		const data = (await response.json()) as ReviewResult;
 		review = data;
 		clarifications = data.clarifications.map((group) => ({ ...group, include: true }));
+		recognisedFiles = data.recognised.map((file) => ({
+			...file,
+			lines: file.lines.map((line) => ({ ...line, accepted: line.dayMapping !== null }))
+		}));
 		stage = 'review';
 	}
 
@@ -111,27 +140,50 @@
 	}
 
 	async function confirmImport(): Promise<void> {
-		const accepted = clarifications.filter((group) => group.include);
-		if (accepted.length === 0) {
+		const acceptedClarifications = clarifications.filter((group) => group.include);
+		if (acceptedClarifications.length === 0 && recognisedFiles.length === 0) {
 			errorText = m.import_confirm_nothing_selected();
 			return;
 		}
 		errorText = '';
 		stage = 'confirming';
-		const response = await fetch('/import/confirm', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: JSON.stringify({
-				proposals: accepted.map((group) => ({
+
+		const neededFilenames: string[] = [];
+		for (const group of acceptedClarifications) {
+			for (const file of group.files) neededFilenames.push(file.filename);
+		}
+		for (const file of recognisedFiles) {
+			neededFilenames.push(file.filename, ...file.attachments);
+		}
+
+		const formData = new FormData();
+		for (const file of scannedFiles) {
+			if (!neededFilenames.includes(file.path)) continue;
+			formData.append('file', new Blob([Uint8Array.from(file.content)]), file.path);
+		}
+		formData.append(
+			'decisions',
+			JSON.stringify({
+				proposals: acceptedClarifications.map((group) => ({
 					groupKey: group.groupKey,
 					client: group.client,
-					contract: group.contract
+					contract: group.contract,
+					files: group.files.map((file) => file.filename)
+				})),
+				invoices: recognisedFiles.map((file) => ({
+					filename: file.filename,
+					contractId: file.contractId,
+					attachments: file.attachments,
+					lineWorkUnitIds: file.lines.map((line) =>
+						line.accepted && line.dayMapping ? line.dayMapping.workUnitIds : []
+					)
 				}))
 			})
-		});
+		);
+
+		const response = await fetch('/import/confirm', { method: 'POST', body: formData });
 		if (!response.ok) {
-			const message = await response.text();
-			errorText = message;
+			errorText = await response.text();
 			stage = 'review';
 			return;
 		}
@@ -181,13 +233,13 @@
 	{:else if (stage === 'review' || stage === 'confirming') && review}
 		<div class="mt-6 flex flex-col gap-8">
 			<div class="flex flex-wrap gap-4 text-sm font-semibold">
-				<span>{m.import_summary_recognised({ count: formatNumber(review.recognised.length) })}</span
-				>
+				<span>{m.import_summary_recognised({ count: formatNumber(recognisedFiles.length) })}</span>
 				<span
 					>{m.import_summary_already_present({
 						count: formatNumber(review.alreadyPresent.length)
 					})}</span
 				>
+				<span>{m.import_summary_conflicts({ count: formatNumber(review.conflicts.length) })}</span>
 				<span
 					>{m.import_summary_to_clarify({
 						count: formatNumber(clarifications.reduce((sum, g) => sum + g.files.length, 0))
@@ -199,33 +251,60 @@
 
 			<section>
 				<h2 class="text-lg font-semibold">{m.import_section_recognised_heading()}</h2>
-				{#if review.recognised.length === 0}
+				{#if recognisedFiles.length === 0}
 					<p class="mt-2 text-sm opacity-70">{m.import_recognised_empty()}</p>
 				{:else}
-					<table class="mt-2 w-full border-collapse text-sm">
-						<thead>
-							<tr class="border-b text-left">
-								<th class="py-2 pr-4">{m.import_column_file()}</th>
-								<th class="py-2 pr-4">{m.import_column_invoice()}</th>
-								<th class="py-2 pr-4">{m.import_column_amount()}</th>
-								<th class="py-2">{m.import_column_client()}</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each review.recognised as row (row.filename)}
-								<tr class="border-b">
-									<td class="py-2 pr-4">{row.filename}</td>
-									<td class="py-2 pr-4"
-										>{row.invoice.number} — {formatDate(row.invoice.issueDate)}</td
-									>
-									<td class="py-2 pr-4"
-										>{formatMinorUnits(row.invoice.total, row.invoice.currency)}</td
-									>
-									<td class="py-2">{row.clientLegalName}</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
+					<div class="mt-2 flex flex-col gap-4">
+						{#each recognisedFiles as file (file.filename)}
+							<div class="flex flex-col gap-2 border p-4 text-sm">
+								<div class="flex flex-wrap items-baseline justify-between gap-2">
+									<p class="font-semibold">
+										{file.invoice.number} — {formatDate(file.invoice.issueDate)}
+									</p>
+									<p>{formatMinorUnits(file.invoice.total, file.invoice.currency)}</p>
+								</div>
+								<p class="text-xs opacity-70">{file.filename} · {file.clientLegalName}</p>
+								{#if file.attachments.length > 0}
+									<p class="text-xs opacity-70">
+										{m.import_recognised_attachments({ files: file.attachments.join(', ') })}
+									</p>
+								{/if}
+								{#each file.lines as line, index (index)}
+									<div class="border-t pt-2">
+										<p>
+											{line.description} — {formatMinorUnits(line.amount, file.invoice.currency)}
+										</p>
+										{#if line.dayMapping}
+											<label class="mt-1 flex items-start gap-2 text-xs">
+												<input type="checkbox" bind:checked={line.accepted} class="mt-0.5" />
+												<span>
+													{m.import_day_mapping_proposal({
+														count: formatNumber(line.dayMapping.dayCount),
+														periodStart: formatDate(line.dayMapping.periodStart),
+														periodEnd: formatDate(line.dayMapping.periodEnd),
+														amount: formatMinorUnits(
+															line.dayMapping.proposedAmount,
+															file.invoice.currency
+														)
+													})}
+													{#if !line.dayMapping.amountMatches}
+														<strong class="block">
+															{m.import_day_mapping_amount_mismatch({
+																lineAmount: formatMinorUnits(
+																	line.dayMapping.lineAmount,
+																	file.invoice.currency
+																)
+															})}
+														</strong>
+													{/if}
+												</span>
+											</label>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						{/each}
+					</div>
 				{/if}
 			</section>
 
@@ -250,9 +329,49 @@
 									<td class="py-2 pr-4"
 										>{row.invoice.number} — {formatDate(row.invoice.issueDate)}</td
 									>
+									<td class="py-2">
+										{#if row.source === 'batch' && row.duplicateOfFilename}
+											{m.import_already_present_duplicate_of({
+												duplicateOfFilename: row.duplicateOfFilename
+											})}
+										{:else if row.existingInvoiceNumber}
+											{m.import_already_present_already_imported({
+												number: row.existingInvoiceNumber
+											})}
+										{/if}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				{/if}
+			</section>
+
+			<section>
+				<h2 class="text-lg font-semibold">{m.import_section_conflicts_heading()}</h2>
+				<p class="mt-1 text-xs opacity-70">{m.import_conflicts_hint()}</p>
+				{#if review.conflicts.length === 0}
+					<p class="mt-2 text-sm opacity-70">{m.import_conflicts_empty()}</p>
+				{:else}
+					<table class="mt-2 w-full border-collapse text-sm">
+						<thead>
+							<tr class="border-b text-left">
+								<th class="py-2 pr-4">{m.import_column_file()}</th>
+								<th class="py-2 pr-4">{m.import_column_invoice()}</th>
+								<th class="py-2">{m.import_column_reason()}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each review.conflicts as row (row.filename)}
+								<tr class="border-b">
+									<td class="py-2 pr-4">{row.filename}</td>
+									<td class="py-2 pr-4"
+										>{row.invoice.number} — {formatDate(row.invoice.issueDate)}</td
+									>
 									<td class="py-2"
-										>{m.import_already_present_duplicate_of({
-											duplicateOfFilename: row.duplicateOfFilename
+										>{m.import_conflict_existing({
+											number: row.existingInvoiceNumber,
+											issueDate: formatDate(row.existingIssueDate)
 										})}</td
 									>
 								</tr>
@@ -386,7 +505,7 @@
 			<button
 				type="button"
 				class="w-fit border px-4 py-2 text-sm"
-				disabled={stage === 'confirming' || acceptedCount === 0}
+				disabled={stage === 'confirming' || !hasWorkToConfirm}
 				onclick={confirmImport}
 			>
 				{stage === 'confirming' ? m.import_confirming() : m.import_confirm_button()}
@@ -400,6 +519,13 @@
 					contractCount: formatNumber(confirmResult.created.length)
 				})}
 			</p>
+			<p class="text-sm">
+				{m.import_confirm_invoice_summary({
+					createdCount: formatNumber(confirmResult.invoicesCreated.length),
+					alreadyPresentCount: formatNumber(confirmResult.invoicesAlreadyPresent.length),
+					conflictCount: formatNumber(confirmResult.invoicesConflicted.length)
+				})}
+			</p>
 			{#if confirmResult.failed.length > 0}
 				<div class="text-sm">
 					<p class="font-semibold">
@@ -408,6 +534,20 @@
 					<ul class="list-disc pl-5">
 						{#each confirmResult.failed as failure (failure.groupKey)}
 							<li>{failure.groupKey}: {failure.message}</li>
+						{/each}
+					</ul>
+				</div>
+			{/if}
+			{#if confirmResult.invoicesFailed.length > 0}
+				<div class="text-sm">
+					<p class="font-semibold">
+						{m.import_confirm_invoices_failed({
+							count: formatNumber(confirmResult.invoicesFailed.length)
+						})}
+					</p>
+					<ul class="list-disc pl-5">
+						{#each confirmResult.invoicesFailed as failure (failure.filename)}
+							<li>{failure.filename}: {failure.message}</li>
 						{/each}
 					</ul>
 				</div>

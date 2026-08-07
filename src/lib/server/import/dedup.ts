@@ -1,29 +1,48 @@
-// Same-batch dedup (#47's "already present" bucket), an honest subset of
-// the natural-key dedup the epic (#8) asks for and #44 will actually build.
+// The natural-key comparator the epic's rule 1 asks for: "dedup on the
+// natural key (supplier tax id, number, year) plus the file hash." #47
+// (last wave) used `naturalInvoiceKey` only within one scan, since the
+// `invoice` table did not exist yet to check history against. #26 built
+// that table and #44 is what actually checks against it: `review.ts`
+// seeds its lookup with every `ExistingInvoiceRecord` already in the
+// database (one per persisted invoice, carrying every document hash ever
+// attached to it — the structured original and any PDF filed alongside
+// it) before folding in whatever the current batch adds, so a same-batch
+// repeat and a repeat of a past import are recognised by the identical
+// comparator, never two.
 //
-// The epic's rule 1 is "dedup on the natural key (supplier tax id, number,
-// year) plus the file hash", checked against every invoice ever imported.
-// That needs the `invoice` table, which this wave deliberately does not
-// create (see the PR description) — `feat/invoices-payments` owns it, and
-// #44 is next wave's issue for persisting an import and deduping against
-// history. What this file gives #47 today is the same natural-key
-// comparator applied only *within one scan*: two files in the same folder
-// pick that describe the same invoice (a duplicate export, the same file
-// copied twice) collapse to one "recognised" plus one "already present",
-// instead of two separate proposals or two counted invoices.
-//
-// `naturalInvoiceKey` is exported, not inlined into review.ts, precisely so
-// #44 can reuse this exact comparator against the persisted table instead
-// of reimplementing it — the day #44 lands, `review.ts`'s in-batch `Map`
-// becomes a database lookup using the same key, and nothing here needs to
-// change shape.
+// The file hash is what turns "same natural key" into "same file" versus
+// "same invoice number, different bytes": an unchanged re-export hashes
+// identically and is silently already present; a genuine re-issue keeps
+// the number but changes the bytes, and `review.ts` surfaces that as a
+// conflict rather than merging it into the existing record.
 
 import { normalizedTaxId } from './direction';
 import type { Invoice } from './invoice';
 
-export function naturalInvoiceKey(
-	invoice: Pick<Invoice, 'supplier' | 'number' | 'issueDate'>
-): string {
+/** One invoice already on record, as far as dedup needs to know about it:
+ * enough to compute its natural key (`number`/`issueDate` — the supplier
+ * is always the account holder, since only outgoing invoices are ever
+ * persisted) and every content hash currently attached to it, structured
+ * document and PDF attachments alike. */
+export interface ExistingInvoiceRecord {
+	readonly id: string;
+	readonly number: string;
+	/** ISO date. */
+	readonly issueDate: string;
+	readonly hashes: readonly string[];
+}
+
+/** Only ever reads `supplier.taxId`, `number` and `issueDate` — accepting
+ * a bare `{ taxId }` for `supplier` (rather than the full `InvoiceParty`
+ * `Pick<Invoice, 'supplier'>` would demand) lets a caller build the same
+ * key from a persisted `invoice` row, which never stored the supplier's
+ * full identity in the first place (it is always the account holder, by
+ * construction — only an outgoing invoice is ever persisted). */
+export function naturalInvoiceKey(invoice: {
+	readonly supplier: Pick<Invoice['supplier'], 'taxId'>;
+	readonly number: Invoice['number'];
+	readonly issueDate: Invoice['issueDate'];
+}): string {
 	const year = invoice.issueDate.slice(0, 4);
 	return `${normalizedTaxId(invoice.supplier.taxId)}|${invoice.number.trim().toUpperCase()}|${year}`;
 }

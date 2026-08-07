@@ -127,6 +127,13 @@
       "when": 1786068406999,
       "tag": "0017_email_template_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786084238754,
+      "tag": "0018_document_invoice_owner",
+      "breakpoints": true
     }
   ]
 }
