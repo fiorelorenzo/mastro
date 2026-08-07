@@ -60,6 +60,9 @@
 		"better-auth": "^1.6.26",
 		"drizzle-orm": "^0.45.2",
 		"fast-xml-parser": "^5.10.1",
+		"imapflow": "^1.6.5",
+		"nodemailer": "^9.0.4",
+		"pdfkit": "^0.19.1",
 		"postgres": "^3.4.9",
 		"zod": "^4.4.3"
 	}
