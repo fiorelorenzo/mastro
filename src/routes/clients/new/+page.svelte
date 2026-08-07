@@ -1,9 +1,10 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import ClientForm from '../ClientForm.svelte';
-	import type { ActionData } from './$types';
+	import type { ActionData, PageData } from './$types';
 
-	let { form }: { form: ActionData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	const emptyContact = { name: '', email: '', phone: '', role: '', canApprove: false };
 	const contactSlots = $derived(
@@ -28,7 +29,7 @@
 <svelte:head><title>{m.client_new_page_title()}</title></svelte:head>
 
 <main class="mx-auto max-w-3xl p-8">
-	<h1 class="text-2xl font-semibold">{m.client_new_heading()}</h1>
+	<PageHeader crumbs={data.crumbs} title={m.client_new_heading()} />
 	<ClientForm
 		{values}
 		{contactSlots}

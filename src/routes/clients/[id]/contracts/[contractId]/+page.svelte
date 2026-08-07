@@ -1,7 +1,15 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import { formatAmount, formatDate, formatMinorUnits, formatNumber } from '$lib/i18n/format';
+	import {
+		formatAmount,
+		formatDate,
+		formatDays,
+		formatMinorUnits,
+		formatNumber
+	} from '$lib/i18n/format';
+	import { factLine } from '$lib/nav/crumbs';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import {
 		expensePolicyKindLabel,
 		invoicingCadenceLabel,
@@ -20,27 +28,29 @@
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
 	const contract = $derived(data.contract);
+	const subtitle = $derived(
+		factLine([
+			formatDate(contract.startsOn),
+			renewalTypeLabel(contract.renewalType),
+			m.contract_subtitle_notice_period({ days: formatDays(contract.terminationNoticeDays) })
+		])
+	);
 </script>
 
 <svelte:head><title>{m.contract_detail_page_title({ title: contract.title })}</title></svelte:head>
 
 <main class="mx-auto max-w-3xl p-8">
-	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-semibold">{contract.title}</h1>
-		<a href={resolve('/clients/[id]', { id: contract.client.id })} class="text-sm underline"
-			>{m.contract_back_to_client_link()}</a
-		>
-	</div>
-	<p class="text-sm opacity-70">{contract.client.legalName}</p>
-	<p class="mt-2 text-sm">
-		<a
-			href={resolve('/clients/[id]/contracts/[contractId]/edit', {
-				id: contract.client.id,
-				contractId: contract.id
-			})}
-			class="underline">{m.contract_edit_link()}</a
-		>
-	</p>
+	<PageHeader crumbs={data.crumbs} title={contract.title} {subtitle}>
+		{#snippet actions()}
+			<a
+				href={resolve('/clients/[id]/contracts/[contractId]/edit', {
+					id: contract.client.id,
+					contractId: contract.id
+				})}
+				class="text-sm underline">{m.contract_edit_link()}</a
+			>
+		{/snippet}
+	</PageHeader>
 
 	<section class="mt-6">
 		<h2 class="text-lg font-semibold">{m.contract_form_identity_legend()}</h2>

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import ClientForm from '../../ClientForm.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -39,7 +40,7 @@
 >
 
 <main class="mx-auto max-w-3xl p-8">
-	<h1 class="text-2xl font-semibold">{m.client_edit_heading({ name: data.client.legalName })}</h1>
+	<PageHeader crumbs={data.crumbs} title={m.client_edit_heading({ name: data.client.legalName })} />
 	<ClientForm
 		{values}
 		{contactSlots}

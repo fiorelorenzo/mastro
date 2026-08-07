@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import ContractForm from '../ContractForm.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -36,14 +36,10 @@
 >
 
 <main class="mx-auto max-w-3xl p-8">
-	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-semibold">
-			{m.contract_new_heading({ client: data.client.legalName })}
-		</h1>
-		<a href={resolve('/clients/[id]', { id: data.client.id })} class="text-sm underline"
-			>{m.contract_back_to_client_link()}</a
-		>
-	</div>
+	<PageHeader
+		crumbs={data.crumbs}
+		title={m.contract_new_heading({ client: data.client.legalName })}
+	/>
 	<ContractForm
 		{values}
 		errors={form?.errors ?? {}}

@@ -1,4 +1,5 @@
 import { error } from '@sveltejs/kit';
+import type { Crumb } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import { getClientWithContacts } from '$lib/server/repositories/client';
 import { listContracts } from '$lib/server/repositories/contract';
@@ -10,5 +11,6 @@ export const load: PageServerLoad = async ({ params }) => {
 
 	const contracts = await listContracts(params.id);
 
-	return { client, contracts };
+	const crumbs: Crumb[] = [{ href: '/clients', label: m.clients_heading() }];
+	return { client, contracts, crumbs };
 };

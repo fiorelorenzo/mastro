@@ -2,6 +2,8 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate } from '$lib/i18n/format';
+	import { factLine } from '$lib/nav/crumbs';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import { noticeChannelLabel } from '../notice-channel';
 	import { renewalTypeLabel, statusLabel } from './contracts/contract-enums';
 	import type { PageData } from './$types';
@@ -14,15 +16,17 @@
 >
 
 <main class="mx-auto max-w-3xl p-8">
-	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-semibold">{data.client.legalName}</h1>
-		<a href={resolve('/clients/[id]/edit', { id: data.client.id })} class="text-sm underline"
-			>{m.clients_edit_link()}</a
-		>
-	</div>
-	<p class="text-sm opacity-70">
-		<a href={resolve('/clients')} class="underline">{m.clients_heading()}</a>
-	</p>
+	<PageHeader
+		crumbs={data.crumbs}
+		title={data.client.legalName}
+		subtitle={factLine([data.client.taxId, noticeChannelLabel(data.client.noticeChannel)])}
+	>
+		{#snippet actions()}
+			<a href={resolve('/clients/[id]/edit', { id: data.client.id })} class="text-sm underline"
+				>{m.clients_edit_link()}</a
+			>
+		{/snippet}
+	</PageHeader>
 
 	<section class="mt-6">
 		<dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">

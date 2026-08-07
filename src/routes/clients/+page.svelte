@@ -2,6 +2,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatNumber } from '$lib/i18n/format';
+	import PageHeader from '$lib/nav/PageHeader.svelte';
 	import { noticeChannelLabel } from './notice-channel';
 	import type { PageData } from './$types';
 
@@ -11,10 +12,11 @@
 <svelte:head><title>{m.clients_page_title()}</title></svelte:head>
 
 <main class="mx-auto max-w-3xl p-8">
-	<div class="flex items-center justify-between">
-		<h1 class="text-2xl font-semibold">{m.clients_heading()}</h1>
-		<a href={resolve('/clients/new')} class="text-sm underline">{m.clients_new_link()}</a>
-	</div>
+	<PageHeader title={m.clients_heading()}>
+		{#snippet actions()}
+			<a href={resolve('/clients/new')} class="text-sm underline">{m.clients_new_link()}</a>
+		{/snippet}
+	</PageHeader>
 
 	{#if data.clients.length === 0}
 		<p class="mt-4 text-sm opacity-70">{m.clients_empty()}</p>
