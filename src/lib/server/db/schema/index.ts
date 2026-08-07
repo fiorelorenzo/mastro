@@ -20,5 +20,6 @@ export * from './email-template';
 export * from './expense';
 export * from './fiscal';
 export * from './invoice';
+export * from './proposal';
 export * from './rate-card';
 export * from './work-unit';
