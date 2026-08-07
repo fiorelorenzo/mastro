@@ -7,7 +7,7 @@
 	import StatusIndicator from '$lib/design/charts/StatusIndicator.svelte';
 	import Tooltip from '$lib/design/charts/Tooltip.svelte';
 	import type { SeriesEntry, StatusEntry, TableColumn, TooltipRow } from '$lib/design/charts/types';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import {
 		CATEGORICAL,
@@ -131,21 +131,20 @@
 
 <svelte:head><title>mastro — design system</title></svelte:head>
 
-<main class="page">
-	<PageHeader
-		title="Visual system"
-		subtitle="Chart color tokens and the shared primitives that will build the dashboard's ceiling meter, cash calendar and client-concentration chart (#57–#59). This route renders the system for review — it is not a dashboard screen, and nothing on it is real data."
-	>
-		{#snippet actions()}
-			<div class="theme-toggle" role="group" aria-label="Color scheme">
-				{#each ['system', 'light', 'dark'] as const as option (option)}
-					<button type="button" class:active={theme === option} onclick={() => setTheme(option)}>
-						{option}
-					</button>
-				{/each}
-			</div>
-		{/snippet}
-	</PageHeader>
+<Page
+	width="wide"
+	title="Visual system"
+	subtitle="Chart color tokens and the shared primitives that will build the dashboard's ceiling meter, cash calendar and client-concentration chart (#57–#59). This route renders the system for review — it is not a dashboard screen, and nothing on it is real data."
+>
+	{#snippet actions()}
+		<div class="theme-toggle" role="group" aria-label="Color scheme">
+			{#each ['system', 'light', 'dark'] as const as option (option)}
+				<button type="button" class:active={theme === option} onclick={() => setTheme(option)}>
+					{option}
+				</button>
+			{/each}
+		</div>
+	{/snippet}
 
 	<section>
 		<h2>Categorical palette</h2>
@@ -346,16 +345,9 @@
 			{/snippet}
 		</ChartFrame>
 	</section>
-</main>
+</Page>
 
 <style>
-	.page {
-		max-width: 60rem;
-		margin: 0 auto;
-		padding: 2rem 1.25rem 4rem;
-		background: var(--surface-page);
-		color: var(--text-primary);
-	}
 	h2 {
 		margin: 0 0 0.25rem;
 		font-size: 1.125rem;
