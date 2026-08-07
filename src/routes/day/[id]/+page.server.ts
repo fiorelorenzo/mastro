@@ -37,7 +37,7 @@ export const load: PageServerLoad = async ({ params }) => {
 				}))
 			: [];
 
-	const crumbs: Crumb[] = [{ href: '/day/calendar', label: m.home_calendar_link() }];
+	const crumbs: Crumb[] = [{ href: '/day/calendar', label: m.nav_calendar() }];
 
 	return {
 		workUnit: {

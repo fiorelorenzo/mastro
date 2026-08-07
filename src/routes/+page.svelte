@@ -44,7 +44,7 @@
 		</a>
 	</div>
 	<p class="mt-2 text-xs opacity-60">{m.home_record_day_shortcut_hint()}</p>
-	<p class="mt-3 text-sm">
+	<p class="mt-3 mb-8 text-sm">
 		<a href={resolve('/day/calendar')} class="underline">{m.home_calendar_link()}</a>
 	</p>
 
