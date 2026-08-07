@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 import {
 	formatAmount,
 	formatDate,
+	formatDateTime,
 	formatDays,
 	formatMinorUnits,
 	formatNumber,
@@ -56,4 +57,32 @@ test('a date given as an ISO calendar day never shifts to the adjacent day', () 
 	// UTC; both the UTC read and the UTC format above guard against it.
 	expect(formatDate('2024-01-01', 'en')).toBe('Jan 1, 2024');
 	expect(formatDate('2024-12-31', 'en')).toBe('Dec 31, 2024');
+});
+
+test('a timestamp renders with locale-appropriate date and time, in the reader’s own time zone, not fixed to UTC like a calendar day', () => {
+	// Unlike formatDate above, a timestamp such as "data saved at" (#61) has
+	// to say how long ago that was for the person looking at it, so the
+	// expectation here is computed against the environment's own resolved
+	// zone instead of a hardcoded clock reading that would be flaky across
+	// machines in different time zones.
+	const instant = new Date('2024-03-01T14:32:00Z');
+	const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+	const expectedEn = new Intl.DateTimeFormat('en', {
+		dateStyle: 'medium',
+		timeStyle: 'short',
+		timeZone
+	}).format(instant);
+	const expectedIt = new Intl.DateTimeFormat('it', {
+		dateStyle: 'medium',
+		timeStyle: 'short',
+		timeZone
+	}).format(instant);
+
+	expect(formatDateTime(instant, 'en')).toBe(expectedEn);
+	expect(formatDateTime('2024-03-01T14:32:00Z', 'it')).toBe(expectedIt);
+});
+
+test('a Date and its equivalent ISO instant string format identically', () => {
+	const instant = new Date('2024-06-15T09:05:00Z');
+	expect(formatDateTime(instant, 'en')).toBe(formatDateTime('2024-06-15T09:05:00Z', 'en'));
 });

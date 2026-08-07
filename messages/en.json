@@ -54,6 +54,8 @@
 	"clients_heading": "Clients",
 	"clients_new_link": "New client",
 	"clients_page_title": "Clients — mastro",
+	"data_freshness_banner_offline_label": "Offline — showing data saved on {time}.",
+	"data_freshness_banner_unreachable_label": "Showing data saved on {time} — the latest could not be fetched.",
 	"day_calendar_amount_unpriced": "—",
 	"day_calendar_column_amount": "Amount",
 	"day_calendar_column_contract": "Contract",
@@ -293,6 +295,10 @@
 	"invoices_summary_total_outstanding": "Total outstanding",
 	"landing_tagline": "A ledger for days that must be approved before they are worked.",
 	"language_switch_label": "Language",
+	"offline_page_body": "mastro needs a connection to check who is signed in before it can show any ledger data. Nothing here is guessed or shown from memory.",
+	"offline_page_heading": "You're offline",
+	"offline_page_retry": "Try again",
+	"offline_page_title": "Offline — mastro",
 	"sign_out": "Sign out",
 	"signed_in_as": "Signed in as {email}."
 }

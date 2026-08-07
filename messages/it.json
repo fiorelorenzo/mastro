@@ -54,6 +54,8 @@
 	"clients_heading": "Clienti",
 	"clients_new_link": "Nuovo cliente",
 	"clients_page_title": "Clienti — mastro",
+	"data_freshness_banner_offline_label": "Offline — dati salvati il {time}.",
+	"data_freshness_banner_unreachable_label": "Dati salvati il {time} — impossibile aggiornare.",
 	"day_calendar_amount_unpriced": "—",
 	"day_calendar_column_amount": "Importo",
 	"day_calendar_column_contract": "Contratto",
@@ -293,6 +295,10 @@
 	"invoices_summary_total_outstanding": "Totale da incassare",
 	"landing_tagline": "Un registro per le giornate che devono essere approvate prima di essere lavorate.",
 	"language_switch_label": "Lingua",
+	"offline_page_body": "mastro ha bisogno di una connessione per verificare chi ha effettuato l'accesso prima di mostrare i dati del registro. Qui non si indovina né si mostra nulla a memoria.",
+	"offline_page_heading": "Sei offline",
+	"offline_page_retry": "Riprova",
+	"offline_page_title": "Offline — mastro",
 	"sign_out": "Esci",
 	"signed_in_as": "Accesso effettuato come {email}."
 }
