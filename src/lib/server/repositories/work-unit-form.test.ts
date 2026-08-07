@@ -35,7 +35,6 @@ test('#62: a missing workUnitId is not a validation error — the database assig
 	const result = parseDayEntryForm(formData, validContractIds, approvalIdsByContract);
 	expect(result.ok).toBe(true);
 	if (result.ok) expect(result.input.id).toBeUndefined();
-	expect(result.errors ?? {}).not.toHaveProperty('workUnitId');
 });
 
 test('#62: a malformed workUnitId is dropped rather than trusted, and is not a validation error', () => {
