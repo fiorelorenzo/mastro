@@ -9,7 +9,7 @@
 		formatWeekday
 	} from '$lib/i18n/format';
 	import ChartFrame from '$lib/design/charts/ChartFrame.svelte';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import type { TableColumn } from '$lib/design/charts/types';
 	import DayStateBadge from '../DayStateBadge.svelte';
 	import { mostAttentionNeedingState, workUnitStateLabel } from '../work-unit-state';
@@ -60,29 +60,27 @@
 	><title>{m.day_calendar_page_title({ month: formatMonth(data.monthStart) })}</title></svelte:head
 >
 
-<main class="mx-auto max-w-3xl p-4 sm:p-8">
-	<PageHeader title={m.day_calendar_heading({ month: formatMonth(data.monthStart) })}>
-		{#snippet actions()}
-			<nav
-				class="flex items-center gap-3 text-sm"
-				aria-label={m.day_calendar_heading({ month: formatMonth(data.monthStart) })}
+<Page title={m.day_calendar_heading({ month: formatMonth(data.monthStart) })}>
+	{#snippet actions()}
+		<nav
+			class="flex items-center gap-3 text-sm"
+			aria-label={m.day_calendar_heading({ month: formatMonth(data.monthStart) })}
+		>
+			<a
+				href={resolve(`/day/calendar?month=${shiftMonth(data.monthStart, -1).slice(0, 7)}`)}
+				class="underline"
 			>
-				<a
-					href={resolve(`/day/calendar?month=${shiftMonth(data.monthStart, -1).slice(0, 7)}`)}
-					class="underline"
-				>
-					{m.day_calendar_prev_month()}
-				</a>
-				<a href={resolve('/day/calendar')} class="underline">{m.day_calendar_today_link()}</a>
-				<a
-					href={resolve(`/day/calendar?month=${shiftMonth(data.monthStart, 1).slice(0, 7)}`)}
-					class="underline"
-				>
-					{m.day_calendar_next_month()}
-				</a>
-			</nav>
-		{/snippet}
-	</PageHeader>
+				{m.day_calendar_prev_month()}
+			</a>
+			<a href={resolve('/day/calendar')} class="underline">{m.day_calendar_today_link()}</a>
+			<a
+				href={resolve(`/day/calendar?month=${shiftMonth(data.monthStart, 1).slice(0, 7)}`)}
+				class="underline"
+			>
+				{m.day_calendar_next_month()}
+			</a>
+		</nav>
+	{/snippet}
 
 	<p class="mt-4 flex flex-wrap gap-6 text-sm">
 		<span
@@ -173,7 +171,7 @@
 	{#if data.entries.length === 0}
 		<p class="mt-4 text-sm opacity-70">{m.day_calendar_empty_state()}</p>
 	{/if}
-</main>
+</Page>
 
 <style>
 	.calendar-grid {

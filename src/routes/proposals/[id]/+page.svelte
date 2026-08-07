@@ -2,7 +2,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDateTime, formatPercent } from '$lib/i18n/format';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import ProposalStatusBadge from '../ProposalStatusBadge.svelte';
 	import { proposalFieldLabel, proposalTargetTypeLabel } from '../proposal-status';
 	import type { ActionData, PageProps } from './$types';
@@ -20,8 +20,7 @@
 
 <svelte:head><title>{m.proposal_detail_page_title()}</title></svelte:head>
 
-<main class="mx-auto max-w-4xl p-4 sm:p-8">
-	<PageHeader crumbs={data.crumbs} title={m.proposal_detail_heading()} />
+<Page crumbs={data.crumbs} title={m.proposal_detail_heading()}>
 	<div class="mt-2 flex items-center gap-3">
 		<ProposalStatusBadge status={data.proposal.status} />
 		<span class="text-sm opacity-70">{proposalTargetTypeLabel(data.proposal.targetType)}</span>
@@ -141,4 +140,4 @@
 			{/if}
 		</section>
 	{/if}
-</main>
+</Page>

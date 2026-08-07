@@ -2,7 +2,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { factLine } from '$lib/nav/crumbs';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import { locales, type Locale } from '$lib/paraglide/runtime';
 	import type { ActionData, PageData } from './$types';
 
@@ -34,26 +34,24 @@
 	><title>{m.mail_contract_page_title({ contractTitle: data.contract.title })}</title></svelte:head
 >
 
-<main class="mx-auto max-w-3xl p-8">
-	<PageHeader
-		crumbs={data.crumbs}
-		title={m.mail_contract_heading({ contractTitle: data.contract.title })}
-		subtitle={factLine([
-			data.contract.client.legalName,
-			data.contract.autoSendMail
-				? m.mail_contract_subtitle_auto_send_on()
-				: m.mail_contract_subtitle_auto_send_off()
-		])}
-	>
-		{#snippet actions()}
-			<a
-				href={resolve('/mail/contracts/[id]/register', { id: data.contract.id })}
-				class="text-sm underline"
-			>
-				{m.mail_contract_register_link()}
-			</a>
-		{/snippet}
-	</PageHeader>
+<Page
+	crumbs={data.crumbs}
+	title={m.mail_contract_heading({ contractTitle: data.contract.title })}
+	subtitle={factLine([
+		data.contract.client.legalName,
+		data.contract.autoSendMail
+			? m.mail_contract_subtitle_auto_send_on()
+			: m.mail_contract_subtitle_auto_send_off()
+	])}
+>
+	{#snippet actions()}
+		<a
+			href={resolve('/mail/contracts/[id]/register', { id: data.contract.id })}
+			class="text-sm underline"
+		>
+			{m.mail_contract_register_link()}
+		</a>
+	{/snippet}
 
 	<form method="POST" action="?/autoSend" class="mt-6 flex flex-col gap-2 border p-4">
 		<span class="text-sm font-semibold">{m.mail_contract_auto_send_legend()}</span>
@@ -156,4 +154,4 @@
 			</tbody>
 		</table>
 	{/if}
-</main>
+</Page>

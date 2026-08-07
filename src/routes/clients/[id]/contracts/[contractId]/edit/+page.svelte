@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { minorUnitsToDecimalString } from '$lib/money';
 	import * as m from '$lib/paraglide/messages';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import ContractForm from '../../ContractForm.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -43,11 +43,7 @@
 	><title>{m.contract_edit_page_title({ title: data.contract.title })}</title></svelte:head
 >
 
-<main class="mx-auto max-w-3xl p-8">
-	<PageHeader
-		crumbs={data.crumbs}
-		title={m.contract_edit_heading({ title: data.contract.title })}
-	/>
+<Page crumbs={data.crumbs} title={m.contract_edit_heading({ title: data.contract.title })}>
 	<ContractForm {values} errors={form?.errors ?? {}} submitLabel={m.contract_form_submit_save()} />
 
 	<section class="mt-10 flex flex-col gap-3 border-t pt-6">
@@ -85,4 +81,4 @@
 			</form>
 		{/if}
 	</section>
-</main>
+</Page>

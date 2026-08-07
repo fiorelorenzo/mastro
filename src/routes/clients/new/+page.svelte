@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import ClientForm from '../ClientForm.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -28,12 +28,11 @@
 
 <svelte:head><title>{m.client_new_page_title()}</title></svelte:head>
 
-<main class="mx-auto max-w-3xl p-8">
-	<PageHeader crumbs={data.crumbs} title={m.client_new_heading()} />
+<Page crumbs={data.crumbs} title={m.client_new_heading()}>
 	<ClientForm
 		{values}
 		{contactSlots}
 		errors={form?.errors ?? {}}
 		submitLabel={m.client_form_submit_create()}
 	/>
-</main>
+</Page>

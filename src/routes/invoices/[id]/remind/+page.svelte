@@ -2,7 +2,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate, formatDays, formatMinorUnits } from '$lib/i18n/format';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import type { DunningSendFormValues } from '$lib/server/repositories/dunning-form';
 	import type { ActionData, PageData } from './$types';
 
@@ -33,13 +33,11 @@
 	><title>{m.mail_dunning_page_title({ number: data.invoice.number })}</title></svelte:head
 >
 
-<main class="mx-auto max-w-3xl p-8">
-	<PageHeader
-		crumbs={data.crumbs}
-		title={m.mail_dunning_heading({ number: data.invoice.number })}
-		{subtitle}
-	/>
-
+<Page
+	crumbs={data.crumbs}
+	title={m.mail_dunning_heading({ number: data.invoice.number })}
+	{subtitle}
+>
 	{#if form?.sent}
 		<p class="mt-4 border border-current p-3 text-sm">{m.mail_send_success()}</p>
 	{/if}
@@ -104,4 +102,4 @@
 			</section>
 		{/if}
 	{/if}
-</main>
+</Page>

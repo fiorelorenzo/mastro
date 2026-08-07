@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import ClauseNoteForm from '../../ClauseNoteForm.svelte';
 	import type { ActionData, PageData } from './$types';
 
@@ -20,14 +20,10 @@
 	><title>{m.clause_note_edit_page_title({ contract: data.contract.title })}</title></svelte:head
 >
 
-<main class="mx-auto max-w-3xl p-8">
-	<PageHeader
-		crumbs={data.crumbs}
-		title={m.clause_note_edit_heading({ contract: data.contract.title })}
-	/>
+<Page crumbs={data.crumbs} title={m.clause_note_edit_heading({ contract: data.contract.title })}>
 	<ClauseNoteForm
 		{values}
 		errors={form?.errors ?? {}}
 		submitLabel={m.clause_note_form_submit_save()}
 	/>
-</main>
+</Page>
