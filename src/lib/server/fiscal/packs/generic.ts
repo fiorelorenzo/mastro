@@ -9,6 +9,12 @@ import type { FiscalPack } from '../pack';
  * The empty arrays are not placeholders. A ceiling widget reading
  * `pack.ceilings` gets `[]`, a valid and complete answer, not a missing
  * field to special-case around.
+ *
+ * `unresolvedRevenue: 'carries_forward'` (#122) is the same reasoning:
+ * an accrual basis never leaves a row unresolved, so the value is inert
+ * here, but `'carries_forward'` is also the only value that can never
+ * silently drop real revenue, which is the one property this pack keeps
+ * even with no jurisdiction modelled behind it.
  */
 export const genericPack: FiscalPack = {
 	id: 'generic',
@@ -18,6 +24,7 @@ export const genericPack: FiscalPack = {
 	basis: 'accrual',
 	fiscalYear: { startMonth: 1, startDay: 1 },
 	ceilings: [],
+	unresolvedRevenue: 'carries_forward',
 	treatments: [],
 	charges: [],
 	formats: []

@@ -11,7 +11,7 @@
 // `profile.ts` — the two files this module composes with to answer "which
 // basis, over which sub-period" across a regime change.
 
-import type { MinorUnits } from './pack';
+import type { MinorUnits, UnresolvedRevenueTreatment } from './pack';
 
 export type LedgerBasis = 'cash' | 'accrual';
 
@@ -81,6 +81,10 @@ export interface LedgerPeriod {
 	readonly from: string;
 	readonly to: string;
 	readonly packId: string;
+	/** #122: what the pack in force for this period says happens to its
+	 * own revenue that has not yet resolved when a later period takes
+	 * over. See `UnresolvedRevenueTreatment` on `pack.ts`. */
+	readonly unresolvedRevenue: UnresolvedRevenueTreatment;
 }
 
 export interface LedgerRegimeFigure {
@@ -96,14 +100,74 @@ export interface LedgerRegimeFigure {
  * `periods` is summed under its own basis, and the total is their sum.
  * Reuses `sumLedger` once per sub-period — never a parallel
  * "multi-period" summation loop with its own basis logic.
+ *
+ * That alone leaves a gap (#122): an invoice issued under a cash-basis
+ * period, still unpaid when that period's own window ends, is invisible
+ * to `sumLedger` there (no `paidOn` yet) and invisible to whatever comes
+ * after (its `issueDate` is not in that later window either), so its
+ * revenue is silently absent from the total — not double-counted, not
+ * miscounted, just missing. The second pass below closes exactly that
+ * gap and nothing else: for each row `sumLedger` did not already pick up
+ * anywhere above, if the pack that governed at issuance is `'cash'` and
+ * declares `unresolvedRevenue: 'carries_forward'`, and the row has since
+ * been paid, it is attributed — still read by `paidOn`, under the
+ * issuing pack's own basis, never the destination period's — to
+ * whichever period's window actually contains that payment date. A row
+ * `sumLedger` already counted is left alone, so a pack whose own window
+ * already reads `paidOn` (a later cash-basis period) never sees a row
+ * added twice.
  */
 export function sumLedgerAcrossPeriods(
 	rows: readonly LedgerRow[],
 	periods: readonly LedgerPeriod[]
 ): LedgerRegimeFigure {
-	const subFigures = periods.map((period) => ({
+	const subFigures: (LedgerFigure & { packId: string })[] = periods.map((period) => ({
 		...sumLedger(rows, period.basis, period.from, period.to),
 		packId: period.packId
 	}));
-	return { amount: subFigures.reduce((sum, figure) => sum + figure.amount, 0), subFigures };
+
+	// #122: `origin.packId` + `destination.from` groups every straddling
+	// row landing in the same place into one figure, the same shape as
+	// the sub-periods above — one entry per regime carry-forward, never
+	// one per invoice.
+	const carriedForward = new Map<string, LedgerFigure & { packId: string }>();
+	for (const row of rows) {
+		const alreadyCounted = periods.some((period) =>
+			period.basis === 'cash'
+				? row.paidOn !== null && row.paidOn >= period.from && row.paidOn < period.to
+				: row.issueDate >= period.from && row.issueDate < period.to
+		);
+		if (alreadyCounted) continue;
+
+		const origin = periods.find(
+			(period) => row.issueDate >= period.from && row.issueDate < period.to
+		);
+		if (
+			origin === undefined ||
+			origin.basis !== 'cash' ||
+			origin.unresolvedRevenue !== 'carries_forward' ||
+			row.paidOn === null
+		) {
+			continue; // still unpaid, or this pack does not carry it forward: correctly missing for now.
+		}
+		const paidOn = row.paidOn;
+		const destination = periods.find((period) => paidOn >= period.from && paidOn < period.to);
+		if (destination === undefined) continue; // paid outside the queried range — the next query's concern.
+
+		const key = `${origin.packId}:${destination.from}`;
+		const existing = carriedForward.get(key);
+		carriedForward.set(key, {
+			basis: 'cash',
+			from: destination.from,
+			to: destination.to,
+			packId: origin.packId,
+			amount: (existing?.amount ?? 0) + row.amount
+		});
+	}
+
+	const allFigures = [...subFigures, ...carriedForward.values()];
+	return {
+		amount: allFigures.reduce((sum, figure) => sum + figure.amount, 0),
+		subFigures: allFigures
+	};
 }

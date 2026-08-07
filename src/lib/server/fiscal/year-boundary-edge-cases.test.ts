@@ -75,7 +75,8 @@ test('an invoice issued 28 December and paid 3 January counts in different calen
 //
 // A cash-basis pack in force through the end of June, an accrual-basis
 // pack from July on. Four rows, each landing in exactly one place once
-// each sub-period reads the date its own basis calls for:
+// each sub-period reads the date its own basis calls for, plus a fifth
+// (#122) that no single sub-period's own window resolves on its own:
 //
 //   A  issued 2024-03-01, paid 2024-03-15, 40,000
 //        → cash sub-period reads paidOn (03-15, inside Jan–Jun): counted.
@@ -83,10 +84,19 @@ test('an invoice issued 28 December and paid 3 January counts in different calen
 //          not counted there. Counted once, in the cash sub-period.
 //   B  issued 2024-05-01, paid 2024-08-01, 35,000
 //        → cash sub-period reads paidOn (08-01, outside Jan–Jun): not
-//          counted there.
+//          counted there — still unpaid when that sub-period's own
+//          window ends.
 //        → accrual sub-period reads issueDate (05-01, outside Jul–Dec):
-//          not counted there either. Counted nowhere — see the comment
-//          below the assertions.
+//          not counted there either.
+//        → #122: B was issued while the cash-basis pack governed, and
+//          that pack declares `unresolvedRevenue: 'carries_forward'`
+//          (Legge 190/2014, art. 1, comma 72, for the real
+//          `it-flat-rate` case this fixture stands in for), so its cash
+//          basis keeps governing B: recognised, by its payment date
+//          (08-01), in whichever period's window actually contains that
+//          date — the accrual sub-period's, here. Counted once, in a
+//          third figure that carries the CASH basis that actually
+//          produced it, not the accrual sub-period's own.
 //   C  issued 2024-09-01, unpaid, 55,000
 //        → cash sub-period: unpaid, contributes nothing under any window.
 //        → accrual sub-period reads issueDate (09-01, inside Jul–Dec):
@@ -96,9 +106,10 @@ test('an invoice issued 28 December and paid 3 January counts in different calen
 //        → accrual sub-period reads issueDate (06-15, outside Jul–Dec):
 //          not counted there. Counted once, in the cash sub-period.
 //
-// Cash sub-period total:    A 40,000 + D 20,000 = 60,000.
-// Accrual sub-period total: C 55,000.
-// Grand total:               60,000 + 55,000 = 115,000.
+// Cash sub-period total:      A 40,000 + D 20,000 = 60,000.
+// Accrual sub-period total:   C 55,000.
+// Carried-forward cash total: B 35,000.
+// Grand total:                60,000 + 55,000 + 35,000 = 150,000.
 test('a regime change mid-year sums each sub-period under its own basis, resolved from the fiscal profiles on record', () => {
 	const cashPack: FiscalPack = {
 		id: 'test-cash-regime',
@@ -110,7 +121,8 @@ test('a regime change mid-year sums each sub-period under its own basis, resolve
 		ceilings: [],
 		treatments: [],
 		charges: [],
-		formats: []
+		formats: [],
+		unresolvedRevenue: 'carries_forward'
 	};
 	const accrualPack: FiscalPack = { ...cashPack, id: 'test-accrual-regime', basis: 'accrual' };
 	const registry = buildRegistry([cashPack, accrualPack]);
@@ -133,11 +145,24 @@ test('a regime change mid-year sums each sub-period under its own basis, resolve
 		basis: period.pack.basis,
 		from: period.from,
 		to: period.to ?? '2025-01-01',
-		packId: period.pack.id
+		packId: period.pack.id,
+		unresolvedRevenue: period.pack.unresolvedRevenue
 	}));
 	expect(periods).toEqual([
-		{ basis: 'cash', from: '2024-01-01', to: '2024-07-01', packId: 'test-cash-regime' },
-		{ basis: 'accrual', from: '2024-07-01', to: '2025-01-01', packId: 'test-accrual-regime' }
+		{
+			basis: 'cash',
+			from: '2024-01-01',
+			to: '2024-07-01',
+			packId: 'test-cash-regime',
+			unresolvedRevenue: 'carries_forward'
+		},
+		{
+			basis: 'accrual',
+			from: '2024-07-01',
+			to: '2025-01-01',
+			packId: 'test-accrual-regime',
+			unresolvedRevenue: 'carries_forward'
+		}
 	]);
 
 	const rows: LedgerRow[] = [
@@ -179,24 +204,26 @@ test('a regime change mid-year sums each sub-period under its own basis, resolve
 
 	expect(result.subFigures[0].amount).toBe(40_000 + 20_000); // A + D
 	expect(result.subFigures[1].amount).toBe(55_000); // C
-	expect(result.amount).toBe(60_000 + 55_000);
+	expect(result.subFigures[2]).toEqual({
+		basis: 'cash',
+		from: '2024-07-01',
+		to: '2025-01-01',
+		packId: 'test-cash-regime',
+		amount: 35_000 // B, carried forward
+	});
+	expect(result.amount).toBe(60_000 + 55_000 + 35_000);
 
-	// B is not a miscount: read individually, it contributes nothing to
-	// either sub-period, because each sub-period reads the one date its
-	// own basis calls for, and B's relevant date under the OLD basis
-	// (paidOn, cash) falls after that sub-period ends, while its relevant
-	// date under the NEW basis (issueDate, accrual) falls before that
-	// sub-period starts. This is a real, if narrow, gap in a mid-year
-	// regime change — filed as #<see PR> rather than patched here, since
-	// closing it is a tax-treatment decision (does the old basis keep
-	// governing an invoice issued under it, or not), not an engineering
-	// one, and AGENTS.md invariant 1 keeps that decision out of the core
-	// engine.
+	// B in isolation resolves to a single cash-basis figure, 35,000, not
+	// the 0 it would have contributed before #122: this is the direct,
+	// row-level proof that the carry-forward does not depend on A, C or
+	// D being present, and that it is not a miscount either — B is
+	// counted exactly once, still under the cash basis that governed it
+	// at issuance, in the sub-period its payment date actually falls in.
 	const bAlone = sumLedgerAcrossPeriods(
 		rows.filter((row) => row.invoiceId === 'B-straddles-the-switch'),
 		periods
 	);
-	expect(bAlone.amount).toBe(0);
+	expect(bAlone.amount).toBe(35_000);
 });
 
 // ─── Case 3: a contract-year basis that does not align with the calendar year ─
