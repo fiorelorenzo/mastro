@@ -12,9 +12,9 @@ coverage/
 # Paraglide
 src/lib/paraglide
 project.inlang/cache/
-
-# Local rehearsal artifacts for the production compose stack (#76, #77):
-# the bind-mounted documents directory and backup archives, never real
-# client data, never committed.
+# The content-addressed document blobs (#49) written under
+# DOCUMENT_STORAGE_ROOT, the bind-mounted documents directory and the backup
+# archives of the production compose rehearsal (#76, #77). Never committed:
+# real client documents never enter this repository.
 /data/
 /backups/

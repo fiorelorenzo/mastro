@@ -1,0 +1,105 @@
+import { relations } from 'drizzle-orm';
+import { date, jsonb, numeric, pgEnum, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { id, timestamps } from '../columns';
+import { approval } from './approval';
+import { contract } from './contract';
+
+/**
+ * The day lifecycle described on epic #2:
+ *
+ * ```
+ *   proposed --> approved --> worked --> invoiced --> paid
+ *       |            |           |           |
+ *       |            |           |           +--> disputed --(resolved)--> invoiced
+ *       |            +--> revoked            |
+ *       +--> rejected                        |
+ *   worked_without_approval --(late approval)--> worked
+ *                           +--(no recovery)---> unbillable
+ * ```
+ *
+ * The accompanying custom migration enforces every edge above at the
+ * database level (#21): which transitions are legal, that `approved` (and
+ * everything after it) needs an `approval_id` on a contract that requires
+ * one, and that a day recorded `worked` on such a contract with no
+ * approval lands in `worked_without_approval` automatically (#23) — never
+ * as an application-layer decision a future write path could skip.
+ */
+export const workUnitState = pgEnum('work_unit_state', [
+	'proposed',
+	'approved',
+	'worked',
+	'worked_without_approval',
+	'invoiced',
+	'paid',
+	'disputed',
+	'revoked',
+	'rejected',
+	'unbillable'
+]);
+export type WorkUnitState = (typeof workUnitState.enumValues)[number];
+
+/**
+ * One day (or fraction of one) of billable work. `quantity` is 1.0 (a full
+ * day), 0.5 (half a day), or an hours figure on an hourly rate card — which
+ * one applies is resolved against the contract's rate card at pricing
+ * time, not validated here. `approvalId` is the proof this day was
+ * authorised in writing before it was worked (#22); `invoiceLineId` is
+ * where it lands once billed — no foreign key yet, `invoice_line` does not
+ * exist (#26, out of scope here), the same situation `document.ownerId`
+ * and `approval.proposalReference` are already in.
+ */
+export const workUnit = pgTable('work_unit', {
+	id: id(),
+	contractId: uuid('contract_id')
+		.notNull()
+		.references(() => contract.id, { onDelete: 'restrict' }),
+	date: date('date').notNull(),
+	quantity: numeric('quantity', { precision: 6, scale: 2, mode: 'number' }).notNull(),
+	scope: text('scope').notNull(),
+	state: workUnitState('state').notNull().default('proposed'),
+	approvalId: uuid('approval_id').references(() => approval.id, { onDelete: 'restrict' }),
+	invoiceLineId: uuid('invoice_line_id'),
+	notes: text('notes'),
+	...timestamps()
+});
+
+/** Who made a transition happen. `human` names the account by email
+ * (Better Auth has no other stable, human-readable identifier at hand);
+ * `agent` names the accepted proposal it followed (invariant 3: the ACP
+ * runner itself never writes here, a human always confirmed first);
+ * `system` is the database's own automatic transitions — the #23 redirect
+ * into `worked_without_approval` and the recovery out of it. */
+export type TransitionActor =
+	| { kind: 'human'; email: string }
+	| { kind: 'agent'; proposalReference: string }
+	| { kind: 'system' };
+
+/**
+ * Append-only (#21): every state change, who made it and why, enforced in
+ * the database by a trigger in the accompanying custom migration, the same
+ * way `approval` enforces its own immutability. Rows are written by a
+ * trigger on `work_unit` itself (`work_unit_log_transition`), not by
+ * application code, so no write path — including a future import or the
+ * ACP runner — can produce a state change this table does not see.
+ */
+export const workUnitTransition = pgTable('work_unit_transition', {
+	id: id(),
+	workUnitId: uuid('work_unit_id')
+		.notNull()
+		.references(() => workUnit.id, { onDelete: 'restrict' }),
+	fromState: workUnitState('from_state'),
+	toState: workUnitState('to_state').notNull(),
+	actor: jsonb('actor').$type<TransitionActor>().notNull(),
+	reason: text('reason').notNull(),
+	...timestamps()
+});
+
+export const workUnitRelations = relations(workUnit, ({ one, many }) => ({
+	contract: one(contract, { fields: [workUnit.contractId], references: [contract.id] }),
+	approval: one(approval, { fields: [workUnit.approvalId], references: [approval.id] }),
+	transitions: many(workUnitTransition)
+}));
+
+export const workUnitTransitionRelations = relations(workUnitTransition, ({ one }) => ({
+	workUnit: one(workUnit, { fields: [workUnitTransition.workUnitId], references: [workUnit.id] })
+}));

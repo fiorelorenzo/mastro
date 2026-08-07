@@ -7,9 +7,12 @@
 // `pnpm db:generate`, then hand-write the constraints the generator cannot
 // express in a `pnpm db:generate:custom` migration.
 
+export * from './approval';
 export * from './auth';
 export * from './backup';
 export * from './client';
 export * from './contract';
+export * from './document';
 export * from './fiscal';
 export * from './rate-card';
+export * from './work-unit';
