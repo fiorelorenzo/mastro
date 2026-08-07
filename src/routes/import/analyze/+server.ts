@@ -13,7 +13,7 @@ import type { ContractStatus } from '$lib/server/db/schema';
 import { resolveActiveFiscalPack } from '$lib/server/fiscal/profile';
 import type { ImportableFile } from '$lib/server/import/adapter';
 import type { ClientMatchCandidate } from '$lib/server/import/client-match';
-import { accountHolderTaxId } from '$lib/server/import/config';
+import { getAccountHolderTaxId } from '$lib/server/import/config';
 import type { DayMappingContext } from '$lib/server/import/review';
 import { defaultAdapterRegistry } from '$lib/server/import/registry';
 import { buildReview } from '$lib/server/import/review';
@@ -46,6 +46,8 @@ function resolveActiveContractId(
 }
 
 export const POST: RequestHandler = async ({ request }) => {
+	// Read per request, not at module load: see config.ts and #133.
+	const accountHolderTaxId = getAccountHolderTaxId();
 	const formData = await request.formData();
 	const files: ImportableFile[] = [];
 	for (const entry of formData.getAll('file')) {
