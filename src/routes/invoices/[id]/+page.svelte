@@ -32,6 +32,15 @@
 		{invoice.contract.client.legalName} — {invoice.contract.title}
 	</p>
 
+	{#if data.overdue}
+		<a
+			href={resolve('/invoices/[id]/remind', { id: invoice.id })}
+			class="mt-2 inline-block text-sm underline"
+		>
+			{m.invoice_detail_remind_link()}
+		</a>
+	{/if}
+
 	<dl class="mt-6 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
 		<dt class="opacity-70">{m.invoice_detail_issue_date_label()}</dt>
 		<dd>{formatDate(invoice.issueDate)}</dd>

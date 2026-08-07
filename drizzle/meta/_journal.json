@@ -155,6 +155,20 @@
       "when": 1786090175222,
       "tag": "0021_document_mirror_run_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786090487540,
+      "tag": "0022_contract_template_language",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786090489149,
+      "tag": "0023_email_template_days_after_due",
+      "breakpoints": true
     }
   ]
 }

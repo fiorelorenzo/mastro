@@ -1,13 +1,23 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import type { PageData } from './$types';
+	import { locales, type Locale } from '$lib/paraglide/runtime';
+	import type { ActionData, PageData } from './$types';
 
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	// Each language names itself, never translated (AGENTS.md invariant
+	// 5's spirit applied to a language name — the same helper
+	// `LanguageSwitch.svelte` uses for the interface locale picker).
+	function autonym(locale: Locale): string {
+		return new Intl.DisplayNames([locale], { type: 'language' }).of(locale) ?? locale;
+	}
 
 	function triggerLabel(trigger: (typeof data.templates)[number]['trigger']): string {
 		if (trigger.kind === 'manual') return m.mail_trigger_manual();
 		if (trigger.kind === 'on_issue') return m.mail_trigger_on_issue();
+		if (trigger.kind === 'days_after_due')
+			return m.mail_trigger_days_after_due({ days: trigger.days });
 		return m.mail_trigger_days_before_due({ days: trigger.days });
 	}
 
@@ -44,6 +54,26 @@
 		<p class="text-xs opacity-70">{m.mail_contract_auto_send_hint()}</p>
 		<button type="submit" class="w-fit border px-4 py-2 text-sm"
 			>{m.mail_contract_auto_send_save()}</button
+		>
+	</form>
+
+	<form method="POST" action="?/templateLanguage" class="mt-6 flex flex-col gap-2 border p-4">
+		<span class="text-sm font-semibold">{m.mail_contract_template_language_legend()}</span>
+		<p class="text-xs opacity-70">{m.mail_contract_template_language_hint()}</p>
+		<label class="flex flex-col gap-1 text-sm">
+			<select name="templateLanguage" class="w-fit border px-2 py-1">
+				{#each locales as locale (locale)}
+					<option value={locale} selected={data.contract.templateLanguage === locale}>
+						{autonym(locale)}
+					</option>
+				{/each}
+			</select>
+		</label>
+		{#if form && 'templateLanguageError' in form && form.templateLanguageError}
+			<span class="text-xs font-semibold">{form.templateLanguageError}</span>
+		{/if}
+		<button type="submit" class="w-fit border px-4 py-2 text-sm"
+			>{m.mail_contract_template_language_save()}</button
 		>
 	</form>
 

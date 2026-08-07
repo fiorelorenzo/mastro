@@ -36,7 +36,12 @@ export const actions: Actions = {
 		const register = await buildRegister(params.id, result.period.from, result.period.to);
 		const prepared = await prepareEmail(
 			template,
-			{ invoice: result.invoice, period: result.period, register },
+			{
+				invoice: result.invoice,
+				period: result.period,
+				register,
+				language: template.contract.templateLanguage
+			},
 			result.to
 		);
 
@@ -67,7 +72,12 @@ export const actions: Actions = {
 		const register = await buildRegister(params.id, result.period.from, result.period.to);
 		const prepared = await prepareEmail(
 			template,
-			{ invoice: result.invoice, period: result.period, register },
+			{
+				invoice: result.invoice,
+				period: result.period,
+				register,
+				language: template.contract.templateLanguage
+			},
 			result.to
 		);
 
