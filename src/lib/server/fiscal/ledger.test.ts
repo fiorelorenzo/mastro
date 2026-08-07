@@ -105,8 +105,20 @@ test('a period spanning a regime change sums each sub-period under its own basis
 		}
 	];
 	const periods: LedgerPeriod[] = [
-		{ basis: 'cash', from: '2024-01-01', to: '2024-07-01', packId: 'flat-rate' },
-		{ basis: 'accrual', from: '2024-07-01', to: '2025-01-01', packId: 'standard' }
+		{
+			basis: 'cash',
+			from: '2024-01-01',
+			to: '2024-07-01',
+			packId: 'flat-rate',
+			unresolvedRevenue: 'carries_forward'
+		},
+		{
+			basis: 'accrual',
+			from: '2024-07-01',
+			to: '2025-01-01',
+			packId: 'standard',
+			unresolvedRevenue: 'carries_forward'
+		}
 	];
 
 	const result = sumLedgerAcrossPeriods(regimeRows, periods);

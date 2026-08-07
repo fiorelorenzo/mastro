@@ -66,7 +66,8 @@ async function resolveLedgerPeriods(
 		basis: period.pack.basis,
 		from: period.from,
 		to: period.to ?? to,
-		packId: period.pack.id
+		packId: period.pack.id,
+		unresolvedRevenue: period.pack.unresolvedRevenue
 	}));
 }
 

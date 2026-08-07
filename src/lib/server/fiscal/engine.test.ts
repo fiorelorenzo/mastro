@@ -45,7 +45,8 @@ test('resolution and charge evaluation work on a pack the engine has never seen'
 				amount: { kind: 'fixed', minorUnits: 500 },
 				appliesWhen: { fact: 'invoiceTotal', comparator: 'gt', value: 1000 }
 			}
-		]
+		],
+		unresolvedRevenue: 'carries_forward'
 	};
 
 	const registry = buildRegistry([imaginary]);
