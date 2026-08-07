@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import PageHeader from '$lib/nav/PageHeader.svelte';
+	import Page from '$lib/layout/Page.svelte';
 	import CeilingMeter from '$lib/dashboard/CeilingMeter.svelte';
 	import CashCalendarChart from '$lib/dashboard/CashCalendarChart.svelte';
 	import ConcentrationChart from '$lib/dashboard/ConcentrationChart.svelte';
@@ -29,9 +29,7 @@
 
 <svelte:head><title>mastro</title></svelte:head>
 
-<main class="page">
-	<PageHeader title="mastro" subtitle={m.landing_tagline()} />
-
+<Page title="mastro" subtitle={m.landing_tagline()} width="wide">
 	<div class="mt-4 flex flex-wrap gap-3">
 		<a href={resolve('/day/new')} class="record-day-cta">{m.home_record_day_cta()}</a>
 		<a href={resolve('/proposals')} class="proposals-cta">
@@ -87,16 +85,9 @@
 			<button type="submit" class="text-sm underline">{m.sign_out()}</button>
 		</form>
 	</footer>
-</main>
+</Page>
 
 <style>
-	.page {
-		max-width: 60rem;
-		margin: 0 auto;
-		padding: 2rem 1.25rem 4rem;
-		background: var(--surface-page);
-		color: var(--text-primary);
-	}
 	.record-day-cta {
 		display: inline-flex;
 		align-items: center;
