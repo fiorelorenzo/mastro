@@ -11,6 +11,7 @@
 		markerLabel
 	} from './cash-calendar';
 	import { renewalAssumptionLine, type RenewalAssumptionContribution } from './renewal-assumption';
+	import { addMinorUnits, NO_MINOR_UNITS, type MinorUnits } from '$lib/money';
 
 	let {
 		months,
@@ -97,10 +98,10 @@
 
 	interface MonthRow {
 		month: string;
-		collected: number;
-		committed: number;
-		projected: number;
-		total: number;
+		collected: MinorUnits;
+		committed: MinorUnits;
+		projected: MinorUnits;
+		total: MinorUnits;
 		assumptionsText: string;
 		markers: string;
 	}
@@ -115,7 +116,11 @@
 				collected: month.collected.amount,
 				committed: month.committed.amount,
 				projected: month.projected.amount,
-				total: month.collected.amount + month.committed.amount + month.projected.amount,
+				total: addMinorUnits(
+					month.collected.amount,
+					month.committed.amount,
+					month.projected.amount
+				),
 				// See the `assumptions` prop doc comment: gated on this exact
 				// month's own projected figure being above zero, the one
 				// condition already computed upstream that means one of
@@ -266,7 +271,7 @@
 							tabindex="0"
 							role="button"
 							aria-label="{formatMonth(month.month)}: {formatMinorUnits(
-								segments.collected.height > 0 ? month.collected.amount : 0,
+								segments.collected.height > 0 ? month.collected.amount : NO_MINOR_UNITS,
 								CURRENCY
 							)}"
 							onpointermove={(e) => showMonthTooltip(month, e)}

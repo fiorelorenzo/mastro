@@ -4,7 +4,13 @@
 // where the database is actually read — so every figure here is
 // hand-verifiable against a fixture built in code.
 
-import type { MinorUnits } from '$lib/money';
+import {
+	NO_MINOR_UNITS,
+	addMinorUnits,
+	scaleMinorUnits,
+	sumMinorUnits,
+	type MinorUnits
+} from '$lib/money';
 import { sumLedger, type LedgerRow } from './ledger';
 
 export type CertaintyLevel = 'collected' | 'committed' | 'projected';
@@ -134,21 +140,28 @@ export function committedAmount(
 		to
 	).amount;
 
-	const approvedNotInvoiced = approvedWorkUnits.reduce((sum, unit) => {
-		if (unit.amount === null || unit.date < from || unit.date >= to) return sum;
-		return sum + unit.amount;
-	}, 0);
+	const pricedApproved = approvedWorkUnits.filter(
+		(unit): unit is ApprovedWorkUnit & { amount: MinorUnits } =>
+			unit.amount !== null && unit.date >= from && unit.date < to
+	);
+	const approvedNotInvoiced = sumMinorUnits(pricedApproved.map((unit) => unit.amount));
 
-	const recurring = recurringContracts.reduce((sum, contract) => {
-		const windowEnd = irrevocabilityWindowEnd(contract, asOfDate);
-		if (windowEnd === null) return sum;
-		const inWindow = contract.occurrences.filter(
-			(o) => o.date >= asOfDate && o.date <= windowEnd && o.date >= from && o.date < to
-		);
-		return sum + inWindow.reduce((s, o) => s + o.amount, 0);
-	}, 0);
+	const recurring = sumMinorUnits(
+		recurringContracts.flatMap((contract) => {
+			const windowEnd = irrevocabilityWindowEnd(contract, asOfDate);
+			if (windowEnd === null) return [];
+			return contract.occurrences
+				.filter((o) => o.date >= asOfDate && o.date <= windowEnd && o.date >= from && o.date < to)
+				.map((o) => o.amount);
+		})
+	);
 
-	return { level: 'committed', from, to, amount: issuedUnpaid + approvedNotInvoiced + recurring };
+	return {
+		level: 'committed',
+		from,
+		to,
+		amount: addMinorUnits(issuedUnpaid, approvedNotInvoiced, recurring)
+	};
 }
 
 /**
@@ -172,7 +185,7 @@ export function renewalAssumptionContribution(
 	to: string
 ): MinorUnits {
 	const assumption = contract.renewalAssumption;
-	if (!assumption) return 0;
+	if (!assumption) return NO_MINOR_UNITS;
 
 	// The known term ends at the contract's own `endsOn` when it has one
 	// (already covered by `projectedAmount`'s own scheduled occurrences)
@@ -180,20 +193,21 @@ export function renewalAssumptionContribution(
 	// `committedAmount`/`projectedAmount` already use, never a second one
 	// invented here.
 	const windowEnd = irrevocabilityWindowEnd(contract, asOfDate);
-	if (windowEnd === null) return 0; // the contract itself is already over
+	if (windowEnd === null) return NO_MINOR_UNITS; // the contract itself is already over
 
 	const assumptionStart = addDaysIso(contract.endsOn ?? windowEnd, 1);
 	const horizonEndExclusive = addDaysIso(assumption.horizonEndsOn, 1);
-	if (assumptionStart >= horizonEndExclusive) return 0; // horizon already elapsed
+	if (assumptionStart >= horizonEndExclusive) return NO_MINOR_UNITS; // horizon already elapsed
 
 	const overlapStart = assumptionStart > from ? assumptionStart : from;
 	const overlapEndExclusive = horizonEndExclusive < to ? horizonEndExclusive : to;
-	if (overlapStart >= overlapEndExclusive) return 0;
+	if (overlapStart >= overlapEndExclusive) return NO_MINOR_UNITS;
 
 	const totalDays = daysBetweenIso(assumptionStart, horizonEndExclusive);
 	const overlapDays = daysBetweenIso(overlapStart, overlapEndExclusive);
-	return Math.round(
-		(assumption.probability * assumption.expectedVolumeMinorUnits * overlapDays) / totalDays
+	return scaleMinorUnits(
+		assumption.expectedVolumeMinorUnits,
+		(assumption.probability * overlapDays) / totalDays
 	);
 }
 
@@ -211,18 +225,20 @@ export function projectedAmount(
 	from: string,
 	to: string
 ): CertaintyFigure {
-	const amount = recurringContracts.reduce((sum, contract) => {
-		const endsOn = contract.endsOn;
-		let scheduled = 0;
-		if (endsOn !== null) {
-			const windowEnd = irrevocabilityWindowEnd(contract, asOfDate) ?? asOfDate;
-			const beyondWindow = contract.occurrences.filter(
-				(o) => o.date > windowEnd && o.date <= endsOn && o.date >= from && o.date < to
-			);
-			scheduled = beyondWindow.reduce((s, o) => s + o.amount, 0);
-		}
-		return sum + scheduled + renewalAssumptionContribution(contract, asOfDate, from, to);
-	}, 0);
+	const amount = sumMinorUnits(
+		recurringContracts.map((contract) => {
+			const endsOn = contract.endsOn;
+			let scheduled: MinorUnits = NO_MINOR_UNITS;
+			if (endsOn !== null) {
+				const windowEnd = irrevocabilityWindowEnd(contract, asOfDate) ?? asOfDate;
+				const beyondWindow = contract.occurrences.filter(
+					(o) => o.date > windowEnd && o.date <= endsOn && o.date >= from && o.date < to
+				);
+				scheduled = sumMinorUnits(beyondWindow.map((o) => o.amount));
+			}
+			return addMinorUnits(scheduled, renewalAssumptionContribution(contract, asOfDate, from, to));
+		})
+	);
 	return { level: 'projected', from, to, amount };
 }
 

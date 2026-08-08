@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 import { sumLedger, sumLedgerAcrossPeriods, type LedgerPeriod, type LedgerRow } from './ledger';
+import { minorUnits } from '$lib/money';
 
 // A December invoice paid the following January — the exact case
 // AGENTS.md's epic #5 calls out: "an invoice issued in December and paid
@@ -13,7 +14,7 @@ const rows: LedgerRow[] = [
 		clientId: 'client-a',
 		issueDate: '2024-12-20',
 		paidOn: '2025-01-05',
-		amount: 100_000
+		amount: minorUnits(100_000)
 	},
 	{
 		invoiceId: 'paid-same-year',
@@ -21,7 +22,7 @@ const rows: LedgerRow[] = [
 		clientId: 'client-a',
 		issueDate: '2024-06-01',
 		paidOn: '2024-06-15',
-		amount: 50_000
+		amount: minorUnits(50_000)
 	},
 	{
 		invoiceId: 'still-unpaid',
@@ -29,7 +30,7 @@ const rows: LedgerRow[] = [
 		clientId: 'client-a',
 		issueDate: '2024-11-01',
 		paidOn: null,
-		amount: 30_000
+		amount: minorUnits(30_000)
 	}
 ];
 
@@ -91,7 +92,7 @@ test('a period spanning a regime change sums each sub-period under its own basis
 			clientId: 'client-a',
 			issueDate: '2024-03-01',
 			paidOn: '2024-03-10',
-			amount: 40_000
+			amount: minorUnits(40_000)
 		},
 		// Issued after the switch to accrual, paid later still: counted
 		// the moment it is issued, not when it is paid.
@@ -101,7 +102,7 @@ test('a period spanning a regime change sums each sub-period under its own basis
 			clientId: 'client-a',
 			issueDate: '2024-08-01',
 			paidOn: null,
-			amount: 60_000
+			amount: minorUnits(60_000)
 		}
 	];
 	const periods: LedgerPeriod[] = [

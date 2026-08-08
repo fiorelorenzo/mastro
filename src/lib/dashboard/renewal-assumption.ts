@@ -11,6 +11,7 @@
 
 import * as m from '$lib/paraglide/messages';
 import { formatDate, formatMinorUnits, formatPercent } from '$lib/i18n/format';
+import type { MinorUnits } from '$lib/money';
 
 /** One contract's recorded renewal assumption, paired with the figure it
  * contributed to the projection window a screen is showing — the same
@@ -21,9 +22,9 @@ export interface RenewalAssumptionContribution {
 	readonly contractId: string;
 	readonly contractTitle: string;
 	readonly probability: number;
-	readonly expectedVolumeMinorUnits: number;
+	readonly expectedVolumeMinorUnits: MinorUnits;
 	readonly horizonEndsOn: string;
-	readonly contributionMinorUnits: number;
+	readonly contributionMinorUnits: MinorUnits;
 }
 
 // See `+page.server.ts`'s own header comment: the fiscal engine carries

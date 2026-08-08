@@ -7,6 +7,7 @@
 import { and, eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
 import { client as pool, db } from '$lib/server/db';
+import { minorUnits } from '$lib/money';
 import {
 	client,
 	contract,
@@ -70,12 +71,18 @@ function invoiceDoc(overrides: Partial<Invoice> = {}): Invoice {
 		supplier: party({ taxId: ACCOUNT_HOLDER_TAX_ID, legalName: 'Consultant' }),
 		customer: party(),
 		lines: [
-			{ description: 'Consulting', quantity: 1, unitPrice: 100000, amount: 100000, taxRate: 22 }
+			{
+				description: 'Consulting',
+				quantity: 1,
+				unitPrice: minorUnits(100000),
+				amount: minorUnits(100000),
+				taxRate: 22
+			}
 		],
-		taxSummary: [{ taxRate: 22, taxableAmount: 100000, taxAmount: 22000 }],
-		taxableAmount: 100000,
-		taxAmount: 22000,
-		total: 122000,
+		taxSummary: [{ taxRate: 22, taxableAmount: minorUnits(100000), taxAmount: minorUnits(22000) }],
+		taxableAmount: minorUnits(100000),
+		taxAmount: minorUnits(22000),
+		total: minorUnits(122000),
 		socialSecurityCharges: [],
 		paymentTerms: [],
 		transmission: { transmitterId: ACCOUNT_HOLDER_TAX_ID, progressiveNumber: '1' },
@@ -322,7 +329,7 @@ test('a re-issue with the same natural key but different content is a conflict, 
 			];
 
 			// Same number and year, different total: a genuine re-issue.
-			const reissued = jsonFile('a-reissued.json', invoiceDoc({ total: 999999 }));
+			const reissued = jsonFile('a-reissued.json', invoiceDoc({ total: minorUnits(999999) }));
 			const second = await persistImportedInvoice(
 				{
 					file: reissued,
@@ -397,8 +404,8 @@ test('confirming a day-mapping decision links the accepted days and moves them t
 								{
 									description: 'Two days',
 									quantity: 2,
-									unitPrice: 60000,
-									amount: 120000,
+									unitPrice: minorUnits(60000),
+									amount: minorUnits(120000),
 									taxRate: 22
 								}
 							]

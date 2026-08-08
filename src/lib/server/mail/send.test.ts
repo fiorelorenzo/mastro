@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { ImapFlow } from 'imapflow';
 import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
+import { minorUnits } from '$lib/money';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract, sentEmail, workUnit } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
@@ -183,7 +184,7 @@ const template = {
 };
 
 const context = {
-	invoice: { number: 'INV-1', total: 100000, currency: 'EUR', dueDate: '2024-04-30' },
+	invoice: { number: 'INV-1', total: minorUnits(100000), currency: 'EUR', dueDate: '2024-04-30' },
 	period: { from: '2024-03-01', to: '2024-03-31' },
 	language: 'en' as const
 };

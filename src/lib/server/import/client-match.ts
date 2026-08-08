@@ -10,7 +10,7 @@
 import type { ExpensePolicy, InvoicingCadence, PaymentTerms } from '$lib/server/db/schema/contract';
 import type { NoticeChannel } from '$lib/server/db/schema/client';
 import { normalizedTaxId } from './direction';
-import type { MinorUnits } from '$lib/money';
+import { scaleMinorUnits, sumMinorUnits, type MinorUnits } from '$lib/money';
 import type { Invoice, InvoiceParty } from './invoice';
 
 export interface ClientMatchCandidate {
@@ -152,8 +152,9 @@ export function buildClientContractProposal(invoices: readonly Invoice[]): Clien
 	const customer = invoices[0].customer;
 	const earliest = invoices.toSorted((a, b) => (a.issueDate < b.issueDate ? -1 : 1))[0];
 	const cadence = inferInvoicingCadence(invoices.map((invoice) => invoice.issueDate));
-	const observedRecurringAmount = Math.round(
-		invoices.reduce((sum, invoice) => sum + invoice.total, 0) / invoices.length
+	const observedRecurringAmount = scaleMinorUnits(
+		sumMinorUnits(invoices.map((invoice) => invoice.total)),
+		1 / invoices.length
 	);
 
 	return {

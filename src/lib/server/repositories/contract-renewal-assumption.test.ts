@@ -3,6 +3,7 @@
 // `ceiling.test.ts`.
 
 import { afterAll, expect, test } from 'vitest';
+import { minorUnits } from '$lib/money';
 import { client as pool, db, type DbExecutor } from '$lib/server/db';
 import { client, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
@@ -65,7 +66,7 @@ function assumptionInput(
 	return {
 		contractId,
 		probability: 0.6,
-		expectedVolumeMinorUnits: 500_000,
+		expectedVolumeMinorUnits: minorUnits(500_000),
 		horizonEndsOn: '2025-12-31',
 		...overrides
 	};
@@ -135,7 +136,7 @@ test('updateRenewalAssumption round-trips a change to all three parameters', asy
 				created.id,
 				assumptionInput(contractRow.id, {
 					probability: 0.25,
-					expectedVolumeMinorUnits: 900_000,
+					expectedVolumeMinorUnits: minorUnits(900_000),
 					horizonEndsOn: '2026-06-30'
 				}),
 				tx

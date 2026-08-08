@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 import { formatDays } from '$lib/i18n/format';
+import { minorUnits } from '$lib/money';
 import { getLocale, overwriteGetLocale } from '$lib/paraglide/runtime';
 import { daysLate } from '$lib/server/domain/invoice';
 import type { Register } from '$lib/server/register/types';
@@ -27,7 +28,12 @@ const register: Register = {
 };
 
 const context: EmailTemplateContext = {
-	invoice: { number: 'INV-2024-03', total: 150000, currency: 'EUR', dueDate: '2024-04-30' },
+	invoice: {
+		number: 'INV-2024-03',
+		total: minorUnits(150000),
+		currency: 'EUR',
+		dueDate: '2024-04-30'
+	},
 	period: { from: '2024-03-01', to: '2024-03-31' },
 	register,
 	language: 'en'
@@ -53,7 +59,10 @@ test('the amount is scaled by the currency, not by a hardcoded hundred', () => {
 	// unit is a property of the currency: two for EUR, none at all for JPY.
 	// A reminder goes to the client, so an amount off by a factor of a
 	// hundred is wrong in front of someone who is being asked to pay it.
-	const jpy = { ...context, invoice: { ...context.invoice, total: 150000, currency: 'JPY' } };
+	const jpy = {
+		...context,
+		invoice: { ...context.invoice, total: minorUnits(150000), currency: 'JPY' }
+	};
 	expect(renderTemplate({ subject: 's', body: '{{amount}}' }, jpy).body).toBe('¥150,000');
 	expect(renderTemplate({ subject: 's', body: '{{amount}}' }, context).body).toBe('€1,500.00');
 });

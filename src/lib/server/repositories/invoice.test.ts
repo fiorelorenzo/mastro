@@ -1,4 +1,5 @@
 import { afterAll, expect, test } from 'vitest';
+import { minorUnits } from '$lib/money';
 import { sql } from 'drizzle-orm';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract, invoice, invoiceLine } from '$lib/server/db/schema';
@@ -100,8 +101,8 @@ test('an invoice created manually with lines whose amounts add up succeeds, and 
 						{
 							description: 'Two days of consulting',
 							quantity: 2,
-							unitPrice: 50000,
-							amount: 100000,
+							unitPrice: minorUnits(50000),
+							amount: minorUnits(100000),
 							taxRate: 22,
 							taxTreatmentCode: null,
 							workUnitIds: [day1.id, day2.id]
@@ -158,8 +159,8 @@ test('a supplied due date is stored verbatim, sourced as "document"', async () =
 						{
 							description: 'Flat fee',
 							quantity: 1,
-							unitPrice: 100000,
-							amount: 100000,
+							unitPrice: minorUnits(100000),
+							amount: minorUnits(100000),
 							taxRate: 0,
 							taxTreatmentCode: 'N2.2',
 							workUnitIds: []
@@ -190,9 +191,9 @@ test('the database rejects an invoice whose lines do not sum to its stated taxab
 					number: 'INV-BAD',
 					issueDate: '2024-06-30',
 					currency: 'EUR',
-					taxableAmount: 100000,
-					taxAmount: 22000,
-					total: 122000,
+					taxableAmount: minorUnits(100000),
+					taxAmount: minorUnits(22000),
+					total: minorUnits(122000),
 					dueDate: '2024-07-30',
 					dueDateSource: 'computed'
 				})
@@ -203,8 +204,8 @@ test('the database rejects an invoice whose lines do not sum to its stated taxab
 				invoiceId: invoiceRow.id,
 				description: 'Understated line',
 				quantity: 1,
-				unitPrice: 40000,
-				amount: 40000,
+				unitPrice: minorUnits(40000),
+				amount: minorUnits(40000),
 				taxRate: 22
 			});
 
@@ -233,9 +234,9 @@ test('the database rejects an invoice whose total does not equal taxable + tax +
 					number: 'INV-BAD-TOTAL',
 					issueDate: '2024-06-30',
 					currency: 'EUR',
-					taxableAmount: 100000,
-					taxAmount: 22000,
-					total: 999999,
+					taxableAmount: minorUnits(100000),
+					taxAmount: minorUnits(22000),
+					total: minorUnits(999999),
 					dueDate: '2024-07-30',
 					dueDateSource: 'computed'
 				})
@@ -245,8 +246,8 @@ test('the database rejects an invoice whose total does not equal taxable + tax +
 				invoiceId: invoiceRow.id,
 				description: 'Line',
 				quantity: 1,
-				unitPrice: 100000,
-				amount: 100000,
+				unitPrice: minorUnits(100000),
+				amount: minorUnits(100000),
 				taxRate: 22
 			});
 
@@ -283,8 +284,8 @@ test('recording a payment sets paid_on, and the invoice no longer appears in the
 						{
 							description: 'Flat fee',
 							quantity: 1,
-							unitPrice: 50000,
-							amount: 50000,
+							unitPrice: minorUnits(50000),
+							amount: minorUnits(50000),
 							taxRate: 0,
 							taxTreatmentCode: null,
 							workUnitIds: []
@@ -345,8 +346,8 @@ test('a day linked to an unpaid invoice line is not itself transitioned to "paid
 						{
 							description: 'A day of work',
 							quantity: 1,
-							unitPrice: 50000,
-							amount: 50000,
+							unitPrice: minorUnits(50000),
+							amount: minorUnits(50000),
 							taxRate: 0,
 							taxTreatmentCode: null,
 							workUnitIds: [day.id]
@@ -401,8 +402,8 @@ test('linking a line to a day still on "proposed" is rejected by the existing st
 						{
 							description: 'A day not yet worked',
 							quantity: 1,
-							unitPrice: 50000,
-							amount: 50000,
+							unitPrice: minorUnits(50000),
+							amount: minorUnits(50000),
 							taxRate: 0,
 							taxTreatmentCode: null,
 							workUnitIds: [day.id]

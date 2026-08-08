@@ -5,6 +5,7 @@
 // its exact severity boundary, not just "fires or does not".
 
 import { expect, test } from 'vitest';
+import { minorUnits, NO_MINOR_UNITS } from '$lib/money';
 import type { EvaluatedCeiling } from '$lib/server/fiscal/ceiling';
 import type { Ceiling } from '$lib/server/fiscal/pack';
 import {
@@ -327,8 +328,8 @@ function evaluated(overrides: Partial<EvaluatedCeiling> = {}): EvaluatedCeiling 
 	return {
 		ceiling: ceiling(),
 		period: { from: '2026-01-01', to: '2027-01-01' },
-		currentValue: 0,
-		limitValue: 8_500_000,
+		currentValue: NO_MINOR_UNITS,
+		limitValue: minorUnits(8_500_000),
 		usageRatio: 0,
 		crossed: false,
 		activeAlertLevels: [],
@@ -337,13 +338,17 @@ function evaluated(overrides: Partial<EvaluatedCeiling> = {}): EvaluatedCeiling 
 }
 
 test('ceiling_approaching does not fire below every configured alert level', () => {
-	const row = evaluated({ currentValue: 1_000_000, usageRatio: 0.12, activeAlertLevels: [] });
+	const row = evaluated({
+		currentValue: minorUnits(1_000_000),
+		usageRatio: 0.12,
+		activeAlertLevels: []
+	});
 	expect(detectCeilingApproaching([row])).toEqual([]);
 });
 
 test('ceiling_approaching fires warning once the lowest configured level is crossed', () => {
 	const row = evaluated({
-		currentValue: 6_900_000,
+		currentValue: minorUnits(6_900_000),
 		usageRatio: 0.81,
 		activeAlertLevels: [{ ratio: 0.8, label }]
 	});
@@ -352,7 +357,7 @@ test('ceiling_approaching fires warning once the lowest configured level is cros
 
 test('ceiling_approaching fires serious past the 0.9 usage ratio', () => {
 	const row = evaluated({
-		currentValue: 8_100_000,
+		currentValue: minorUnits(8_100_000),
 		usageRatio: 0.9529411764705882,
 		activeAlertLevels: [
 			{ ratio: 0.8, label },
@@ -364,7 +369,7 @@ test('ceiling_approaching fires serious past the 0.9 usage ratio', () => {
 
 test('ceiling_approaching fires critical once actually crossed', () => {
 	const row = evaluated({
-		currentValue: 8_600_000,
+		currentValue: minorUnits(8_600_000),
 		usageRatio: 1.0117647058823529,
 		crossed: true,
 		activeAlertLevels: [
@@ -385,7 +390,7 @@ test('ceiling_approaching carries the label and consequence bundles verbatim, fo
 
 test('year_end_overrun_risk does not fire when nothing projects past the limit', () => {
 	const input = {
-		evaluated: evaluated({ currentValue: 1_000_000 }),
+		evaluated: evaluated({ currentValue: minorUnits(1_000_000) }),
 		committed: 500_000,
 		projected: 200_000
 	};
@@ -394,7 +399,7 @@ test('year_end_overrun_risk does not fire when nothing projects past the limit',
 
 test('year_end_overrun_risk does not duplicate an already-crossed ceiling — ceiling_approaching already covers it', () => {
 	const input = {
-		evaluated: evaluated({ currentValue: 9_000_000, crossed: true }),
+		evaluated: evaluated({ currentValue: minorUnits(9_000_000), crossed: true }),
 		committed: 1_000_000,
 		projected: 0
 	};
@@ -403,7 +408,10 @@ test('year_end_overrun_risk does not duplicate an already-crossed ceiling — ce
 
 test('year_end_overrun_risk fires once committed plus projected would land past the limit, even though nothing has crossed yet', () => {
 	const input = {
-		evaluated: evaluated({ currentValue: 5_000_000, limitValue: 8_500_000 }),
+		evaluated: evaluated({
+			currentValue: minorUnits(5_000_000),
+			limitValue: minorUnits(8_500_000)
+		}),
 		committed: 2_000_000,
 		projected: 1_600_000 // total 8,600,000 > 8,500,000
 	};
@@ -413,7 +421,7 @@ test('year_end_overrun_risk fires once committed plus projected would land past 
 });
 
 test('year_end_overrun_risk severity scales with how far past the limit the projection lands', () => {
-	const base = { currentValue: 0, limitValue: 1_000_000 };
+	const base = { currentValue: NO_MINOR_UNITS, limitValue: minorUnits(1_000_000) };
 	const warning = detectYearEndOverrunRisk([
 		{ evaluated: evaluated(base), committed: 1_010_000, projected: 0 }
 	]);

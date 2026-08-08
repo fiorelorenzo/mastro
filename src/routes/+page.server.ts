@@ -4,6 +4,7 @@
 // same simplification `fiscal/ledger.ts`'s `LedgerRow` already makes by
 // carrying no currency of its own.
 import { evaluateActiveCeilings } from '$lib/server/fiscal/ceiling-status';
+import { addMinorUnits } from '$lib/money';
 import { irrevocabilityWindowEnd } from '$lib/server/fiscal/certainty';
 import {
 	forecastRenewalAssumptions,
@@ -135,10 +136,11 @@ export const load: PageServerLoad = async ({ locals }) => {
 		// hand plus what's committed and projected between today and the
 		// period's own end — never a second forecast computed by hand here,
 		// just the two figures `forecast.ts` already exports, added once.
-		projectedEnd:
-			evaluated.currentValue +
-			heroProjections[index].committed.amount +
-			heroProjections[index].projected.amount,
+		projectedEnd: addMinorUnits(
+			evaluated.currentValue,
+			heroProjections[index].committed.amount,
+			heroProjections[index].projected.amount
+		),
 		assumptions: toAssumptionViews(heroAssumptions[index])
 	}));
 

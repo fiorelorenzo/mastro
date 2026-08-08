@@ -5,7 +5,7 @@
 // format that hands over a float has already lost the guarantee this file
 // exists to keep; adapters must read amounts as strings.
 
-import type { MinorUnits } from '$lib/money';
+import { minorUnits, type MinorUnits } from '$lib/money';
 
 const DECIMAL = /^(-?)(\d+)\.(\d+)$/;
 
@@ -25,5 +25,5 @@ export function decimalStringToMinorUnits(raw: string): MinorUnits {
 	const cents = Number(intPart) * 100 + Number(fracPart.slice(0, 2));
 	const roundingDigit = fracPart.charCodeAt(2) - 48;
 	const rounded = roundingDigit >= 5 ? cents + 1 : cents;
-	return sign === '-' ? -rounded : rounded;
+	return minorUnits(sign === '-' ? -rounded : rounded);
 }

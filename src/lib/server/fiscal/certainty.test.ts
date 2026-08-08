@@ -12,6 +12,7 @@ import {
 	type RenewalAssumption
 } from './certainty';
 import type { LedgerRow } from './ledger';
+import { minorUnits } from '$lib/money';
 
 test('collected is money in the bank: cash basis, unconditionally', () => {
 	const rows: LedgerRow[] = [
@@ -21,7 +22,7 @@ test('collected is money in the bank: cash basis, unconditionally', () => {
 			clientId: 'client-a',
 			issueDate: '2024-03-01',
 			paidOn: '2024-04-10',
-			amount: 70_000
+			amount: minorUnits(70_000)
 		},
 		{
 			invoiceId: 'b',
@@ -29,7 +30,7 @@ test('collected is money in the bank: cash basis, unconditionally', () => {
 			clientId: 'client-a',
 			issueDate: '2024-05-01',
 			paidOn: null,
-			amount: 20_000
+			amount: minorUnits(20_000)
 		}
 	];
 	const figure = collectedAmount(rows, '2024-01-01', '2025-01-01');
@@ -49,7 +50,7 @@ test('an issued unpaid invoice counts as committed, by issue date', () => {
 			clientId: 'client-a',
 			issueDate: '2024-03-01',
 			paidOn: null,
-			amount: 50_000
+			amount: minorUnits(50_000)
 		}
 	];
 	const figure = committedAmount(rows, [], [], '2024-06-01', '2024-01-01', '2025-01-01');
@@ -57,7 +58,9 @@ test('an issued unpaid invoice counts as committed, by issue date', () => {
 });
 
 test('approved but not yet invoiced days count as committed', () => {
-	const approvedWorkUnits: ApprovedWorkUnit[] = [{ date: '2024-06-20', amount: 60_000 }];
+	const approvedWorkUnits: ApprovedWorkUnit[] = [
+		{ date: '2024-06-20', amount: minorUnits(60_000) }
+	];
 	const figure = committedAmount(
 		[],
 		approvedWorkUnits,
@@ -131,7 +134,7 @@ test('a year-long contract with a 30-day notice period contributes only the curr
 	];
 	const occurrences: RecurringFeeOccurrence[] = monthStarts.map((date) => ({
 		date,
-		amount: 100_000
+		amount: minorUnits(100_000)
 	}));
 	const contract: RecurringFeeContract = {
 		terminationNoticeDays: 30,
@@ -157,8 +160,8 @@ test('a year-long contract with a 30-day notice period contributes only the curr
 
 test('an indefinite contract (no end date) projects nothing beyond the notice window — no renewal assumed', () => {
 	const occurrences: RecurringFeeOccurrence[] = [
-		{ date: '2024-08-01', amount: 100_000 },
-		{ date: '2024-09-01', amount: 100_000 }
+		{ date: '2024-08-01', amount: minorUnits(100_000) },
+		{ date: '2024-09-01', amount: minorUnits(100_000) }
 	];
 	const contract: RecurringFeeContract = { terminationNoticeDays: 30, endsOn: null, occurrences };
 	const projected = projectedAmount([contract], '2024-06-15', '2024-01-01', '2025-01-01');
@@ -173,16 +176,16 @@ test('the three levels are separately queryable and also composable into one bre
 			clientId: 'client-a',
 			issueDate: '2024-02-01',
 			paidOn: '2024-02-10',
-			amount: 10_000
+			amount: minorUnits(10_000)
 		}
 	];
-	const approvedWorkUnits: ApprovedWorkUnit[] = [{ date: '2024-03-01', amount: 5_000 }];
+	const approvedWorkUnits: ApprovedWorkUnit[] = [{ date: '2024-03-01', amount: minorUnits(5_000) }];
 	const contract: RecurringFeeContract = {
 		terminationNoticeDays: 10,
 		endsOn: '2024-12-31',
 		occurrences: [
-			{ date: '2024-06-15', amount: 2_000 },
-			{ date: '2024-09-01', amount: 3_000 }
+			{ date: '2024-06-15', amount: minorUnits(2_000) },
+			{ date: '2024-09-01', amount: minorUnits(3_000) }
 		]
 	};
 	const asOfDate = '2024-06-10';
@@ -211,8 +214,8 @@ test('the three levels are separately queryable and also composable into one bre
 
 test("with no renewal assumption recorded, nothing projects past a fixed-term contract's own end date — not even a stray occurrence dated after it", () => {
 	const occurrences: RecurringFeeOccurrence[] = [
-		{ date: '2024-05-20', amount: 7_000 }, // between the window and endsOn: scheduled
-		{ date: '2024-06-15', amount: 9_000 } // after endsOn: never scheduled, never guessed
+		{ date: '2024-05-20', amount: minorUnits(7_000) }, // between the window and endsOn: scheduled
+		{ date: '2024-06-15', amount: minorUnits(9_000) } // after endsOn: never scheduled, never guessed
 	];
 	const contract: RecurringFeeContract = {
 		terminationNoticeDays: 15,
@@ -239,7 +242,7 @@ test('renewalAssumptionContribution is zero with none recorded', () => {
 test('a renewal assumption fills exactly its own horizon when the query window fully contains it', () => {
 	const assumption: RenewalAssumption = {
 		probability: 0.4,
-		expectedVolumeMinorUnits: 100_000,
+		expectedVolumeMinorUnits: minorUnits(100_000),
 		horizonEndsOn: '2024-02-10'
 	};
 	const contract: RecurringFeeContract = {
@@ -266,7 +269,7 @@ test('a renewal assumption fills exactly its own horizon when the query window f
 test('a renewal assumption prorates by day when the query window only partly overlaps its horizon', () => {
 	const assumption: RenewalAssumption = {
 		probability: 0.4,
-		expectedVolumeMinorUnits: 100_000,
+		expectedVolumeMinorUnits: minorUnits(100_000),
 		horizonEndsOn: '2024-02-10'
 	};
 	const contract: RecurringFeeContract = {
@@ -290,7 +293,7 @@ test('a renewal assumption prorates by day when the query window only partly ove
 test('a renewal assumption contributes nothing to a query window that misses its horizon entirely', () => {
 	const assumption: RenewalAssumption = {
 		probability: 0.4,
-		expectedVolumeMinorUnits: 100_000,
+		expectedVolumeMinorUnits: minorUnits(100_000),
 		horizonEndsOn: '2024-02-10'
 	};
 	const contract: RecurringFeeContract = {
@@ -311,7 +314,7 @@ test('a renewal assumption contributes nothing to a query window that misses its
 test('a renewal assumption already past its own horizon by the query window contributes nothing', () => {
 	const assumption: RenewalAssumption = {
 		probability: 1,
-		expectedVolumeMinorUnits: 50_000,
+		expectedVolumeMinorUnits: minorUnits(50_000),
 		horizonEndsOn: '2024-01-15' // before the window even opens (2024-02-01)
 	};
 	const contract: RecurringFeeContract = {
@@ -332,10 +335,10 @@ test('a renewal assumption already past its own horizon by the query window cont
 test('a renewal assumption never reaches committedAmount — it feeds the projected band only', () => {
 	const assumption: RenewalAssumption = {
 		probability: 1,
-		expectedVolumeMinorUnits: 1_000_000,
+		expectedVolumeMinorUnits: minorUnits(1_000_000),
 		horizonEndsOn: '2025-12-31'
 	};
-	const occurrences: RecurringFeeOccurrence[] = [{ date: '2024-06-20', amount: 4_000 }];
+	const occurrences: RecurringFeeOccurrence[] = [{ date: '2024-06-20', amount: minorUnits(4_000) }];
 	const contract: RecurringFeeContract = {
 		terminationNoticeDays: 30,
 		endsOn: null,
@@ -358,12 +361,12 @@ test("a fixed-term contract's renewal assumption starts the day after its own en
 	// at 2024-06-12.
 	const assumption: RenewalAssumption = {
 		probability: 1,
-		expectedVolumeMinorUnits: 31_000, // 1,000/day over the 31-day horizon below
+		expectedVolumeMinorUnits: minorUnits(31_000), // 1,000/day over the 31-day horizon below
 		horizonEndsOn: '2024-07-31'
 	};
 	const occurrences: RecurringFeeOccurrence[] = [
-		{ date: '2024-06-15', amount: 5_000 }, // between the window and endsOn: scheduled
-		{ date: '2024-07-01', amount: 9_999 } // after endsOn: excluded from "scheduled"
+		{ date: '2024-06-15', amount: minorUnits(5_000) }, // between the window and endsOn: scheduled
+		{ date: '2024-07-01', amount: minorUnits(9_999) } // after endsOn: excluded from "scheduled"
 	];
 	const contract: RecurringFeeContract = {
 		terminationNoticeDays: 10,

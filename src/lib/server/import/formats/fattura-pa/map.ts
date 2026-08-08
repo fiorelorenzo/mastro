@@ -6,6 +6,7 @@ import { legalText } from '$lib/legal/legal-text';
 import { computeDueDate } from '$lib/server/domain/contract';
 import type { PaymentTerms } from '$lib/server/db/schema/contract';
 import { decimalStringToMinorUnits } from '../../decimal';
+import { sumMinorUnits } from '$lib/money';
 import type {
 	Invoice,
 	InvoiceDocumentType,
@@ -219,8 +220,8 @@ function mapBody(
 		customer: mapCustomer(header.CessionarioCommittente),
 		lines: body.DatiBeniServizi.DettaglioLinee.map(mapLine),
 		taxSummary,
-		taxableAmount: taxSummary.reduce((sum, block) => sum + block.taxableAmount, 0),
-		taxAmount: taxSummary.reduce((sum, block) => sum + block.taxAmount, 0),
+		taxableAmount: sumMinorUnits(taxSummary.map((block) => block.taxableAmount)),
+		taxAmount: sumMinorUnits(taxSummary.map((block) => block.taxAmount)),
 		total: decimalStringToMinorUnits(documento.ImportoTotaleDocumento),
 		stampDuty:
 			documento.DatiBollo !== undefined

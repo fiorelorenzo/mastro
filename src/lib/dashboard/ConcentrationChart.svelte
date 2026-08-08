@@ -10,6 +10,7 @@
 		type ClientShare,
 		type ShareCeilingReference
 	} from './concentration';
+	import type { MinorUnits } from '$lib/money';
 
 	let {
 		byClient,
@@ -58,7 +59,7 @@
 	interface ClientRow {
 		clientId: string;
 		clientName: string;
-		amount: number;
+		amount: MinorUnits;
 		share: number;
 	}
 	const rows = $derived<ClientRow[]>(

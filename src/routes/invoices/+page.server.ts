@@ -1,3 +1,4 @@
+import { addMinorUnits, NO_MINOR_UNITS, type MinorUnits } from '$lib/money';
 import { daysLate } from '$lib/server/domain/invoice';
 import { listUnpaidInvoices } from '$lib/server/repositories/invoice';
 import type { PageServerLoad } from './$types';
@@ -12,8 +13,11 @@ export const load: PageServerLoad = async () => {
 		.map((row) => ({ ...row, daysLate: daysLate(row.invoice.dueDate, now) }))
 		.sort((a, b) => b.daysLate - a.daysLate);
 
-	const totalOutstandingByCurrency = rows.reduce<Record<string, number>>((totals, row) => {
-		totals[row.invoice.currency] = (totals[row.invoice.currency] ?? 0) + row.invoice.total;
+	const totalOutstandingByCurrency = rows.reduce<Record<string, MinorUnits>>((totals, row) => {
+		totals[row.invoice.currency] = addMinorUnits(
+			totals[row.invoice.currency] ?? NO_MINOR_UNITS,
+			row.invoice.total
+		);
 		return totals;
 	}, {});
 

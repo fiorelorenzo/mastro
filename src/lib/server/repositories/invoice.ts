@@ -13,7 +13,13 @@ import {
 	type InvoiceDueDateSource,
 	type TransitionActor
 } from '$lib/server/db/schema';
-import type { MinorUnits } from '$lib/money';
+import {
+	addMinorUnits,
+	NO_MINOR_UNITS,
+	scaleMinorUnits,
+	sumMinorUnits,
+	type MinorUnits
+} from '$lib/money';
 import type { InvoiceDocumentType } from '$lib/server/import/invoice';
 import type { ExistingInvoiceRecord } from '$lib/server/import/dedup';
 import { transitionWorkUnit } from './work-unit';
@@ -75,12 +81,16 @@ export async function createInvoice(
 		});
 		if (!contractRow) throw new Error(`contract ${input.contractId} not found`);
 
-		const taxableAmount = input.lines.reduce((sum, line) => sum + line.amount, 0);
-		const taxAmount = input.lines.reduce(
-			(sum, line) => sum + Math.round((line.amount * line.taxRate) / 100),
-			0
+		const taxableAmount = sumMinorUnits(input.lines.map((line) => line.amount));
+		const taxAmount = sumMinorUnits(
+			input.lines.map((line) => scaleMinorUnits(line.amount, line.taxRate / 100))
 		);
-		const total = taxableAmount + taxAmount + (input.stampDuty ?? 0) + (input.socialCharge ?? 0);
+		const total = addMinorUnits(
+			taxableAmount,
+			taxAmount,
+			input.stampDuty ?? NO_MINOR_UNITS,
+			input.socialCharge ?? NO_MINOR_UNITS
+		);
 
 		const { dueDate, source: dueDateSource }: { dueDate: string; source: InvoiceDueDateSource } =
 			resolveDueDate(contractRow.paymentTerms, input.issueDate, input.dueDate);
