@@ -1,3 +1,4 @@
+import type { MinorUnits } from '$lib/money';
 import { relations, sql } from 'drizzle-orm';
 import {
 	check,
@@ -80,13 +81,13 @@ export const invoice = pgTable(
 		currency: text('currency').notNull(),
 		// All amounts are MinorUnits (integer cents) — see `import/invoice.ts`
 		// and `import/decimal.ts` for why a float never carries money here.
-		taxableAmount: integer('taxable_amount').notNull(),
-		taxAmount: integer('tax_amount').notNull(),
-		total: integer('total').notNull(),
+		taxableAmount: integer('taxable_amount').$type<MinorUnits>().notNull(),
+		taxAmount: integer('tax_amount').$type<MinorUnits>().notNull(),
+		total: integer('total').$type<MinorUnits>().notNull(),
 		taxTreatmentCode: text('tax_treatment_code'),
 		statutoryReference: jsonb('statutory_reference').$type<LegalText>(),
-		stampDuty: integer('stamp_duty'),
-		socialCharge: integer('social_charge'),
+		stampDuty: integer('stamp_duty').$type<MinorUnits>(),
+		socialCharge: integer('social_charge').$type<MinorUnits>(),
 		dueDate: date('due_date').notNull(),
 		dueDateSource: invoiceDueDateSource('due_date_source').notNull(),
 		// The document's own code, opaque here (FatturaPA's `ModalitaPagamento`) —
@@ -135,8 +136,8 @@ export const invoiceLine = pgTable(
 			.references(() => invoice.id, { onDelete: 'cascade' }),
 		description: text('description').notNull(),
 		quantity: numeric('quantity', { precision: 6, scale: 2, mode: 'number' }).notNull(),
-		unitPrice: integer('unit_price').notNull(),
-		amount: integer('amount').notNull(),
+		unitPrice: integer('unit_price').$type<MinorUnits>().notNull(),
+		amount: integer('amount').$type<MinorUnits>().notNull(),
 		taxRate: numeric('tax_rate', { precision: 5, scale: 2, mode: 'number' }).notNull(),
 		taxTreatmentCode: text('tax_treatment_code'),
 		...timestamps()

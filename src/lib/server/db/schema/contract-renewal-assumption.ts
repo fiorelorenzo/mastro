@@ -1,3 +1,4 @@
+import type { MinorUnits } from '$lib/money';
 import { relations, sql } from 'drizzle-orm';
 import { check, date, integer, numeric, pgTable, unique, uuid } from 'drizzle-orm/pg-core';
 import { id, timestamps } from '../columns';
@@ -38,7 +39,7 @@ export const contractRenewalAssumption = pgTable(
 		// if the contract does renew — spread across it by
 		// `fiscal/certainty.ts`'s `renewalAssumptionContribution`, day by
 		// day, never a second hand-rolled rate.
-		expectedVolumeMinorUnits: integer('expected_volume_minor_units').notNull(),
+		expectedVolumeMinorUnits: integer('expected_volume_minor_units').$type<MinorUnits>().notNull(),
 		// Inclusive: the last date this assumption still projects revenue
 		// for. Required — an assumption with no horizon would forecast
 		// forever, exactly the guess #39 exists to rule out.

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
 import { evaluateCharges, fiscalYearOf, type FiscalPack } from './pack';
+import { minorUnits } from '$lib/money';
 import { buildRegistry } from './registry';
 import { resolvePackAt } from './resolve';
 
@@ -42,7 +43,7 @@ test('resolution and charge evaluation work on a pack the engine has never seen'
 			{
 				id: 'imaginary-duty',
 				label: { en: 'Imaginary duty', it: 'Imposta immaginaria' },
-				amount: { kind: 'fixed', minorUnits: 500 },
+				amount: { kind: 'fixed', minorUnits: minorUnits(500) },
 				appliesWhen: { fact: 'invoiceTotal', comparator: 'gt', value: 1000 }
 			}
 		],

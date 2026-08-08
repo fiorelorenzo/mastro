@@ -14,7 +14,7 @@
 
 import { resolveRateCard } from '$lib/server/domain/rate-card';
 import { priceWorkUnitOnDate, type PriceableRateCard } from '$lib/server/domain/work-unit-pricing';
-import type { MinorUnits } from '$lib/money';
+import { minorUnits, NO_MINOR_UNITS, sumMinorUnits, type MinorUnits } from '$lib/money';
 
 export interface DayMappingCandidateDay {
 	readonly id: string;
@@ -90,13 +90,15 @@ export function proposeDayMapping(
 	if (picked.length === 0) return null;
 	if (Math.abs(runningQuantity - line.quantity) > QUANTITY_EPSILON) return null;
 
-	const proposedAmount = picked.reduce((sum, day) => {
-		const price = priceWorkUnitOnDate(day, rateCards);
-		// `priceRateCard` already rounds to cents before returning; `* 100`
-		// only needs `Math.round` to clear the odd floating-point residue
-		// that arithmetic on a decimal amount leaves behind (e.g. `219.99…97`).
-		return sum + (price === null ? 0 : Math.round(price * 100));
-	}, 0);
+	const proposedAmount = sumMinorUnits(
+		picked.map((day) => {
+			const price = priceWorkUnitOnDate(day, rateCards);
+			// `priceRateCard` already rounds to cents before returning; `* 100`
+			// only needs `Math.round` to clear the odd floating-point residue
+			// that arithmetic on a decimal amount leaves behind (e.g. `219.99…97`).
+			return price === null ? NO_MINOR_UNITS : minorUnits(Math.round(price * 100));
+		})
+	);
 
 	const dates = picked.map((day) => day.date);
 	return {

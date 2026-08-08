@@ -5,7 +5,7 @@
 // interface below is missing a capability and should grow one, per
 // AGENTS.md invariant 1.
 
-import type { MinorUnits } from '$lib/money';
+import { minorUnits, scaleMinorUnits, type MinorUnits } from '$lib/money';
 import type { LegalText } from '$lib/legal/legal-text';
 import type { LabelBundle } from './label';
 
@@ -280,7 +280,7 @@ function amountOf(amount: ChargeAmount, facts: Readonly<Record<string, number>>)
 	if (base === undefined) {
 		throw new Error(`fact '${amount.of}' was not supplied`);
 	}
-	return Math.round(base * amount.rate);
+	return scaleMinorUnits(minorUnits(base), amount.rate);
 }
 
 export interface EvaluatedCharge {

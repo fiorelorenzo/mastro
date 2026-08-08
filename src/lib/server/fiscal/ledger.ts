@@ -11,7 +11,7 @@
 // `profile.ts` — the two files this module composes with to answer "which
 // basis, over which sub-period" across a regime change.
 
-import type { MinorUnits } from '$lib/money';
+import { NO_MINOR_UNITS, addMinorUnits, sumMinorUnits, type MinorUnits } from '$lib/money';
 import type { UnresolvedRevenueTreatment } from './pack';
 
 export type LedgerBasis = 'cash' | 'accrual';
@@ -63,14 +63,17 @@ export function sumLedger(
 	to: string
 ): LedgerFigure {
 	if (from >= to) throw new Error(`invalid period: from (${from}) must be before to (${to})`);
-	const amount = rows.reduce((sum, row) => {
-		// The date that matters for `basis` — `paidOn` (`null` until the
-		// invoice is actually collected) for `'cash'`, `issueDate` for
-		// `'accrual'`.
-		const date = basis === 'cash' ? row.paidOn : row.issueDate;
-		if (date === null || date < from || date >= to) return sum;
-		return sum + row.amount;
-	}, 0);
+	const amount = sumMinorUnits(
+		rows
+			.filter((row) => {
+				// The date that matters for `basis` — `paidOn` (`null` until the
+				// invoice is actually collected) for `'cash'`, `issueDate` for
+				// `'accrual'`.
+				const date = basis === 'cash' ? row.paidOn : row.issueDate;
+				return date !== null && date >= from && date < to;
+			})
+			.map((row) => row.amount)
+	);
 	return { basis, from, to, amount };
 }
 
@@ -176,13 +179,13 @@ export function sumLedgerAcrossPeriods(
 			from: destination.from,
 			to: destination.to,
 			packId: origin.packId,
-			amount: (existing?.amount ?? 0) + row.amount
+			amount: addMinorUnits(existing?.amount ?? NO_MINOR_UNITS, row.amount)
 		});
 	}
 
 	const allFigures = [...subFigures, ...carriedForward.values()];
 	return {
-		amount: allFigures.reduce((sum, figure) => sum + figure.amount, 0),
+		amount: sumMinorUnits(allFigures.map((figure) => figure.amount)),
 		subFigures: allFigures
 	};
 }

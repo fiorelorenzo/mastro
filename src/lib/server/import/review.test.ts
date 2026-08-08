@@ -3,6 +3,7 @@
 // registered under a format id that exists nowhere else, detecting
 // invoices by an in-memory marker instead of a real document format.
 import { expect, test } from 'vitest';
+import { minorUnits, NO_MINOR_UNITS } from '$lib/money';
 import { hashContent } from '$lib/server/documents/blob-store';
 import type { ImportableFile, InvoiceFormatAdapter } from './adapter';
 import type { ClientMatchCandidate } from './client-match';
@@ -30,8 +31,8 @@ function line(overrides: Partial<InvoiceLine> = {}): InvoiceLine {
 	return {
 		description: 'Consulting',
 		quantity: 1,
-		unitPrice: 100000,
-		amount: 100000,
+		unitPrice: minorUnits(100000),
+		amount: minorUnits(100000),
 		taxRate: 0,
 		...overrides
 	};
@@ -47,9 +48,9 @@ function invoice(overrides: Partial<Invoice> = {}): Invoice {
 		customer: party(),
 		lines: [],
 		taxSummary: [],
-		taxableAmount: 0,
-		taxAmount: 0,
-		total: 100000,
+		taxableAmount: NO_MINOR_UNITS,
+		taxAmount: NO_MINOR_UNITS,
+		total: minorUnits(100000),
 		socialSecurityCharges: [],
 		paymentTerms: [],
 		transmission: { transmitterId: ACCOUNT_HOLDER_TAX_ID, progressiveNumber: '1' },
@@ -322,7 +323,10 @@ test('the same natural key with different content is a conflict, never merged or
 	const existing: ExistingInvoiceRecord[] = [
 		{ id: 'inv-1', number: '1', issueDate: '2024-01-15', hashes: ['deadbeef'] }
 	];
-	const file = jsonFile('a.json', invoice({ number: '1', issueDate: '2024-01-15', total: 999999 }));
+	const file = jsonFile(
+		'a.json',
+		invoice({ number: '1', issueDate: '2024-01-15', total: minorUnits(999999) })
+	);
 	const result = buildReview([file], pack, registry, ACCOUNT_HOLDER_TAX_ID, [client()], existing);
 	expect(result.recognised).toEqual([]);
 	expect(result.alreadyPresent).toEqual([]);
@@ -422,8 +426,8 @@ test('a line on a day-rate contract carries a day-mapping proposal, an hourly li
 		eligibleDays: [{ id: 'wu-1', date: '2024-01-10', quantity: 1 }]
 	};
 	const withLine = invoice({
-		lines: [line({ quantity: 1, amount: 60000 })],
-		total: 60000
+		lines: [line({ quantity: 1, amount: minorUnits(60000) })],
+		total: minorUnits(60000)
 	});
 	const result = buildReview(
 		[jsonFile('a.json', withLine)],

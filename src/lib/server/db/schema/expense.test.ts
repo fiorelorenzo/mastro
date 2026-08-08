@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract, document, expense, invoice, invoiceLine } from './index';
+import { minorUnits, NO_MINOR_UNITS } from '$lib/money';
 import type { ExpensePolicy, PaymentTerms } from './contract';
 
 // Needs a migrated database: `pnpm db:up && pnpm db:migrate`.
@@ -69,7 +70,7 @@ test('a pre-authorised expense on a contract requiring pre-authorisation is reim
 					contractId: contractRow.id,
 					date: '2024-02-01',
 					description: 'Hotel',
-					amount: 20000,
+					amount: minorUnits(20000),
 					preAuthorised: true,
 					authorisationReference: 'client email, 2024-01-20'
 				})
@@ -93,7 +94,7 @@ test('an expense without pre-authorisation on a contract that requires it is fla
 					contractId: contractRow.id,
 					date: '2024-02-01',
 					description: 'Taxi',
-					amount: 5000
+					amount: minorUnits(5000)
 				})
 				.returning();
 
@@ -117,7 +118,7 @@ test('an expense with no pre-authorisation is reimbursable when the contract doe
 					contractId: contractRow.id,
 					date: '2024-02-01',
 					description: 'Taxi',
-					amount: 5000
+					amount: minorUnits(5000)
 				})
 				.returning();
 
@@ -141,7 +142,7 @@ test('reimbursable is false on a contract that does not reimburse expenses at al
 					contractId: contractRow.id,
 					date: '2024-02-01',
 					description: 'Taxi',
-					amount: 5000,
+					amount: minorUnits(5000),
 					preAuthorised: true,
 					authorisationReference: 'verbal, confirmed by email'
 				})
@@ -162,7 +163,7 @@ test('pre_authorised without an authorisation_reference is rejected by the datab
 				contractId: contractRow.id,
 				date: '2024-02-01',
 				description: 'Taxi',
-				amount: 5000,
+				amount: minorUnits(5000),
 				preAuthorised: true
 			});
 			tx.rollback();
@@ -178,7 +179,7 @@ test('an authorisation_reference set without pre_authorised is rejected by the d
 				contractId: contractRow.id,
 				date: '2024-02-01',
 				description: 'Taxi',
-				amount: 5000,
+				amount: minorUnits(5000),
 				preAuthorised: false,
 				authorisationReference: 'stale reference'
 			});
@@ -195,7 +196,7 @@ test('a non-positive amount is rejected by the database', async () => {
 				contractId: contractRow.id,
 				date: '2024-02-01',
 				description: 'Taxi',
-				amount: 0
+				amount: NO_MINOR_UNITS
 			});
 			tx.rollback();
 		})
@@ -213,7 +214,7 @@ test('a rebilled expense cannot be rebilled onto a second invoice line', async (
 					contractId: contractRow.id,
 					date: '2024-02-01',
 					description: 'Taxi',
-					amount: 5000
+					amount: minorUnits(5000)
 				})
 				.returning();
 
@@ -224,9 +225,9 @@ test('a rebilled expense cannot be rebilled onto a second invoice line', async (
 					number: 'INV-1',
 					issueDate: '2024-03-01',
 					currency: 'EUR',
-					taxableAmount: 5000,
-					taxAmount: 0,
-					total: 5000,
+					taxableAmount: minorUnits(5000),
+					taxAmount: NO_MINOR_UNITS,
+					total: minorUnits(5000),
 					dueDate: '2024-03-31',
 					dueDateSource: 'computed'
 				})
@@ -238,8 +239,8 @@ test('a rebilled expense cannot be rebilled onto a second invoice line', async (
 					invoiceId: invoiceRow.id,
 					description: 'Rebilled taxi',
 					quantity: 1,
-					unitPrice: 5000,
-					amount: 5000,
+					unitPrice: minorUnits(5000),
+					amount: minorUnits(5000),
 					taxRate: 0
 				})
 				.returning();
@@ -250,8 +251,8 @@ test('a rebilled expense cannot be rebilled onto a second invoice line', async (
 					invoiceId: invoiceRow.id,
 					description: 'Something else',
 					quantity: 1,
-					unitPrice: 100,
-					amount: 100,
+					unitPrice: minorUnits(100),
+					amount: minorUnits(100),
 					taxRate: 0
 				})
 				.returning();
@@ -281,7 +282,7 @@ test('a receipt document can be owned by an expense', async () => {
 					contractId: contractRow.id,
 					date: '2024-02-01',
 					description: 'Taxi',
-					amount: 5000
+					amount: minorUnits(5000)
 				})
 				.returning();
 

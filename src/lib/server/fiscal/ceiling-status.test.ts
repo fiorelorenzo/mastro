@@ -7,6 +7,7 @@
 
 import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
+import { minorUnits } from '$lib/money';
 import { client as pool, db, type DbExecutor } from '$lib/server/db';
 import { client, contract, invoice } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
@@ -75,8 +76,8 @@ function invoiceInput(contractId: string, overrides: Partial<InvoiceInput> = {})
 			{
 				description: 'Consulting',
 				quantity: 1,
-				unitPrice: 100_000,
-				amount: 100_000,
+				unitPrice: minorUnits(100_000),
+				amount: minorUnits(100_000),
 				taxRate: 0,
 				taxTreatmentCode: null,
 				workUnitIds: []
@@ -126,7 +127,7 @@ test('a pack ceiling and a persisted contract ceiling both appear, evaluated by 
 						origin: 'pack',
 						label: { en: 'Pack cap', it: 'Tetto pacchetto' },
 						measure: 'absolute_amount',
-						value: 500_000,
+						value: minorUnits(500_000),
 						basis: 'cash_received_calendar_year',
 						perimeter: { kind: 'all_clients' },
 						alertLevels: [],
@@ -178,7 +179,7 @@ test('a contract ceiling survives a fiscal profile switch with no pack ceilings,
 					legalBasis: null,
 					basis: 'cash_received_calendar_year',
 					measure: 'absolute_amount',
-					value: 1_000_000,
+					value: minorUnits(1_000_000),
 					alertLevels: [],
 					consequence: { en: 'x', it: 'x' }
 				},

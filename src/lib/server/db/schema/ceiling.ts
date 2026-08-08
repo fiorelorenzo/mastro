@@ -1,3 +1,4 @@
+import type { MinorUnits } from '$lib/money';
 import { relations, sql } from 'drizzle-orm';
 import {
 	check,
@@ -69,7 +70,7 @@ export const ceiling = pgTable(
 		label: jsonb('label').$type<LabelBundle>().notNull(),
 		legalBasis: jsonb('legal_basis').$type<LegalText>(),
 		measure: ceilingMeasure('measure').notNull(),
-		absoluteValueMinorUnits: integer('absolute_value_minor_units'),
+		absoluteValueMinorUnits: integer('absolute_value_minor_units').$type<MinorUnits>(),
 		shareRatio: numeric('share_ratio', { precision: 5, scale: 4, mode: 'number' }),
 		basis: ceilingBasis('basis').notNull(),
 		alertLevels: jsonb('alert_levels').$type<readonly CeilingAlertLevel[]>().notNull().default([]),

@@ -1,5 +1,6 @@
 import * as m from '$lib/paraglide/messages';
 import { decimalStringToMinorUnits } from '$lib/server/import/decimal';
+import { NO_MINOR_UNITS, type MinorUnits } from '$lib/money';
 import type { ExpenseInput } from './expense';
 
 export type ExpenseFormValues = {
@@ -36,7 +37,7 @@ export function parseExpenseForm(formData: FormData): ExpenseFormResult {
 	if (!description) errors.description = m.expense_validation_description_required();
 
 	const amountRaw = string('amount');
-	let amount = 0;
+	let amount: MinorUnits = NO_MINOR_UNITS;
 	try {
 		amount = decimalStringToMinorUnits(amountRaw);
 		if (amount <= 0) throw new Error('non-positive');

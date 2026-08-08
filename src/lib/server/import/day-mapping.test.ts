@@ -2,6 +2,7 @@
 // candidate days rather than a real database — the repository layer
 // (`persist.ts`) is what actually reads eligible days and rate cards.
 import { expect, test } from 'vitest';
+import { minorUnits } from '$lib/money';
 import { proposeDayMapping, type DayMappingCandidateDay } from './day-mapping';
 
 const dailyCard = {
@@ -34,9 +35,12 @@ function day(id: string, date: string, quantity = 1): DayMappingCandidateDay {
 
 test('picks the oldest eligible days first, up to the line quantity, with the reasoning fields filled in', () => {
 	const days = [day('d1', '2024-03-01'), day('d2', '2024-03-04'), day('d3', '2024-03-10')];
-	const proposal = proposeDayMapping({ quantity: 2, amount: 120000 }, '2024-03-15', days, [
-		dailyCard
-	]);
+	const proposal = proposeDayMapping(
+		{ quantity: 2, amount: minorUnits(120000) },
+		'2024-03-15',
+		days,
+		[dailyCard]
+	);
 	expect(proposal).toEqual({
 		workUnitIds: ['d1', 'd2'],
 		periodStart: '2024-03-01',
@@ -50,9 +54,12 @@ test('picks the oldest eligible days first, up to the line quantity, with the re
 
 test('amountMatches is false when the rate-card price disagrees with the document, but the proposal still stands', () => {
 	const days = [day('d1', '2024-03-01')];
-	const proposal = proposeDayMapping({ quantity: 1, amount: 55000 }, '2024-03-15', days, [
-		dailyCard
-	]);
+	const proposal = proposeDayMapping(
+		{ quantity: 1, amount: minorUnits(55000) },
+		'2024-03-15',
+		days,
+		[dailyCard]
+	);
 	expect(proposal).not.toBeNull();
 	expect(proposal?.proposedAmount).toBe(60000);
 	expect(proposal?.lineAmount).toBe(55000);
@@ -61,61 +68,81 @@ test('amountMatches is false when the rate-card price disagrees with the documen
 
 test('half-day and full-day quantities combine to an exact match', () => {
 	const days = [day('d1', '2024-03-01', 0.5), day('d2', '2024-03-02', 1)];
-	const proposal = proposeDayMapping({ quantity: 1.5, amount: 90000 }, '2024-03-15', days, [
-		dailyCard
-	]);
+	const proposal = proposeDayMapping(
+		{ quantity: 1.5, amount: minorUnits(90000) },
+		'2024-03-15',
+		days,
+		[dailyCard]
+	);
 	expect(proposal?.workUnitIds).toEqual(['d1', 'd2']);
 	expect(proposal?.dayCount).toBe(2);
 });
 
 test('proposes nothing when there are not enough eligible days to reach the line quantity', () => {
 	const days = [day('d1', '2024-03-01')];
-	const proposal = proposeDayMapping({ quantity: 3, amount: 180000 }, '2024-03-15', days, [
-		dailyCard
-	]);
+	const proposal = proposeDayMapping(
+		{ quantity: 3, amount: minorUnits(180000) },
+		'2024-03-15',
+		days,
+		[dailyCard]
+	);
 	expect(proposal).toBeNull();
 });
 
 test('proposes nothing when the running total overshoots without ever landing on the exact quantity', () => {
 	const days = [day('d1', '2024-03-01'), day('d2', '2024-03-02')];
 	// No combination of whole days sums to 1.5.
-	const proposal = proposeDayMapping({ quantity: 1.5, amount: 90000 }, '2024-03-15', days, [
-		dailyCard
-	]);
+	const proposal = proposeDayMapping(
+		{ quantity: 1.5, amount: minorUnits(90000) },
+		'2024-03-15',
+		days,
+		[dailyCard]
+	);
 	expect(proposal).toBeNull();
 });
 
 test('never picks a day dated after the invoice issue date', () => {
 	const days = [day('d1', '2024-03-01'), day('d2', '2024-04-01')];
-	const proposal = proposeDayMapping({ quantity: 2, amount: 120000 }, '2024-03-15', days, [
-		dailyCard
-	]);
+	const proposal = proposeDayMapping(
+		{ quantity: 2, amount: minorUnits(120000) },
+		'2024-03-15',
+		days,
+		[dailyCard]
+	);
 	expect(proposal).toBeNull();
 });
 
 test('proposes nothing for a contract whose rate card in force on the issue date is not daily', () => {
 	const days = [day('d1', '2024-03-01')];
-	const proposal = proposeDayMapping({ quantity: 1, amount: 60000 }, '2024-03-15', days, [
-		hourlyCard
-	]);
+	const proposal = proposeDayMapping(
+		{ quantity: 1, amount: minorUnits(60000) },
+		'2024-03-15',
+		days,
+		[hourlyCard]
+	);
 	expect(proposal).toBeNull();
 });
 
 test('proposes nothing when no rate card covers the issue date at all', () => {
 	const days = [day('d1', '2024-03-01')];
-	const proposal = proposeDayMapping({ quantity: 1, amount: 60000 }, '2023-03-15', days, [
-		dailyCard
-	]);
+	const proposal = proposeDayMapping(
+		{ quantity: 1, amount: minorUnits(60000) },
+		'2023-03-15',
+		days,
+		[dailyCard]
+	);
 	expect(proposal).toBeNull();
 });
 
 test('resolves the rate card in force on the issue date, not the first one in the list', () => {
 	const oldCard = { ...dailyCard, id: 'card-old', validFrom: '2023-01-01', validTo: '2023-12-31' };
 	const days = [day('d1', '2024-03-01')];
-	const proposal = proposeDayMapping({ quantity: 1, amount: 60000 }, '2024-03-15', days, [
-		oldCard,
-		hourlyCard
-	]);
+	const proposal = proposeDayMapping(
+		{ quantity: 1, amount: minorUnits(60000) },
+		'2024-03-15',
+		days,
+		[oldCard, hourlyCard]
+	);
 	// The card in force on 2024-03-15 is hourly, not the old daily one.
 	expect(proposal).toBeNull();
 });

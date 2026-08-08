@@ -19,7 +19,7 @@ import {
 	type CeilingMeasure,
 	type FiscalYearDefinition
 } from './pack';
-import type { MinorUnits } from '$lib/money';
+import { scaleMinorUnits, type MinorUnits } from '$lib/money';
 import { sumLedger, type LedgerBasis, type LedgerRow } from './ledger';
 
 const CALENDAR_YEAR: FiscalYearDefinition = { startMonth: 1, startDay: 1 };
@@ -124,7 +124,7 @@ export function evaluateCeiling(
 	const limitValue =
 		ceiling.measure === 'absolute_amount'
 			? ceiling.value
-			: Math.round(sumLedger(rows, basis, period.from, period.to).amount * ceiling.value);
+			: scaleMinorUnits(sumLedger(rows, basis, period.from, period.to).amount, ceiling.value);
 
 	const usageRatio = limitValue === 0 ? 0 : currentValue / limitValue;
 
@@ -163,7 +163,7 @@ export interface ContractCeilingRow {
 	readonly label: LabelBundle;
 	readonly legalBasis: LegalText | null;
 	readonly measure: CeilingMeasure;
-	readonly absoluteValueMinorUnits: number | null;
+	readonly absoluteValueMinorUnits: MinorUnits | null;
 	readonly shareRatio: number | null;
 	readonly basis: CeilingBasis;
 	readonly alertLevels: readonly CeilingAlertLevel[];
@@ -181,7 +181,7 @@ export interface ContractCeilingRow {
 export function ceilingFromContractRow(row: ContractCeilingRow, clientId: string): Ceiling {
 	const limit: CeilingLimit =
 		row.measure === 'absolute_amount'
-			? { measure: 'absolute_amount', value: row.absoluteValueMinorUnits as MinorUnits }
+			? { measure: 'absolute_amount', value: row.absoluteValueMinorUnits! }
 			: { measure: 'percentage_share', value: row.shareRatio as number };
 	return {
 		id: row.code,

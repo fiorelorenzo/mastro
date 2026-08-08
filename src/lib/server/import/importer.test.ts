@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
+import { NO_MINOR_UNITS } from '$lib/money';
 import type { ImportableFile, InvoiceFormatAdapter } from './adapter';
 import { importFile, resolveAdapter } from './importer';
 import { buildAdapterRegistry } from './registry';
@@ -42,9 +43,9 @@ function imaginaryInvoice(): Invoice {
 		customer: imaginaryParty(),
 		lines: [],
 		taxSummary: [],
-		taxableAmount: 0,
-		taxAmount: 0,
-		total: 0,
+		taxableAmount: NO_MINOR_UNITS,
+		taxAmount: NO_MINOR_UNITS,
+		total: NO_MINOR_UNITS,
 		socialSecurityCharges: [],
 		paymentTerms: [],
 		transmission: { transmitterId: 'QQ00000000000', progressiveNumber: '1' }

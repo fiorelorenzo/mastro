@@ -1,17 +1,23 @@
+import type { MinorUnits } from '$lib/money';
+
 // Client-side mirror of the JSON `/import/analyze` and `/import/confirm`
 // responses. Deliberately not imported from `$lib/server/import/review.ts`
 // or `client-match.ts`: those live under `$lib/server`, which SvelteKit
 // refuses to bundle into client code, and a JSON round trip already erases
 // the distinction between the two shapes — same reasoning as
 // `clients/notice-channel.ts` duplicating the `notice_channel` enum instead
-// of importing it from the schema.
+// of importing it from the schema. `MinorUnits` is the exception it can
+// import, and the reason `$lib/money` sits outside `$lib/server`: the
+// mirror has to agree with the server about which of these numbers are
+// money, or the brand stops at the network boundary and the formatter
+// guard stops with it.
 
 export interface InvoiceSummary {
 	readonly number: string;
 	readonly issueDate: string;
 	readonly customerLegalName: string;
 	readonly customerTaxId: string;
-	readonly total: number;
+	readonly total: MinorUnits;
 	readonly currency: string;
 }
 
@@ -44,16 +50,16 @@ export interface DayMappingProposal {
 	readonly periodStart: string;
 	readonly periodEnd: string;
 	readonly dayCount: number;
-	readonly proposedAmount: number;
-	readonly lineAmount: number;
+	readonly proposedAmount: MinorUnits;
+	readonly lineAmount: MinorUnits;
 	readonly amountMatches: boolean;
 }
 
 export interface InvoiceLineView {
 	readonly description: string;
 	readonly quantity: number;
-	readonly unitPrice: number;
-	readonly amount: number;
+	readonly unitPrice: MinorUnits;
+	readonly amount: MinorUnits;
 	readonly taxRate: number;
 	readonly dayMapping: DayMappingProposal | null;
 }
@@ -136,7 +142,7 @@ export interface ClarificationGroup {
 	}[];
 	client: ClientProposal;
 	contract: ContractProposal;
-	readonly observedRecurringAmount: number;
+	readonly observedRecurringAmount: MinorUnits;
 	readonly observedCadence: InvoicingCadence;
 }
 

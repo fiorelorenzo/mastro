@@ -5,11 +5,12 @@
 // server-side in `+page.server.ts`.
 
 import { CATEGORICAL } from '$lib/design';
+import type { MinorUnits } from '$lib/money';
 
 export interface ClientShare {
 	readonly clientId: string;
 	readonly clientName: string;
-	readonly amount: number;
+	readonly amount: MinorUnits;
 }
 
 export interface ShareCeilingReference {
