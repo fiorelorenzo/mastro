@@ -69,24 +69,29 @@ exactly as before. What disappears is only the ability for the runner to keep
 producing new proposals from ingested documents — invariant 3's other half, "a
 runner failure degrades to manual entry, not to a broken product."
 
-## What could not be exercised on this box
+## What has and has not been exercised
 
-There is no local model installed here (checked: no `ollama`, no `llama.cpp`, no
-`transformers`, no `.gguf` files) and no hosted-provider API key. This means:
+There is no local model here and there never will be: #81's decision was revised
+on 2026-08-08 to Claude, with no local LLM at all, so a contract with no consent
+on file gets no extraction rather than a worse one.
 
+- **Claude, driven through this runner's own ACP client, works.** Verified with
+  `AcpAgentModel('hosted', …)` unmodified, spawning
+  `npx -y @zed-industries/claude-code-acp`, against #85's actual task:
+  `"Ciao, ti confermo le giornate del 3 e 4 febbraio 2026, la seconda mezza."`
+  came back as `{"days":[{"date":"2026-02-03","quantity":1},{"date":"2026-02-04","quantity":0.5}]}`
+  in 8.6 seconds. Both days, and the half resolved onto the right one.
 - The genuine ACP transport (subprocess spawn, JSON-RPC handshake, prompt/response
-  round trip) is verified end to end against a real, minimal ACP-speaking test
-  fixture (`src/lib/server/runner/__fixtures__/fake-acp-agent.ts`, never wired
-  into any production path) — this proves the plumbing, not that a real model's
-  answers are any good.
+  round trip) is also covered by a minimal ACP-speaking test fixture
+  (`src/lib/server/runner/__fixtures__/fake-acp-agent.ts`, never wired into any
+  production path), which is what the suite runs: the probe above is a one-off
+  against a real provider, not something CI repeats on every push.
 - `AcpAgentModel.call()` on an unconfigured provider throws
-  `RunnerConfigurationError` immediately, before any spawn — verified, and this is
-  the actual, honest behaviour for "no local model, no hosted credentials" rather
-  than a fabricated response.
-- Nobody has run this against a real local model (a Qwen3 8B or Llama 3.3 8B
-  ACP-speaking wrapper, per #81's decision comment) or a real hosted provider.
-  Whether a real model's extraction quality is usable is #85/#86/#87's own
-  acceptance to prove, once they exist.
+  `RunnerConfigurationError` immediately, before any spawn. With no local agent
+  configured, that is exactly what a local-routed job does, and it is the correct
+  reading of "this contract has no consent, so a human handles it".
+- Whether extraction quality is usable across a real corpus is #85/#86/#87's own
+  acceptance to prove, not this page's.
 
 ## Configuration
 
@@ -101,11 +106,15 @@ own comments for the exact variables. In short:
   `./data/runner-queue`; `compose.prod.yaml` mounts a named volume there so it
   survives a container recreate.
 - `RUNNER_LOCAL_AGENT_COMMAND` / `RUNNER_LOCAL_AGENT_ARGS` (JSON array) /
-  `RUNNER_LOCAL_AGENT_ENV` (JSON object) — the local model's ACP CLI command.
-  Unset is a fully supported "no runner work happens yet" configuration.
+  `RUNNER_LOCAL_AGENT_ENV` (JSON object) — unset, and expected to stay unset.
+  There is no local model, so a local-routed job failing loudly is the design.
 - `RUNNER_HOSTED_AGENT_COMMAND` / `RUNNER_HOSTED_AGENT_ARGS` / `RUNNER_HOSTED_AGENT_ENV`
-  — the hosted provider's ACP CLI command, only ever reached for a contract whose
-  `hosted_extraction_consent_document_id` is set.
+  — Claude, only ever reached for a contract whose
+  `hosted_extraction_consent_document_id` is set. Claude Code speaks ACP through
+  Zed's adapter, so the command is `npx` with
+  `["-y","@zed-industries/claude-code-acp"]`, and the env carries a long-lived
+  `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` plus the `PATH` and `HOME`
+  the adapter needs. That token is the only credential the agent receives.
 
 `RUNNER_*_AGENT_ENV` is the _only_ environment the spawned agent subprocess gets —
 never this process's own environment. `RUNNER_DATABASE_URL` and everything else
