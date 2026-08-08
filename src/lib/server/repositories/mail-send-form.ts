@@ -51,7 +51,7 @@ export function parseMailSendForm(formData: FormData, currency: string): MailSen
 	let amountMinorUnits: MinorUnits = NO_MINOR_UNITS;
 	try {
 		if (!amountRaw) throw new Error('blank');
-		amountMinorUnits = decimalStringToMinorUnits(amountRaw);
+		amountMinorUnits = decimalStringToMinorUnits(amountRaw, currency);
 	} catch {
 		errors.amount = m.mail_send_validation_amount_invalid();
 	}

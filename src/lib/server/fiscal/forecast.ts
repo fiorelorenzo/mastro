@@ -3,15 +3,14 @@
 // (`revenue.ts`), to the pure functions in `certainty.ts`. Accepts either
 // the pool or an open transaction (`DbExecutor`), same as `revenue.ts`.
 
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import { contract, rateCard, workUnit } from '$lib/server/db/schema';
-import { decimalStringToMinorUnits } from '$lib/server/import/decimal';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
 import { recurringFeeOccurrences, type RecurringFeeCard } from '$lib/server/domain/recurring-fee';
 import { listRenewalAssumptionsWithContract } from '$lib/server/repositories/contract-renewal-assumption';
 import { fetchLedgerRows } from './revenue';
-import type { MinorUnits } from '$lib/money';
+import { minorUnitsFromMajor, type MinorUnits } from '$lib/money';
 import {
 	certaintyBreakdown,
 	collectedAmount,
@@ -29,14 +28,10 @@ import {
  * `priceRateCard`/`priceWorkUnitOnDate` price in whole currency units,
  * matching `rate_card.amount`'s own column type (see the module comment
  * on `domain/rate-card.ts`). Every certainty figure, like every other
- * money figure in `fiscal/`, is `MinorUnits` — this is the one place that
- * conversion happens, through the same string-based rounding
- * `decimalStringToMinorUnits` already uses for every other amount a human
- * or a document supplies, never a second hand-rolled `* 100`.
+ * money figure in `fiscal/`, is `MinorUnits` — converted here through
+ * `minorUnitsFromMajor`, keyed by the owning contract's own currency,
+ * never a second hand-rolled `* 100`.
  */
-function toMinorUnits(majorUnits: number): MinorUnits {
-	return decimalStringToMinorUnits(majorUnits.toFixed(2));
-}
 
 /** Every day currently `approved` and not yet on an invoice line, priced
  * against its own contract's rate cards, restricted to `[from, to)`. */
@@ -51,8 +46,8 @@ async function fetchApprovedWorkUnits(
 		.where(and(eq(workUnit.state, 'approved'), isNull(workUnit.invoiceLineId)));
 
 	const contractIds = [...new Set(rows.map((row) => row.contractId))];
-	const rateCardsByContract = new Map(
-		await Promise.all(
+	const [rateCardsByContract, currencyByContract] = await Promise.all([
+		Promise.all(
 			contractIds.map(async (contractId) => {
 				const cards = await executor
 					.select()
@@ -60,8 +55,18 @@ async function fetchApprovedWorkUnits(
 					.where(eq(rateCard.contractId, contractId));
 				return [contractId, cards] as const;
 			})
-		)
-	);
+		).then((entries) => new Map(entries)),
+		// The rate card's price is in the owning contract's own major
+		// units — read alongside the cards so `minorUnitsFromMajor` below
+		// never has to guess a currency the work unit row itself doesn't carry.
+		(contractIds.length === 0
+			? Promise.resolve([])
+			: executor
+					.select({ id: contract.id, currency: contract.currency })
+					.from(contract)
+					.where(inArray(contract.id, contractIds))
+		).then((rows) => new Map(rows.map((row) => [row.id, row.currency])))
+	]);
 
 	return rows
 		.filter((row) => row.date >= from && row.date < to)
@@ -70,7 +75,12 @@ async function fetchApprovedWorkUnits(
 				{ date: row.date, quantity: Number(row.quantity) },
 				rateCardsByContract.get(row.contractId) ?? []
 			);
-			return { date: row.date, amount: amount === null ? null : toMinorUnits(amount) };
+			if (amount === null) return { date: row.date, amount: null };
+			const currency = currencyByContract.get(row.contractId);
+			if (currency === undefined) {
+				throw new Error(`no contract found for work unit contractId ${row.contractId}`);
+			}
+			return { date: row.date, amount: minorUnitsFromMajor(amount, currency) };
 		});
 }
 
@@ -109,7 +119,7 @@ async function fetchRecurringFeeContracts(
 			const occurrences = cards.flatMap((card) =>
 				recurringFeeOccurrences(card, from, to).map((o) => ({
 					date: o.date,
-					amount: toMinorUnits(o.amount)
+					amount: minorUnitsFromMajor(o.amount, row.currency)
 				}))
 			);
 

@@ -39,7 +39,8 @@ test('picks the oldest eligible days first, up to the line quantity, with the re
 		{ quantity: 2, amount: minorUnits(120000) },
 		'2024-03-15',
 		days,
-		[dailyCard]
+		[dailyCard],
+		'EUR'
 	);
 	expect(proposal).toEqual({
 		workUnitIds: ['d1', 'd2'],
@@ -58,7 +59,8 @@ test('amountMatches is false when the rate-card price disagrees with the documen
 		{ quantity: 1, amount: minorUnits(55000) },
 		'2024-03-15',
 		days,
-		[dailyCard]
+		[dailyCard],
+		'EUR'
 	);
 	expect(proposal).not.toBeNull();
 	expect(proposal?.proposedAmount).toBe(60000);
@@ -72,7 +74,8 @@ test('half-day and full-day quantities combine to an exact match', () => {
 		{ quantity: 1.5, amount: minorUnits(90000) },
 		'2024-03-15',
 		days,
-		[dailyCard]
+		[dailyCard],
+		'EUR'
 	);
 	expect(proposal?.workUnitIds).toEqual(['d1', 'd2']);
 	expect(proposal?.dayCount).toBe(2);
@@ -84,7 +87,8 @@ test('proposes nothing when there are not enough eligible days to reach the line
 		{ quantity: 3, amount: minorUnits(180000) },
 		'2024-03-15',
 		days,
-		[dailyCard]
+		[dailyCard],
+		'EUR'
 	);
 	expect(proposal).toBeNull();
 });
@@ -96,7 +100,8 @@ test('proposes nothing when the running total overshoots without ever landing on
 		{ quantity: 1.5, amount: minorUnits(90000) },
 		'2024-03-15',
 		days,
-		[dailyCard]
+		[dailyCard],
+		'EUR'
 	);
 	expect(proposal).toBeNull();
 });
@@ -107,7 +112,8 @@ test('never picks a day dated after the invoice issue date', () => {
 		{ quantity: 2, amount: minorUnits(120000) },
 		'2024-03-15',
 		days,
-		[dailyCard]
+		[dailyCard],
+		'EUR'
 	);
 	expect(proposal).toBeNull();
 });
@@ -118,7 +124,8 @@ test('proposes nothing for a contract whose rate card in force on the issue date
 		{ quantity: 1, amount: minorUnits(60000) },
 		'2024-03-15',
 		days,
-		[hourlyCard]
+		[hourlyCard],
+		'EUR'
 	);
 	expect(proposal).toBeNull();
 });
@@ -129,7 +136,8 @@ test('proposes nothing when no rate card covers the issue date at all', () => {
 		{ quantity: 1, amount: minorUnits(60000) },
 		'2023-03-15',
 		days,
-		[dailyCard]
+		[dailyCard],
+		'EUR'
 	);
 	expect(proposal).toBeNull();
 });
@@ -141,8 +149,26 @@ test('resolves the rate card in force on the issue date, not the first one in th
 		{ quantity: 1, amount: minorUnits(60000) },
 		'2024-03-15',
 		days,
-		[oldCard, hourlyCard]
+		[oldCard, hourlyCard],
+		'EUR'
 	);
 	// The card in force on 2024-03-15 is hourly, not the old daily one.
 	expect(proposal).toBeNull();
+});
+
+test('prices a day in a zero-decimal currency without a hardcoded hundred-scale', () => {
+	// JPY's minor unit equals its major unit (scale 1): a ¥600/day rate
+	// card prices one day to 600, not the 60000 a hardcoded `* 100` would
+	// produce — the same hardcoded scale #164, #179 and #184 keep finding.
+	const days = [day('d1', '2024-03-01')];
+	const proposal = proposeDayMapping(
+		{ quantity: 1, amount: minorUnits(600) },
+		'2024-03-15',
+		days,
+		[dailyCard],
+		'JPY'
+	);
+	expect(proposal).not.toBeNull();
+	expect(proposal?.proposedAmount).toBe(600);
+	expect(proposal?.amountMatches).toBe(true);
 });

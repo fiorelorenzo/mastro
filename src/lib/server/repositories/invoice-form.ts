@@ -84,7 +84,7 @@ export function parseInvoiceForm(formData: FormData): InvoiceFormResult {
 	let stampDuty: MinorUnits | null = null;
 	if (stampDutyRaw) {
 		try {
-			stampDuty = decimalStringToMinorUnits(stampDutyRaw);
+			stampDuty = decimalStringToMinorUnits(stampDutyRaw, currency);
 		} catch {
 			errors.stampDuty = m.invoice_validation_amount_invalid();
 		}
@@ -94,7 +94,7 @@ export function parseInvoiceForm(formData: FormData): InvoiceFormResult {
 	let socialCharge: MinorUnits | null = null;
 	if (socialChargeRaw) {
 		try {
-			socialCharge = decimalStringToMinorUnits(socialChargeRaw);
+			socialCharge = decimalStringToMinorUnits(socialChargeRaw, currency);
 		} catch {
 			errors.socialCharge = m.invoice_validation_amount_invalid();
 		}
@@ -138,8 +138,8 @@ export function parseInvoiceForm(formData: FormData): InvoiceFormResult {
 		let unitPrice: MinorUnits;
 		let amount: MinorUnits;
 		try {
-			unitPrice = decimalStringToMinorUnits(unitPriceRaw);
-			amount = decimalStringToMinorUnits(amountRaw);
+			unitPrice = decimalStringToMinorUnits(unitPriceRaw, currency);
+			amount = decimalStringToMinorUnits(amountRaw, currency);
 		} catch {
 			errors[`lineAmount_${i}`] = m.invoice_validation_amount_invalid();
 			continue;

@@ -33,8 +33,11 @@ export const load: PageServerLoad = async ({ params }) => {
 
 export const actions: Actions = {
 	default: async ({ request, params }) => {
+		const contract = await getContractWithClient(params.contractId);
+		if (!contract || contract.clientId !== params.id) error(404, m.contract_not_found());
+
 		const formData = await request.formData();
-		const result = parseExpenseForm(formData);
+		const result = parseExpenseForm(formData, contract.currency);
 		if (!result.ok) return fail(400, { errors: result.errors, values: result.values });
 
 		await updateExpense(params.expenseId, result.input);

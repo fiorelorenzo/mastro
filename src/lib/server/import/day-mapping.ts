@@ -14,7 +14,7 @@
 
 import { resolveRateCard } from '$lib/server/domain/rate-card';
 import { priceWorkUnitOnDate, type PriceableRateCard } from '$lib/server/domain/work-unit-pricing';
-import { minorUnits, NO_MINOR_UNITS, sumMinorUnits, type MinorUnits } from '$lib/money';
+import { minorUnitsFromMajor, NO_MINOR_UNITS, sumMinorUnits, type MinorUnits } from '$lib/money';
 
 export interface DayMappingCandidateDay {
 	readonly id: string;
@@ -70,7 +70,11 @@ export function proposeDayMapping(
 	// Not `readonly`: matches `resolveRateCard`/`priceWorkUnitOnDate`'s own
 	// signature in `domain/rate-card.ts`/`domain/work-unit-pricing.ts`,
 	// which this function calls straight through.
-	rateCards: PriceableRateCard[]
+	rateCards: PriceableRateCard[],
+	// The invoice's own currency (ISO 4217) — the picked days' rate-card
+	// prices are in major units, and only the invoice knows what currency
+	// those major units are denominated in.
+	currency: string
 ): DayMappingProposal | null {
 	const card = resolveRateCard(rateCards, issueDate);
 	if (!card || card.kind !== 'daily') return null;
@@ -93,10 +97,7 @@ export function proposeDayMapping(
 	const proposedAmount = sumMinorUnits(
 		picked.map((day) => {
 			const price = priceWorkUnitOnDate(day, rateCards);
-			// `priceRateCard` already rounds to cents before returning; `* 100`
-			// only needs `Math.round` to clear the odd floating-point residue
-			// that arithmetic on a decimal amount leaves behind (e.g. `219.99…97`).
-			return price === null ? NO_MINOR_UNITS : minorUnits(Math.round(price * 100));
+			return price === null ? NO_MINOR_UNITS : minorUnitsFromMajor(price, currency);
 		})
 	);
 

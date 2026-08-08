@@ -71,11 +71,49 @@ export function scaleMinorUnits(amount: MinorUnits, factor: number): MinorUnits 
 	return Math.round(amount * factor) as MinorUnits;
 }
 
+/**
+ * How many minor units make one major unit of `currency`, read from `Intl`
+ * rather than assumed. A hundred for EUR, one for JPY, a thousand for BHD.
+ *
+ * The same lookup `formatMinorUnits` does. It lives here because the two
+ * conversions below and the formatter must agree, and because a hardcoded
+ * hundred has now been wrong in four separate places (#164, #179, and the
+ * two this replaces).
+ */
+export function minorUnitScale(currency: string): number {
+	const { maximumFractionDigits = 2 } = new Intl.NumberFormat('en', {
+		style: 'currency',
+		currency
+	}).resolvedOptions();
+	return 10 ** maximumFractionDigits;
+}
+
+/**
+ * A major-unit amount — a rate card's price, a figure a person typed —
+ * converted to the minor units everything downstream stores.
+ *
+ * Deliberately not `Math.round(amount * scale)`. Multiplying a decimal by
+ * a hundred in binary floating point is the thing this codebase has said
+ * since `decimal.ts` was written that it does not do: the value goes to a
+ * fixed-digit string first and the digits are read off it, so the last
+ * minor unit is decided by decimal rounding rather than by however the
+ * product happened to land. `toFixed` is the same step the previous
+ * `fiscal/forecast.ts` helper used, so figures are unchanged.
+ */
+export function minorUnitsFromMajor(amount: number, currency: string): MinorUnits {
+	const scale = minorUnitScale(currency);
+	const digits = String(scale).length - 1;
+	const fixed = Math.abs(amount).toFixed(digits);
+	const [intPart, fracPart = ''] = fixed.split('.');
+	const whole = Number(intPart) * scale + (digits === 0 ? 0 : Number(fracPart));
+	return ((amount < 0 ? -whole : whole) || 0) as MinorUnits;
+}
+
 /** Zero, as money. */
 export const NO_MINOR_UNITS = 0 as MinorUnits;
 
 /**
- * Round-trips a value already stored as `MinorUnits` (integer cents) back
+ * Round-trips a value already stored as `MinorUnits` back
  * into a plain, non-localised decimal string for an editable form field —
  * e.g. pre-filling `expense.amount` or `ExpensePolicy`'s `capAmount` on an
  * edit screen. Not a display helper (`$lib/i18n/format.ts`'s
@@ -84,13 +122,19 @@ export const NO_MINOR_UNITS = 0 as MinorUnits;
  * owns parsing a submission back into cents): this lives outside
  * `$lib/server` on purpose, since a `+page.svelte` pre-filling a form runs
  * in the browser and cannot import server-only code. Integer arithmetic
- * throughout — `cents` is already whole, so there is no rounding step to
- * get wrong, only digit formatting.
+ * throughout — the amount is already whole, so there is no rounding step
+ * to get wrong, only digit formatting. The number of digits comes from the
+ * currency, not from the number two: a JPY amount renders with none, and
+ * `decimalStringToMinorUnits` must be given the same currency to read it
+ * back.
  */
-export function minorUnitsToDecimalString(cents: number): string {
-	const sign = cents < 0 ? '-' : '';
-	const abs = Math.abs(cents);
-	const intPart = Math.trunc(abs / 100);
-	const fracPart = String(abs % 100).padStart(2, '0');
+export function minorUnitsToDecimalString(amount: MinorUnits, currency: string): string {
+	const scale = minorUnitScale(currency);
+	const sign = amount < 0 ? '-' : '';
+	const abs = Math.abs(amount);
+	const intPart = Math.trunc(abs / scale);
+	if (scale === 1) return `${sign}${intPart}`;
+	const digits = String(scale).length - 1;
+	const fracPart = String(abs % scale).padStart(digits, '0');
 	return `${sign}${intPart}.${fracPart}`;
 }
