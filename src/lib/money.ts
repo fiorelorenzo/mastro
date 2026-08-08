@@ -26,6 +26,16 @@ export type MinorUnits = number & { readonly [minorUnitsBrand]: true };
 export type NotMinorUnits = number & { readonly [minorUnitsBrand]?: never };
 
 /**
+ * What this does not catch, written here rather than in a merged pull
+ * request nobody will read: an anonymous sum. `formatAmount(a + b, 'EUR')`
+ * compiles, because `a + b` is a plain `number` and a plain number is
+ * legitimately what `formatAmount` takes. Every total in this codebase
+ * lands in a `MinorUnits`-typed slot first, which forces it through the
+ * operations below and re-brands it, so the real call sites are covered.
+ * The expression form is not. If you are adding one, name it first.
+ */
+
+/**
  * The single door through which a plain number becomes money. Everywhere
  * else, a `MinorUnits` is produced by another `MinorUnits`: the schema
  * declares the columns, `decimalStringToMinorUnits` parses documents and
