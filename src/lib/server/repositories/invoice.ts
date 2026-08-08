@@ -13,7 +13,8 @@ import {
 	type InvoiceDueDateSource,
 	type TransitionActor
 } from '$lib/server/db/schema';
-import type { InvoiceDocumentType, MinorUnits } from '$lib/server/import/invoice';
+import type { MinorUnits } from '$lib/money';
+import type { InvoiceDocumentType } from '$lib/server/import/invoice';
 import type { ExistingInvoiceRecord } from '$lib/server/import/dedup';
 import { transitionWorkUnit } from './work-unit';
 

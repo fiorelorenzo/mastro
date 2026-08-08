@@ -14,7 +14,7 @@
 
 import { resolveRateCard } from '$lib/server/domain/rate-card';
 import { priceWorkUnitOnDate, type PriceableRateCard } from '$lib/server/domain/work-unit-pricing';
-import type { MinorUnits } from './invoice';
+import type { MinorUnits } from '$lib/money';
 
 export interface DayMappingCandidateDay {
 	readonly id: string;

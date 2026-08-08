@@ -11,7 +11,8 @@
 // `profile.ts` — the two files this module composes with to answer "which
 // basis, over which sub-period" across a regime change.
 
-import type { MinorUnits, UnresolvedRevenueTreatment } from './pack';
+import type { MinorUnits } from '$lib/money';
+import type { UnresolvedRevenueTreatment } from './pack';
 
 export type LedgerBasis = 'cash' | 'accrual';
 

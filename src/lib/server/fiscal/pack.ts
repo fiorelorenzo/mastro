@@ -5,6 +5,7 @@
 // interface below is missing a capability and should grow one, per
 // AGENTS.md invariant 1.
 
+import type { MinorUnits } from '$lib/money';
 import type { LegalText } from '$lib/legal/legal-text';
 import type { LabelBundle } from './label';
 
@@ -21,10 +22,6 @@ export interface FiscalYearDefinition {
 	/** 1–31, valid for `startMonth`. */
 	readonly startDay: number;
 }
-
-/** An amount in the currency's minor unit (cents for EUR). Never a float —
- * fiscal amounts must not lose precision to binary rounding. */
-export type MinorUnits = number;
 
 /** Which side of AGENTS.md invariant 2 a ceiling came from: a `pack`
  * ceiling follows the money and vanishes when the fiscal profile changes

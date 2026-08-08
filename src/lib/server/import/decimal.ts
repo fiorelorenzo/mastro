@@ -5,7 +5,7 @@
 // format that hands over a float has already lost the guarantee this file
 // exists to keep; adapters must read amounts as strings.
 
-import type { MinorUnits } from './invoice';
+import type { MinorUnits } from '$lib/money';
 
 const DECIMAL = /^(-?)(\d+)\.(\d+)$/;
 

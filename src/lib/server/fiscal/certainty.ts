@@ -4,7 +4,7 @@
 // where the database is actually read — so every figure here is
 // hand-verifiable against a fixture built in code.
 
-import type { MinorUnits } from './pack';
+import type { MinorUnits } from '$lib/money';
 import { sumLedger, type LedgerRow } from './ledger';
 
 export type CertaintyLevel = 'collected' | 'committed' | 'projected';
