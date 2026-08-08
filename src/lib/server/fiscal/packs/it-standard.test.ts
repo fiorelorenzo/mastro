@@ -11,6 +11,7 @@
 // and keeps rendering a contract one — has no code to exercise until #57
 // exists; see the PR description.
 
+import { minorUnits } from '$lib/money';
 import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
 import { client as pool, db } from '../../db';
@@ -64,7 +65,10 @@ test(
 			db.transaction(async (tx) => {
 				const [clientRow] = await tx.insert(client).values(clientFields()).returning();
 
-				const expensePolicy: ExpensePolicy = { kind: 'reimbursed_with_cap', capAmount: 500_000 };
+				const expensePolicy: ExpensePolicy = {
+					kind: 'reimbursed_with_cap',
+					capAmount: minorUnits(500_000)
+				};
 				const paymentTerms: PaymentTerms = { kind: 'net', days: 30 };
 				const [contractRow] = await tx
 					.insert(contract)

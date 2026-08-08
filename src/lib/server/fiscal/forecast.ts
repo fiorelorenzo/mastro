@@ -34,7 +34,7 @@ import {
  * `decimalStringToMinorUnits` already uses for every other amount a human
  * or a document supplies, never a second hand-rolled `* 100`.
  */
-function toMinorUnits(majorUnits: number): number {
+function toMinorUnits(majorUnits: number): MinorUnits {
 	return decimalStringToMinorUnits(majorUnits.toFixed(2));
 }
 

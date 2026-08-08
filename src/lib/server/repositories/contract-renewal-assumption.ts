@@ -8,12 +8,13 @@
 import { eq } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import { contractRenewalAssumption } from '$lib/server/db/schema';
+import type { MinorUnits } from '$lib/money';
 
 export interface ContractRenewalAssumptionInput {
 	readonly contractId: string;
 	/** 0–1. */
 	readonly probability: number;
-	readonly expectedVolumeMinorUnits: number;
+	readonly expectedVolumeMinorUnits: MinorUnits;
 	/** Inclusive ISO date. */
 	readonly horizonEndsOn: string;
 }

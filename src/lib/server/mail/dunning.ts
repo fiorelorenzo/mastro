@@ -13,6 +13,7 @@
 import { isOverdue } from '$lib/server/domain/invoice';
 import { db, type DbExecutor } from '$lib/server/db';
 import type { ContractTemplateLanguage } from '$lib/server/db/schema';
+import type { MinorUnits } from '$lib/money';
 import { buildRegister } from '$lib/server/repositories/register';
 import type { EmailTemplateContext } from './render';
 
@@ -31,7 +32,7 @@ export class InvoiceNotOverdueError extends Error {
 export type DunningInvoice = {
 	readonly contractId: string;
 	readonly number: string;
-	readonly total: number;
+	readonly total: MinorUnits;
 	readonly currency: string;
 	readonly issueDate: string;
 	readonly dueDate: string;

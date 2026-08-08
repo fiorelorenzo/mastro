@@ -4,6 +4,7 @@
 
 import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
+import { minorUnits } from '$lib/money';
 import { client as pool, db, type DbExecutor } from '$lib/server/db';
 import { client, contract, invoice, rateCard } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
@@ -83,8 +84,8 @@ function invoiceInput(contractId: string, overrides: Partial<InvoiceInput> = {})
 			{
 				description: 'Consulting',
 				quantity: 1,
-				unitPrice: 100_000,
-				amount: 100_000,
+				unitPrice: minorUnits(100_000),
+				amount: minorUnits(100_000),
 				taxRate: 0,
 				taxTreatmentCode: null,
 				workUnitIds: []
@@ -279,7 +280,7 @@ test('forecastRenewalAssumptions pairs a recorded assumption with the contributi
 				{
 					contractId: contractRow.id,
 					probability: 0.5,
-					expectedVolumeMinorUnits: 200_000,
+					expectedVolumeMinorUnits: minorUnits(200_000),
 					horizonEndsOn: '2024-02-20'
 				},
 				tx

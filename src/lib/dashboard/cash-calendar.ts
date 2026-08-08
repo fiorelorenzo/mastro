@@ -8,6 +8,7 @@
 
 import * as m from '$lib/paraglide/messages';
 import type { CertaintyLevel } from '$lib/server/fiscal/certainty';
+import { minorUnits, type MinorUnits } from '$lib/money';
 
 export type CashCalendarMarkerKind = 'contract_expiry' | 'renewal_window' | 'irrevocability_edge';
 
@@ -26,9 +27,9 @@ export interface CashCalendarMarker {
  * returns it. */
 export interface CashCalendarMonth {
 	readonly month: string;
-	readonly collected: { readonly amount: number };
-	readonly committed: { readonly amount: number };
-	readonly projected: { readonly amount: number };
+	readonly collected: { readonly amount: MinorUnits };
+	readonly committed: { readonly amount: MinorUnits };
+	readonly projected: { readonly amount: MinorUnits };
 }
 
 export function markerLabel(marker: CashCalendarMarker): string {
@@ -83,8 +84,8 @@ export const CASH_CALENDAR_TIER = {
  * differ only below the smallest unit of the currency would print
  * identically anyway.
  */
-export function cashCalendarYTicks(yMax: number): readonly number[] {
+export function cashCalendarYTicks(yMax: number): readonly MinorUnits[] {
 	const top = Math.max(0, Math.round(yMax));
 	const ticks = [0, Math.round(top / 2), top];
-	return [...new Set(ticks)].sort((a, b) => a - b);
+	return [...new Set(ticks)].sort((a, b) => a - b).map((tick) => minorUnits(tick));
 }

@@ -1,3 +1,4 @@
+import type { MinorUnits } from '$lib/money';
 import { relations } from 'drizzle-orm';
 import { boolean, date, integer, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { id, timestamps } from '../columns';
@@ -37,7 +38,7 @@ export const expense = pgTable('expense', {
 		.references(() => contract.id, { onDelete: 'restrict' }),
 	date: date('date').notNull(),
 	description: text('description').notNull(),
-	amount: integer('amount').notNull(),
+	amount: integer('amount').$type<MinorUnits>().notNull(),
 	preAuthorised: boolean('pre_authorised').notNull().default(false),
 	authorisationReference: text('authorisation_reference'),
 	reimbursable: boolean('reimbursable').notNull().default(true),

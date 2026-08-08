@@ -7,6 +7,7 @@
 // `smtp-imap.test.ts` prove against; skipped when it is not running.
 import { ImapFlow } from 'imapflow';
 import { afterAll, expect, test } from 'vitest';
+import { minorUnits } from '$lib/money';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
@@ -78,8 +79,8 @@ async function seedOverdueInvoice(tx: Tx, overrides: { dueDate: string; paidOn?:
 				{
 					description: 'Consulting, April',
 					quantity: 10,
-					unitPrice: 50000,
-					amount: 500000,
+					unitPrice: minorUnits(50000),
+					amount: minorUnits(500000),
 					taxRate: 22,
 					taxTreatmentCode: null,
 					workUnitIds: []
@@ -177,6 +178,17 @@ test('builds a draft with the real figures and days late off a persisted overdue
 			expect(rendered.body).toContain('6100,00\u00a0€');
 			expect(rendered.body).toContain('1 mag 2024');
 			expect(rendered.body).toContain('31 giorni');
+
+			// Currency is a property of the invoice, not a hardcoded /100:
+			// the exact same total renders with zero decimal digits and a
+			// currency-code suffix (Italian has no yen glyph) in a currency
+			// with no minor unit — the distinction #179's dunning bug missed.
+			const jpyContext = { ...context, invoice: { ...context.invoice, currency: 'JPY' } };
+			const renderedJpy = renderTemplate(
+				{ subject: 'Sollecito fattura {{invoice_number}}', body: 'Importo {{amount}}' },
+				jpyContext
+			);
+			expect(renderedJpy.body).toBe('Importo 610.000\u00a0JPY');
 
 			tx.rollback();
 		})

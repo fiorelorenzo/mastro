@@ -8,7 +8,7 @@ import { db, type DbExecutor } from '$lib/server/db';
 import { contract, invoice } from '$lib/server/db/schema';
 import { defaultRegistry, type PackRegistry } from './registry';
 import { resolveFiscalPackOverRange } from './profile';
-import type { MinorUnits } from '$lib/money';
+import { NO_MINOR_UNITS, addMinorUnits, type MinorUnits } from '$lib/money';
 import {
 	sumLedgerAcrossPeriods,
 	type LedgerPeriod,
@@ -47,7 +47,7 @@ export async function fetchLedgerRows(executor: DbExecutor = db): Promise<Ledger
 		clientId: row.clientId,
 		issueDate: row.issueDate,
 		paidOn: row.paidOn,
-		amount: row.taxableAmount + (row.socialCharge ?? 0)
+		amount: addMinorUnits(row.taxableAmount, row.socialCharge ?? NO_MINOR_UNITS)
 	}));
 }
 

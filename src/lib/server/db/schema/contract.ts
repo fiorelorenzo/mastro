@@ -1,3 +1,4 @@
+import type { MinorUnits } from '$lib/money';
 import { relations } from 'drizzle-orm';
 import {
 	boolean,
@@ -78,7 +79,7 @@ export type PaymentTerms =
 export type ExpensePolicy =
 	| { kind: 'not_reimbursed' }
 	| { kind: 'reimbursed_at_cost' }
-	| { kind: 'reimbursed_with_cap'; capAmount: number };
+	| { kind: 'reimbursed_with_cap'; capAmount: MinorUnits };
 
 /**
  * The contract is the shape most of the domain's difficulty lives in. Two

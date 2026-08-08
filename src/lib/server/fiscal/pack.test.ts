@@ -1,5 +1,6 @@
 import { expect, test } from 'vitest';
 import { evaluateCharges, fiscalYearBounds, fiscalYearOf, type FiscalPack } from './pack';
+import { minorUnits } from '$lib/money';
 
 test('a calendar fiscal year is just the calendar year', () => {
 	const definition = { startMonth: 1, startDay: 1 };
@@ -35,7 +36,7 @@ const packWithCharges: FiscalPack = {
 		{
 			id: 'always-on',
 			label: { en: 'Fixed fee', it: 'Quota fissa' },
-			amount: { kind: 'fixed', minorUnits: 200 }
+			amount: { kind: 'fixed', minorUnits: minorUnits(200) }
 		},
 		{
 			// Modelled on a stamp duty that only applies once the invoice
@@ -43,7 +44,7 @@ const packWithCharges: FiscalPack = {
 			// not a callback the pack runs.
 			id: 'threshold-stamp',
 			label: { en: 'Stamp duty', it: 'Imposta di bollo' },
-			amount: { kind: 'fixed', minorUnits: 200 },
+			amount: { kind: 'fixed', minorUnits: minorUnits(200) },
 			appliesWhen: { fact: 'invoiceTotal', comparator: 'gt', value: 7747 }
 		},
 		{

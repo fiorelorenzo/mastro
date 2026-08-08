@@ -2,6 +2,7 @@ import * as m from '$lib/paraglide/messages';
 import { legalText } from '$lib/legal/legal-text';
 import { decimalStringToMinorUnits } from '$lib/server/import/decimal';
 import { invoiceDocumentType } from '$lib/server/db/schema';
+import type { MinorUnits } from '$lib/money';
 import type { InvoiceDocumentType } from '$lib/server/import/invoice';
 import type { InvoiceInput, InvoiceLineInput } from './invoice';
 
@@ -80,7 +81,7 @@ export function parseInvoiceForm(formData: FormData): InvoiceFormResult {
 	}
 
 	const stampDutyRaw = string('stampDuty');
-	let stampDuty: number | null = null;
+	let stampDuty: MinorUnits | null = null;
 	if (stampDutyRaw) {
 		try {
 			stampDuty = decimalStringToMinorUnits(stampDutyRaw);
@@ -90,7 +91,7 @@ export function parseInvoiceForm(formData: FormData): InvoiceFormResult {
 	}
 
 	const socialChargeRaw = string('socialCharge');
-	let socialCharge: number | null = null;
+	let socialCharge: MinorUnits | null = null;
 	if (socialChargeRaw) {
 		try {
 			socialCharge = decimalStringToMinorUnits(socialChargeRaw);
@@ -134,8 +135,8 @@ export function parseInvoiceForm(formData: FormData): InvoiceFormResult {
 			continue;
 		}
 
-		let unitPrice: number;
-		let amount: number;
+		let unitPrice: MinorUnits;
+		let amount: MinorUnits;
 		try {
 			unitPrice = decimalStringToMinorUnits(unitPriceRaw);
 			amount = decimalStringToMinorUnits(amountRaw);

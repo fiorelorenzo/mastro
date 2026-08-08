@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
 import { client as pool, db, type DbExecutor } from '$lib/server/db';
+import { minorUnits, NO_MINOR_UNITS } from '$lib/money';
 import {
 	backupRun,
 	client,
@@ -419,8 +420,8 @@ function invoiceInput(contractId: string, overrides: Partial<InvoiceInput> = {})
 			{
 				description: 'Consulting',
 				quantity: 1,
-				unitPrice: 100000,
-				amount: 100000,
+				unitPrice: minorUnits(100000),
+				amount: minorUnits(100000),
 				taxRate: 0,
 				taxTreatmentCode: null,
 				workUnitIds: []
@@ -451,11 +452,11 @@ test('fetchYearEndOverrunInputs only builds a figure for all_clients, cash-basis
 					alertLevels: [],
 					consequence: { en: 'x', it: 'x' },
 					measure: 'absolute_amount' as const,
-					value: 1000000
+					value: minorUnits(1000000)
 				},
 				period: { from: '2026-01-01', to: '2027-01-01' },
-				currentValue: 0,
-				limitValue: 1000000,
+				currentValue: NO_MINOR_UNITS,
+				limitValue: minorUnits(1000000),
 				usageRatio: 0,
 				crossed: false,
 				activeAlertLevels: []

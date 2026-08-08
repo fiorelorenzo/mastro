@@ -12,6 +12,7 @@
 // re-validates direction and the natural key against whatever the database
 // looks like right now, not at review time.
 
+import { sumMinorUnits } from '$lib/money';
 import { db, type DbExecutor } from '$lib/server/db';
 import type { TransitionActor } from '$lib/server/db/schema';
 import { hashContent } from '$lib/server/documents/blob-store';
@@ -90,7 +91,7 @@ function mapInvoiceToInput(invoice: Invoice, contractId: string): Omit<InvoiceIn
 	const firstTaxSummary = invoice.taxSummary[0];
 	const firstInstallment = invoice.paymentTerms[0]?.installments[0];
 	const socialCharge = invoice.socialSecurityCharges.length
-		? invoice.socialSecurityCharges.reduce((sum, charge) => sum + charge.amount, 0)
+		? sumMinorUnits(invoice.socialSecurityCharges.map((charge) => charge.amount))
 		: null;
 	return {
 		contractId,

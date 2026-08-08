@@ -3,6 +3,7 @@
 // configured tax id, and must work identically whichever format produced
 // the invoice.
 import { expect, test } from 'vitest';
+import { minorUnits, NO_MINOR_UNITS } from '$lib/money';
 import {
 	classifyDirection,
 	classifyImportedInvoice,
@@ -22,7 +23,7 @@ function party(taxId: string): InvoiceParty {
 	};
 }
 
-function invoice(supplierTaxId: string, total = 100000): Invoice {
+function invoice(supplierTaxId: string, total = minorUnits(100000)): Invoice {
 	return {
 		number: '1/2026',
 		issueDate: '2026-01-01',
@@ -33,7 +34,7 @@ function invoice(supplierTaxId: string, total = 100000): Invoice {
 		lines: [],
 		taxSummary: [],
 		taxableAmount: total,
-		taxAmount: 0,
+		taxAmount: NO_MINOR_UNITS,
 		total,
 		socialSecurityCharges: [],
 		paymentTerms: [],
@@ -89,9 +90,9 @@ test('an incoming invoice is skipped and carries its reason', () => {
 
 test('revenueEligibleInvoices returns only the outgoing invoices', () => {
 	const outcomes: ImportedInvoiceOutcome[] = [
-		classifyImportedInvoice(invoice('IT01234567890', 100_000), 'IT01234567890'),
-		classifyImportedInvoice(invoice('IT55555555555', 999_999_999), 'IT01234567890'),
-		classifyImportedInvoice(invoice('IT01234567890', 50_000), 'IT01234567890')
+		classifyImportedInvoice(invoice('IT01234567890', minorUnits(100_000)), 'IT01234567890'),
+		classifyImportedInvoice(invoice('IT55555555555', minorUnits(999_999_999)), 'IT01234567890'),
+		classifyImportedInvoice(invoice('IT01234567890', minorUnits(50_000)), 'IT01234567890')
 	];
 
 	const eligible = revenueEligibleInvoices(outcomes);

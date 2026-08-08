@@ -12,7 +12,67 @@
  * pre-filling a form and an import adapter all need it, and none of them
  * should have to import the others to say "this number is money".
  */
-export type MinorUnits = number;
+declare const minorUnitsBrand: unique symbol;
+
+export type MinorUnits = number & { readonly [minorUnitsBrand]: true };
+
+/**
+ * A number that is explicitly *not* money. `formatAmount` takes this rather
+ * than a bare `number`, so handing it a `MinorUnits` is a type error: the
+ * optional brand can only be `undefined`, and a `MinorUnits` carries `true`.
+ * That is the whole mechanism behind #168 — #164 was nine call sites passing
+ * a minor-unit column to a major-unit formatter, and nothing objected.
+ */
+export type NotMinorUnits = number & { readonly [minorUnitsBrand]?: never };
+
+/**
+ * The single door through which a plain number becomes money. Everywhere
+ * else, a `MinorUnits` is produced by another `MinorUnits`: the schema
+ * declares the columns, `decimalStringToMinorUnits` parses documents and
+ * form input, and the operations below keep the brand across arithmetic.
+ *
+ * Throws on a non-integer, because a fractional minor unit is not a
+ * rounding preference, it is a value that has already been through a float
+ * and lost the guarantee this type exists to make.
+ */
+export function minorUnits(value: number): MinorUnits {
+	if (!Number.isInteger(value)) {
+		throw new Error(`minor units must be a whole number, got ${value}`);
+	}
+	return value as MinorUnits;
+}
+
+/**
+ * Money arithmetic, brand in and brand out.
+ *
+ * These exist because a brand does not survive `+`: `a + b` on two
+ * `MinorUnits` is a plain `number`, and without them every sum would have
+ * to be re-branded by hand at the call site, which is a cast with a
+ * friendlier name and would leave the guard covering bare columns but not
+ * totals. `totalOutstandingByCurrency` was one of #164's nine wrong sites,
+ * so totals are exactly where the hole must not be.
+ */
+export function sumMinorUnits(values: Iterable<MinorUnits>): MinorUnits {
+	let total = 0;
+	for (const value of values) total += value;
+	return total as MinorUnits;
+}
+
+export function addMinorUnits(...values: MinorUnits[]): MinorUnits {
+	return sumMinorUnits(values);
+}
+
+/**
+ * Money times a plain ratio — a tax rate, a share, a fraction of a day —
+ * rounded to a whole minor unit, since a fraction of a cent is not a value
+ * this codebase is allowed to hold.
+ */
+export function scaleMinorUnits(amount: MinorUnits, factor: number): MinorUnits {
+	return Math.round(amount * factor) as MinorUnits;
+}
+
+/** Zero, as money. */
+export const NO_MINOR_UNITS = 0 as MinorUnits;
 
 /**
  * Round-trips a value already stored as `MinorUnits` (integer cents) back

@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest';
+import { minorUnits, NO_MINOR_UNITS } from '$lib/money';
 import {
 	ceilingFromContractRow,
 	ceilingPeriod,
@@ -17,7 +18,7 @@ const rows: LedgerRow[] = [
 		clientId: 'client-a',
 		issueDate: '2024-05-01',
 		paidOn: '2024-05-10',
-		amount: 60_000
+		amount: minorUnits(60_000)
 	},
 	{
 		invoiceId: 'b',
@@ -25,7 +26,7 @@ const rows: LedgerRow[] = [
 		clientId: 'client-a',
 		issueDate: '2024-08-01',
 		paidOn: '2024-08-15',
-		amount: 25_000
+		amount: minorUnits(25_000)
 	},
 	{
 		invoiceId: 'c',
@@ -33,7 +34,7 @@ const rows: LedgerRow[] = [
 		clientId: 'client-b',
 		issueDate: '2024-09-01',
 		paidOn: '2024-09-20',
-		amount: 40_000
+		amount: minorUnits(40_000)
 	}
 ];
 
@@ -42,7 +43,7 @@ const packCeiling: Ceiling = {
 	origin: 'pack',
 	label: { en: 'Revenue ceiling', it: 'Soglia di ricavi' },
 	measure: 'absolute_amount',
-	value: 100_000,
+	value: minorUnits(100_000),
 	basis: 'cash_received_calendar_year',
 	perimeter: { kind: 'all_clients' },
 	alertLevels: [
@@ -63,14 +64,14 @@ test('an absolute-amount pack ceiling sums cash received across all clients over
 });
 
 test('below the ceiling, no alert level is active and it has not crossed', () => {
-	const smallCeiling: Ceiling = { ...packCeiling, value: 1_000_000 };
+	const smallCeiling: Ceiling = { ...packCeiling, value: minorUnits(1_000_000) };
 	const evaluated = evaluateCeiling(smallCeiling, rows, '2024-10-01');
 	expect(evaluated.crossed).toBe(false);
 	expect(evaluated.activeAlertLevels).toEqual([]);
 });
 
 test('an absolute-amount ceiling of exactly zero is crossed the moment any revenue exists against it', () => {
-	const zeroCeiling: Ceiling = { ...packCeiling, value: 0 };
+	const zeroCeiling: Ceiling = { ...packCeiling, value: NO_MINOR_UNITS };
 	const evaluated = evaluateCeiling(zeroCeiling, rows, '2024-10-01');
 	expect(evaluated.limitValue).toBe(0);
 	expect(evaluated.currentValue).toBe(125_000);
@@ -78,7 +79,7 @@ test('an absolute-amount ceiling of exactly zero is crossed the moment any reven
 });
 
 test('an absolute-amount ceiling of exactly zero is not crossed with no revenue against it either', () => {
-	const zeroCeiling: Ceiling = { ...packCeiling, value: 0 };
+	const zeroCeiling: Ceiling = { ...packCeiling, value: NO_MINOR_UNITS };
 	const evaluated = evaluateCeiling(zeroCeiling, [], '2024-10-01');
 	expect(evaluated.limitValue).toBe(0);
 	expect(evaluated.currentValue).toBe(0);
@@ -129,7 +130,7 @@ test('a percentage-share ceiling responds to the total changing, not just its ow
 			clientId: 'client-c',
 			issueDate: '2024-09-01',
 			paidOn: '2024-09-20',
-			amount: 500_000
+			amount: minorUnits(500_000)
 		}
 	];
 	const evaluated = evaluateCeiling(shareCeiling, rowsWithLargerTotal, '2024-10-01');

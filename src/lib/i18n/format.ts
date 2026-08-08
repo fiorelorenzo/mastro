@@ -4,6 +4,7 @@
 // call: reach for one of these instead of formatting a number or a date
 // inline, wherever either is displayed.
 
+import type { MinorUnits, NotMinorUnits } from '$lib/money';
 import { getLocale, type Locale } from '$lib/paraglide/runtime';
 
 /**
@@ -24,7 +25,7 @@ export function formatNumber(value: number, locale: Locale = getLocale()): strin
  * concatenates a currency symbol onto a formatted number by hand.
  */
 export function formatAmount(
-	amount: number,
+	amount: NotMinorUnits,
 	currency: string,
 	locale: Locale = getLocale()
 ): string {
@@ -41,7 +42,7 @@ export function formatAmount(
  * off to `formatAmount`.
  */
 export function formatMinorUnits(
-	minorUnits: number,
+	minorUnits: MinorUnits,
 	currency: string,
 	locale: Locale = getLocale()
 ): string {

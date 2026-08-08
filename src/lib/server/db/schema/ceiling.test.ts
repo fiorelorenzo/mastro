@@ -1,5 +1,6 @@
 import { afterAll, expect, test } from 'vitest';
 import { client as pool, db } from '$lib/server/db';
+import { minorUnits } from '$lib/money';
 import { ceiling, client, contract } from './index';
 
 // Needs a migrated database: `pnpm db:up && pnpm db:migrate`. Real
@@ -72,7 +73,7 @@ test('an absolute-amount ceiling round-trips, with the label bundle and alert le
 				.values({
 					...baseCeiling(contractRow.id),
 					measure: 'absolute_amount',
-					absoluteValueMinorUnits: 5_000_000,
+					absoluteValueMinorUnits: minorUnits(5_000_000),
 					shareRatio: null
 				})
 				.returning();
@@ -134,7 +135,7 @@ test('a percentage-share ceiling with an absolute value set instead is rejected'
 				tx.insert(ceiling).values({
 					...baseCeiling(contractRow.id),
 					measure: 'percentage_share',
-					absoluteValueMinorUnits: 1_000_000,
+					absoluteValueMinorUnits: minorUnits(1_000_000),
 					shareRatio: null
 				})
 			).rejects.toMatchObject({ code: '23514', constraint_name: 'ceiling_value_matches_measure' });
@@ -151,7 +152,7 @@ test('a negative absolute value is rejected', async () => {
 				tx.insert(ceiling).values({
 					...baseCeiling(contractRow.id),
 					measure: 'absolute_amount',
-					absoluteValueMinorUnits: -1,
+					absoluteValueMinorUnits: minorUnits(-1),
 					shareRatio: null
 				})
 			).rejects.toMatchObject({
@@ -204,14 +205,14 @@ test('two ceilings on the same contract cannot share a code', async () => {
 			await tx.insert(ceiling).values({
 				...baseCeiling(contractRow.id),
 				measure: 'absolute_amount',
-				absoluteValueMinorUnits: 1_000_000,
+				absoluteValueMinorUnits: minorUnits(1_000_000),
 				shareRatio: null
 			});
 			await expect(
 				tx.insert(ceiling).values({
 					...baseCeiling(contractRow.id),
 					measure: 'absolute_amount',
-					absoluteValueMinorUnits: 2_000_000,
+					absoluteValueMinorUnits: minorUnits(2_000_000),
 					shareRatio: null
 				})
 			).rejects.toMatchObject({ code: '23505', constraint_name: 'ceiling_contract_code_unique' });

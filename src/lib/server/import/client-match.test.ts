@@ -2,6 +2,7 @@
 // tested the same way `direction.test.ts` tests direction detection, with
 // hand-built `Invoice` values rather than through an adapter.
 import { expect, test } from 'vitest';
+import { minorUnits, NO_MINOR_UNITS } from '$lib/money';
 import {
 	buildClientContractProposal,
 	inferInvoicingCadence,
@@ -31,10 +32,12 @@ function invoice(overrides: Partial<Invoice> = {}): Invoice {
 		supplier: party({ taxId: 'IT11111111111', legalName: 'Consultant' }),
 		customer: party(),
 		lines: [],
-		taxSummary: [{ taxRate: 0.22, taxableAmount: 100000, taxAmount: 22000 }],
-		taxableAmount: 100000,
-		taxAmount: 22000,
-		total: 122000,
+		taxSummary: [
+			{ taxRate: 0.22, taxableAmount: minorUnits(100000), taxAmount: minorUnits(22000) }
+		],
+		taxableAmount: minorUnits(100000),
+		taxAmount: minorUnits(22000),
+		total: minorUnits(122000),
 		socialSecurityCharges: [],
 		paymentTerms: [],
 		transmission: { transmitterId: 'IT11111111111', progressiveNumber: '1' },
@@ -121,7 +124,12 @@ test('the payment terms are read from the invoice\u2019s own first instalment', 
 			{
 				conditionCode: 'TP02',
 				installments: [
-					{ dueDate: '2024-02-04', dueDateSource: 'document', amount: 122000, method: 'MP05' }
+					{
+						dueDate: '2024-02-04',
+						dueDateSource: 'document',
+						amount: minorUnits(122000),
+						method: 'MP05'
+					}
 				]
 			}
 		]
@@ -134,7 +142,14 @@ test('the payment terms are read from the invoice\u2019s own first instalment', 
 
 test('taxTreatment is copied verbatim from the invoice when present, else left blank', () => {
 	const withCode = invoice({
-		taxSummary: [{ taxRate: 0, taxTreatmentCode: 'N2.2', taxableAmount: 100000, taxAmount: 0 }]
+		taxSummary: [
+			{
+				taxRate: 0,
+				taxTreatmentCode: 'N2.2',
+				taxableAmount: minorUnits(100000),
+				taxAmount: NO_MINOR_UNITS
+			}
+		]
 	});
 	expect(buildClientContractProposal([withCode]).contract.taxTreatment).toBe('N2.2');
 	expect(buildClientContractProposal([invoice()]).contract.taxTreatment).toBe('');
@@ -142,9 +157,9 @@ test('taxTreatment is copied verbatim from the invoice when present, else left b
 
 test('several invoices for the same customer produce one proposal, starting from the earliest', () => {
 	const invoices = [
-		invoice({ number: '2024/2', issueDate: '2024-02-15', total: 200000 }),
-		invoice({ number: '2024/1', issueDate: '2024-01-15', total: 100000 }),
-		invoice({ number: '2024/3', issueDate: '2024-03-15', total: 300000 })
+		invoice({ number: '2024/2', issueDate: '2024-02-15', total: minorUnits(200000) }),
+		invoice({ number: '2024/1', issueDate: '2024-01-15', total: minorUnits(100000) }),
+		invoice({ number: '2024/3', issueDate: '2024-03-15', total: minorUnits(300000) })
 	];
 	const proposal = buildClientContractProposal(invoices);
 	expect(proposal.contract.startsOn).toBe('2024-01-15');

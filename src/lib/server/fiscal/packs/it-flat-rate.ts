@@ -1,5 +1,6 @@
 import type { FiscalPack } from '../pack';
 import { legalText } from '$lib/legal/legal-text';
+import { minorUnits } from '$lib/money';
 
 /**
  * Italy's flat-rate regime (`regime forfettario`): cash basis, calendar
@@ -91,7 +92,7 @@ export const itFlatRatePack: FiscalPack = {
 				"Art. 1, comma 54, lettera a), legge 23 dicembre 2014, n. 190, come modificato dall'art. 1, comma 54, legge 29 dicembre 2022, n. 197"
 			),
 			measure: 'absolute_amount',
-			value: 8_500_000,
+			value: minorUnits(8_500_000),
 			basis: 'cash_received_calendar_year',
 			perimeter: { kind: 'all_clients' },
 			alertLevels: [
@@ -124,7 +125,7 @@ export const itFlatRatePack: FiscalPack = {
 				"Art. 1, comma 71, legge 23 dicembre 2014, n. 190, come modificato dall'art. 1, comma 54, legge 29 dicembre 2022, n. 197"
 			),
 			measure: 'absolute_amount',
-			value: 10_000_000,
+			value: minorUnits(10_000_000),
 			basis: 'cash_received_calendar_year',
 			perimeter: { kind: 'all_clients' },
 			alertLevels: [
@@ -167,7 +168,7 @@ export const itFlatRatePack: FiscalPack = {
 				'D.P.R. 26 ottobre 1972, n. 642, art. 6 della Tabella allegata (Allegato A) e art. 13 della Tariffa, parte prima'
 			),
 			// 2.00 EUR, due once a document not subject to VAT exceeds 77.47 EUR.
-			amount: { kind: 'fixed', minorUnits: 200 },
+			amount: { kind: 'fixed', minorUnits: minorUnits(200) },
 			appliesWhen: { fact: 'invoiceTotal', comparator: 'gt', value: 7747 }
 		},
 		{

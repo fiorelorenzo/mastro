@@ -5,6 +5,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
 import { client as pool, db, type DbExecutor } from '$lib/server/db';
+import { minorUnits } from '$lib/money';
 import { client, contract, invoice } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { fiscalProfile } from '$lib/server/db/schema/fiscal';
@@ -74,8 +75,8 @@ function invoiceInput(contractId: string, overrides: Partial<InvoiceInput> = {})
 			{
 				description: 'Consulting',
 				quantity: 1,
-				unitPrice: 100_000,
-				amount: 100_000,
+				unitPrice: minorUnits(100_000),
+				amount: minorUnits(100_000),
 				taxRate: 0,
 				taxTreatmentCode: null,
 				workUnitIds: []
@@ -91,14 +92,14 @@ test('fetchLedgerRows carries taxable_amount plus social_charge as revenue, neve
 			const { clientRow, contractRow } = await insertContract(tx);
 			const invoiceRow = await createInvoice(
 				invoiceInput(contractRow.id, {
-					socialCharge: 4_000,
-					stampDuty: 200,
+					socialCharge: minorUnits(4_000),
+					stampDuty: minorUnits(200),
 					lines: [
 						{
 							description: 'Consulting',
 							quantity: 1,
-							unitPrice: 100_000,
-							amount: 100_000,
+							unitPrice: minorUnits(100_000),
+							amount: minorUnits(100_000),
 							taxRate: 22,
 							taxTreatmentCode: null,
 							workUnitIds: []
@@ -229,8 +230,8 @@ test('fetchRevenueOverRange sums each sub-period under its own basis across a re
 						{
 							description: 'Consulting',
 							quantity: 1,
-							unitPrice: 60_000,
-							amount: 60_000,
+							unitPrice: minorUnits(60_000),
+							amount: minorUnits(60_000),
 							taxRate: 0,
 							taxTreatmentCode: null,
 							workUnitIds: []
@@ -320,8 +321,8 @@ test('fetchClientRevenueBreakdown splits revenue by client under the pack in for
 						{
 							description: 'Consulting',
 							quantity: 1,
-							unitPrice: 60_000,
-							amount: 60_000,
+							unitPrice: minorUnits(60_000),
+							amount: minorUnits(60_000),
 							taxRate: 0,
 							taxTreatmentCode: null,
 							workUnitIds: []
