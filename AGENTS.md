@@ -213,7 +213,11 @@ database really answers.
 | `pnpm messages:compile`       | Regenerate `src/lib/paraglide` from `messages/*.json` |
 
 Ports are fixed (app `5187`, Postgres `5436`) so this project can run beside the
-others on the same box. Postgres is published on `127.0.0.1` only.
+others on the same box, and both are overridable per checkout from `.env`
+(`WEB_PORT`, `POSTGRES_PORT`). The dev and preview servers use `strictPort`, so a
+port already in use fails with `Port <n> is already in use` instead of quietly
+starting on the next one: a server you did not notice moving is a server you will
+later verify the wrong branch on. Postgres is published on `127.0.0.1` only.
 
 **A second checkout needs its own compose project, not just its own port.**
 `compose.yaml` names the project `mastro`, and that name is what every `pnpm db:*`
@@ -225,6 +229,32 @@ checkout its own `COMPOSE_PROJECT_NAME` in `.env` (`mastro-<worktree>`) alongsid
 own `POSTGRES_PORT`, and each gets its own container, volume and database. The
 variable overrides the compose file's `name:`; only `-p` and a shell variable of the
 same name beat it.
+
+**A per-checkout port does not give you a per-checkout session.** Cookies are scoped
+by host and path and ignore the port entirely (RFC 6265), so every dev server on
+`localhost` shares one `better-auth.session_token` and whoever signs in last wins.
+Two checkouts verifying in a browser at the same time will silently run as each
+other's session. `localhost` and `127.0.0.1` are separate hosts and do get separate
+jars, which buys exactly two checkouts and is not something to build on. The thing
+that actually separates them is an isolated browser context per session
+(`browser.createBrowserContext()`), so use one whenever you plant a session cookie.
+
+**`--env-file` fills gaps, it never overrides.** `pnpm db:migrate`, `pnpm
+runner:watch` and `pnpm runner:once` all read `.env` through `node
+--env-file-if-exists`, and node leaves a variable that is already set alone. That is
+harmless in a clean shell and wrong everywhere else: a supervisor that launches a
+long-running process passes its own environment down, not your shell's, so a server
+started in a worktree can come up holding another checkout's `DATABASE_URL` and
+`BETTER_AUTH_SECRET`, ignore the `.env` next to it, and read and write the wrong
+database. Setting the variable to an empty string does not help, since an empty
+string still counts as set. Clear it for real:
+
+```bash
+bash -c 'unset DATABASE_URL BETTER_AUTH_SECRET BETTER_AUTH_URL; exec node --env-file-if-exists=.env build'
+```
+
+Then check which database the process actually holds rather than which one you
+configured: `tr '\0' '\n' < /proc/<pid>/environ | grep DATABASE_URL`.
 
 **i18n.** Message catalogues live in `messages/en.json` and `messages/it.json`
 (inlang message format, one key per string), compiled by Paraglide into

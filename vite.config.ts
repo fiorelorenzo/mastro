@@ -1,13 +1,20 @@
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vitest/config';
+import { loadEnv } from 'vite';
 import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
 
-export default defineConfig({
-	// Fixed port so several projects can run side by side on one box.
-	server: { port: 5187 },
-	preview: { port: 5187 },
+export default defineConfig(({ mode }) => ({
+	// Fixed port so several projects can run side by side on one box, and
+	// overridable per checkout the way POSTGRES_PORT already is, because a
+	// worktree needs its own (#157). strictPort because the default is to
+	// drift quietly to the next free number, and a server you did not notice
+	// moving is a server you will later verify the wrong branch on. Note this
+	// does not separate session cookies between checkouts: cookies ignore the
+	// port entirely, so that needs an isolated browser context. See AGENTS.md.
+	server: { port: Number(loadEnv(mode, process.cwd(), '').WEB_PORT ?? 5187), strictPort: true },
+	preview: { port: Number(loadEnv(mode, process.cwd(), '').WEB_PORT ?? 5187), strictPort: true },
 	plugins: [
 		tailwindcss(),
 		sveltekit({
@@ -58,4 +65,4 @@ export default defineConfig({
 			}
 		]
 	}
-});
+}));
