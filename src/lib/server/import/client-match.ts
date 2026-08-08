@@ -10,7 +10,8 @@
 import type { ExpensePolicy, InvoicingCadence, PaymentTerms } from '$lib/server/db/schema/contract';
 import type { NoticeChannel } from '$lib/server/db/schema/client';
 import { normalizedTaxId } from './direction';
-import type { Invoice, InvoiceParty, MinorUnits } from './invoice';
+import type { MinorUnits } from '$lib/money';
+import type { Invoice, InvoiceParty } from './invoice';
 
 export interface ClientMatchCandidate {
 	readonly id: string;

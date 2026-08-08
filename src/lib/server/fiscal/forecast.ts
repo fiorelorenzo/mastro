@@ -11,7 +11,7 @@ import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
 import { recurringFeeOccurrences, type RecurringFeeCard } from '$lib/server/domain/recurring-fee';
 import { listRenewalAssumptionsWithContract } from '$lib/server/repositories/contract-renewal-assumption';
 import { fetchLedgerRows } from './revenue';
-import type { MinorUnits } from './pack';
+import type { MinorUnits } from '$lib/money';
 import {
 	certaintyBreakdown,
 	collectedAmount,

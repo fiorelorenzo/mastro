@@ -1,7 +1,7 @@
 import { asc, eq } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import { expense, invoice, invoiceLine, type DocumentProvenance } from '$lib/server/db/schema';
-import type { MinorUnits } from '$lib/server/import/invoice';
+import type { MinorUnits } from '$lib/money';
 import { listDocumentsForOwner, storeDocument } from './document';
 
 export type ExpenseInput = {

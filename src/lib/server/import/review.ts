@@ -30,7 +30,8 @@ import {
 import { naturalInvoiceKey, type ExistingInvoiceRecord } from './dedup';
 import { classifyImportedInvoice, normalizedTaxId, type IncomingInvoiceReason } from './direction';
 import { importFile, type ImportFileResult } from './importer';
-import type { Invoice, InvoiceLine, MinorUnits } from './invoice';
+import type { MinorUnits } from '$lib/money';
+import type { Invoice, InvoiceLine } from './invoice';
 import type { AdapterRegistry } from './registry';
 
 /** Enough of a parsed invoice to show on the review screen, without

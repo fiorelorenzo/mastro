@@ -8,7 +8,7 @@ import { db, type DbExecutor } from '$lib/server/db';
 import { contract, invoice } from '$lib/server/db/schema';
 import { defaultRegistry, type PackRegistry } from './registry';
 import { resolveFiscalPackOverRange } from './profile';
-import type { MinorUnits } from './pack';
+import type { MinorUnits } from '$lib/money';
 import {
 	sumLedgerAcrossPeriods,
 	type LedgerPeriod,

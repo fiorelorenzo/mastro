@@ -14,11 +14,8 @@
 // human input, entered after import.
 
 import type { LegalText } from '$lib/legal/legal-text';
+import type { MinorUnits } from '$lib/money';
 import type { InvoiceDueDateSource } from '$lib/server/domain/invoice';
-
-/** An amount in the currency's minor unit (cents for EUR), matching
- * `MinorUnits` in `fiscal/pack.ts`. Never a float — see `decimal.ts`. */
-export type MinorUnits = number;
 
 /**
  * What kind of document this is. Named after what the document does, not

@@ -17,9 +17,9 @@ import {
 	type CeilingBasis,
 	type CeilingLimit,
 	type CeilingMeasure,
-	type FiscalYearDefinition,
-	type MinorUnits
+	type FiscalYearDefinition
 } from './pack';
+import type { MinorUnits } from '$lib/money';
 import { sumLedger, type LedgerBasis, type LedgerRow } from './ledger';
 
 const CALENDAR_YEAR: FiscalYearDefinition = { startMonth: 1, startDay: 1 };
