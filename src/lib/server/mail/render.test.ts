@@ -48,6 +48,16 @@ test('renders every known placeholder with real, formatted data', () => {
 	expect(rendered.body).not.toMatch(/\{\{/);
 });
 
+test('the amount is scaled by the currency, not by a hardcoded hundred', () => {
+	// invoice.total is MinorUnits, and how many minor units make one major
+	// unit is a property of the currency: two for EUR, none at all for JPY.
+	// A reminder goes to the client, so an amount off by a factor of a
+	// hundred is wrong in front of someone who is being asked to pay it.
+	const jpy = { ...context, invoice: { ...context.invoice, total: 150000, currency: 'JPY' } };
+	expect(renderTemplate({ subject: 's', body: '{{amount}}' }, jpy).body).toBe('¥150,000');
+	expect(renderTemplate({ subject: 's', body: '{{amount}}' }, context).body).toBe('€1,500.00');
+});
+
 test('a template using none of the placeholders renders unchanged', () => {
 	const rendered = renderTemplate({ subject: 'Fixed subject', body: 'Fixed body.' }, context);
 	expect(rendered).toEqual({ subject: 'Fixed subject', body: 'Fixed body.' });
