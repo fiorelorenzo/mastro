@@ -26,7 +26,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
  * to bounce back as a 500. `contractId` is not read here, the same reason
  * `parseContractForm` skips it: it comes from the route.
  */
-export function parseExpenseForm(formData: FormData): ExpenseFormResult {
+export function parseExpenseForm(formData: FormData, currency: string): ExpenseFormResult {
 	const errors: Record<string, string> = {};
 	const string = (key: string) => String(formData.get(key) ?? '').trim();
 
@@ -39,7 +39,7 @@ export function parseExpenseForm(formData: FormData): ExpenseFormResult {
 	const amountRaw = string('amount');
 	let amount: MinorUnits = NO_MINOR_UNITS;
 	try {
-		amount = decimalStringToMinorUnits(amountRaw);
+		amount = decimalStringToMinorUnits(amountRaw, currency);
 		if (amount <= 0) throw new Error('non-positive');
 	} catch {
 		errors.amount = m.expense_validation_amount_invalid();

@@ -30,7 +30,7 @@
 			expensePolicyKind: data.contract.expensePolicy.kind,
 			expensePolicyCapAmount:
 				data.contract.expensePolicy.kind === 'reimbursed_with_cap'
-					? minorUnitsToDecimalString(data.contract.expensePolicy.capAmount)
+					? minorUnitsToDecimalString(data.contract.expensePolicy.capAmount, data.contract.currency)
 					: '',
 			requiresExpensePreAuthorisation: data.contract.requiresExpensePreAuthorisation,
 			templateLanguage: data.contract.templateLanguage,

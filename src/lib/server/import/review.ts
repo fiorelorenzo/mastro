@@ -385,7 +385,8 @@ export function buildReview(
 									line,
 									invoice.issueDate,
 									dayMappingContext.eligibleDays,
-									dayMappingContext.rateCards
+									dayMappingContext.rateCards,
+									invoice.currency
 								)
 							: null
 					})),

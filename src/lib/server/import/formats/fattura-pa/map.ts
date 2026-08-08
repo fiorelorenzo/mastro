@@ -105,17 +105,17 @@ function mapCustomer(cessionario: RawCessionarioCommittente): InvoiceParty {
 	};
 }
 
-function mapLine(linea: RawDettaglioLinee): InvoiceLine {
+function mapLine(linea: RawDettaglioLinee, currency: string): InvoiceLine {
 	return {
 		description: linea.Descrizione,
 		quantity: linea.Quantita !== undefined ? Number(linea.Quantita) : 1,
-		unitPrice: decimalStringToMinorUnits(linea.PrezzoUnitario),
-		amount: decimalStringToMinorUnits(linea.PrezzoTotale),
+		unitPrice: decimalStringToMinorUnits(linea.PrezzoUnitario, currency),
+		amount: decimalStringToMinorUnits(linea.PrezzoTotale, currency),
 		taxRate: Number(linea.AliquotaIVA)
 	};
 }
 
-function mapTaxSummary(riepilogo: RawDatiRiepilogo): InvoiceTaxSummary {
+function mapTaxSummary(riepilogo: RawDatiRiepilogo, currency: string): InvoiceTaxSummary {
 	return {
 		taxRate: Number(riepilogo.AliquotaIVA),
 		taxTreatmentCode: riepilogo.Natura,
@@ -123,25 +123,28 @@ function mapTaxSummary(riepilogo: RawDatiRiepilogo): InvoiceTaxSummary {
 			riepilogo.RiferimentoNormativo !== undefined
 				? legalText('it', riepilogo.RiferimentoNormativo)
 				: undefined,
-		taxableAmount: decimalStringToMinorUnits(riepilogo.ImponibileImporto),
-		taxAmount: decimalStringToMinorUnits(riepilogo.Imposta)
+		taxableAmount: decimalStringToMinorUnits(riepilogo.ImponibileImporto, currency),
+		taxAmount: decimalStringToMinorUnits(riepilogo.Imposta, currency)
 	};
 }
 
-function mapSocialCharge(cassa: RawDatiCassaPrevidenziale): InvoiceSocialSecurityCharge {
+function mapSocialCharge(
+	cassa: RawDatiCassaPrevidenziale,
+	currency: string
+): InvoiceSocialSecurityCharge {
 	return {
 		fundCode: cassa.TipoCassa,
 		rate: Number(cassa.AlCassa),
-		amount: decimalStringToMinorUnits(cassa.ImportoContributoCassa),
+		amount: decimalStringToMinorUnits(cassa.ImportoContributoCassa, currency),
 		taxableAmount:
 			cassa.ImponibileCassa !== undefined
-				? decimalStringToMinorUnits(cassa.ImponibileCassa)
+				? decimalStringToMinorUnits(cassa.ImponibileCassa, currency)
 				: undefined,
 		taxRateOnCharge: Number(cassa.AliquotaIVA)
 	};
 }
 
-function mapPaymentTerms(pagamento: RawDatiPagamento): InvoicePaymentTerms {
+function mapPaymentTerms(pagamento: RawDatiPagamento, currency: string): InvoicePaymentTerms {
 	return {
 		conditionCode: pagamento.CondizioniPagamento,
 		installments: pagamento.DettaglioPagamento.map((dettaglio) => {
@@ -149,7 +152,7 @@ function mapPaymentTerms(pagamento: RawDatiPagamento): InvoicePaymentTerms {
 				return {
 					dueDate: dettaglio.DataScadenzaPagamento,
 					dueDateSource: 'document' as const,
-					amount: decimalStringToMinorUnits(dettaglio.ImportoPagamento),
+					amount: decimalStringToMinorUnits(dettaglio.ImportoPagamento, currency),
 					method: dettaglio.ModalitaPagamento,
 					iban: dettaglio.IBAN
 				};
@@ -178,7 +181,7 @@ function mapPaymentTerms(pagamento: RawDatiPagamento): InvoicePaymentTerms {
 				return {
 					dueDate: due.toISOString().slice(0, 10),
 					dueDateSource: 'computed' as const,
-					amount: decimalStringToMinorUnits(dettaglio.ImportoPagamento),
+					amount: decimalStringToMinorUnits(dettaglio.ImportoPagamento, currency),
 					method: dettaglio.ModalitaPagamento,
 					iban: dettaglio.IBAN
 				};
@@ -209,26 +212,33 @@ function mapBody(
 		throw new Error('DatiGeneraliDocumento is missing ImportoTotaleDocumento');
 	}
 
-	const taxSummary = body.DatiBeniServizi.DatiRiepilogo.map(mapTaxSummary);
+	const currency = documento.Divisa;
+	const taxSummary = body.DatiBeniServizi.DatiRiepilogo.map((riepilogo) =>
+		mapTaxSummary(riepilogo, currency)
+	);
 
 	return {
 		number: documento.Numero,
 		issueDate: documento.Data,
 		documentType,
-		currency: documento.Divisa,
+		currency,
 		supplier: mapSupplier(header.CedentePrestatore),
 		customer: mapCustomer(header.CessionarioCommittente),
-		lines: body.DatiBeniServizi.DettaglioLinee.map(mapLine),
+		lines: body.DatiBeniServizi.DettaglioLinee.map((linea) => mapLine(linea, currency)),
 		taxSummary,
 		taxableAmount: sumMinorUnits(taxSummary.map((block) => block.taxableAmount)),
 		taxAmount: sumMinorUnits(taxSummary.map((block) => block.taxAmount)),
-		total: decimalStringToMinorUnits(documento.ImportoTotaleDocumento),
+		total: decimalStringToMinorUnits(documento.ImportoTotaleDocumento, currency),
 		stampDuty:
 			documento.DatiBollo !== undefined
-				? decimalStringToMinorUnits(documento.DatiBollo.ImportoBollo)
+				? decimalStringToMinorUnits(documento.DatiBollo.ImportoBollo, currency)
 				: undefined,
-		socialSecurityCharges: (documento.DatiCassaPrevidenziale ?? []).map(mapSocialCharge),
-		paymentTerms: (body.DatiPagamento ?? []).map(mapPaymentTerms),
+		socialSecurityCharges: (documento.DatiCassaPrevidenziale ?? []).map((cassa) =>
+			mapSocialCharge(cassa, currency)
+		),
+		paymentTerms: (body.DatiPagamento ?? []).map((pagamento) =>
+			mapPaymentTerms(pagamento, currency)
+		),
 		transmission: {
 			transmitterId: fiscalIdString(header.DatiTrasmissione.IdTrasmittente),
 			progressiveNumber: header.DatiTrasmissione.ProgressivoInvio

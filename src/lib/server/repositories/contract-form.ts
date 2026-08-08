@@ -140,7 +140,7 @@ export function parseContractForm(formData: FormData): ContractFormResult {
 		expensePolicy = { kind: expensePolicyKind };
 	} else if (expensePolicyKind === 'reimbursed_with_cap') {
 		try {
-			const capAmount = decimalStringToMinorUnits(expensePolicyCapAmountRaw);
+			const capAmount = decimalStringToMinorUnits(expensePolicyCapAmountRaw, currency);
 			if (capAmount <= 0) throw new Error('non-positive');
 			expensePolicy = { kind: 'reimbursed_with_cap', capAmount };
 		} catch {

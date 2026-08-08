@@ -11,7 +11,7 @@
 		form?.values ?? {
 			date: data.expense.date,
 			description: data.expense.description,
-			amount: minorUnitsToDecimalString(data.expense.amount),
+			amount: minorUnitsToDecimalString(data.expense.amount, data.contract.currency),
 			preAuthorised: data.expense.preAuthorised,
 			authorisationReference: data.expense.authorisationReference ?? ''
 		}
