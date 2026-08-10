@@ -1,5 +1,5 @@
 import { asc, eq } from 'drizzle-orm';
-import { db } from '$lib/server/db';
+import { db, type DbExecutor } from '$lib/server/db';
 import {
 	rateCard,
 	type DisbursementPeriod,
@@ -19,8 +19,8 @@ export type RateCardInput = {
 	disbursementPeriod: DisbursementPeriod | null;
 };
 
-export async function listRateCards(contractId: string) {
-	return db.query.rateCard.findMany({
+export async function listRateCards(contractId: string, executor: DbExecutor = db) {
+	return executor.query.rateCard.findMany({
 		where: eq(rateCard.contractId, contractId),
 		orderBy: asc(rateCard.validFrom)
 	});
