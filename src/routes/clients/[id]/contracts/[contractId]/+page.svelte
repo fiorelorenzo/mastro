@@ -9,6 +9,7 @@
 		formatNumber
 	} from '$lib/i18n/format';
 	import { factLine } from '$lib/nav/crumbs';
+	import { appHref } from '$lib/nav/href';
 	import Page from '$lib/layout/Page.svelte';
 	import Section from '$lib/layout/Section.svelte';
 	import RecordList from '$lib/layout/RecordList.svelte';
@@ -336,7 +337,10 @@
 	<Section title={m.consent_section_heading()}>
 		{#if data.consentDocument}
 			<p class="text-sm">
-				{m.consent_state_granted({ document: data.consentDocument.originalName })}
+				{m.consent_state_granted()}
+				<a href={appHref(`/documents/${data.consentDocument.id}`)} class="underline"
+					>{data.consentDocument.originalName}</a
+				>
 			</p>
 			<p class="mt-1 text-sm opacity-70">{m.consent_withdraw_note()}</p>
 			<form method="POST" action="?/withdrawConsent" class="mt-3">
