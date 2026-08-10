@@ -332,4 +332,32 @@
 			{/if}
 		{/if}
 	</Section>
+
+	<Section title={m.consent_section_heading()}>
+		{#if data.consentDocument}
+			<p class="text-sm">
+				{m.consent_state_granted({ document: data.consentDocument.originalName })}
+			</p>
+			<p class="mt-1 text-sm opacity-70">{m.consent_withdraw_note()}</p>
+			<form method="POST" action="?/withdrawConsent" class="mt-3">
+				<button type="submit" class="border px-3 py-1.5 text-sm"
+					>{m.consent_withdraw_submit()}</button
+				>
+			</form>
+		{:else}
+			<p class="text-sm">{m.consent_state_none()}</p>
+			<form
+				method="POST"
+				action="?/setConsent"
+				enctype="multipart/form-data"
+				class="mt-3 flex flex-wrap items-center gap-2"
+			>
+				<input type="file" name="consent" required class="text-sm" />
+				<button type="submit" class="border px-3 py-1.5 text-sm">{m.consent_set_submit()}</button>
+			</form>
+			{#if form?.consentError}
+				<p class="mt-2 text-xs font-semibold">{form.consentError}</p>
+			{/if}
+		{/if}
+	</Section>
 </Page>
