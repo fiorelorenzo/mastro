@@ -17,6 +17,7 @@ import {
 	parseExtractedDays
 } from '../src/lib/server/agent/day-extraction.ts';
 import { loadRunnerConfig } from '../src/lib/server/runner/config.ts';
+import { stripCodeFence } from '../src/lib/server/runner/job.ts';
 import { AcpAgentModel } from '../src/lib/server/runner/model.ts';
 
 interface Case {
@@ -47,7 +48,7 @@ for (const testCase of corpus) {
 			instructions: dayExtractionInstructions(testCase.messageDate),
 			content: testCase.content
 		});
-		const parsed = JSON.parse(stripFence(text)) as { proposedFields: Record<string, unknown> };
+		const parsed = JSON.parse(stripCodeFence(text)) as { proposedFields: Record<string, unknown> };
 		const days = parseExtractedDays(parsed.proposedFields).map((day) => ({
 			date: day.date,
 			quantity: day.quantity
@@ -70,11 +71,3 @@ for (const testCase of corpus) {
 
 console.log(`\n${passed}/${corpus.length} cases exact`);
 if (failures.length > 0) console.log(`\n${failures.join('\n\n')}`);
-
-/** Claude wraps JSON in a fenced block about half the time, whatever the
- * instructions say. Stripping it here rather than fighting the prompt:
- * this is a property of the agent, not of the extraction. */
-function stripFence(text: string): string {
-	const fenced = /^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/.exec(text);
-	return fenced ? fenced[1] : text;
-}

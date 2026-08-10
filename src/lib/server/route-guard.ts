@@ -20,6 +20,10 @@ export const PUBLIC_ROUTE_IDS: ReadonlySet<string> = new Set([
 	// caller is cron, with no browser session to present at all — see the
 	// route's own bearer-token check, which is the actual protection here.
 	'/api/alerts/run/[job]',
+	// One turn of the agentic ingestion loop (#85): queue extractions for
+	// newly arrived messages, apply the answers the runner has finished.
+	// Same shape as the alerts route above, same bearer check.
+	'/api/agent/run',
 	// The IMAP poller's cron-driven run (#84): same shape as the alerts
 	// route above — the caller is cron, no session to present, protected
 	// by the route's own bearer-token check instead.

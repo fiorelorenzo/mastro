@@ -32,6 +32,26 @@ export async function recordInboundThread(input: InboundThreadInput, executor: D
 	return row ?? null;
 }
 
+/** Every archived message, oldest first. The extraction enqueuer (#85)
+ * walks these and skips the ones already proposed from; ordering by
+ * arrival means the oldest unread message is queued first, which is the
+ * order a person would have read them in. */
+export async function listInboundThreadsAwaitingExtraction(executor: DbExecutor = db) {
+	return executor.select().from(inboundThread).orderBy(inboundThread.receivedAt);
+}
+
+/** The thread one archived message belongs to (#85). The drain needs its
+ * `receivedAt`: every relative date in the message resolves against when
+ * it was sent, which is a fact of the envelope rather than anything a
+ * model should be asked to guess. */
+export async function getInboundThreadForDocument(documentId: string, executor: DbExecutor = db) {
+	const [row] = await executor
+		.select()
+		.from(inboundThread)
+		.where(eq(inboundThread.documentId, documentId));
+	return row ?? null;
+}
+
 /** The high-water mark `pollContractFolder` fetches from: every UID at or
  * below this, for this contract's *current* `UIDVALIDITY`, has already
  * been handed off. `null` means nothing has ever been recorded for this

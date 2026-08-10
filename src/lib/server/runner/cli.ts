@@ -49,13 +49,13 @@ export async function runQueueOnce(
 			const result = await processExtractionJob(sql, models, job.request);
 			// #82's own scope ends here: "its only output is a proposal
 			// object." Writing it into `proposal` (createProposal, #83) is a
-			// human-facing producer's job (#85/#86/#87) — this process has no
-			// write grant to do it even if it tried. One JSON line on stdout
-			// is the hand-off: a producer with a real, write-capable
-			// connection reads this process's output and calls
-			// `createProposal` itself.
+			// producer's job — this process has no write grant to do it even
+			// if it tried. The hand-off is the file `markJobDone` leaves in
+			// `done/`, which the app drains (#85's `agent/drain.ts`); the
+			// line on stdout is for a human watching the log, not a seam
+			// anything parses.
 			console.log(JSON.stringify({ kind: 'proposal', jobId: job.id, ...result }));
-			await markJobDone(queueDir, filename);
+			await markJobDone(queueDir, filename, job, result);
 			console.log(`[runner] completed ${filename}`);
 			processed++;
 		} catch (err) {

@@ -9,6 +9,7 @@ import {
 	enqueueJob,
 	listPendingJobs,
 	markJobDone,
+	readCompletedJob,
 	markJobFailed,
 	readPendingJob
 } from './queue.ts';
@@ -59,9 +60,20 @@ test('a job survives from enqueue through done, and failed jobs record why', asy
 	const job = await readPendingJob(dir, `${id}.json`);
 	expect(job).toMatchObject({ id, request });
 
-	await markJobDone(dir, `${id}.json`);
+	const result = {
+		documentId: request.documentId,
+		contractId: request.contractId,
+		targetType: 'work_unit',
+		proposedFields: { days: [] },
+		excerpt: 'x',
+		confidence: 1
+	};
+	await markJobDone(dir, `${id}.json`, job, result);
 	expect(await listPendingJobs(dir)).toEqual([]);
 	expect(await readdir(join(dir, 'done'))).toEqual([`${id}.json`]);
+	// The answer travels with the job: the app drains this file, and the
+	// runner's stdout is for a human reading the log (#85).
+	expect(await readCompletedJob(dir, `${id}.json`)).toMatchObject({ id, result });
 });
 
 test('a failed job is moved out of pending and carries its error', async () => {

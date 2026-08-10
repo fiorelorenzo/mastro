@@ -43,6 +43,14 @@ export async function getProposal(id: string, executor: DbExecutor = db) {
 	return row;
 }
 
+/** Every proposal already produced from one document. The drain's
+ * idempotency check (#85): a job whose document already has proposals has
+ * been applied, whatever the queue file says, so a crash between writing
+ * the rows and moving the file cannot double a reviewer's work. */
+export async function listProposalsForDocument(documentId: string, executor: DbExecutor = db) {
+	return executor.select().from(proposal).where(eq(proposal.documentId, documentId));
+}
+
 /** Every proposal, most recent first, optionally narrowed to one status —
  * the review queue's feed (pending) and its decided history (accepted or
  * rejected) are the same query with a different filter. */

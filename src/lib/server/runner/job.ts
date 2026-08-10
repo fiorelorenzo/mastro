@@ -62,6 +62,19 @@ export async function processExtractionJob(
 }
 
 /**
+ * Agents wrap JSON in a fenced block about half the time, whatever the
+ * instructions say — Claude Code does, and it is the configured agent.
+ * That is a property of the transport rather than of any one producer's
+ * prompt, so it is unwrapped here rather than in each of #85/#86/#87. A
+ * job that failed on this answered correctly and was thrown away, which
+ * is the worst kind of failure: it looks like the model got it wrong.
+ */
+export function stripCodeFence(text: string): string {
+	const fenced = /^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/.exec(text);
+	return fenced ? fenced[1] : text;
+}
+
+/**
  * Parses a model's raw text as the JSON shape `ExtractionResult` needs.
  * Anything else — unparsable JSON, a missing field, an out-of-range
  * confidence — is a thrown error naming what was wrong, never a
@@ -70,7 +83,7 @@ export async function processExtractionJob(
 function parseExtractionResult(text: string, request: ExtractionRequest): ProposalCandidate {
 	let parsed: unknown;
 	try {
-		parsed = JSON.parse(text);
+		parsed = JSON.parse(stripCodeFence(text));
 	} catch (cause) {
 		throw new Error(`model response is not valid JSON: ${truncate(text)}`, { cause });
 	}

@@ -87,8 +87,23 @@ export async function proposeDaysFromMessage(
 		instructions: dayExtractionInstructions(source.messageDate),
 		requestedProvider: 'hosted'
 	});
+	return writeDayProposals(source, candidate, executor);
+}
 
-	const context = await extractionContext(source, executor);
+/**
+ * The half that writes, split out because the drain (`drain.ts`) already
+ * holds a candidate: the runner produced it in its own process and left
+ * it on disk, so re-calling the model to get it back would be absurd.
+ */
+export async function writeDayProposals(
+	source: Omit<DayProposalSource, 'messageDate'>,
+	candidate: ProposalCandidate,
+	executor?: DbExecutor
+): Promise<DayProposalOutcome> {
+	const context = {
+		...(await extractionContext(source, executor)),
+		fallbackExcerpt: candidate.excerpt
+	};
 	const { accepted, rejected } = validateDays(
 		parseExtractedDays(candidate.proposedFields),
 		context
@@ -127,7 +142,7 @@ export async function proposeDaysFromMessage(
 }
 
 async function extractionContext(
-	source: DayProposalSource,
+	source: Omit<DayProposalSource, 'messageDate'>,
 	executor?: DbExecutor
 ): Promise<DayExtractionContext> {
 	const rateCards = executor
@@ -139,5 +154,10 @@ async function extractionContext(
 	const allowedQuantities = [
 		...new Set(rateCards.flatMap((card) => card.allowedFractions.map(Number)))
 	];
-	return { startsOn: source.startsOn, endsOn: source.endsOn, allowedQuantities };
+	return {
+		startsOn: source.startsOn,
+		endsOn: source.endsOn,
+		allowedQuantities,
+		content: source.content
+	};
 }
