@@ -1,0 +1,111 @@
+[
+	{
+		"name": "two days, the second a half",
+		"language": "it",
+		"messageDate": "2026-02-02",
+		"content": "Ciao Lorenzo, ti confermo le giornate del 3 e 4 febbraio, la seconda mezza. Grazie!",
+		"expected": [
+			{ "date": "2026-02-03", "quantity": 1 },
+			{ "date": "2026-02-04", "quantity": 0.5 }
+		]
+	},
+	{
+		"name": "relative weekdays with a half day",
+		"language": "en",
+		"messageDate": "2026-02-02",
+		"content": "ok for Thursday and Friday, but Friday is a half day",
+		"expected": [
+			{ "date": "2026-02-05", "quantity": 1 },
+			{ "date": "2026-02-06", "quantity": 0.5 }
+		]
+	},
+	{
+		"name": "a range, weekend excluded",
+		"language": "en",
+		"messageDate": "2026-03-02",
+		"content": "Approved: Wednesday 4 March through Monday 9 March inclusive, full days.",
+		"expected": [
+			{ "date": "2026-03-04", "quantity": 1 },
+			{ "date": "2026-03-05", "quantity": 1 },
+			{ "date": "2026-03-06", "quantity": 1 },
+			{ "date": "2026-03-09", "quantity": 1 }
+		]
+	},
+	{
+		"name": "a range with one day carved out",
+		"language": "it",
+		"messageDate": "2026-04-07",
+		"content": "Va bene per tutta la settimana prossima, dal 13 al 17, tranne mercoledì che sono in ferie.",
+		"expected": [
+			{ "date": "2026-04-13", "quantity": 1 },
+			{ "date": "2026-04-14", "quantity": 1 },
+			{ "date": "2026-04-16", "quantity": 1 },
+			{ "date": "2026-04-17", "quantity": 1 }
+		]
+	},
+	{
+		"name": "nothing is approved, it is a question",
+		"language": "en",
+		"messageDate": "2026-02-10",
+		"content": "Thanks for the estimate. Before I approve anything, can you tell me how many days the migration would take?",
+		"expected": []
+	},
+	{
+		"name": "nothing is approved, the contract is being sent",
+		"language": "it",
+		"messageDate": "2026-01-20",
+		"content": "In allegato il contratto firmato. Ci sentiamo la settimana prossima per programmare.",
+		"expected": []
+	},
+	{
+		"name": "a revocation of a day approved earlier",
+		"language": "it",
+		"messageDate": "2026-05-11",
+		"content": "Scusa, devo disdire la giornata di giovedì 14. Confermo invece venerdì 15.",
+		"expected": [{ "date": "2026-05-15", "quantity": 1 }]
+	},
+	{
+		"name": "tomorrow, in the middle of a longer message",
+		"language": "en",
+		"messageDate": "2026-06-08",
+		"content": "Hi, the invoice from last month is being processed by finance and should be paid this week. Separately: yes, go ahead tomorrow for the security review, one day is fine.",
+		"expected": [{ "date": "2026-06-09", "quantity": 1 }]
+	},
+	{
+		"name": "two half days on different dates",
+		"language": "it",
+		"messageDate": "2026-07-06",
+		"content": "Ok per mezza giornata martedì 7 e mezza giovedì 9.",
+		"expected": [
+			{ "date": "2026-07-07", "quantity": 0.5 },
+			{ "date": "2026-07-09", "quantity": 0.5 }
+		]
+	},
+	{
+		"name": "a date written as a weekday plus a number, next month",
+		"language": "en",
+		"messageDate": "2026-09-28",
+		"content": "Confirmed for Thursday 1 October, full day, and Friday 2 October, full day.",
+		"expected": [
+			{ "date": "2026-10-01", "quantity": 1 },
+			{ "date": "2026-10-02", "quantity": 1 }
+		]
+	},
+	{
+		"name": "an approval that also mentions a date that is not a day of work",
+		"language": "it",
+		"messageDate": "2026-02-16",
+		"content": "Confermo la giornata del 18 febbraio. La fattura di gennaio, emessa il 31 gennaio, la paghiamo entro il 28.",
+		"expected": [{ "date": "2026-02-18", "quantity": 1 }]
+	},
+	{
+		"name": "next week with no weekday named",
+		"language": "en",
+		"messageDate": "2026-11-02",
+		"content": "Let us do two full days next week, Tuesday and Wednesday.",
+		"expected": [
+			{ "date": "2026-11-10", "quantity": 1 },
+			{ "date": "2026-11-11", "quantity": 1 }
+		]
+	}
+]
