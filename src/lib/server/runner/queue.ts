@@ -11,7 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ExtractionRequest } from './types.ts';
+import type { ExtractionRequest, ProposalCandidate } from './types.ts';
 
 export interface QueuedJob {
 	readonly id: string;
@@ -56,11 +56,53 @@ export async function readPendingJob(queueDir: string, filename: string): Promis
 	return JSON.parse(raw) as QueuedJob;
 }
 
-/** Moves a completed job's file into `done/`. Never called until
- * `processExtractionJob` has fully returned, so a job killed mid-flight
- * is never marked done for work it did not finish. */
-export async function markJobDone(queueDir: string, filename: string): Promise<void> {
-	await rename(join(queueDir, 'pending', filename), join(queueDir, 'done', filename));
+/** A finished job, with what the model actually answered. The runner has
+ * no write grant for `proposal`, so this file in `done/` is the hand-off:
+ * the app drains it (`$lib/server/agent/drain.ts`) and writes the rows
+ * itself. A file rather than the process's stdout, so a producer that was
+ * not running when the job finished still gets it. */
+export interface CompletedJob extends QueuedJob {
+	readonly result: ProposalCandidate;
+	readonly completedAt: string;
+}
+
+/** Records what the model answered and moves the job into `done/`. Never
+ * called until `processExtractionJob` has fully returned, so a job killed
+ * mid-flight is never marked done for work it did not finish. The write
+ * happens in `pending/` and the rename is what publishes it, the same
+ * atomicity `enqueueJob` relies on. */
+export async function markJobDone(
+	queueDir: string,
+	filename: string,
+	job: QueuedJob,
+	result: ProposalCandidate
+): Promise<void> {
+	const pendingPath = join(queueDir, 'pending', filename);
+	const completed: CompletedJob = { ...job, result, completedAt: new Date().toISOString() };
+	await writeFile(pendingPath, JSON.stringify(completed, null, 2));
+	await rename(pendingPath, join(queueDir, 'done', filename));
+}
+
+/** Every completed job waiting to be turned into proposals, oldest first
+ * by filename. Read by the app, never by the runner. */
+export async function listCompletedJobs(queueDir: string): Promise<string[]> {
+	await ensureQueueDirs(queueDir);
+	const names = await readdir(join(queueDir, 'done'));
+	return names.filter((name) => name.endsWith('.json')).sort();
+}
+
+export async function readCompletedJob(queueDir: string, filename: string): Promise<CompletedJob> {
+	const raw = await readFile(join(queueDir, 'done', filename), 'utf8');
+	return JSON.parse(raw) as CompletedJob;
+}
+
+/** Moves a drained job out of `done/` once its proposals exist. A separate
+ * directory rather than a delete: what the model answered is the evidence
+ * behind a proposal a human is about to read, and invariant 4 says keep
+ * the source. */
+export async function markJobApplied(queueDir: string, filename: string): Promise<void> {
+	await mkdir(join(queueDir, 'applied'), { recursive: true });
+	await rename(join(queueDir, 'done', filename), join(queueDir, 'applied', filename));
 }
 
 /** Records why a job failed and moves it into `failed/` — a terminal

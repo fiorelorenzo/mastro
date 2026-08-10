@@ -16,6 +16,12 @@ export interface ExtractedDay {
 	readonly notes?: string;
 }
 
+/** The shortest excerpt that can still be read as evidence. A model asked
+ * for "the shortest span" will hand back "3", which is verbatim and
+ * useless: a reviewer seeing it next to a proposed day learns nothing
+ * about whether the message really said so. */
+const MINIMUM_EXCERPT_LENGTH = 12;
+
 export interface DayExtractionContext {
 	/** The contract's own term, so a day outside it is refused rather than proposed. */
 	readonly startsOn: string;
@@ -29,6 +35,23 @@ export interface DayExtractionContext {
 	 * positive quantity is allowed through for a human to judge.
 	 */
 	readonly allowedQuantities: readonly number[];
+	/**
+	 * The message itself. Every excerpt is checked against it, because a
+	 * paraphrased excerpt is the one failure invariant 4 cannot tolerate:
+	 * the whole point of keeping the source is that the span shown next to
+	 * a proposed day is what the client actually wrote.
+	 */
+	readonly content: string;
+	/**
+	 * The message-level span the model gave for the approval as a whole.
+	 * When a day's own excerpt is verbatim but too short to read as
+	 * evidence — Claude answers `"3"` for the first of "le giornate del 3
+	 * e 4 febbraio" often enough to matter — the day is kept and shown
+	 * against this wider span instead of being thrown away. Widening is
+	 * safe in a way that inventing is not: this is still the client's own
+	 * words, just more of them.
+	 */
+	readonly fallbackExcerpt?: string;
 }
 
 export interface RejectedDay {
@@ -97,8 +120,11 @@ export function parseExtractedDays(proposedFields: Record<string, unknown>): Ext
 		if (typeof quantity !== 'number' || !Number.isFinite(quantity)) {
 			throw new Error(`day ${index} has no numeric quantity`);
 		}
-		if (typeof scope !== 'string' || scope.trim() === '') {
-			throw new Error(`day ${index} has no scope`);
+		// An approval often says only "ok for Thursday". A scope invented to
+		// satisfy a schema is worse than an empty one a human fills in, so
+		// this accepts a missing scope and the review screen asks for it.
+		if (scope !== undefined && scope !== null && typeof scope !== 'string') {
+			throw new Error(`day ${index} has a non-string scope`);
 		}
 		if (typeof excerpt !== 'string' || excerpt.trim() === '') {
 			throw new Error(`day ${index} has no excerpt`);
@@ -109,7 +135,7 @@ export function parseExtractedDays(proposedFields: Record<string, unknown>): Ext
 		return {
 			date,
 			quantity,
-			scope: scope.trim(),
+			scope: typeof scope === 'string' ? scope.trim() : '',
 			excerpt: excerpt.trim(),
 			...(typeof notes === 'string' && notes.trim() !== '' ? { notes: notes.trim() } : {})
 		};
@@ -131,7 +157,8 @@ export function validateDays(
 	const rejected: RejectedDay[] = [];
 	const seen = new Set<string>();
 
-	for (const day of days) {
+	for (const raw of days) {
+		const day = widenShortExcerpt(raw, context);
 		const reason = rejectionReason(day, context, seen);
 		if (reason) {
 			rejected.push({ day, reason });
@@ -141,6 +168,18 @@ export function validateDays(
 		accepted.push(day);
 	}
 	return { accepted, rejected };
+}
+
+/** A day whose own excerpt is verbatim but too short falls back to the
+ * message-level span, when that one is itself usable. Only length is
+ * forgiven this way: a paraphrase is still refused, because the point of
+ * the excerpt is that the client wrote it. */
+function widenShortExcerpt(day: ExtractedDay, context: DayExtractionContext): ExtractedDay {
+	if (day.excerpt.length >= MINIMUM_EXCERPT_LENGTH) return day;
+	const fallback = context.fallbackExcerpt?.trim() ?? '';
+	if (fallback.length < MINIMUM_EXCERPT_LENGTH) return day;
+	if (!normalise(context.content).includes(normalise(fallback))) return day;
+	return { ...day, excerpt: fallback };
 }
 
 function rejectionReason(
@@ -161,8 +200,21 @@ function rejectionReason(
 		return `${day.date} is after the contract ends`;
 	}
 	if (day.quantity <= 0) return `quantity ${day.quantity} is not positive`;
+	if (day.excerpt.length < MINIMUM_EXCERPT_LENGTH) {
+		return `excerpt ${JSON.stringify(day.excerpt)} is too short to be evidence`;
+	}
+	if (!normalise(context.content).includes(normalise(day.excerpt))) {
+		return `excerpt ${JSON.stringify(day.excerpt)} is not verbatim in the message`;
+	}
 	if (context.allowedQuantities.length > 0 && !context.allowedQuantities.includes(day.quantity)) {
 		return `quantity ${day.quantity} is not one this contract's rate cards sell`;
 	}
 	return null;
+}
+
+/** Whitespace is the one difference worth forgiving: a model reflowing a
+ * wrapped line is still quoting. Anything else it changed is a paraphrase.
+ */
+function normalise(text: string): string {
+	return text.replace(/\s+/g, ' ').trim();
 }

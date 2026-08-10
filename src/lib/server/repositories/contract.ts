@@ -68,8 +68,8 @@ export async function listContractsWithMailFolder(executor: DbExecutor = db) {
 		.where(isNotNull(contract.mailFolder));
 }
 
-export async function getContract(id: string) {
-	return db.query.contract.findFirst({ where: eq(contract.id, id) });
+export async function getContract(id: string, executor: DbExecutor = db) {
+	return executor.query.contract.findFirst({ where: eq(contract.id, id) });
 }
 
 export async function getContractWithClient(id: string) {

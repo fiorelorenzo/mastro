@@ -33,10 +33,18 @@ export interface RunAcpPromptInput {
  * one-shot request/response call, not a session this process keeps open.
  */
 export async function runAcpPrompt(input: RunAcpPromptInput): Promise<string> {
+	// `detached` so the child leads its own process group, which is the
+	// only way to kill what it spawned. The configured agent is `npx`,
+	// which execs a wrapper that forks the real agent: killing the wrapper
+	// leaves the agent alive holding this process's stdio open, so a run
+	// that has already failed hangs until its timeout and every job leaks
+	// one more process. Observed, not theorised — three of them were still
+	// running after one job.
 	const child = spawn(input.command, [...input.args], {
 		cwd: input.cwd ?? process.cwd(),
 		env: { ...input.env },
-		stdio: ['pipe', 'pipe', 'inherit']
+		stdio: ['pipe', 'pipe', 'inherit'],
+		detached: true
 	});
 
 	// `spawn` fails asynchronously (e.g. ENOENT for a command that does not
@@ -87,6 +95,18 @@ export async function runAcpPrompt(input: RunAcpPromptInput): Promise<string> {
 	} catch (cause) {
 		throw new Error(`ACP agent '${input.command}' failed: ${(cause as Error).message}`, { cause });
 	} finally {
-		child.kill();
+		killProcessGroup(child.pid);
+	}
+}
+
+/** Kills the agent and everything it spawned. A negative pid signals the
+ * whole process group, which is what `detached: true` above exists to
+ * create. ESRCH means it is already gone, which is the common case. */
+function killProcessGroup(pid: number | undefined): void {
+	if (pid === undefined) return;
+	try {
+		process.kill(-pid, 'SIGTERM');
+	} catch {
+		// Already exited, or never started.
 	}
 }
