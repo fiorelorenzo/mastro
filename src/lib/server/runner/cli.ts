@@ -15,7 +15,8 @@
 import { connectRunnerDb } from './db.ts';
 import { loadRunnerConfig } from './config.ts';
 import { RunnerConfigurationError } from './errors.ts';
-import { processExtractionJob, type ExtractionModels } from './job.ts';
+import { processExtractionJob } from './job.ts';
+import type { ExtractionModel } from './model.ts';
 import { AcpAgentModel } from './model.ts';
 import {
 	enqueueJob,
@@ -25,7 +26,7 @@ import {
 	markJobFailed,
 	readPendingJob
 } from './queue.ts';
-import type { ExtractionProvider, ExtractionRequest } from './types.ts';
+import type { ExtractionRequest } from './types.ts';
 
 /** Processes every job currently in `pending/` once, then returns —
  * `cli.ts`'s `once` subcommand, and the unit `queue.test.ts` and
@@ -37,7 +38,7 @@ import type { ExtractionProvider, ExtractionRequest } from './types.ts';
 export async function runQueueOnce(
 	queueDir: string,
 	sql: Parameters<typeof processExtractionJob>[0],
-	models: ExtractionModels
+	model: ExtractionModel
 ): Promise<{ processed: number; failed: number }> {
 	const pending = await listPendingJobs(queueDir);
 	let processed = 0;
@@ -46,7 +47,7 @@ export async function runQueueOnce(
 		const job = await readPendingJob(queueDir, filename);
 		console.log(`[runner] processing ${filename}`);
 		try {
-			const result = await processExtractionJob(sql, models, job.request);
+			const result = await processExtractionJob(sql, model, job.request);
 			// #82's own scope ends here: "its only output is a proposal
 			// object." Writing it into `proposal` (createProposal, #83) is a
 			// producer's job — this process has no write grant to do it even
@@ -88,12 +89,12 @@ const DEFAULT_POLL_INTERVAL_MS = 2000;
 export async function watchQueue(
 	queueDir: string,
 	sql: Parameters<typeof processExtractionJob>[0],
-	models: ExtractionModels,
+	model: ExtractionModel,
 	signal: AbortSignal,
 	pollIntervalMs = DEFAULT_POLL_INTERVAL_MS
 ): Promise<void> {
 	while (!signal.aborted) {
-		await runQueueOnce(queueDir, sql, models);
+		await runQueueOnce(queueDir, sql, model);
 		await sleep(pollIntervalMs, signal);
 	}
 }
@@ -127,17 +128,12 @@ function requireFlag(flags: Record<string, string>, name: string): string {
 
 async function runEnqueueCommand(queueDir: string, argv: string[]): Promise<void> {
 	const flags = parseFlags(argv);
-	const provider = flags.provider;
-	if (provider !== undefined && provider !== 'local' && provider !== 'hosted') {
-		throw new Error(`--provider must be 'local' or 'hosted', got: ${provider}`);
-	}
 	const request: ExtractionRequest = {
 		documentId: requireFlag(flags, 'document'),
 		contractId: requireFlag(flags, 'contract'),
 		targetType: requireFlag(flags, 'target-type'),
 		content: requireFlag(flags, 'content'),
-		instructions: requireFlag(flags, 'instructions'),
-		requestedProvider: provider as ExtractionProvider | undefined
+		instructions: requireFlag(flags, 'instructions')
 	};
 	const id = await enqueueJob(queueDir, request);
 	console.log(`[runner] enqueued ${id}`);
@@ -154,15 +150,12 @@ export async function runRunnerCli(argv: string[]): Promise<void> {
 	}
 
 	const sql = connectRunnerDb(config.databaseUrl);
-	const models: ExtractionModels = {
-		local: new AcpAgentModel('local', config.localAgent, config.modelTimeoutMs),
-		hosted: new AcpAgentModel('hosted', config.hostedAgent, config.modelTimeoutMs)
-	};
+	const model = new AcpAgentModel(config.agent, config.modelTimeoutMs);
 	await ensureQueueDirs(config.queueDir);
 
 	try {
 		if (command === 'once' || command === undefined) {
-			const { processed, failed } = await runQueueOnce(config.queueDir, sql, models);
+			const { processed, failed } = await runQueueOnce(config.queueDir, sql, model);
 			console.log(`[runner] processed ${processed} job(s), ${failed} failed`);
 			return;
 		}
@@ -173,10 +166,9 @@ export async function runRunnerCli(argv: string[]): Promise<void> {
 			process.once('SIGINT', () => controller.abort());
 			console.log(
 				`[runner] watching ${config.queueDir} ` +
-					`(local agent: ${config.localAgent ? 'configured' : 'not configured'}, ` +
-					`hosted agent: ${config.hostedAgent ? 'configured' : 'not configured'})`
+					`(agent: ${config.agent ? 'configured' : 'not configured'})`
 			);
-			await watchQueue(config.queueDir, sql, models, controller.signal);
+			await watchQueue(config.queueDir, sql, model, controller.signal);
 			return;
 		}
 

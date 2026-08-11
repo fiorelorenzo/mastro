@@ -5,12 +5,10 @@ import {
 	type ContractRenewalType,
 	type ContractStatus,
 	type ContractTemplateLanguage,
-	type DocumentProvenance,
 	type ExpensePolicy,
 	type InvoicingCadence,
 	type PaymentTerms
 } from '$lib/server/db/schema';
-import { storeDocument } from './document';
 
 export type ContractInput = {
 	clientId: string;
@@ -132,63 +130,6 @@ export async function setContractMailFolder(id: string, mailFolder: string | nul
 		.update(contract)
 		.set({ mailFolder })
 		.where(eq(contract.id, id))
-		.returning();
-	return row;
-}
-
-export type HostedExtractionConsentInput = {
-	bytes: Uint8Array;
-	mime: string;
-	originalName: string;
-	provenance: DocumentProvenance;
-	confidential: boolean;
-};
-
-/**
- * Archives `input` as evidence that this contract's client consented in
- * writing to route this contract's documents to a named hosted extraction
- * provider (#81, #82), and points the contract at it — the only way
- * `contract.hostedExtractionConsentDocumentId` is ever set. The document
- * is owned by the contract directly (`ownerType: 'contract'`), the same
- * evidentiary shape `attachExpenseReceipt` gives a receipt and
- * `createApproval` gives an approval's proof; the accompanying custom
- * migration's trigger rejects the update below if the two ever disagree.
- *
- * The ACP runner never calls this: it has no write grant to. This is the
- * human side of #82's boundary — the runner only ever reads what this
- * writes.
- */
-export async function setHostedExtractionConsentDocument(
-	contractId: string,
-	input: HostedExtractionConsentInput,
-	tx?: DbExecutor
-) {
-	const run = async (executor: DbExecutor) => {
-		const documentRow = await storeDocument(
-			{ ...input, contractId, ownerType: 'contract', ownerId: contractId },
-			executor
-		);
-		const [row] = await executor
-			.update(contract)
-			.set({ hostedExtractionConsentDocumentId: documentRow.id })
-			.where(eq(contract.id, contractId))
-			.returning();
-		return row;
-	};
-	return tx ? run(tx) : db.transaction((innerTx) => run(innerTx));
-}
-
-/** Reverts a contract to local-only routing (#81's default) by clearing
- * the consent link. Never deletes the archived document itself — it stays
- * as a historical record of what was once on file, the same way a
- * rejected proposal stays a row rather than being removed (invariant 4:
- * never keep only the extracted fact, and never discard the evidence
- * either once it exists). */
-export async function revokeHostedExtractionConsent(contractId: string, executor: DbExecutor = db) {
-	const [row] = await executor
-		.update(contract)
-		.set({ hostedExtractionConsentDocumentId: null })
-		.where(eq(contract.id, contractId))
 		.returning();
 	return row;
 }

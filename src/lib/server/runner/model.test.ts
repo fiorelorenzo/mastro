@@ -4,19 +4,18 @@ import { RunnerConfigurationError } from './errors.ts';
 
 const FIXTURE_AGENT = new URL('./__fixtures__/fake-acp-agent.ts', import.meta.url).pathname;
 
-test('an unconfigured provider refuses immediately, without spawning anything', async () => {
-	const model = new AcpAgentModel('local', null, 5000);
+test('an unconfigured agent refuses immediately, without spawning anything', async () => {
+	const model = new AcpAgentModel(null, 5000);
 	await expect(model.call({ instructions: 'x', content: 'y' })).rejects.toThrow(
 		RunnerConfigurationError
 	);
 	await expect(model.call({ instructions: 'x', content: 'y' })).rejects.toThrow(
-		/RUNNER_LOCAL_AGENT_COMMAND/
+		/RUNNER_AGENT_COMMAND/
 	);
 });
 
-test('a configured provider speaks real ACP to the agent and returns its text', async () => {
+test('a configured agent speaks real ACP and returns its text', async () => {
 	const model = new AcpAgentModel(
-		'local',
 		{
 			command: process.execPath,
 			args: [FIXTURE_AGENT],
@@ -43,7 +42,6 @@ test('a configured provider speaks real ACP to the agent and returns its text', 
 
 test('an agent that exits before answering fails loudly, not with a fabricated response', async () => {
 	const model = new AcpAgentModel(
-		'hosted',
 		{ command: process.execPath, args: [FIXTURE_AGENT], env: { FAKE_AGENT_EXIT_CODE: '1' } },
 		2000
 	);
@@ -52,7 +50,6 @@ test('an agent that exits before answering fails loudly, not with a fabricated r
 
 test('an agent that never responds in time fails loudly rather than hanging the runner', async () => {
 	const model = new AcpAgentModel(
-		'hosted',
 		{ command: process.execPath, args: [FIXTURE_AGENT], env: { FAKE_AGENT_DELAY_MS: '2000' } },
 		200
 	);

@@ -55,16 +55,14 @@ async function setUpContractAndDocument() {
 	return { contractRow, documentRow };
 }
 
-test('the runner role can read the two columns model routing needs', async () => {
+test('the runner role can read the one contract column it filters by', async () => {
 	const { contractRow } = await setUpContractAndDocument();
 	runnerSql = connectRunnerDb(runnerDatabaseUrl);
 
 	const rows = await runnerSql<
-		{ id: string; hosted_extraction_consent_document_id: string | null }[]
-	>`
-		SELECT id, hosted_extraction_consent_document_id FROM contract WHERE id = ${contractRow.id}
-	`;
-	expect(rows).toEqual([{ id: contractRow.id, hosted_extraction_consent_document_id: null }]);
+		{ id: string }[]
+	>`SELECT id FROM contract WHERE id = ${contractRow.id}`;
+	expect(rows).toEqual([{ id: contractRow.id }]);
 });
 
 test('the runner role can read the document row it was handed', async () => {

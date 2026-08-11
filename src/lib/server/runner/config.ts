@@ -14,8 +14,8 @@ export interface AgentCommandConfig {
 	/** Environment for the spawned subprocess only — never this process's
 	 * own `process.env`. See `acp-client.ts`: the child is spawned with
 	 * exactly this object, nothing inherited, so `RUNNER_DATABASE_URL` and
-	 * every other credential this process holds can never reach a model
-	 * agent, local or hosted. */
+	 * every other credential this process holds can never reach the model
+	 * agent. */
 	readonly env: Readonly<Record<string, string>>;
 }
 
@@ -24,10 +24,9 @@ export interface RunnerConfig {
 	readonly queueDir: string;
 	readonly modelTimeoutMs: number;
 	/** `null` when unconfigured — a supported state, not an error, until a
-	 * job actually needs this provider. See `model.ts`'s `AcpAgentModel`,
-	 * which is what turns "null" into the loud failure #82 asks for. */
-	readonly localAgent: AgentCommandConfig | null;
-	readonly hostedAgent: AgentCommandConfig | null;
+	 * job actually needs it. See `model.ts`'s `AcpAgentModel`, which is what
+	 * turns "null" into the loud failure #82 asks for. */
+	readonly agent: AgentCommandConfig | null;
 }
 
 function parseJsonArrayOfStrings(varName: string, raw: string | undefined): string[] {
@@ -70,19 +69,13 @@ function parseJsonObjectOfStrings(
 	return parsed as Record<string, string>;
 }
 
-function loadAgentCommand(
-	prefix: 'LOCAL' | 'HOSTED',
-	env: NodeJS.ProcessEnv
-): AgentCommandConfig | null {
-	const command = env[`RUNNER_${prefix}_AGENT_COMMAND`];
+function loadAgentCommand(env: NodeJS.ProcessEnv): AgentCommandConfig | null {
+	const command = env.RUNNER_AGENT_COMMAND;
 	if (!command) return null;
 	return {
 		command,
-		args: parseJsonArrayOfStrings(
-			`RUNNER_${prefix}_AGENT_ARGS`,
-			env[`RUNNER_${prefix}_AGENT_ARGS`]
-		),
-		env: parseJsonObjectOfStrings(`RUNNER_${prefix}_AGENT_ENV`, env[`RUNNER_${prefix}_AGENT_ENV`])
+		args: parseJsonArrayOfStrings('RUNNER_AGENT_ARGS', env.RUNNER_AGENT_ARGS),
+		env: parseJsonObjectOfStrings('RUNNER_AGENT_ENV', env.RUNNER_AGENT_ENV)
 	};
 }
 
@@ -110,7 +103,6 @@ export function loadRunnerConfig(env: NodeJS.ProcessEnv = process.env): RunnerCo
 		databaseUrl,
 		queueDir: env.RUNNER_QUEUE_DIR || DEFAULT_QUEUE_DIR,
 		modelTimeoutMs,
-		localAgent: loadAgentCommand('LOCAL', env),
-		hostedAgent: loadAgentCommand('HOSTED', env)
+		agent: loadAgentCommand(env)
 	};
 }

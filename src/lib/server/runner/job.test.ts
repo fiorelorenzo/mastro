@@ -2,8 +2,7 @@ import { afterAll, afterEach, expect, test } from 'vitest';
 import { env } from '$env/dynamic/private';
 import { client as pool } from '$lib/server/db';
 import { connectRunnerDb, type RunnerDb } from './db.ts';
-import { HostedExtractionRefused } from './errors.ts';
-import { processExtractionJob, type ExtractionModels } from './job.ts';
+import { processExtractionJob } from './job.ts';
 import type { ExtractionModel } from './model.ts';
 import type { ExtractionRequest } from './types.ts';
 import {
@@ -58,75 +57,47 @@ test('a document that does not belong to the stated contract is rejected before 
 	const documentOfA = await insertCommittedDocument(contractA.id);
 	runnerSql = connectRunnerDb(runnerDatabaseUrl);
 
-	const models: ExtractionModels = { local: NEVER_CALL, hosted: NEVER_CALL };
-	await expect(
-		processExtractionJob(
-			runnerSql,
-			models,
-			baseRequest({ documentId: documentOfA.id, contractId: contractB.id })
-		)
-	).rejects.toThrow(/belongs to contract/);
-});
-
-test('a document id the runner cannot read at all is rejected', async () => {
-	runnerSql = connectRunnerDb(runnerDatabaseUrl);
-	const models: ExtractionModels = { local: NEVER_CALL, hosted: NEVER_CALL };
-	await expect(
-		processExtractionJob(
-			runnerSql,
-			models,
-			baseRequest({ documentId: crypto.randomUUID(), contractId: crypto.randomUUID() })
-		)
-	).rejects.toThrow(/does not exist/);
-});
-
-test('hosted extraction on a contract with no consent on file never reaches the hosted model', async () => {
-	const contractRow = await insertCommittedContract();
-	cleanup.push(() => deleteCommittedContract(contractRow.id, contractRow.clientId));
-	const documentRow = await insertCommittedDocument(contractRow.id);
-	runnerSql = connectRunnerDb(runnerDatabaseUrl);
-
-	// The strongest available proof that the hosted path was never
-	// reached: patch the real global `fetch` to throw, so *any* code that
-	// tried to make a network call — inside this model double, or inside
-	// a real implementation that used `fetch` instead of spawning a
-	// subprocess — would fail the test, not silently succeed.
+	// The strongest available proof that no model was reached: patch the
+	// real global `fetch` to throw, so *any* code that tried to make a
+	// network call — inside a model double, or inside a real
+	// implementation using `fetch` rather than spawning a subprocess —
+	// fails the test instead of silently succeeding.
 	const originalFetch = globalThis.fetch;
 	globalThis.fetch = (() => {
-		throw new Error('network reached: the hosted model must never be invoked here');
+		throw new Error('network reached: no model may be invoked for a mismatched document');
 	}) as typeof fetch;
-
-	const hostedModelThatWouldReachTheNetwork: ExtractionModel = {
-		async call() {
-			await fetch('https://example.invalid/should-never-be-reached');
-			throw new Error('unreachable');
-		}
-	};
 
 	try {
 		await expect(
 			processExtractionJob(
 				runnerSql,
-				{ local: NEVER_CALL, hosted: hostedModelThatWouldReachTheNetwork },
-				baseRequest({
-					documentId: documentRow.id,
-					contractId: contractRow.id,
-					requestedProvider: 'hosted'
-				})
+				NEVER_CALL,
+				baseRequest({ documentId: documentOfA.id, contractId: contractB.id })
 			)
-		).rejects.toThrow(HostedExtractionRefused);
+		).rejects.toThrow(/belongs to contract/);
 	} finally {
 		globalThis.fetch = originalFetch;
 	}
 });
 
-test('a successful local call returns a ProposalCandidate shaped from the model response', async () => {
+test('a document id the runner cannot read at all is rejected', async () => {
+	runnerSql = connectRunnerDb(runnerDatabaseUrl);
+	await expect(
+		processExtractionJob(
+			runnerSql,
+			NEVER_CALL,
+			baseRequest({ documentId: crypto.randomUUID(), contractId: crypto.randomUUID() })
+		)
+	).rejects.toThrow(/does not exist/);
+});
+
+test('a successful call returns a ProposalCandidate shaped from the model response', async () => {
 	const contractRow = await insertCommittedContract();
 	cleanup.push(() => deleteCommittedContract(contractRow.id, contractRow.clientId));
 	const documentRow = await insertCommittedDocument(contractRow.id);
 	runnerSql = connectRunnerDb(runnerDatabaseUrl);
 
-	const localModel: ExtractionModel = {
+	const model: ExtractionModel = {
 		async call() {
 			return {
 				text: JSON.stringify({
@@ -140,7 +111,7 @@ test('a successful local call returns a ProposalCandidate shaped from the model 
 
 	const result = await processExtractionJob(
 		runnerSql,
-		{ local: localModel, hosted: NEVER_CALL },
+		model,
 		baseRequest({ documentId: documentRow.id, contractId: contractRow.id, targetType: 'work_unit' })
 	);
 
@@ -176,7 +147,7 @@ test.each([
 		await expect(
 			processExtractionJob(
 				runnerSql,
-				{ local: badModel, hosted: NEVER_CALL },
+				badModel,
 				baseRequest({ documentId: documentRow.id, contractId: contractRow.id })
 			)
 		).rejects.toThrow(new RegExp(expectedMessage));

@@ -210,7 +210,7 @@ and the two match.
 ### The runner service
 
 `scripts/deploy-prod.sh` starts the ACP runner only when `.env.prod` sets
-`RUNNER_LOCAL_AGENT_COMMAND`. With no model agent configured it would have nothing
+`RUNNER_AGENT_COMMAND`. With no model agent configured it would have nothing
 to do, and a container restarting forever is worse than an absent one: #82's own
 acceptance is that the product degrades to manual entry when the runner is not
 there. Configure the command and the next deploy brings it up.

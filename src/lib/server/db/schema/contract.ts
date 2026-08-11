@@ -1,23 +1,8 @@
 import type { MinorUnits } from '$lib/money';
 import { relations } from 'drizzle-orm';
-import {
-	boolean,
-	date,
-	integer,
-	jsonb,
-	pgEnum,
-	pgTable,
-	text,
-	uuid,
-	type AnyPgColumn
-} from 'drizzle-orm/pg-core';
+import { boolean, date, integer, jsonb, pgEnum, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { id, timestamps } from '../columns';
 import { client } from './client';
-// Circular at the type level with document.ts (document.contractId points
-// back here): safe because drizzle's `.references(() => document.id)`
-// below is a closure, only invoked after both modules finish evaluating,
-// never at import time.
-import { document } from './document';
 
 export const contractRenewalType = pgEnum('contract_renewal_type', [
 	'none',
@@ -147,32 +132,9 @@ export const contract = pgTable('contract', {
 		.notNull()
 		.default(false),
 	status: contractStatus('status').notNull().default('draft'),
-	/**
-	 * A human's evidence (#81, #82) that this contract's client consented
-	 * in writing to route documents to a named hosted extraction provider
-	 * — never a bare boolean: the accompanying custom migration's trigger
-	 * rejects any value that does not point at a `document` archived with
-	 * `ownerType: 'contract', ownerId: <this contract>`, the same
-	 * evidentiary shape every other piece of proof in this system carries
-	 * (invariant 4). Null, the default and every contract's starting
-	 * state, means local-only: the ACP runner (#82) reads this column to
-	 * decide, and refuses a hosted call outright when it is null rather
-	 * than falling back to it. Set only by a human, through
-	 * `setHostedExtractionConsentDocument` in `repositories/contract.ts`
-	 * — the runner's own database role has no write grant on this table
-	 * at all, let alone this column.
-	 */
-	hostedExtractionConsentDocumentId: uuid('hosted_extraction_consent_document_id').references(
-		(): AnyPgColumn => document.id,
-		{ onDelete: 'restrict' }
-	),
 	...timestamps()
 });
 
 export const contractRelations = relations(contract, ({ one }) => ({
-	client: one(client, { fields: [contract.clientId], references: [client.id] }),
-	hostedExtractionConsentDocument: one(document, {
-		fields: [contract.hostedExtractionConsentDocumentId],
-		references: [document.id]
-	})
+	client: one(client, { fields: [contract.clientId], references: [client.id] })
 }));

@@ -9,59 +9,58 @@ test('RUNNER_DATABASE_URL is required', () => {
 	expect(() => loadRunnerConfig({})).toThrow(/RUNNER_DATABASE_URL/);
 });
 
-test('with nothing else set, both agents are unconfigured and defaults apply', () => {
+test('with nothing else set, the agent is unconfigured and defaults apply', () => {
 	const config = loadRunnerConfig(BASE_ENV);
-	expect(config.localAgent).toBeNull();
-	expect(config.hostedAgent).toBeNull();
+	expect(config.agent).toBeNull();
 	expect(config.queueDir).toBe('./data/runner-queue');
 	expect(config.modelTimeoutMs).toBe(120_000);
 });
 
 test('an agent command with no args/env still resolves to empty defaults', () => {
-	const config = loadRunnerConfig({ ...BASE_ENV, RUNNER_LOCAL_AGENT_COMMAND: 'my-local-agent' });
-	expect(config.localAgent).toEqual({ command: 'my-local-agent', args: [], env: {} });
+	const config = loadRunnerConfig({ ...BASE_ENV, RUNNER_AGENT_COMMAND: 'my-agent' });
+	expect(config.agent).toEqual({ command: 'my-agent', args: [], env: {} });
 });
 
 test('args and env parse from JSON', () => {
 	const config = loadRunnerConfig({
 		...BASE_ENV,
-		RUNNER_HOSTED_AGENT_COMMAND: 'my-hosted-agent',
-		RUNNER_HOSTED_AGENT_ARGS: '["--flag", "value"]',
-		RUNNER_HOSTED_AGENT_ENV: '{"API_KEY": "secret"}'
+		RUNNER_AGENT_COMMAND: 'my-agent',
+		RUNNER_AGENT_ARGS: '["--flag", "value"]',
+		RUNNER_AGENT_ENV: '{"API_KEY": "secret"}'
 	});
-	expect(config.hostedAgent).toEqual({
-		command: 'my-hosted-agent',
+	expect(config.agent).toEqual({
+		command: 'my-agent',
 		args: ['--flag', 'value'],
 		env: { API_KEY: 'secret' }
 	});
 });
 
-test('malformed RUNNER_*_AGENT_ARGS is a loud configuration error, not a silent empty array', () => {
+test('malformed RUNNER_AGENT_ARGS is a loud configuration error, not a silent empty array', () => {
 	expect(() =>
 		loadRunnerConfig({
 			...BASE_ENV,
-			RUNNER_LOCAL_AGENT_COMMAND: 'x',
-			RUNNER_LOCAL_AGENT_ARGS: 'not json'
+			RUNNER_AGENT_COMMAND: 'x',
+			RUNNER_AGENT_ARGS: 'not json'
 		})
 	).toThrow(RunnerConfigurationError);
 });
 
-test('RUNNER_*_AGENT_ARGS must be an array of strings, not e.g. numbers', () => {
+test('RUNNER_AGENT_ARGS must be an array of strings, not e.g. numbers', () => {
 	expect(() =>
 		loadRunnerConfig({
 			...BASE_ENV,
-			RUNNER_LOCAL_AGENT_COMMAND: 'x',
-			RUNNER_LOCAL_AGENT_ARGS: '[1, 2]'
+			RUNNER_AGENT_COMMAND: 'x',
+			RUNNER_AGENT_ARGS: '[1, 2]'
 		})
 	).toThrow(RunnerConfigurationError);
 });
 
-test('malformed RUNNER_*_AGENT_ENV is a loud configuration error', () => {
+test('malformed RUNNER_AGENT_ENV is a loud configuration error', () => {
 	expect(() =>
 		loadRunnerConfig({
 			...BASE_ENV,
-			RUNNER_HOSTED_AGENT_COMMAND: 'x',
-			RUNNER_HOSTED_AGENT_ENV: '["not", "an", "object"]'
+			RUNNER_AGENT_COMMAND: 'x',
+			RUNNER_AGENT_ENV: '["not", "an", "object"]'
 		})
 	).toThrow(RunnerConfigurationError);
 });

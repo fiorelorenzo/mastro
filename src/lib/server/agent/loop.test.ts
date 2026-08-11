@@ -107,8 +107,7 @@ async function completeOneJob(dir: string, documentId: string, contractId: strin
 		contractId,
 		targetType: 'work_unit',
 		content: 'Confermo il 3 e il 4 febbraio, la seconda mezza.',
-		instructions: 'x',
-		requestedProvider: 'hosted'
+		instructions: 'x'
 	});
 	const job = await readPendingJob(dir, `${id}.json`);
 	await markJobDone(dir, `${id}.json`, job, answer(documentId, contractId));

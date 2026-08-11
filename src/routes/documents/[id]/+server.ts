@@ -7,7 +7,7 @@ import type { RequestHandler } from './$types';
  * Serves an archived document back to the person who archived it (#187).
  *
  * Every piece of evidence this product keeps — an approval's proof, an
- * expense receipt, a client's consent to hosted extraction — has been
+ * expense receipt, an imported invoice — has been
  * write-only until now: the row names the file and nothing in the app
  * could open it. Invariant 4 says the source document is what counts when
  * a client disputes a day, which is worth very little if the source
