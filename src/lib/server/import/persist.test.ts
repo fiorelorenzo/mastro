@@ -6,6 +6,8 @@
 // amounts directly instead of hand-writing FatturaPA XML for every case.
 import { and, eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
+import { rejection } from '$lib/server/db/pg-error';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
 import { minorUnits } from '$lib/money';
 import {
@@ -165,454 +167,429 @@ async function countRows(
 }
 
 test('persisting a new imported invoice creates the invoice, one line and the structured document', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const before = await countRows(tx, contractRow.id);
-			expect(before.invoices).toBe(0);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const before = await countRows(tx, contractRow.id);
+		expect(before.invoices).toBe(0);
 
-			const outcome = await persistImportedInvoice(
-				{
-					file: jsonFile('a.json', invoiceDoc()),
-					invoiceIndex: 0,
-					attachments: [],
-					contractId: contractRow.id,
-					lineDecisions: [{ workUnitIds: [] }]
-				},
-				pack,
-				registry,
-				ACCOUNT_HOLDER_TAX_ID,
-				[],
-				ACTOR,
-				'imported from a fixture folder',
-				tx
-			);
-			expect(outcome.kind).toBe('created');
-
-			const after = await countRows(tx, contractRow.id);
-			expect(after.invoices).toBe(1);
-			expect(after.lines).toBe(1);
-			expect(after.documents).toBe(1);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
-});
-
-test('re-running the same import a second time creates nothing: outcome is already_present, row counts unchanged', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const file = jsonFile('a.json', invoiceDoc());
-			const request: PersistInvoiceRequest = {
-				file,
+		const outcome = await persistImportedInvoice(
+			{
+				file: jsonFile('a.json', invoiceDoc()),
 				invoiceIndex: 0,
 				attachments: [],
 				contractId: contractRow.id,
 				lineDecisions: [{ workUnitIds: [] }]
-			};
+			},
+			pack,
+			registry,
+			ACCOUNT_HOLDER_TAX_ID,
+			[],
+			ACTOR,
+			'imported from a fixture folder',
+			tx
+		);
+		expect(outcome.kind).toBe('created');
 
-			const first = await persistImportedInvoice(
-				request,
-				pack,
-				registry,
-				ACCOUNT_HOLDER_TAX_ID,
-				[],
-				ACTOR,
-				'first import',
-				tx
-			);
-			const invoiceId = expectCreated(first);
-			const afterFirst = await countRows(tx, contractRow.id);
+		const after = await countRows(tx, contractRow.id);
+		expect(after.invoices).toBe(1);
+		expect(after.lines).toBe(1);
+		expect(after.documents).toBe(1);
+	});
+});
 
-			// The second run reflects the database exactly as the route handler
-			// would re-fetch it: the invoice `persistImportedInvoice` just wrote,
-			// carrying the hash of the file just stored.
-			const existingInvoices = [
-				{
-					id: invoiceId,
-					number: '2024/1',
-					issueDate: '2024-03-15',
-					hashes: [hashContent(file.content)]
-				}
-			];
+test('re-running the same import a second time creates nothing: outcome is already_present, row counts unchanged', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const file = jsonFile('a.json', invoiceDoc());
+		const request: PersistInvoiceRequest = {
+			file,
+			invoiceIndex: 0,
+			attachments: [],
+			contractId: contractRow.id,
+			lineDecisions: [{ workUnitIds: [] }]
+		};
 
-			const second = await persistImportedInvoice(
-				request,
-				pack,
-				registry,
-				ACCOUNT_HOLDER_TAX_ID,
-				existingInvoices,
-				ACTOR,
-				'second import of the same folder',
-				tx
-			);
-			expect(second.kind).toBe('already_present');
+		const first = await persistImportedInvoice(
+			request,
+			pack,
+			registry,
+			ACCOUNT_HOLDER_TAX_ID,
+			[],
+			ACTOR,
+			'first import',
+			tx
+		);
+		const invoiceId = expectCreated(first);
+		const afterFirst = await countRows(tx, contractRow.id);
 
-			const afterSecond = await countRows(tx, contractRow.id);
-			expect(afterSecond).toEqual(afterFirst);
+		// The second run reflects the database exactly as the route handler
+		// would re-fetch it: the invoice `persistImportedInvoice` just wrote,
+		// carrying the hash of the file just stored.
+		const existingInvoices = [
+			{
+				id: invoiceId,
+				number: '2024/1',
+				issueDate: '2024-03-15',
+				hashes: [hashContent(file.content)]
+			}
+		];
 
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const second = await persistImportedInvoice(
+			request,
+			pack,
+			registry,
+			ACCOUNT_HOLDER_TAX_ID,
+			existingInvoices,
+			ACTOR,
+			'second import of the same folder',
+			tx
+		);
+		expect(second.kind).toBe('already_present');
+
+		const afterSecond = await countRows(tx, contractRow.id);
+		expect(afterSecond).toEqual(afterFirst);
+	});
 });
 
 test('a structured document plus a companion attachment produce one invoice with two stored documents', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const structured = jsonFile('2024/invoice-1.json', invoiceDoc());
-			const companion: ImportableFile = {
-				filename: '2024/invoice-1.pdf',
-				content: new TextEncoder().encode('pdf bytes')
-			};
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const structured = jsonFile('2024/invoice-1.json', invoiceDoc());
+		const companion: ImportableFile = {
+			filename: '2024/invoice-1.pdf',
+			content: new TextEncoder().encode('pdf bytes')
+		};
 
-			const outcome = await persistImportedInvoice(
-				{
-					file: structured,
-					invoiceIndex: 0,
-					attachments: [companion],
-					contractId: contractRow.id,
-					lineDecisions: [{ workUnitIds: [] }]
-				},
-				pack,
-				registry,
-				ACCOUNT_HOLDER_TAX_ID,
-				[],
-				ACTOR,
-				'imported with its companion PDF',
-				tx
-			);
-			expect(outcome.kind).toBe('created');
+		const outcome = await persistImportedInvoice(
+			{
+				file: structured,
+				invoiceIndex: 0,
+				attachments: [companion],
+				contractId: contractRow.id,
+				lineDecisions: [{ workUnitIds: [] }]
+			},
+			pack,
+			registry,
+			ACCOUNT_HOLDER_TAX_ID,
+			[],
+			ACTOR,
+			'imported with its companion PDF',
+			tx
+		);
+		expect(outcome.kind).toBe('created');
 
-			const after = await countRows(tx, contractRow.id);
-			expect(after.invoices).toBe(1);
-			expect(after.documents).toBe(2);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const after = await countRows(tx, contractRow.id);
+		expect(after.invoices).toBe(1);
+		expect(after.documents).toBe(2);
+	});
 });
 
 test('a re-issue with the same natural key but different content is a conflict, never merged: nothing new is written', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const original = jsonFile('a.json', invoiceDoc());
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const original = jsonFile('a.json', invoiceDoc());
 
-			const first = await persistImportedInvoice(
-				{
-					file: original,
-					invoiceIndex: 0,
-					attachments: [],
-					contractId: contractRow.id,
-					lineDecisions: [{ workUnitIds: [] }]
-				},
-				pack,
-				registry,
-				ACCOUNT_HOLDER_TAX_ID,
-				[],
-				ACTOR,
-				'first issue',
-				tx
-			);
-			const invoiceId = expectCreated(first);
-			const afterFirst = await countRows(tx, contractRow.id);
+		const first = await persistImportedInvoice(
+			{
+				file: original,
+				invoiceIndex: 0,
+				attachments: [],
+				contractId: contractRow.id,
+				lineDecisions: [{ workUnitIds: [] }]
+			},
+			pack,
+			registry,
+			ACCOUNT_HOLDER_TAX_ID,
+			[],
+			ACTOR,
+			'first issue',
+			tx
+		);
+		const invoiceId = expectCreated(first);
+		const afterFirst = await countRows(tx, contractRow.id);
 
-			const existingInvoices = [
-				{
-					id: invoiceId,
-					number: '2024/1',
-					issueDate: '2024-03-15',
-					hashes: [hashContent(original.content)]
-				}
-			];
+		const existingInvoices = [
+			{
+				id: invoiceId,
+				number: '2024/1',
+				issueDate: '2024-03-15',
+				hashes: [hashContent(original.content)]
+			}
+		];
 
-			// Same number and year, different total: a genuine re-issue.
-			const reissued = jsonFile('a-reissued.json', invoiceDoc({ total: minorUnits(999999) }));
-			const second = await persistImportedInvoice(
-				{
-					file: reissued,
-					invoiceIndex: 0,
-					attachments: [],
-					contractId: contractRow.id,
-					lineDecisions: [{ workUnitIds: [] }]
-				},
-				pack,
-				registry,
-				ACCOUNT_HOLDER_TAX_ID,
-				existingInvoices,
-				ACTOR,
-				're-issue with the same number',
-				tx
-			);
-			expect(second).toEqual({
-				kind: 'conflict',
-				filename: 'a-reissued.json',
-				existingInvoiceNumber: '2024/1'
-			});
+		// Same number and year, different total: a genuine re-issue.
+		const reissued = jsonFile('a-reissued.json', invoiceDoc({ total: minorUnits(999999) }));
+		const second = await persistImportedInvoice(
+			{
+				file: reissued,
+				invoiceIndex: 0,
+				attachments: [],
+				contractId: contractRow.id,
+				lineDecisions: [{ workUnitIds: [] }]
+			},
+			pack,
+			registry,
+			ACCOUNT_HOLDER_TAX_ID,
+			existingInvoices,
+			ACTOR,
+			're-issue with the same number',
+			tx
+		);
+		expect(second).toEqual({
+			kind: 'conflict',
+			filename: 'a-reissued.json',
+			existingInvoiceNumber: '2024/1'
+		});
 
-			const afterSecond = await countRows(tx, contractRow.id);
-			expect(afterSecond).toEqual(afterFirst);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const afterSecond = await countRows(tx, contractRow.id);
+		expect(afterSecond).toEqual(afterFirst);
+	});
 });
 
 test('confirming a day-mapping decision links the accepted days and moves them to invoiced', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			await tx.insert(rateCard).values({
-				contractId: contractRow.id,
-				validFrom: '2024-01-01',
-				validTo: null,
-				kind: 'daily',
-				amount: 600,
-				unit: 'day',
-				allowedFractions: [1],
-				minimumHours: null,
-				disbursementPeriod: null
-			});
-			const [day1, day2] = await tx
-				.insert(workUnit)
-				.values([
-					{
-						contractId: contractRow.id,
-						date: '2024-03-01',
-						quantity: 1,
-						scope: 'work',
-						state: 'worked'
-					},
-					{
-						contractId: contractRow.id,
-						date: '2024-03-02',
-						quantity: 1,
-						scope: 'work',
-						state: 'worked'
-					}
-				])
-				.returning();
-
-			const outcome = await persistImportedInvoice(
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		await tx.insert(rateCard).values({
+			contractId: contractRow.id,
+			validFrom: '2024-01-01',
+			validTo: null,
+			kind: 'daily',
+			amount: 600,
+			unit: 'day',
+			allowedFractions: [1],
+			minimumHours: null,
+			disbursementPeriod: null
+		});
+		const [day1, day2] = await tx
+			.insert(workUnit)
+			.values([
 				{
-					file: jsonFile(
-						'a.json',
-						invoiceDoc({
-							lines: [
-								{
-									description: 'Two days',
-									quantity: 2,
-									unitPrice: minorUnits(60000),
-									amount: minorUnits(120000),
-									taxRate: 22
-								}
-							]
-						})
-					),
-					invoiceIndex: 0,
-					attachments: [],
-					contractId: contractRow.id,
-					lineDecisions: [{ workUnitIds: [day1.id, day2.id] }]
-				},
-				pack,
-				registry,
-				ACCOUNT_HOLDER_TAX_ID,
-				[],
-				ACTOR,
-				'confirmed day mapping',
-				tx
-			);
-			const invoiceId = expectCreated(outcome);
-
-			const [line] = await tx
-				.select()
-				.from(invoiceLine)
-				.where(eq(invoiceLine.invoiceId, invoiceId));
-			const days = await tx.select().from(workUnit).where(eq(workUnit.contractId, contractRow.id));
-			for (const day of days) {
-				expect(day.state).toBe('invoiced');
-				expect(day.invoiceLineId).toBe(line.id);
-			}
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
-});
-
-test('rejecting a day-mapping proposal (empty workUnitIds) leaves the days completely untouched', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const [day] = await tx
-				.insert(workUnit)
-				.values({
 					contractId: contractRow.id,
 					date: '2024-03-01',
 					quantity: 1,
 					scope: 'work',
 					state: 'worked'
-				})
-				.returning();
-			const before = await tx.select().from(workUnit).where(eq(workUnit.id, day.id));
-
-			const outcome = await persistImportedInvoice(
-				{
-					file: jsonFile('a.json', invoiceDoc()),
-					invoiceIndex: 0,
-					attachments: [],
-					contractId: contractRow.id,
-					// The reviewer rejected the proposal: no day is linked.
-					lineDecisions: [{ workUnitIds: [] }]
 				},
-				pack,
-				registry,
-				ACCOUNT_HOLDER_TAX_ID,
-				[],
-				ACTOR,
-				'day mapping rejected',
-				tx
-			);
-			expect(outcome.kind).toBe('created');
+				{
+					contractId: contractRow.id,
+					date: '2024-03-02',
+					quantity: 1,
+					scope: 'work',
+					state: 'worked'
+				}
+			])
+			.returning();
 
-			const after = await tx.select().from(workUnit).where(eq(workUnit.id, day.id));
-			expect(after).toEqual(before);
-			expect(after[0].state).toBe('worked');
-			expect(after[0].invoiceLineId).toBeNull();
+		const outcome = await persistImportedInvoice(
+			{
+				file: jsonFile(
+					'a.json',
+					invoiceDoc({
+						lines: [
+							{
+								description: 'Two days',
+								quantity: 2,
+								unitPrice: minorUnits(60000),
+								amount: minorUnits(120000),
+								taxRate: 22
+							}
+						]
+					})
+				),
+				invoiceIndex: 0,
+				attachments: [],
+				contractId: contractRow.id,
+				lineDecisions: [{ workUnitIds: [day1.id, day2.id] }]
+			},
+			pack,
+			registry,
+			ACCOUNT_HOLDER_TAX_ID,
+			[],
+			ACTOR,
+			'confirmed day mapping',
+			tx
+		);
+		const invoiceId = expectCreated(outcome);
 
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const [line] = await tx.select().from(invoiceLine).where(eq(invoiceLine.invoiceId, invoiceId));
+		const days = await tx.select().from(workUnit).where(eq(workUnit.contractId, contractRow.id));
+		for (const day of days) {
+			expect(day.state).toBe('invoiced');
+			expect(day.invoiceLineId).toBe(line.id);
+		}
+	});
+});
+
+test('rejecting a day-mapping proposal (empty workUnitIds) leaves the days completely untouched', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const [day] = await tx
+			.insert(workUnit)
+			.values({
+				contractId: contractRow.id,
+				date: '2024-03-01',
+				quantity: 1,
+				scope: 'work',
+				state: 'worked'
+			})
+			.returning();
+		const before = await tx.select().from(workUnit).where(eq(workUnit.id, day.id));
+
+		const outcome = await persistImportedInvoice(
+			{
+				file: jsonFile('a.json', invoiceDoc()),
+				invoiceIndex: 0,
+				attachments: [],
+				contractId: contractRow.id,
+				// The reviewer rejected the proposal: no day is linked.
+				lineDecisions: [{ workUnitIds: [] }]
+			},
+			pack,
+			registry,
+			ACCOUNT_HOLDER_TAX_ID,
+			[],
+			ACTOR,
+			'day mapping rejected',
+			tx
+		);
+		expect(outcome.kind).toBe('created');
+
+		const after = await tx.select().from(workUnit).where(eq(workUnit.id, day.id));
+		expect(after).toEqual(before);
+		expect(after[0].state).toBe('worked');
+		expect(after[0].invoiceLineId).toBeNull();
+	});
 });
 
 test('a mismatched line-decision count is rejected rather than guessed at', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			await expect(
-				persistImportedInvoice(
-					{
-						file: jsonFile('a.json', invoiceDoc()),
-						invoiceIndex: 0,
-						attachments: [],
-						contractId: contractRow.id,
-						lineDecisions: []
-					},
-					pack,
-					registry,
-					ACCOUNT_HOLDER_TAX_ID,
-					[],
-					ACTOR,
-					'mismatched decisions',
-					tx
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		expect(
+			(
+				await rejection(() =>
+					persistImportedInvoice(
+						{
+							file: jsonFile('a.json', invoiceDoc()),
+							invoiceIndex: 0,
+							attachments: [],
+							contractId: contractRow.id,
+							lineDecisions: []
+						},
+						pack,
+						registry,
+						ACCOUNT_HOLDER_TAX_ID,
+						[],
+						ACTOR,
+						'mismatched decisions',
+						tx
+					)
 				)
-			).rejects.toThrow(/decision/);
-			tx.rollback();
-		})
-	).rejects.toThrow();
+			).message
+		).toMatch(/decision/);
+	});
 });
 
 test('an incoming invoice is rejected, never persisted as revenue', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			await expect(
-				persistImportedInvoice(
-					{
-						file: jsonFile('a.json', invoiceDoc({ supplier: party({ taxId: 'IT99999999999' }) })),
-						invoiceIndex: 0,
-						attachments: [],
-						contractId: contractRow.id,
-						lineDecisions: [{ workUnitIds: [] }]
-					},
-					pack,
-					registry,
-					ACCOUNT_HOLDER_TAX_ID,
-					[],
-					ACTOR,
-					'incoming, rejected',
-					tx
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		expect(
+			(
+				await rejection(() =>
+					persistImportedInvoice(
+						{
+							file: jsonFile('a.json', invoiceDoc({ supplier: party({ taxId: 'IT99999999999' }) })),
+							invoiceIndex: 0,
+							attachments: [],
+							contractId: contractRow.id,
+							lineDecisions: [{ workUnitIds: [] }]
+						},
+						pack,
+						registry,
+						ACCOUNT_HOLDER_TAX_ID,
+						[],
+						ACTOR,
+						'incoming, rejected',
+						tx
+					)
 				)
-			).rejects.toThrow(/incoming/);
-			tx.rollback();
-		})
-	).rejects.toThrow();
+			).message
+		).toMatch(/incoming/);
+	});
 });
 
 test('a batch file whose adapter parses to two invoices persists each independently by invoiceIndex, as two separate invoice rows; an out-of-range invoiceIndex is rejected (#101)', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const batchFile = jsonFileBatch('batch.json', [
-				invoiceDoc({ number: '2024/1' }),
-				invoiceDoc({ number: '2024/2' })
-			]);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const batchFile = jsonFileBatch('batch.json', [
+			invoiceDoc({ number: '2024/1' }),
+			invoiceDoc({ number: '2024/2' })
+		]);
 
-			const firstOutcome = await persistImportedInvoice(
-				{
-					file: batchFile,
-					invoiceIndex: 0,
-					attachments: [],
-					contractId: contractRow.id,
-					lineDecisions: [{ workUnitIds: [] }]
-				},
-				pack,
-				registry,
-				ACCOUNT_HOLDER_TAX_ID,
-				[],
-				ACTOR,
-				'first body of the batch',
-				tx
-			);
-			const firstInvoiceId = expectCreated(firstOutcome);
+		const firstOutcome = await persistImportedInvoice(
+			{
+				file: batchFile,
+				invoiceIndex: 0,
+				attachments: [],
+				contractId: contractRow.id,
+				lineDecisions: [{ workUnitIds: [] }]
+			},
+			pack,
+			registry,
+			ACCOUNT_HOLDER_TAX_ID,
+			[],
+			ACTOR,
+			'first body of the batch',
+			tx
+		);
+		const firstInvoiceId = expectCreated(firstOutcome);
 
-			// A second, independent call — matching how the confirm route
-			// sends two separate confirm-list entries for the same file
-			// (Part I / #101), not a single call handling both bodies.
-			const secondOutcome = await persistImportedInvoice(
-				{
-					file: batchFile,
-					invoiceIndex: 1,
-					attachments: [],
-					contractId: contractRow.id,
-					lineDecisions: [{ workUnitIds: [] }]
-				},
-				pack,
-				registry,
-				ACCOUNT_HOLDER_TAX_ID,
-				[],
-				ACTOR,
-				'second body of the batch',
-				tx
-			);
-			const secondInvoiceId = expectCreated(secondOutcome);
+		// A second, independent call — matching how the confirm route
+		// sends two separate confirm-list entries for the same file
+		// (Part I / #101), not a single call handling both bodies.
+		const secondOutcome = await persistImportedInvoice(
+			{
+				file: batchFile,
+				invoiceIndex: 1,
+				attachments: [],
+				contractId: contractRow.id,
+				lineDecisions: [{ workUnitIds: [] }]
+			},
+			pack,
+			registry,
+			ACCOUNT_HOLDER_TAX_ID,
+			[],
+			ACTOR,
+			'second body of the batch',
+			tx
+		);
+		const secondInvoiceId = expectCreated(secondOutcome);
 
-			expect(firstInvoiceId).not.toBe(secondInvoiceId);
-			const after = await countRows(tx, contractRow.id);
-			expect(after.invoices).toBe(2);
+		expect(firstInvoiceId).not.toBe(secondInvoiceId);
+		const after = await countRows(tx, contractRow.id);
+		expect(after.invoices).toBe(2);
 
-			const singleFile = jsonFile('single.json', invoiceDoc());
-			await expect(
-				persistImportedInvoice(
-					{
-						file: singleFile,
-						invoiceIndex: 5,
-						attachments: [],
-						contractId: contractRow.id,
-						lineDecisions: [{ workUnitIds: [] }]
-					},
-					pack,
-					registry,
-					ACCOUNT_HOLDER_TAX_ID,
-					[],
-					ACTOR,
-					'out of range invoiceIndex',
-					tx
+		const singleFile = jsonFile('single.json', invoiceDoc());
+		expect(
+			(
+				await rejection(() =>
+					persistImportedInvoice(
+						{
+							file: singleFile,
+							invoiceIndex: 5,
+							attachments: [],
+							contractId: contractRow.id,
+							lineDecisions: [{ workUnitIds: [] }]
+						},
+						pack,
+						registry,
+						ACCOUNT_HOLDER_TAX_ID,
+						[],
+						ACTOR,
+						'out of range invoiceIndex',
+						tx
+					)
 				)
-			).rejects.toThrow(/does not have an invoice at index/);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+			).message
+		).toMatch(/no longer has an invoice at index/);
+	});
 });

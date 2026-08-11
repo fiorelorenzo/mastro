@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { env } from '$env/dynamic/private';
-import { db } from '$lib/server/db';
 import { connectRunnerDb, getHostedExtractionConsentDocumentId } from '$lib/server/runner/db';
 import {
 	deleteCommittedContract,
@@ -56,43 +56,39 @@ const consent = (name: string) => ({
 });
 
 test('consent granted, withdrawn and granted again points at the new document, not the old one', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
 
-			const first = await setHostedExtractionConsentDocument(
-				contractRow.id,
-				consent('amendment-2026.pdf'),
-				tx
-			);
-			const firstDocumentId = first.hostedExtractionConsentDocumentId;
+		const first = await setHostedExtractionConsentDocument(
+			contractRow.id,
+			consent('amendment-2026.pdf'),
+			tx
+		);
+		const firstDocumentId = first.hostedExtractionConsentDocumentId;
 
-			await revokeHostedExtractionConsent(contractRow.id, tx);
+		await revokeHostedExtractionConsent(contractRow.id, tx);
 
-			const second = await setHostedExtractionConsentDocument(
-				contractRow.id,
-				consent('amendment-2027.pdf'),
-				tx
-			);
+		const second = await setHostedExtractionConsentDocument(
+			contractRow.id,
+			consent('amendment-2027.pdf'),
+			tx
+		);
 
-			expect(second.hostedExtractionConsentDocumentId).not.toBe(firstDocumentId);
+		expect(second.hostedExtractionConsentDocumentId).not.toBe(firstDocumentId);
 
-			// Both documents survive: consent given and later withdrawn is
-			// history, and the runner's refusal reads the column, not the
-			// documents, so keeping them costs nothing and losing them would
-			// destroy the evidence invariant 4 exists for.
-			const archived = await tx
-				.select()
-				.from(document)
-				.where(eq(document.contractId, contractRow.id));
-			expect(archived.map((row) => row.originalName).sort()).toEqual([
-				'amendment-2026.pdf',
-				'amendment-2027.pdf'
-			]);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		// Both documents survive: consent given and later withdrawn is
+		// history, and the runner's refusal reads the column, not the
+		// documents, so keeping them costs nothing and losing them would
+		// destroy the evidence invariant 4 exists for.
+		const archived = await tx
+			.select()
+			.from(document)
+			.where(eq(document.contractId, contractRow.id));
+		expect(archived.map((row) => row.originalName).sort()).toEqual([
+			'amendment-2026.pdf',
+			'amendment-2027.pdf'
+		]);
+	});
 });
 
 // The other half of #187: what the contract screen writes is what the

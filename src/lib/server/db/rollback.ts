@@ -1,4 +1,10 @@
-import { db, type DbExecutor } from './index';
+import { db } from './index';
+
+/** Exactly what `db.transaction` hands its callback. Not `DbExecutor`, which
+ * is the wider "pool or transaction" union: a test passing its `tx` on to a
+ * repository function that requires a real transaction has to keep the
+ * narrow type it had before this helper existed. */
+type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * Runs `body` inside a transaction, rolls it back, and returns whatever
@@ -24,7 +30,9 @@ import { db, type DbExecutor } from './index';
  * Here the rollback is this function's business, not the test's. Anything
  * else `body` throws propagates, so a failing assertion fails its test.
  */
-export async function inRolledBackTransaction<T>(body: (tx: DbExecutor) => Promise<T>): Promise<T> {
+export async function inRolledBackTransaction<T>(
+	body: (tx: Transaction) => Promise<T>
+): Promise<T> {
 	const marker = Symbol('rollback');
 	let result!: T;
 	try {

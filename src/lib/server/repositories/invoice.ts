@@ -149,8 +149,8 @@ export async function createInvoice(
 	return tx ? run(tx) : db.transaction(run);
 }
 
-export async function getInvoiceWithLines(id: string) {
-	const invoiceRow = await db.query.invoice.findFirst({
+export async function getInvoiceWithLines(id: string, executor: DbExecutor = db) {
+	const invoiceRow = await executor.query.invoice.findFirst({
 		where: eq(invoice.id, id),
 		with: { contract: { with: { client: true } } }
 	});
@@ -160,14 +160,14 @@ export async function getInvoiceWithLines(id: string) {
 	// not one combined query: a line can carry several of each, and
 	// joining both against `invoice_line` in a single query would produce
 	// their cartesian product per line instead of two independent lists.
-	const dayRows = await db
+	const dayRows = await executor
 		.select({ line: invoiceLine, day: workUnit })
 		.from(invoiceLine)
 		.leftJoin(workUnit, eq(workUnit.invoiceLineId, invoiceLine.id))
 		.where(eq(invoiceLine.invoiceId, id))
 		.orderBy(asc(invoiceLine.createdAt), asc(workUnit.date));
 
-	const expenseRows = await db
+	const expenseRows = await executor
 		.select({ line: invoiceLine, expense })
 		.from(invoiceLine)
 		.leftJoin(expense, eq(expense.invoiceLineId, invoiceLine.id))
@@ -202,8 +202,8 @@ export async function getInvoiceWithLines(id: string) {
  * `routes/invoices/[id]`), not stored, exactly as #27 asks. No batch job
  * exists to keep a stored flag current because nothing stores one.
  */
-export async function recordPayment(invoiceId: string, paidOn: string) {
-	const [row] = await db
+export async function recordPayment(invoiceId: string, paidOn: string, executor: DbExecutor = db) {
+	const [row] = await executor
 		.update(invoice)
 		.set({ paidOn })
 		.where(eq(invoice.id, invoiceId))
@@ -219,8 +219,8 @@ export async function recordPayment(invoiceId: string, paidOn: string) {
  * plain function over `dueDate`, not a column this query could `ORDER BY`
  * without duplicating that arithmetic in SQL.
  */
-export async function listUnpaidInvoices() {
-	const rows = await db
+export async function listUnpaidInvoices(executor: DbExecutor = db) {
+	const rows = await executor
 		.select({
 			invoice,
 			contractTitle: contract.title,

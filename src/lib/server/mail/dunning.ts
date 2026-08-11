@@ -71,6 +71,11 @@ export async function buildDunningContext(
 		},
 		period,
 		register,
-		language
+		language,
+		// The date this context was built for, so the rendered body agrees
+		// with it. Without this `renderTemplate` recomputed days late off the
+		// wall clock, and a draft built for a pinned date rendered a
+		// different figure than the one its caller had just checked.
+		today
 	};
 }

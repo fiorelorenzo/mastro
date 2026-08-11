@@ -310,4 +310,23 @@ CREATE TRIGGER <table>_set_updated_at BEFORE UPDATE ON "<table>"
 Vitest, in a node environment, `*.test.ts` next to the code. Database tests use the
 real database (`pnpm db:up && pnpm db:migrate` first) and do their work inside a
 transaction they roll back, so the suite leaves nothing behind and does not care about
-order. `src/lib/server/db/set-updated-at.test.ts` is the pattern to copy.
+order.
+
+**Roll back with `inRolledBackTransaction` (`src/lib/server/db/rollback.ts`), and assert
+on what it returns.** Never `await expect(db.transaction(...)).rejects.toThrow()`: that
+shape was the convention here for a year and it silently passes. `tx.rollback()` works
+by throwing, the matcher accepts any error, and an assertion error is an error, so a
+test whose assertions all fail still goes green. It was measured, not reasoned about:
+`expect(1).toBe(2)` inside that shape passes, and **70 of 841 tests were asserting
+nothing** when the swallow was removed (#191). Assertions belong after the helper
+returns, on the value the body handed back.
+
+Two more things that only bite inside a transaction. `now()` is the transaction's own
+start time, so `updated_at` cannot advance between two statements of one test and
+"the most recent row" of two inserted there is undefined — pass explicit timestamps
+when the ordering is the point. And a rejected statement aborts its transaction, so a
+test that watches two constraints fire needs a savepoint: `rejection(fn, tx)`
+(`src/lib/server/db/pg-error.ts`) contains the failure and hands back the Postgres
+error, `code` and `constraint_name` included, from behind Drizzle's `Failed query:`
+wrapper. Asserting against that wrapper is how a dozen constraint tests came to name
+constraints that had never fired.

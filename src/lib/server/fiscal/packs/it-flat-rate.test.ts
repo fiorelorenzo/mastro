@@ -3,7 +3,8 @@
 // is what keeps that comment honest if the numbers ever drift.
 
 import { afterAll, expect, test } from 'vitest';
-import { client, db } from '../../db';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
+import { client } from '../../db';
 import { fiscalProfile } from '../../db/schema/fiscal';
 import { evaluateCharges } from '../pack';
 import { buildRegistry, defaultRegistry, lookupPack } from '../registry';
@@ -88,20 +89,16 @@ test('resolution finds the pack by id and version, independent of the default re
 });
 
 test('a taxpayer on the flat-rate pack resolves end to end, both ceilings included', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			await tx.insert(fiscalProfile).values({
-				packId: 'it-flat-rate',
-				packVersion: '1',
-				validFrom: '2023-01-01',
-				validTo: null
-			});
+	await inRolledBackTransaction(async (tx) => {
+		await tx.insert(fiscalProfile).values({
+			packId: 'it-flat-rate',
+			packVersion: '1',
+			validFrom: '2023-01-01',
+			validTo: null
+		});
 
-			const resolved = await resolveActiveFiscalPack(tx, '2024-06-01');
-			expect(resolved?.pack.id).toBe('it-flat-rate');
-			expect(resolved?.pack.ceilings).toHaveLength(2);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const resolved = await resolveActiveFiscalPack(tx, '2024-06-01');
+		expect(resolved?.pack.id).toBe('it-flat-rate');
+		expect(resolved?.pack.ceilings).toHaveLength(2);
+	});
 });

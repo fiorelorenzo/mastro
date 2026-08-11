@@ -1,5 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
+import { rejection } from '$lib/server/db/pg-error';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
 import { clauseNote, client, contract } from './index';
 import type { ExpensePolicy, PaymentTerms } from './contract';
@@ -52,77 +54,73 @@ async function insertContract(tx: Parameters<Parameters<typeof db.transaction>[0
 }
 
 test('a well-formed clause note attaches to its contract', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
 
-			const [note] = await tx
-				.insert(clauseNote)
-				.values({
-					contractId: contractRow.id,
-					clauseReference: 'Art. 8.3',
-					verbatimText:
-						'The agreement terminates unless renewed; either party may refuse renewal upon one month notice.',
-					interpretationAdopted:
-						'Read as counterparty_option: the client may refuse renewal with 30 days notice.',
-					notes: 'Confirmed by the client in writing on 2024-01-15.'
-				})
-				.returning();
+		const [note] = await tx
+			.insert(clauseNote)
+			.values({
+				contractId: contractRow.id,
+				clauseReference: 'Art. 8.3',
+				verbatimText:
+					'The agreement terminates unless renewed; either party may refuse renewal upon one month notice.',
+				interpretationAdopted:
+					'Read as counterparty_option: the client may refuse renewal with 30 days notice.',
+				notes: 'Confirmed by the client in writing on 2024-01-15.'
+			})
+			.returning();
 
-			expect(note.contractId).toBe(contractRow.id);
+		expect(note.contractId).toBe(contractRow.id);
 
-			const notes = await tx
-				.select()
-				.from(clauseNote)
-				.where(eq(clauseNote.contractId, contractRow.id));
-			expect(notes).toHaveLength(1);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const notes = await tx
+			.select()
+			.from(clauseNote)
+			.where(eq(clauseNote.contractId, contractRow.id));
+		expect(notes).toHaveLength(1);
+	});
 });
 
 test('a blank clause_reference is rejected by the database', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			await tx.insert(clauseNote).values({
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const error = await rejection(() =>
+			tx.insert(clauseNote).values({
 				contractId: contractRow.id,
 				clauseReference: '   ',
 				verbatimText: 'text',
 				interpretationAdopted: 'reading'
-			});
-			tx.rollback();
-		})
-	).rejects.toThrow();
+			})
+		);
+		expect(error.constraint_name).toBe('clause_note_clause_reference_not_blank');
+	});
 });
 
 test('a blank verbatim_text is rejected by the database', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			await tx.insert(clauseNote).values({
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const error = await rejection(() =>
+			tx.insert(clauseNote).values({
 				contractId: contractRow.id,
 				clauseReference: 'Art. 8.3',
 				verbatimText: '',
 				interpretationAdopted: 'reading'
-			});
-			tx.rollback();
-		})
-	).rejects.toThrow();
+			})
+		);
+		expect(error.constraint_name).toBe('clause_note_verbatim_text_not_blank');
+	});
 });
 
 test('a blank interpretation_adopted is rejected by the database', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			await tx.insert(clauseNote).values({
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const error = await rejection(() =>
+			tx.insert(clauseNote).values({
 				contractId: contractRow.id,
 				clauseReference: 'Art. 8.3',
 				verbatimText: 'text',
 				interpretationAdopted: ''
-			});
-			tx.rollback();
-		})
-	).rejects.toThrow();
+			})
+		);
+		expect(error.constraint_name).toBe('clause_note_interpretation_adopted_not_blank');
+	});
 });

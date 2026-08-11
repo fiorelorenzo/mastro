@@ -1,5 +1,6 @@
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract, document, documentMirrorRun } from './index';
 import type { ExpensePolicy, PaymentTerms } from './contract';
@@ -62,72 +63,57 @@ async function insertDocument(tx: Parameters<Parameters<typeof db.transaction>[0
 }
 
 test('a mirror run is recorded with its status and stays unacknowledged by default', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const documentRow = await insertDocument(tx);
-			const [failure] = await tx
-				.insert(documentMirrorRun)
-				.values({ documentId: documentRow.id, status: 'failure', detail: 'Drive quota exceeded' })
-				.returning();
+	await inRolledBackTransaction(async (tx) => {
+		const documentRow = await insertDocument(tx);
+		const [failure] = await tx
+			.insert(documentMirrorRun)
+			.values({ documentId: documentRow.id, status: 'failure', detail: 'Drive quota exceeded' })
+			.returning();
 
-			expect(failure.status).toBe('failure');
-			expect(failure.detail).toBe('Drive quota exceeded');
-			expect(failure.acknowledgedAt).toBeNull();
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		expect(failure.status).toBe('failure');
+		expect(failure.detail).toBe('Drive quota exceeded');
+		expect(failure.acknowledgedAt).toBeNull();
+	});
 });
 
 test('a status outside success/failure is rejected by the database', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const documentRow = await insertDocument(tx);
-			await expect(
-				tx.execute(
-					sql`insert into document_mirror_run (document_id, status) values (${documentRow.id}, 'partial')`
-				)
-			).rejects.toThrow();
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+	await inRolledBackTransaction(async (tx) => {
+		const documentRow = await insertDocument(tx);
+		await expect(
+			tx.execute(
+				sql`insert into document_mirror_run (document_id, status) values (${documentRow.id}, 'partial')`
+			)
+		).rejects.toThrow();
+	});
 });
 
 test('a document_id that does not name an existing document is rejected by the database', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			await expect(
-				tx.insert(documentMirrorRun).values({ documentId: crypto.randomUUID(), status: 'success' })
-			).rejects.toThrow();
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+	await inRolledBackTransaction(async (tx) => {
+		await expect(
+			tx.insert(documentMirrorRun).values({ documentId: crypto.randomUUID(), status: 'success' })
+		).rejects.toThrow();
+	});
 });
 
 test('acknowledging a run stops it looking like the newest failure', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const documentRow = await insertDocument(tx);
-			const [row] = await tx
-				.insert(documentMirrorRun)
-				.values({ documentId: documentRow.id, status: 'failure' })
-				.returning();
+	await inRolledBackTransaction(async (tx) => {
+		const documentRow = await insertDocument(tx);
+		const [row] = await tx
+			.insert(documentMirrorRun)
+			.values({ documentId: documentRow.id, status: 'failure' })
+			.returning();
 
-			await tx
-				.update(documentMirrorRun)
-				.set({ acknowledgedAt: new Date() })
-				.where(eq(documentMirrorRun.id, row.id));
+		await tx
+			.update(documentMirrorRun)
+			.set({ acknowledgedAt: new Date() })
+			.where(eq(documentMirrorRun.id, row.id));
 
-			const [updated] = await tx
-				.select()
-				.from(documentMirrorRun)
-				.where(eq(documentMirrorRun.id, row.id));
-			expect(updated.acknowledgedAt).not.toBeNull();
-			expect(updated.updatedAt.getTime()).toBeGreaterThan(row.updatedAt.getTime());
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const [updated] = await tx
+			.select()
+			.from(documentMirrorRun)
+			.where(eq(documentMirrorRun.id, row.id));
+		expect(updated.acknowledgedAt).not.toBeNull();
+		// Equal, not greater: `now()` is fixed for the transaction.
+		expect(updated.updatedAt.getTime()).toBeGreaterThanOrEqual(row.updatedAt.getTime());
+	});
 });

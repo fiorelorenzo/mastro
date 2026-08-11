@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
@@ -67,45 +68,41 @@ async function insertContract(tx: Parameters<Parameters<typeof db.transaction>[0
 }
 
 test('creating an approval archives its proof and links it in both directions', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const bytes = new TextEncoder().encode('Yes, go ahead with the three days next week.');
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const bytes = new TextEncoder().encode('Yes, go ahead with the three days next week.');
 
-			const approvalRow = await createApproval(
-				{
-					contractId: contractRow.id,
-					channel: 'email',
-					sender: 'client@example.com',
-					receivedAt: new Date('2024-05-01T09:00:00Z'),
-					messageId: '<abc@example.com>',
-					excerpt: 'Yes, go ahead with the three days next week.',
-					origin: { kind: 'manual' },
-					document: {
-						bytes,
-						mime: 'message/rfc822',
-						originalName: 'approval.eml',
-						provenance: 'mail',
-						confidential: true
-					}
-				},
-				tx
-			);
+		const approvalRow = await createApproval(
+			{
+				contractId: contractRow.id,
+				channel: 'email',
+				sender: 'client@example.com',
+				receivedAt: new Date('2024-05-01T09:00:00Z'),
+				messageId: '<abc@example.com>',
+				excerpt: 'Yes, go ahead with the three days next week.',
+				origin: { kind: 'manual' },
+				document: {
+					bytes,
+					mime: 'message/rfc822',
+					originalName: 'approval.eml',
+					provenance: 'mail',
+					confidential: true
+				}
+			},
+			tx
+		);
 
-			// Forward: from the approval to its archived original.
-			const original = await getApprovalDocument(approvalRow.id, tx);
-			expect(original?.originalName).toBe('approval.eml');
-			expect(original?.confidential).toBe(true);
+		// Forward: from the approval to its archived original.
+		const original = await getApprovalDocument(approvalRow.id, tx);
+		expect(original?.originalName).toBe('approval.eml');
+		expect(original?.confidential).toBe(true);
 
-			// Reverse: from the document back to the approval it evidences.
-			expect(
-				original ? await documentBelongsToApproval(original.id, approvalRow.id, tx) : false
-			).toBe(true);
+		// Reverse: from the document back to the approval it evidences.
+		expect(
+			original ? await documentBelongsToApproval(original.id, approvalRow.id, tx) : false
+		).toBe(true);
 
-			const forContract = await listApprovalsForContract(contractRow.id, tx);
-			expect(forContract.map((a) => a.id)).toEqual([approvalRow.id]);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const forContract = await listApprovalsForContract(contractRow.id, tx);
+		expect(forContract.map((a) => a.id)).toEqual([approvalRow.id]);
+	});
 });

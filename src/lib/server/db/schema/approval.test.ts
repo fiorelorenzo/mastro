@@ -1,5 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
+import { rejection } from '$lib/server/db/pg-error';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
 import { approval, client, contract, document } from './index';
 import type { ApprovalOrigin } from './approval';
@@ -82,108 +84,92 @@ function approvalFields(
 }
 
 test('a well-formed manual approval is accepted', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const { contractRow, documentRow } = await insertContractAndDocument(tx);
-			const [row] = await tx
-				.insert(approval)
-				.values(approvalFields(contractRow.id, documentRow.id))
-				.returning();
-			expect(row.sender).toBe('client@example.com');
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await insertContractAndDocument(tx);
+		const [row] = await tx
+			.insert(approval)
+			.values(approvalFields(contractRow.id, documentRow.id))
+			.returning();
+		expect(row.sender).toBe('client@example.com');
+	});
 });
 
 test('an agent origin without a proposal reference is rejected by the database', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const { contractRow, documentRow } = await insertContractAndDocument(tx);
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await insertContractAndDocument(tx);
 
-			await expect(
+		expect(
+			await rejection(() =>
 				tx.insert(approval).values(
 					approvalFields(contractRow.id, documentRow.id, {
 						origin: { kind: 'agent', proposalReference: '' } satisfies ApprovalOrigin
 					})
 				)
-			).rejects.toMatchObject({ code: '23514', constraint_name: 'approval_origin_shape' });
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+			)
+		).toMatchObject({ code: '23514', constraint_name: 'approval_origin_shape' });
+	});
 });
 
 test('an agent origin with a proposal reference is accepted', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const { contractRow, documentRow } = await insertContractAndDocument(tx);
-			const [row] = await tx
-				.insert(approval)
-				.values(
-					approvalFields(contractRow.id, documentRow.id, {
-						origin: { kind: 'agent', proposalReference: 'proposal-1' } satisfies ApprovalOrigin
-					})
-				)
-				.returning();
-			expect(row.origin).toEqual({ kind: 'agent', proposalReference: 'proposal-1' });
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await insertContractAndDocument(tx);
+		const [row] = await tx
+			.insert(approval)
+			.values(
+				approvalFields(contractRow.id, documentRow.id, {
+					origin: { kind: 'agent', proposalReference: 'proposal-1' } satisfies ApprovalOrigin
+				})
+			)
+			.returning();
+		expect(row.origin).toEqual({ kind: 'agent', proposalReference: 'proposal-1' });
+	});
 });
 
 test('a blank excerpt is rejected by the database', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const { contractRow, documentRow } = await insertContractAndDocument(tx);
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await insertContractAndDocument(tx);
 
-			await expect(
+		expect(
+			await rejection(() =>
 				tx
 					.insert(approval)
 					.values(approvalFields(contractRow.id, documentRow.id, { excerpt: '   ' }))
-			).rejects.toMatchObject({ code: '23514', constraint_name: 'approval_excerpt_not_blank' });
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+			)
+		).toMatchObject({ code: '23514', constraint_name: 'approval_excerpt_not_blank' });
+	});
 });
 
 test('an approval cannot be updated after creation; the attempt fails', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const { contractRow, documentRow } = await insertContractAndDocument(tx);
-			const [row] = await tx
-				.insert(approval)
-				.values(approvalFields(contractRow.id, documentRow.id))
-				.returning();
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await insertContractAndDocument(tx);
+		const [row] = await tx
+			.insert(approval)
+			.values(approvalFields(contractRow.id, documentRow.id))
+			.returning();
 
-			await expect(
-				tx
-					.update(approval)
-					.set({ excerpt: 'a different excerpt entirely' })
-					.where(eq(approval.id, row.id))
-			).rejects.toThrow(/immutable once written/);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		expect(
+			(
+				await rejection(() =>
+					tx
+						.update(approval)
+						.set({ excerpt: 'a different excerpt entirely' })
+						.where(eq(approval.id, row.id))
+				)
+			).message
+		).toMatch(/immutable once written/);
+	});
 });
 
 test('an unreferenced approval can be deleted; nothing in #22 blocks that', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const { contractRow, documentRow } = await insertContractAndDocument(tx);
-			const [row] = await tx
-				.insert(approval)
-				.values(approvalFields(contractRow.id, documentRow.id))
-				.returning();
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await insertContractAndDocument(tx);
+		const [row] = await tx
+			.insert(approval)
+			.values(approvalFields(contractRow.id, documentRow.id))
+			.returning();
 
-			await tx.delete(approval).where(eq(approval.id, row.id));
-			const remaining = await tx.select().from(approval).where(eq(approval.id, row.id));
-			expect(remaining).toHaveLength(0);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		await tx.delete(approval).where(eq(approval.id, row.id));
+		const remaining = await tx.select().from(approval).where(eq(approval.id, row.id));
+		expect(remaining).toHaveLength(0);
+	});
 });

@@ -86,7 +86,20 @@ export async function publishAllPending(
 	const pending = await listUnmirroredDocuments(executor);
 	const outcomes: PublishOutcome[] = [];
 	for (const row of pending) {
-		outcomes.push(await publishDocument(row.id, target, folderConfig, executor));
+		try {
+			outcomes.push(await publishDocument(row.id, target, folderConfig, executor));
+		} catch (error) {
+			// One document nobody can read must not stop the mirror for every
+			// other one — the same "one bad row does not stop the batch" shape
+			// the alert engine and the ACP runner already use. A blob missing
+			// from disk is not hypothetical: a database restored without its
+			// documents directory is exactly this, and the alert engine's
+			// mirror-failure query is what should surface it.
+			outcomes.push({
+				ok: false,
+				detail: error instanceof Error ? error.message : String(error)
+			});
+		}
 	}
 	return outcomes;
 }

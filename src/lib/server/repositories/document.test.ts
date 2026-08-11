@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
@@ -68,107 +69,95 @@ async function insertContract(tx: Parameters<Parameters<typeof db.transaction>[0
 }
 
 test('uploading the same file twice stores one copy on disk and two references in Postgres', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const bytes = new TextEncoder().encode('the client confirmed the scope by email');
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const bytes = new TextEncoder().encode('the client confirmed the scope by email');
 
-			const first = await storeDocument(
-				{
-					bytes,
-					mime: 'message/rfc822',
-					originalName: 'confirmation.eml',
-					provenance: 'mail',
-					contractId: contractRow.id,
-					confidential: true,
-					ownerType: 'contract',
-					ownerId: contractRow.id
-				},
-				tx
-			);
-			const second = await storeDocument(
-				{
-					bytes,
-					mime: 'message/rfc822',
-					originalName: 'confirmation-forwarded.eml',
-					provenance: 'mail',
-					contractId: contractRow.id,
-					confidential: true,
-					ownerType: 'contract',
-					ownerId: contractRow.id
-				},
-				tx
-			);
+		const first = await storeDocument(
+			{
+				bytes,
+				mime: 'message/rfc822',
+				originalName: 'confirmation.eml',
+				provenance: 'mail',
+				contractId: contractRow.id,
+				confidential: true,
+				ownerType: 'contract',
+				ownerId: contractRow.id
+			},
+			tx
+		);
+		const second = await storeDocument(
+			{
+				bytes,
+				mime: 'message/rfc822',
+				originalName: 'confirmation-forwarded.eml',
+				provenance: 'mail',
+				contractId: contractRow.id,
+				confidential: true,
+				ownerType: 'contract',
+				ownerId: contractRow.id
+			},
+			tx
+		);
 
-			expect(first.id).not.toBe(second.id);
-			expect(first.hash).toBe(second.hash);
+		expect(first.id).not.toBe(second.id);
+		expect(first.hash).toBe(second.hash);
 
-			const references = await listDocumentsForOwner('contract', contractRow.id, tx);
-			expect(references.map((r) => r.id).sort()).toEqual([first.id, second.id].sort());
+		const references = await listDocumentsForOwner('contract', contractRow.id, tx);
+		expect(references.map((r) => r.id).sort()).toEqual([first.id, second.id].sort());
 
-			const bytesBack = await readDocumentBytes(first);
-			expect(Buffer.compare(bytesBack, Buffer.from(bytes))).toBe(0);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const bytesBack = await readDocumentBytes(first);
+		expect(Buffer.compare(bytesBack, Buffer.from(bytes))).toBe(0);
+	});
 });
 
 test('a document is reachable by id and its owner is reachable in the other direction', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const stored = await storeDocument(
-				{
-					bytes: new TextEncoder().encode('signed contract'),
-					mime: 'application/pdf',
-					originalName: 'contract-signed.pdf',
-					provenance: 'upload',
-					contractId: contractRow.id,
-					confidential: false,
-					ownerType: 'contract',
-					ownerId: contractRow.id
-				},
-				tx
-			);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const stored = await storeDocument(
+			{
+				bytes: new TextEncoder().encode('signed contract'),
+				mime: 'application/pdf',
+				originalName: 'contract-signed.pdf',
+				provenance: 'upload',
+				contractId: contractRow.id,
+				confidential: false,
+				ownerType: 'contract',
+				ownerId: contractRow.id
+			},
+			tx
+		);
 
-			const fetched = await getDocument(stored.id, tx);
-			expect(fetched?.originalName).toBe('contract-signed.pdf');
+		const fetched = await getDocument(stored.id, tx);
+		expect(fetched?.originalName).toBe('contract-signed.pdf');
 
-			const forOwner = await listDocumentsForOwner('contract', contractRow.id, tx);
-			expect(forOwner.map((d) => d.id)).toContain(stored.id);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const forOwner = await listDocumentsForOwner('contract', contractRow.id, tx);
+		expect(forOwner.map((d) => d.id)).toContain(stored.id);
+	});
 });
 
 test('setDocumentRemoteFileId records the mirror id without touching anything else', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const stored = await storeDocument(
-				{
-					bytes: new TextEncoder().encode('signed contract'),
-					mime: 'application/pdf',
-					originalName: 'contract-signed.pdf',
-					provenance: 'upload',
-					contractId: contractRow.id,
-					confidential: false,
-					ownerType: 'contract',
-					ownerId: contractRow.id
-				},
-				tx
-			);
-			expect(stored.remoteFileId).toBeNull();
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const stored = await storeDocument(
+			{
+				bytes: new TextEncoder().encode('signed contract'),
+				mime: 'application/pdf',
+				originalName: 'contract-signed.pdf',
+				provenance: 'upload',
+				contractId: contractRow.id,
+				confidential: false,
+				ownerType: 'contract',
+				ownerId: contractRow.id
+			},
+			tx
+		);
+		expect(stored.remoteFileId).toBeNull();
 
-			const updated = await setDocumentRemoteFileId(stored.id, 'Contracts/Acme/doc.pdf', tx);
+		const updated = await setDocumentRemoteFileId(stored.id, 'Contracts/Acme/doc.pdf', tx);
 
-			expect(updated.remoteFileId).toBe('Contracts/Acme/doc.pdf');
-			expect(updated.originalName).toBe(stored.originalName);
-			expect(updated.hash).toBe(stored.hash);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		expect(updated.remoteFileId).toBe('Contracts/Acme/doc.pdf');
+		expect(updated.originalName).toBe(stored.originalName);
+		expect(updated.hash).toBe(stored.hash);
+	});
 });

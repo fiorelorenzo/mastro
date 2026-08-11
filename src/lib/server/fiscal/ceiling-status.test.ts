@@ -7,8 +7,9 @@
 
 import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { minorUnits } from '$lib/money';
-import { client as pool, db, type DbExecutor } from '$lib/server/db';
+import { client as pool, type DbExecutor } from '$lib/server/db';
 import { client, contract, invoice } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { fiscalProfile } from '$lib/server/db/schema/fiscal';
@@ -88,132 +89,124 @@ function invoiceInput(contractId: string, overrides: Partial<InvoiceInput> = {})
 }
 
 test('a pack ceiling and a persisted contract ceiling both appear, evaluated by the same call', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const { clientRow, contractRow } = await insertContract(tx);
-			const invoiceRow = await createInvoice(
-				invoiceInput(contractRow.id),
-				{ kind: 'human', email: 'lorenzo@example.com' },
-				'test fixture',
-				tx
-			);
-			await tx.update(invoice).set({ paidOn: '2091-06-10' }).where(eq(invoice.id, invoiceRow.id));
+	await inRolledBackTransaction(async (tx) => {
+		const { clientRow, contractRow } = await insertContract(tx);
+		const invoiceRow = await createInvoice(
+			invoiceInput(contractRow.id),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+		await tx.update(invoice).set({ paidOn: '2091-06-10' }).where(eq(invoice.id, invoiceRow.id));
 
-			await createCeiling(
+		await createCeiling(
+			{
+				contractId: contractRow.id,
+				code: 'client-share-cap',
+				label: { en: 'Client share cap', it: 'Tetto quota cliente' },
+				legalBasis: null,
+				basis: 'cash_received_calendar_year',
+				measure: 'percentage_share',
+				value: 0.5,
+				alertLevels: [],
+				consequence: { en: 'Renegotiate.', it: 'Rinegoziare.' }
+			},
+			tx
+		);
+
+		const pack: FiscalPack = {
+			id: 'test-ceiling-status-pack',
+			version: '1',
+			effectiveFrom: '2024-01-01',
+			displayName: { en: 'x', it: 'x' },
+			basis: 'cash',
+			fiscalYear: { startMonth: 1, startDay: 1 },
+			ceilings: [
 				{
-					contractId: contractRow.id,
-					code: 'client-share-cap',
-					label: { en: 'Client share cap', it: 'Tetto quota cliente' },
-					legalBasis: null,
+					id: 'test-pack-cap',
+					origin: 'pack',
+					label: { en: 'Pack cap', it: 'Tetto pacchetto' },
+					measure: 'absolute_amount',
+					value: minorUnits(500_000),
 					basis: 'cash_received_calendar_year',
-					measure: 'percentage_share',
-					value: 0.5,
+					perimeter: { kind: 'all_clients' },
 					alertLevels: [],
-					consequence: { en: 'Renegotiate.', it: 'Rinegoziare.' }
-				},
-				tx
-			);
+					consequence: { en: 'x', it: 'x' }
+				}
+			],
+			treatments: [],
+			charges: [],
+			formats: [],
+			unresolvedRevenue: 'carries_forward'
+		};
+		const registry: PackRegistry = buildRegistry([pack]);
+		await tx.insert(fiscalProfile).values({
+			packId: 'test-ceiling-status-pack',
+			packVersion: '1',
+			validFrom: '2091-01-01',
+			validTo: null
+		});
 
-			const pack: FiscalPack = {
-				id: 'test-ceiling-status-pack',
-				version: '1',
-				effectiveFrom: '2024-01-01',
-				displayName: { en: 'x', it: 'x' },
-				basis: 'cash',
-				fiscalYear: { startMonth: 1, startDay: 1 },
-				ceilings: [
-					{
-						id: 'test-pack-cap',
-						origin: 'pack',
-						label: { en: 'Pack cap', it: 'Tetto pacchetto' },
-						measure: 'absolute_amount',
-						value: minorUnits(500_000),
-						basis: 'cash_received_calendar_year',
-						perimeter: { kind: 'all_clients' },
-						alertLevels: [],
-						consequence: { en: 'x', it: 'x' }
-					}
-				],
-				treatments: [],
-				charges: [],
-				formats: [],
-				unresolvedRevenue: 'carries_forward'
-			};
-			const registry: PackRegistry = buildRegistry([pack]);
-			await tx.insert(fiscalProfile).values({
-				packId: 'test-ceiling-status-pack',
-				packVersion: '1',
-				validFrom: '2091-01-01',
-				validTo: null
-			});
+		const evaluated = await evaluateActiveCeilings('2091-06-15', tx, registry);
 
-			const evaluated = await evaluateActiveCeilings('2091-06-15', tx, registry);
+		const packResult = evaluated.find((e) => e.ceiling.id === 'test-pack-cap');
+		const contractResult = evaluated.find((e) => e.ceiling.id === 'client-share-cap');
 
-			const packResult = evaluated.find((e) => e.ceiling.id === 'test-pack-cap');
-			const contractResult = evaluated.find((e) => e.ceiling.id === 'client-share-cap');
+		expect(packResult).toBeDefined();
+		expect(packResult?.ceiling.origin).toBe('pack');
+		expect(packResult?.currentValue).toBe(100_000);
 
-			expect(packResult).toBeDefined();
-			expect(packResult?.ceiling.origin).toBe('pack');
-			expect(packResult?.currentValue).toBe(100_000);
-
-			expect(contractResult).toBeDefined();
-			expect(contractResult?.ceiling.origin).toBe('contract');
-			expect(contractResult?.ceiling.perimeter).toEqual({ kind: 'client', clientId: clientRow.id });
-			expect(contractResult?.currentValue).toBe(100_000); // this client is the only revenue
-			expect(contractResult?.limitValue).toBe(Math.round(100_000 * 0.5));
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		expect(contractResult).toBeDefined();
+		expect(contractResult?.ceiling.origin).toBe('contract');
+		expect(contractResult?.ceiling.perimeter).toEqual({ kind: 'client', clientId: clientRow.id });
+		expect(contractResult?.currentValue).toBe(100_000); // this client is the only revenue
+		expect(contractResult?.limitValue).toBe(Math.round(100_000 * 0.5));
+	});
 });
 
 test('a contract ceiling survives a fiscal profile switch with no pack ceilings, while the pack set empties', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const { contractRow } = await insertContract(tx);
-			await createCeiling(
-				{
-					contractId: contractRow.id,
-					code: 'survives-regime-change',
-					label: { en: 'x', it: 'x' },
-					legalBasis: null,
-					basis: 'cash_received_calendar_year',
-					measure: 'absolute_amount',
-					value: minorUnits(1_000_000),
-					alertLevels: [],
-					consequence: { en: 'x', it: 'x' }
-				},
-				tx
-			);
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow } = await insertContract(tx);
+		await createCeiling(
+			{
+				contractId: contractRow.id,
+				code: 'survives-regime-change',
+				label: { en: 'x', it: 'x' },
+				legalBasis: null,
+				basis: 'cash_received_calendar_year',
+				measure: 'absolute_amount',
+				value: minorUnits(1_000_000),
+				alertLevels: [],
+				consequence: { en: 'x', it: 'x' }
+			},
+			tx
+		);
 
-			const packWithoutCeilings: FiscalPack = {
-				id: 'test-ceiling-status-empty',
-				version: '1',
-				effectiveFrom: '2024-01-01',
-				displayName: { en: 'x', it: 'x' },
-				basis: 'accrual',
-				fiscalYear: { startMonth: 1, startDay: 1 },
-				ceilings: [],
-				treatments: [],
-				charges: [],
-				formats: [],
-				unresolvedRevenue: 'carries_forward'
-			};
-			const registry: PackRegistry = buildRegistry([packWithoutCeilings]);
-			await tx.insert(fiscalProfile).values({
-				packId: 'test-ceiling-status-empty',
-				packVersion: '1',
-				validFrom: '2092-01-01',
-				validTo: null
-			});
+		const packWithoutCeilings: FiscalPack = {
+			id: 'test-ceiling-status-empty',
+			version: '1',
+			effectiveFrom: '2024-01-01',
+			displayName: { en: 'x', it: 'x' },
+			basis: 'accrual',
+			fiscalYear: { startMonth: 1, startDay: 1 },
+			ceilings: [],
+			treatments: [],
+			charges: [],
+			formats: [],
+			unresolvedRevenue: 'carries_forward'
+		};
+		const registry: PackRegistry = buildRegistry([packWithoutCeilings]);
+		await tx.insert(fiscalProfile).values({
+			packId: 'test-ceiling-status-empty',
+			packVersion: '1',
+			validFrom: '2092-01-01',
+			validTo: null
+		});
 
-			const evaluated = await evaluateActiveCeilings('2092-03-01', tx, registry);
+		const evaluated = await evaluateActiveCeilings('2092-03-01', tx, registry);
 
-			expect(evaluated).toHaveLength(1); // the contract ceiling alone
-			expect(evaluated[0].ceiling.id).toBe('survives-regime-change');
-			expect(evaluated[0].ceiling.origin).toBe('contract');
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		expect(evaluated).toHaveLength(1); // the contract ceiling alone
+		expect(evaluated[0].ceiling.id).toBe('survives-regime-change');
+		expect(evaluated[0].ceiling.origin).toBe('contract');
+	});
 });

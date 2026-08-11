@@ -3,8 +3,9 @@
 // `ceiling.test.ts`.
 
 import { afterAll, expect, test } from 'vitest';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { minorUnits } from '$lib/money';
-import { client as pool, db, type DbExecutor } from '$lib/server/db';
+import { client as pool, type DbExecutor } from '$lib/server/db';
 import { client, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import {
@@ -73,117 +74,89 @@ function assumptionInput(
 }
 
 test('createRenewalAssumption stores the three parameters as given', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const { contractRow } = await insertContract(tx);
-			const row = await createRenewalAssumption(assumptionInput(contractRow.id), tx);
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow } = await insertContract(tx);
+		const row = await createRenewalAssumption(assumptionInput(contractRow.id), tx);
 
-			expect(row.contractId).toBe(contractRow.id);
-			expect(row.probability).toBe(0.6);
-			expect(row.expectedVolumeMinorUnits).toBe(500_000);
-			expect(row.horizonEndsOn).toBe('2025-12-31');
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		expect(row.contractId).toBe(contractRow.id);
+		expect(row.probability).toBe(0.6);
+		expect(row.expectedVolumeMinorUnits).toBe(500_000);
+		expect(row.horizonEndsOn).toBe('2025-12-31');
+	});
 });
 
 test('a second assumption on the same contract is rejected — one per contract', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const { contractRow } = await insertContract(tx);
-			await createRenewalAssumption(assumptionInput(contractRow.id), tx);
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow } = await insertContract(tx);
+		await createRenewalAssumption(assumptionInput(contractRow.id), tx);
 
-			await expect(createRenewalAssumption(assumptionInput(contractRow.id), tx)).rejects.toThrow();
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		await expect(createRenewalAssumption(assumptionInput(contractRow.id), tx)).rejects.toThrow();
+	});
 });
 
 test('a probability outside 0–1 is rejected by the database, not just the caller', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const { contractRow } = await insertContract(tx);
-			await expect(
-				createRenewalAssumption(assumptionInput(contractRow.id, { probability: 1.5 }), tx)
-			).rejects.toThrow();
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow } = await insertContract(tx);
+		await expect(
+			createRenewalAssumption(assumptionInput(contractRow.id, { probability: 1.5 }), tx)
+		).rejects.toThrow();
+	});
 });
 
 test('getRenewalAssumptionByContract returns null for a contract with none recorded', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const { contractRow } = await insertContract(tx);
-			const found = await getRenewalAssumptionByContract(contractRow.id, tx);
-			expect(found).toBeUndefined();
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow } = await insertContract(tx);
+		const found = await getRenewalAssumptionByContract(contractRow.id, tx);
+		expect(found).toBeUndefined();
+	});
 });
 
 test('updateRenewalAssumption round-trips a change to all three parameters', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const { contractRow } = await insertContract(tx);
-			const created = await createRenewalAssumption(assumptionInput(contractRow.id), tx);
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow } = await insertContract(tx);
+		const created = await createRenewalAssumption(assumptionInput(contractRow.id), tx);
 
-			const updated = await updateRenewalAssumption(
-				created.id,
-				assumptionInput(contractRow.id, {
-					probability: 0.25,
-					expectedVolumeMinorUnits: minorUnits(900_000),
-					horizonEndsOn: '2026-06-30'
-				}),
-				tx
-			);
+		const updated = await updateRenewalAssumption(
+			created.id,
+			assumptionInput(contractRow.id, {
+				probability: 0.25,
+				expectedVolumeMinorUnits: minorUnits(900_000),
+				horizonEndsOn: '2026-06-30'
+			}),
+			tx
+		);
 
-			expect(updated.probability).toBe(0.25);
-			expect(updated.expectedVolumeMinorUnits).toBe(900_000);
-			expect(updated.horizonEndsOn).toBe('2026-06-30');
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		expect(updated.probability).toBe(0.25);
+		expect(updated.expectedVolumeMinorUnits).toBe(900_000);
+		expect(updated.horizonEndsOn).toBe('2026-06-30');
+	});
 });
 
 test('deleteRenewalAssumption removes the row — the withdrawal path for #39', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const { contractRow } = await insertContract(tx);
-			const created = await createRenewalAssumption(assumptionInput(contractRow.id), tx);
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow } = await insertContract(tx);
+		const created = await createRenewalAssumption(assumptionInput(contractRow.id), tx);
 
-			await deleteRenewalAssumption(created.id, tx);
+		await deleteRenewalAssumption(created.id, tx);
 
-			expect(await getRenewalAssumptionByContract(contractRow.id, tx)).toBeUndefined();
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		expect(await getRenewalAssumptionByContract(contractRow.id, tx)).toBeUndefined();
+	});
 });
 
 test("listRenewalAssumptionsWithContract joins each row to its own contract's endsOn, terminationNoticeDays and title", async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const { contractRow } = await insertContract(tx, {
-				title: 'Retainer with Acme',
-				endsOn: '2024-12-31',
-				terminationNoticeDays: 45
-			});
-			await createRenewalAssumption(assumptionInput(contractRow.id), tx);
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow } = await insertContract(tx, {
+			title: 'Retainer with Acme',
+			endsOn: '2024-12-31',
+			terminationNoticeDays: 45
+		});
+		await createRenewalAssumption(assumptionInput(contractRow.id), tx);
 
-			const listed = await listRenewalAssumptionsWithContract(tx);
-			const found = listed.find((row) => row.contractId === contractRow.id);
+		const listed = await listRenewalAssumptionsWithContract(tx);
+		const found = listed.find((row) => row.contractId === contractRow.id);
 
-			expect(found?.contract.title).toBe('Retainer with Acme');
-			expect(found?.contract.endsOn).toBe('2024-12-31');
-			expect(found?.contract.terminationNoticeDays).toBe(45);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		expect(found?.contract.title).toBe('Retainer with Acme');
+		expect(found?.contract.endsOn).toBe('2024-12-31');
+		expect(found?.contract.terminationNoticeDays).toBe(45);
+	});
 });

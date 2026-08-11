@@ -1,4 +1,5 @@
 import { afterAll, afterEach, expect, test } from 'vitest';
+import { rejection } from '$lib/server/db/pg-error';
 import { env } from '$env/dynamic/private';
 import { client as pool } from '$lib/server/db';
 import { connectRunnerDb, type RunnerDb } from './db.ts';
@@ -80,48 +81,72 @@ test('reading any other contract column is refused by Postgres, not merely unuse
 	const { contractRow } = await setUpContractAndDocument();
 	runnerSql = connectRunnerDb(runnerDatabaseUrl);
 
-	await expect(runnerSql`SELECT title FROM contract WHERE id = ${contractRow.id}`).rejects.toThrow(
-		/permission denied/
-	);
+	expect(
+		(await rejection(() => runnerSql`SELECT title FROM contract WHERE id = ${contractRow.id}`))
+			.message
+	).toMatch(/permission denied/);
 });
 
 test('reading a wholly different table is refused', async () => {
 	await setUpContractAndDocument();
 	runnerSql = connectRunnerDb(runnerDatabaseUrl);
 
-	await expect(runnerSql`SELECT * FROM client LIMIT 1`).rejects.toThrow(/permission denied/);
-	await expect(runnerSql`SELECT * FROM work_unit LIMIT 1`).rejects.toThrow(/permission denied/);
-	await expect(runnerSql`SELECT * FROM invoice LIMIT 1`).rejects.toThrow(/permission denied/);
-	await expect(runnerSql`SELECT * FROM approval LIMIT 1`).rejects.toThrow(/permission denied/);
-	await expect(runnerSql`SELECT * FROM proposal LIMIT 1`).rejects.toThrow(/permission denied/);
+	expect((await rejection(() => runnerSql`SELECT * FROM client LIMIT 1`)).message).toMatch(
+		/permission denied/
+	);
+	expect((await rejection(() => runnerSql`SELECT * FROM work_unit LIMIT 1`)).message).toMatch(
+		/permission denied/
+	);
+	expect((await rejection(() => runnerSql`SELECT * FROM invoice LIMIT 1`)).message).toMatch(
+		/permission denied/
+	);
+	expect((await rejection(() => runnerSql`SELECT * FROM approval LIMIT 1`)).message).toMatch(
+		/permission denied/
+	);
+	expect((await rejection(() => runnerSql`SELECT * FROM proposal LIMIT 1`)).message).toMatch(
+		/permission denied/
+	);
 });
 
 test('the runner role cannot write to contract', async () => {
 	const { contractRow } = await setUpContractAndDocument();
 	runnerSql = connectRunnerDb(runnerDatabaseUrl);
 
-	await expect(
-		runnerSql`UPDATE contract SET title = 'hijacked' WHERE id = ${contractRow.id}`
-	).rejects.toThrow(/permission denied/);
+	expect(
+		(
+			await rejection(
+				() => runnerSql`UPDATE contract SET title = 'hijacked' WHERE id = ${contractRow.id}`
+			)
+		).message
+	).toMatch(/permission denied/);
 });
 
 test('the runner role cannot write to document', async () => {
 	const { contractRow } = await setUpContractAndDocument();
 	runnerSql = connectRunnerDb(runnerDatabaseUrl);
 
-	await expect(
-		runnerSql`
+	expect(
+		(
+			await rejection(
+				() => runnerSql`
 			INSERT INTO document (hash, mime, size, original_name, provenance, contract_id, confidential, owner_type, owner_id)
 			VALUES (repeat('0', 64), 'text/plain', 1, 'x', 'upload', ${contractRow.id}, true, 'contract', ${contractRow.id})
 		`
-	).rejects.toThrow(/permission denied/);
+			)
+		).message
+	).toMatch(/permission denied/);
 });
 
 test('the runner role cannot write anywhere else in the ledger either', async () => {
 	const { contractRow } = await setUpContractAndDocument();
 	runnerSql = connectRunnerDb(runnerDatabaseUrl);
 
-	await expect(
-		runnerSql`INSERT INTO work_unit (contract_id, date, quantity, state) VALUES (${contractRow.id}, '2024-01-01', 1, 'proposed')`
-	).rejects.toThrow(/permission denied/);
+	expect(
+		(
+			await rejection(
+				() =>
+					runnerSql`INSERT INTO work_unit (contract_id, date, quantity, state) VALUES (${contractRow.id}, '2024-01-01', 1, 'proposed')`
+			)
+		).message
+	).toMatch(/permission denied/);
 });
