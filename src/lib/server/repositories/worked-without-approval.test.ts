@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
@@ -67,89 +68,81 @@ async function insertContract(tx: Parameters<Parameters<typeof db.transaction>[0
 }
 
 test('recording a worked day with no approval surfaces on the feed #74 polls, and a late approval clears it', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
 
-			const row = await createWorkUnit(
-				{
-					contractId: contractRow.id,
-					date: '2024-06-12',
-					quantity: 1,
-					scope: 'Restored the backup after the outage.',
-					state: 'worked'
-				},
-				{ kind: 'human', email: 'lorenzo@example.com' },
-				'recorded the same day it happened',
-				tx
-			);
-			expect(row.state).toBe('worked_without_approval');
+		const row = await createWorkUnit(
+			{
+				contractId: contractRow.id,
+				date: '2024-06-12',
+				quantity: 1,
+				scope: 'Restored the backup after the outage.',
+				state: 'worked'
+			},
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'recorded the same day it happened',
+			tx
+		);
+		expect(row.state).toBe('worked_without_approval');
 
-			const feed = await listWorkedWithoutApprovalEvents(undefined, tx);
-			const ownEvent = feed.find((event) => event.workUnitId === row.id);
-			expect(ownEvent?.toState).toBe('worked_without_approval');
-			expect(ownEvent?.createdAt).toBeInstanceOf(Date);
+		const feed = await listWorkedWithoutApprovalEvents(undefined, tx);
+		const ownEvent = feed.find((event) => event.workUnitId === row.id);
+		expect(ownEvent?.toState).toBe('worked_without_approval');
+		expect(ownEvent?.createdAt).toBeInstanceOf(Date);
 
-			const approvalRow = await createApproval(
-				{
-					contractId: contractRow.id,
-					channel: 'email',
-					sender: 'client@example.com',
-					receivedAt: new Date('2024-06-14T09:00:00Z'),
-					messageId: '<late@example.com>',
-					excerpt: 'Sorry for the delay, that emergency fix is approved.',
-					origin: { kind: 'manual' },
-					document: {
-						bytes: new TextEncoder().encode('Sorry for the delay, that emergency fix is approved.'),
-						mime: 'message/rfc822',
-						originalName: 'late-approval.eml',
-						provenance: 'mail',
-						confidential: true
-					}
-				},
-				tx
-			);
+		const approvalRow = await createApproval(
+			{
+				contractId: contractRow.id,
+				channel: 'email',
+				sender: 'client@example.com',
+				receivedAt: new Date('2024-06-14T09:00:00Z'),
+				messageId: '<late@example.com>',
+				excerpt: 'Sorry for the delay, that emergency fix is approved.',
+				origin: { kind: 'manual' },
+				document: {
+					bytes: new TextEncoder().encode('Sorry for the delay, that emergency fix is approved.'),
+					mime: 'message/rfc822',
+					originalName: 'late-approval.eml',
+					provenance: 'mail',
+					confidential: true
+				}
+			},
+			tx
+		);
 
-			const recovered = await linkApprovalToWorkUnit(
-				row.id,
-				approvalRow.id,
-				{ kind: 'human', email: 'lorenzo@example.com' },
-				'client confirmed after the fact',
-				tx
-			);
-			expect(recovered.state).toBe('worked');
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const recovered = await linkApprovalToWorkUnit(
+			row.id,
+			approvalRow.id,
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'client confirmed after the fact',
+			tx
+		);
+		expect(recovered.state).toBe('worked');
+	});
 });
 
 test('listWorkedWithoutApprovalEvents(sinceInclusive) excludes events before the given instant', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const row = await createWorkUnit(
-				{
-					contractId: contractRow.id,
-					date: '2024-06-12',
-					quantity: 1,
-					scope: 'Restored the backup after the outage.',
-					state: 'worked'
-				},
-				{ kind: 'human', email: 'lorenzo@example.com' },
-				'recorded the same day it happened',
-				tx
-			);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const row = await createWorkUnit(
+			{
+				contractId: contractRow.id,
+				date: '2024-06-12',
+				quantity: 1,
+				scope: 'Restored the backup after the outage.',
+				state: 'worked'
+			},
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'recorded the same day it happened',
+			tx
+		);
 
-			const future = new Date(Date.now() + 60_000);
-			const feed = await listWorkedWithoutApprovalEvents(future, tx);
-			expect(feed.some((event) => event.workUnitId === row.id)).toBe(false);
+		const future = new Date(Date.now() + 60_000);
+		const feed = await listWorkedWithoutApprovalEvents(future, tx);
+		expect(feed.some((event) => event.workUnitId === row.id)).toBe(false);
 
-			const past = new Date(Date.now() - 60_000);
-			const feedFromPast = await listWorkedWithoutApprovalEvents(past, tx);
-			expect(feedFromPast.some((event) => event.workUnitId === row.id)).toBe(true);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const past = new Date(Date.now() - 60_000);
+		const feedFromPast = await listWorkedWithoutApprovalEvents(past, tx);
+		expect(feedFromPast.some((event) => event.workUnitId === row.id)).toBe(true);
+	});
 });

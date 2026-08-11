@@ -7,6 +7,7 @@
 // `smtp-imap.test.ts` prove against; skipped when it is not running.
 import { ImapFlow } from 'imapflow';
 import { afterAll, expect, test } from 'vitest';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { minorUnits } from '$lib/money';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract } from '$lib/server/db/schema';
@@ -93,106 +94,98 @@ async function seedOverdueInvoice(tx: Tx, overrides: { dueDate: string; paidOn?:
 	);
 
 	if (overrides.paidOn) {
-		await recordPayment(invoiceRow.id, overrides.paidOn);
+		await recordPayment(invoiceRow.id, overrides.paidOn, tx);
 	}
 
 	// Read back through the same repository function the compose route
 	// uses, not the raw insert result — what `buildDunningContext` renders
 	// against in production is always this shape.
-	const rehydrated = await getInvoiceWithLines(invoiceRow.id);
+	// With the transaction: without it this reads through the pool, cannot
+	// see the invoice just inserted, and the seed fails.
+	const rehydrated = await getInvoiceWithLines(invoiceRow.id, tx);
 	if (!rehydrated) throw new Error('invoice failed to persist');
 	return rehydrated;
 }
 
 test('throws for an invoice that is not overdue: unpaid but not yet past its due date', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const invoiceRow = await seedOverdueInvoice(tx, { dueDate: '2024-05-01' });
-			await expect(
-				buildDunningContext(
-					invoiceRow,
-					invoiceRow.contract.templateLanguage,
-					tx,
-					new Date('2024-04-15T00:00:00Z')
-				)
-			).rejects.toThrow(InvoiceNotOverdueError);
-			tx.rollback();
-		})
-	).rejects.toThrow();
-});
-
-test('throws for an invoice already paid, however late the payment was', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const invoiceRow = await seedOverdueInvoice(tx, {
-				dueDate: '2024-05-01',
-				paidOn: '2024-07-01'
-			});
-			await expect(
-				buildDunningContext(
-					invoiceRow,
-					invoiceRow.contract.templateLanguage,
-					tx,
-					new Date('2024-08-01T00:00:00Z')
-				)
-			).rejects.toThrow(InvoiceNotOverdueError);
-			tx.rollback();
-		})
-	).rejects.toThrow();
-});
-
-test('builds a draft with the real figures and days late off a persisted overdue invoice (#73)', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			// Contract's template language is Italian (seeded above); the
-			// draft must render in Italian regardless of anything else,
-			// per #69.
-			const invoiceRow = await seedOverdueInvoice(tx, { dueDate: '2024-05-01' });
-			const pinnedToday = new Date('2024-06-01T00:00:00Z'); // 31 days past due
-
-			const context = await buildDunningContext(
+	await inRolledBackTransaction(async (tx) => {
+		const invoiceRow = await seedOverdueInvoice(tx, { dueDate: '2024-05-01' });
+		await expect(
+			buildDunningContext(
 				invoiceRow,
 				invoiceRow.contract.templateLanguage,
 				tx,
-				pinnedToday
-			);
+				new Date('2024-04-15T00:00:00Z')
+			)
+		).rejects.toThrow(InvoiceNotOverdueError);
+	});
+});
 
-			expect(context.language).toBe('it');
-			expect(context.invoice.number).toBe(invoiceRow.number);
-			expect(context.invoice.total).toBe(invoiceRow.total);
-			expect(context.invoice.dueDate).toBe('2024-05-01');
+test('throws for an invoice already paid, however late the payment was', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const invoiceRow = await seedOverdueInvoice(tx, {
+			dueDate: '2024-05-01',
+			paidOn: '2024-07-01'
+		});
+		await expect(
+			buildDunningContext(
+				invoiceRow,
+				invoiceRow.contract.templateLanguage,
+				tx,
+				new Date('2024-08-01T00:00:00Z')
+			)
+		).rejects.toThrow(InvoiceNotOverdueError);
+	});
+});
 
-			const rendered = renderTemplate(
-				{
-					subject: 'Sollecito fattura {{invoice_number}}',
-					body: 'Importo {{amount}}, scaduta il {{due_date}}, in ritardo di {{days_late}}.'
-				},
-				context
-			);
+test('builds a draft with the real figures and days late off a persisted overdue invoice (#73)', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		// Contract's template language is Italian (seeded above); the
+		// draft must render in Italian regardless of anything else,
+		// per #69.
+		const invoiceRow = await seedOverdueInvoice(tx, { dueDate: '2024-05-01' });
+		const pinnedToday = new Date('2024-06-01T00:00:00Z'); // 31 days past due
 
-			expect(rendered.subject).toBe(`Sollecito fattura ${invoiceRow.number}`);
-			// €5,000.00 (500000 taxable + 110000 tax = 610000 total, minor
-			// units) formatted in Italian, the due date in Italian, and
-			// exactly 31 days late — every figure read off the real row,
-			// none typed by hand into the assertion's premise.
-			expect(rendered.body).toContain('6100,00\u00a0€');
-			expect(rendered.body).toContain('1 mag 2024');
-			expect(rendered.body).toContain('31 giorni');
+		const context = await buildDunningContext(
+			invoiceRow,
+			invoiceRow.contract.templateLanguage,
+			tx,
+			pinnedToday
+		);
 
-			// Currency is a property of the invoice, not a hardcoded /100:
-			// the exact same total renders with zero decimal digits and a
-			// currency-code suffix (Italian has no yen glyph) in a currency
-			// with no minor unit — the distinction #179's dunning bug missed.
-			const jpyContext = { ...context, invoice: { ...context.invoice, currency: 'JPY' } };
-			const renderedJpy = renderTemplate(
-				{ subject: 'Sollecito fattura {{invoice_number}}', body: 'Importo {{amount}}' },
-				jpyContext
-			);
-			expect(renderedJpy.body).toBe('Importo 610.000\u00a0JPY');
+		expect(context.language).toBe('it');
+		expect(context.invoice.number).toBe(invoiceRow.number);
+		expect(context.invoice.total).toBe(invoiceRow.total);
+		expect(context.invoice.dueDate).toBe('2024-05-01');
 
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const rendered = renderTemplate(
+			{
+				subject: 'Sollecito fattura {{invoice_number}}',
+				body: 'Importo {{amount}}, scaduta il {{due_date}}, in ritardo di {{days_late}}.'
+			},
+			context
+		);
+
+		expect(rendered.subject).toBe(`Sollecito fattura ${invoiceRow.number}`);
+		// €5,000.00 (500000 taxable + 110000 tax = 610000 total, minor
+		// units) formatted in Italian, the due date in Italian, and
+		// exactly 31 days late — every figure read off the real row,
+		// none typed by hand into the assertion's premise.
+		expect(rendered.body).toContain('6100,00\u00a0€');
+		expect(rendered.body).toContain('1 mag 2024');
+		expect(rendered.body).toContain('31 giorni');
+
+		// Currency is a property of the invoice, not a hardcoded /100:
+		// the exact same total renders with zero decimal digits and a
+		// currency-code suffix (Italian has no yen glyph) in a currency
+		// with no minor unit — the distinction #179's dunning bug missed.
+		const jpyContext = { ...context, invoice: { ...context.invoice, currency: 'JPY' } };
+		const renderedJpy = renderTemplate(
+			{ subject: 'Sollecito fattura {{invoice_number}}', body: 'Importo {{amount}}' },
+			jpyContext
+		);
+		expect(renderedJpy.body).toBe('Importo 610.000\u00a0JPY');
+	});
 });
 
 const realConfig: MailConfig = {
@@ -249,57 +242,53 @@ if (!mailboxAvailable) {
 test.skipIf(!mailboxAvailable)(
 	'dispatching a dunning draft for a real overdue invoice sends and appends to Sent',
 	async () => {
-		await expect(
-			db.transaction(async (tx) => {
-				const invoiceRow = await seedOverdueInvoice(tx, { dueDate: '2024-05-01' });
-				const context = await buildDunningContext(
-					invoiceRow,
-					invoiceRow.contract.templateLanguage,
-					tx,
-					new Date('2024-06-01T00:00:00Z')
-				);
-				const rendered = renderTemplate(
-					{
-						subject: `mastro dunning smoke test ${crypto.randomUUID()}`,
-						body: 'Importo {{amount}}, in ritardo di {{days_late}}.'
-					},
-					context
-				);
+		await inRolledBackTransaction(async (tx) => {
+			const invoiceRow = await seedOverdueInvoice(tx, { dueDate: '2024-05-01' });
+			const context = await buildDunningContext(
+				invoiceRow,
+				invoiceRow.contract.templateLanguage,
+				tx,
+				new Date('2024-06-01T00:00:00Z')
+			);
+			const rendered = renderTemplate(
+				{
+					subject: `mastro dunning smoke test ${crypto.randomUUID()}`,
+					body: 'Importo {{amount}}, in ritardo di {{days_late}}.'
+				},
+				context
+			);
 
-				const message = await composeMessage({
-					from: { address: realConfig.smtp.fromAddress, name: realConfig.smtp.fromName },
-					to: [realConfig.smtp.user],
-					subject: rendered.subject,
-					body: rendered.body,
-					attachments: []
-				});
+			const message = await composeMessage({
+				from: { address: realConfig.smtp.fromAddress, name: realConfig.smtp.fromName },
+				to: [realConfig.smtp.user],
+				subject: rendered.subject,
+				body: rendered.body,
+				attachments: []
+			});
 
-				await sendOverSmtp(realConfig.smtp, message);
-				await appendToSentMailbox(realConfig.imap, message);
+			await sendOverSmtp(realConfig.smtp, message);
+			await appendToSentMailbox(realConfig.imap, message);
 
-				const verifyClient = new ImapFlow({
-					host: realConfig.imap.host,
-					port: realConfig.imap.port,
-					secure: realConfig.imap.secure,
-					auth: { user: realConfig.imap.user, pass: realConfig.imap.password },
-					logger: false
-				});
-				await verifyClient.connect();
+			const verifyClient = new ImapFlow({
+				host: realConfig.imap.host,
+				port: realConfig.imap.port,
+				secure: realConfig.imap.secure,
+				auth: { user: realConfig.imap.user, pass: realConfig.imap.password },
+				logger: false
+			});
+			await verifyClient.connect();
+			try {
+				const lock = await verifyClient.getMailboxLock('Sent');
 				try {
-					const lock = await verifyClient.getMailboxLock('Sent');
-					try {
-						const found = await verifyClient.search({ header: { subject: rendered.subject } });
-						expect(found).toBeTruthy();
-						expect((found as number[]).length).toBeGreaterThan(0);
-					} finally {
-						lock.release();
-					}
+					const found = await verifyClient.search({ header: { subject: rendered.subject } });
+					expect(found).toBeTruthy();
+					expect((found as number[]).length).toBeGreaterThan(0);
 				} finally {
-					await verifyClient.logout();
+					lock.release();
 				}
-
-				tx.rollback();
-			})
-		).rejects.toThrow();
+			} finally {
+				await verifyClient.logout();
+			}
+		});
 	}
 );

@@ -4,9 +4,10 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { ImapFlow } from 'imapflow';
 import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { minorUnits } from '$lib/money';
 import { client as pool, db } from '$lib/server/db';
-import { client, contract, sentEmail, workUnit } from '$lib/server/db/schema';
+import { client, contract, invoice, invoiceLine, sentEmail, workUnit } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { createApproval } from '$lib/server/repositories/approval';
 import { createWorkUnit } from '$lib/server/repositories/work-unit';
@@ -165,9 +166,39 @@ async function seed(tx: Tx) {
 		'seed',
 		tx
 	);
+	// Walked, not jumped, and billed onto a real line: the state machine
+	// allows proposed -> approved -> worked -> invoiced and nothing shorter,
+	// and `invoice_line_id` is a foreign key.
+	const [invoiceRow] = await tx
+		.insert(invoice)
+		.values({
+			contractId: contractRow.id,
+			number: `FIX-${crypto.randomUUID().slice(0, 8)}`,
+			issueDate: '2024-03-31',
+			currency: 'EUR',
+			taxableAmount: minorUnits(100_000),
+			taxAmount: minorUnits(22_000),
+			total: minorUnits(122_000),
+			dueDate: '2024-04-30',
+			dueDateSource: 'computed'
+		})
+		.returning();
+	const [lineRow] = await tx
+		.insert(invoiceLine)
+		.values({
+			invoiceId: invoiceRow.id,
+			description: 'Days',
+			quantity: 1,
+			unitPrice: minorUnits(100_000),
+			amount: minorUnits(100_000),
+			taxRate: 22
+		})
+		.returning();
+	await tx.update(workUnit).set({ state: 'approved' }).where(eq(workUnit.id, day.id));
+	await tx.update(workUnit).set({ state: 'worked' }).where(eq(workUnit.id, day.id));
 	await tx
 		.update(workUnit)
-		.set({ state: 'invoiced', invoiceLineId: crypto.randomUUID() })
+		.set({ state: 'invoiced', invoiceLineId: lineRow.id })
 		.where(eq(workUnit.id, day.id));
 
 	return contractRow;
@@ -190,120 +221,108 @@ const context = {
 };
 
 test('auto-send off: prepares nothing sent, touches neither SMTP nor IMAP', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await seed(tx);
-			const prepared = await prepareEmail(
-				{ ...template, contractId: contractRow.id },
-				{
-					...context,
-					register: { contractId: contractRow.id, ...context.period, entries: [], totalQuantity: 0 }
-				},
-				['client@example.com'],
-				tx
-			);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await seed(tx);
+		const prepared = await prepareEmail(
+			{ ...template, contractId: contractRow.id },
+			{
+				...context,
+				register: { contractId: contractRow.id, ...context.period, entries: [], totalQuantity: 0 }
+			},
+			['client@example.com'],
+			tx
+		);
 
-			const result = await composeForAutomaticTrigger(prepared, false, unreachableConfig, tx);
-			expect(result).toEqual({ sent: false });
+		const result = await composeForAutomaticTrigger(prepared, false, unreachableConfig, tx);
+		expect(result).toEqual({ sent: false });
 
-			const logged = await tx
-				.select()
-				.from(sentEmail)
-				.where(eq(sentEmail.contractId, contractRow.id));
-			expect(logged).toEqual([]);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const logged = await tx
+			.select()
+			.from(sentEmail)
+			.where(eq(sentEmail.contractId, contractRow.id));
+		expect(logged).toEqual([]);
+	});
 });
 
 test.skipIf(!mailboxAvailable)(
 	'auto-send on: sends for real, appends to Sent, and logs the send',
 	async () => {
-		await expect(
-			db.transaction(async (tx) => {
-				const contractRow = await seed(tx);
-				const prepared = await prepareEmail(
-					{
-						...template,
+		await inRolledBackTransaction(async (tx) => {
+			const contractRow = await seed(tx);
+			const prepared = await prepareEmail(
+				{
+					...template,
+					contractId: contractRow.id,
+					subject: `${template.subject} ${crypto.randomUUID()}`
+				},
+				{
+					...context,
+					register: {
 						contractId: contractRow.id,
-						subject: `${template.subject} ${crypto.randomUUID()}`
-					},
-					{
-						...context,
-						register: {
-							contractId: contractRow.id,
-							...context.period,
-							entries: [],
-							totalQuantity: 0
-						}
-					},
-					[realConfig.smtp.user],
-					tx
-				);
+						...context.period,
+						entries: [],
+						totalQuantity: 0
+					}
+				},
+				[realConfig.smtp.user],
+				tx
+			);
 
-				const result = await composeForAutomaticTrigger(prepared, true, realConfig, tx);
-				expect(result.sent).toBe(true);
-				if (!result.sent) return;
-				expect(result.messageId).toBeTruthy();
+			const result = await composeForAutomaticTrigger(prepared, true, realConfig, tx);
+			expect(result.sent).toBe(true);
+			if (!result.sent) return;
+			expect(result.messageId).toBeTruthy();
 
-				const [logged] = await tx
-					.select()
-					.from(sentEmail)
-					.where(eq(sentEmail.contractId, contractRow.id));
-				expect(logged.autoSent).toBe(true);
-				expect(logged.messageId).toBe(result.messageId);
-				expect(logged.subject).toBe(prepared.subject);
-
-				tx.rollback();
-			})
-		).rejects.toThrow();
+			const [logged] = await tx
+				.select()
+				.from(sentEmail)
+				.where(eq(sentEmail.contractId, contractRow.id));
+			expect(logged.autoSent).toBe(true);
+			expect(logged.messageId).toBe(result.messageId);
+			expect(logged.subject).toBe(prepared.subject);
+		});
 	}
 );
 
 test.skipIf(!mailboxAvailable)(
 	'a manual send always requires dispatchEmail explicitly, regardless of the auto-send flag',
 	async () => {
-		await expect(
-			db.transaction(async (tx) => {
-				const contractRow = await seed(tx);
-				const prepared = await prepareEmail(
-					{
-						...template,
+		await inRolledBackTransaction(async (tx) => {
+			const contractRow = await seed(tx);
+			const prepared = await prepareEmail(
+				{
+					...template,
+					contractId: contractRow.id,
+					subject: `${template.subject} ${crypto.randomUUID()}`
+				},
+				{
+					...context,
+					register: {
 						contractId: contractRow.id,
-						subject: `${template.subject} ${crypto.randomUUID()}`
-					},
-					{
-						...context,
-						register: {
-							contractId: contractRow.id,
-							...context.period,
-							entries: [],
-							totalQuantity: 0
-						}
-					},
-					[realConfig.smtp.user],
-					tx
-				);
+						...context.period,
+						entries: [],
+						totalQuantity: 0
+					}
+				},
+				[realConfig.smtp.user],
+				tx
+			);
 
-				// Nothing sent yet: dispatchEmail was never called.
-				const before = await tx
-					.select()
-					.from(sentEmail)
-					.where(eq(sentEmail.contractId, contractRow.id));
-				expect(before).toEqual([]);
+			// Nothing sent yet: dispatchEmail was never called.
+			const before = await tx
+				.select()
+				.from(sentEmail)
+				.where(eq(sentEmail.contractId, contractRow.id));
+			expect(before).toEqual([]);
 
-				const result = await dispatchEmail(prepared, realConfig, false, tx);
-				expect(result.messageId).toBeTruthy();
+			const result = await dispatchEmail(prepared, realConfig, false, tx);
+			expect(result.messageId).toBeTruthy();
 
-				const [logged] = await tx
-					.select()
-					.from(sentEmail)
-					.where(eq(sentEmail.contractId, contractRow.id));
-				expect(logged.autoSent).toBe(false);
-
-				tx.rollback();
-			})
-		).rejects.toThrow();
+			const [logged] = await tx
+				.select()
+				.from(sentEmail)
+				.where(eq(sentEmail.contractId, contractRow.id));
+			expect(logged.autoSent).toBe(false);
+		});
 	}
 );

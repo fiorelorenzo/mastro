@@ -1,5 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
+import { rejection } from '$lib/server/db/pg-error';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract, document, proposal } from './index';
 import type { ExpensePolicy, PaymentTerms } from './contract';
@@ -88,173 +90,176 @@ function proposalFields(
 }
 
 test('a well-formed proposal is accepted, defaulting to pending with no decision', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const documentRow = await insertDocument(tx, contractRow.id);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
 
-			const [row] = await tx
-				.insert(proposal)
-				.values(proposalFields(contractRow.id, documentRow.id))
-				.returning();
+		const [row] = await tx
+			.insert(proposal)
+			.values(proposalFields(contractRow.id, documentRow.id))
+			.returning();
 
-			expect(row.status).toBe('pending');
-			expect(row.acceptedFields).toBeNull();
-			expect(row.resultId).toBeNull();
-			expect(row.decidedBy).toBeNull();
-			expect(row.decidedAt).toBeNull();
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		expect(row.status).toBe('pending');
+		expect(row.acceptedFields).toBeNull();
+		expect(row.resultId).toBeNull();
+		expect(row.decidedBy).toBeNull();
+		expect(row.decidedAt).toBeNull();
+	});
 });
 
 test('a blank excerpt is rejected by the database', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const documentRow = await insertDocument(tx, contractRow.id);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
 
-			await expect(
+		expect(
+			await rejection(
+				() =>
+					tx
+						.insert(proposal)
+						.values(proposalFields(contractRow.id, documentRow.id, { excerpt: '   ' })),
 				tx
-					.insert(proposal)
-					.values(proposalFields(contractRow.id, documentRow.id, { excerpt: '   ' }))
-			).rejects.toMatchObject({ code: '23514', constraint_name: 'proposal_excerpt_not_blank' });
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+			)
+		).toMatchObject({ code: '23514', constraint_name: 'proposal_excerpt_not_blank' });
+	});
 });
 
 test('a confidence outside 0..1 is rejected by the database', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const documentRow = await insertDocument(tx, contractRow.id);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
 
-			await expect(
+		expect(
+			await rejection(
+				() =>
+					tx
+						.insert(proposal)
+						.values(proposalFields(contractRow.id, documentRow.id, { confidence: 1.5 })),
 				tx
-					.insert(proposal)
-					.values(proposalFields(contractRow.id, documentRow.id, { confidence: 1.5 }))
-			).rejects.toMatchObject({ code: '23514', constraint_name: 'proposal_confidence_range' });
+			)
+		).toMatchObject({ code: '23514', constraint_name: 'proposal_confidence_range' });
 
-			await expect(
+		expect(
+			await rejection(
+				() =>
+					tx
+						.insert(proposal)
+						.values(proposalFields(contractRow.id, documentRow.id, { confidence: -0.1 })),
 				tx
-					.insert(proposal)
-					.values(proposalFields(contractRow.id, documentRow.id, { confidence: -0.1 }))
-			).rejects.toMatchObject({ code: '23514', constraint_name: 'proposal_confidence_range' });
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+			)
+		).toMatchObject({ code: '23514', constraint_name: 'proposal_confidence_range' });
+	});
 });
 
 test('a target_type outside the known set is rejected by the database', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const documentRow = await insertDocument(tx, contractRow.id);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
 
-			await expect(
+		expect(
+			await rejection(
+				() =>
+					tx
+						.insert(proposal)
+						.values(
+							proposalFields(contractRow.id, documentRow.id, { targetType: 'invoice' as never })
+						),
 				tx
-					.insert(proposal)
-					.values(
-						proposalFields(contractRow.id, documentRow.id, { targetType: 'invoice' as never })
-					)
-			).rejects.toMatchObject({ code: '23514', constraint_name: 'proposal_target_type_known' });
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+			)
+		).toMatchObject({ code: '23514', constraint_name: 'proposal_target_type_known' });
+	});
 });
 
 test('an accepted status with no decision recorded is rejected by the database', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const documentRow = await insertDocument(tx, contractRow.id);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
 
-			await expect(
+		expect(
+			await rejection(
+				() =>
+					tx
+						.insert(proposal)
+						.values(proposalFields(contractRow.id, documentRow.id, { status: 'accepted' })),
 				tx
-					.insert(proposal)
-					.values(proposalFields(contractRow.id, documentRow.id, { status: 'accepted' }))
-			).rejects.toMatchObject({ code: '23514', constraint_name: 'proposal_decision_shape' });
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+			)
+		).toMatchObject({ code: '23514', constraint_name: 'proposal_decision_shape' });
+	});
 });
 
 test('a pending status carrying a decision is rejected by the database', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const documentRow = await insertDocument(tx, contractRow.id);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
 
-			await expect(
-				tx.insert(proposal).values(
-					proposalFields(contractRow.id, documentRow.id, {
-						decidedBy: 'lorenzo@example.com',
-						decidedAt: new Date()
-					})
-				)
-			).rejects.toMatchObject({ code: '23514', constraint_name: 'proposal_decision_shape' });
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		expect(
+			await rejection(
+				() =>
+					tx.insert(proposal).values(
+						proposalFields(contractRow.id, documentRow.id, {
+							decidedBy: 'lorenzo@example.com',
+							decidedAt: new Date()
+						})
+					),
+				tx
+			)
+		).toMatchObject({ code: '23514', constraint_name: 'proposal_decision_shape' });
+	});
 });
 
 test('the proposed fields, excerpt and confidence cannot change after creation', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const documentRow = await insertDocument(tx, contractRow.id);
-			const [row] = await tx
-				.insert(proposal)
-				.values(proposalFields(contractRow.id, documentRow.id))
-				.returning();
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
+		const [row] = await tx
+			.insert(proposal)
+			.values(proposalFields(contractRow.id, documentRow.id))
+			.returning();
 
-			await expect(
-				tx
-					.update(proposal)
-					.set({ excerpt: 'a different sentence entirely' })
-					.where(eq(proposal.id, row.id))
-			).rejects.toThrow(/immutable after creation/);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		expect(
+			(
+				await rejection(
+					() =>
+						tx
+							.update(proposal)
+							.set({ excerpt: 'a different sentence entirely' })
+							.where(eq(proposal.id, row.id)),
+					tx
+				)
+			).message
+		).toMatch(/immutable after creation/);
+	});
 });
 
 test('a proposal can move from pending to accepted exactly once', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const documentRow = await insertDocument(tx, contractRow.id);
-			const [row] = await tx
-				.insert(proposal)
-				.values(proposalFields(contractRow.id, documentRow.id))
-				.returning();
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
+		const [row] = await tx
+			.insert(proposal)
+			.values(proposalFields(contractRow.id, documentRow.id))
+			.returning();
 
-			const [decided] = await tx
-				.update(proposal)
-				.set({
-					status: 'accepted',
-					acceptedFields: { date: '2024-06-10', quantity: 1, scope: 'API migration' },
-					resultId: crypto.randomUUID(),
-					decidedBy: 'lorenzo@example.com',
-					decidedAt: new Date()
-				})
-				.where(eq(proposal.id, row.id))
-				.returning();
-			expect(decided.status).toBe('accepted');
+		const [decided] = await tx
+			.update(proposal)
+			.set({
+				status: 'accepted',
+				acceptedFields: { date: '2024-06-10', quantity: 1, scope: 'API migration' },
+				resultId: crypto.randomUUID(),
+				decidedBy: 'lorenzo@example.com',
+				decidedAt: new Date()
+			})
+			.where(eq(proposal.id, row.id))
+			.returning();
+		expect(decided.status).toBe('accepted');
 
-			await expect(
-				tx.update(proposal).set({ status: 'rejected' }).where(eq(proposal.id, row.id))
-			).rejects.toThrow(/already been decided/);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		expect(
+			(
+				await rejection(
+					() => tx.update(proposal).set({ status: 'rejected' }).where(eq(proposal.id, row.id)),
+					tx
+				)
+			).message
+		).toMatch(/already been decided/);
+	});
 });

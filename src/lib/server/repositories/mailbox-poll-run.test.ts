@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
-import { client as pool, db } from '$lib/server/db';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
+import { client as pool } from '$lib/server/db';
 import { mailboxPollRun } from '$lib/server/db/schema';
 import {
 	acknowledgeMailboxPollRun,
@@ -17,52 +18,46 @@ afterAll(async () => {
 });
 
 test('recordMailboxPollRun writes a row with the given status and detail, unacknowledged by default', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const row = await recordMailboxPollRun(
-				{ status: 'failure', detail: 'connect ECONNREFUSED' },
-				tx
-			);
-			expect(row.status).toBe('failure');
-			expect(row.detail).toBe('connect ECONNREFUSED');
-			expect(row.acknowledgedAt).toBeNull();
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+	await inRolledBackTransaction(async (tx) => {
+		const row = await recordMailboxPollRun(
+			{ status: 'failure', detail: 'connect ECONNREFUSED' },
+			tx
+		);
+		expect(row.status).toBe('failure');
+		expect(row.detail).toBe('connect ECONNREFUSED');
+		expect(row.acknowledgedAt).toBeNull();
+	});
 });
 
 test('getLatestMailboxPollRun returns the most recent row, null when none exist', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			expect(await getLatestMailboxPollRun(tx)).toBeNull();
+	await inRolledBackTransaction(async (tx) => {
+		expect(await getLatestMailboxPollRun(tx)).toBeNull();
 
-			await recordMailboxPollRun({ status: 'failure', detail: 'first' }, tx);
-			await recordMailboxPollRun({ status: 'success', detail: null }, tx);
+		// Distinct times: two rows inserted in one transaction share its clock,
+		// and "the most recent" of two identical stamps is undefined.
+		await recordMailboxPollRun({ status: 'failure', detail: 'first' }, tx);
+		await tx
+			.update(mailboxPollRun)
+			.set({ createdAt: new Date('2026-01-01T00:00:00Z') })
+			.where(eq(mailboxPollRun.status, 'failure'));
+		await recordMailboxPollRun({ status: 'success', detail: null }, tx);
 
-			const latest = await getLatestMailboxPollRun(tx);
-			expect(latest?.status).toBe('success');
-			expect(latest?.detail).toBeNull();
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const latest = await getLatestMailboxPollRun(tx);
+		expect(latest?.status).toBe('success');
+		expect(latest?.detail).toBeNull();
+	});
 });
 
 test('acknowledgeMailboxPollRun sets acknowledged_at without touching status or detail', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const row = await recordMailboxPollRun({ status: 'failure', detail: 'boom' }, tx);
-			const acknowledged = await acknowledgeMailboxPollRun(row.id, tx);
+	await inRolledBackTransaction(async (tx) => {
+		const row = await recordMailboxPollRun({ status: 'failure', detail: 'boom' }, tx);
+		const acknowledged = await acknowledgeMailboxPollRun(row.id, tx);
 
-			expect(acknowledged.acknowledgedAt).not.toBeNull();
-			expect(acknowledged.status).toBe('failure');
-			expect(acknowledged.detail).toBe('boom');
+		expect(acknowledged.acknowledgedAt).not.toBeNull();
+		expect(acknowledged.status).toBe('failure');
+		expect(acknowledged.detail).toBe('boom');
 
-			const [reread] = await tx.select().from(mailboxPollRun).where(eq(mailboxPollRun.id, row.id));
-			expect(reread.acknowledgedAt).not.toBeNull();
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const [reread] = await tx.select().from(mailboxPollRun).where(eq(mailboxPollRun.id, row.id));
+		expect(reread.acknowledgedAt).not.toBeNull();
+	});
 });

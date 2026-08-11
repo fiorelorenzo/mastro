@@ -1,4 +1,5 @@
 import { afterAll, expect, test } from 'vitest';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { minorUnits } from '$lib/money';
 import { sql } from 'drizzle-orm';
 import { client as pool, db } from '$lib/server/db';
@@ -54,130 +55,122 @@ async function insertContract(
 }
 
 test('an invoice created manually with lines whose amounts add up succeeds, and each linked day moves to invoiced', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const day1 = await createWorkUnit(
-				{
-					contractId: contractRow.id,
-					date: '2024-06-10',
-					quantity: 1,
-					scope: 'Day one.',
-					state: 'worked'
-				},
-				{ kind: 'human', email: 'lorenzo@example.com' },
-				'worked as agreed',
-				tx
-			);
-			const day2 = await createWorkUnit(
-				{
-					contractId: contractRow.id,
-					date: '2024-06-11',
-					quantity: 1,
-					scope: 'Day two.',
-					state: 'worked'
-				},
-				{ kind: 'human', email: 'lorenzo@example.com' },
-				'worked as agreed',
-				tx
-			);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const day1 = await createWorkUnit(
+			{
+				contractId: contractRow.id,
+				date: '2024-06-10',
+				quantity: 1,
+				scope: 'Day one.',
+				state: 'worked'
+			},
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'worked as agreed',
+			tx
+		);
+		const day2 = await createWorkUnit(
+			{
+				contractId: contractRow.id,
+				date: '2024-06-11',
+				quantity: 1,
+				scope: 'Day two.',
+				state: 'worked'
+			},
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'worked as agreed',
+			tx
+		);
 
-			const invoiceRow = await createInvoice(
-				{
-					contractId: contractRow.id,
-					number: 'INV-0001',
-					issueDate: '2024-06-30',
-					documentType: 'invoice',
-					currency: 'EUR',
-					taxTreatmentCode: null,
-					statutoryReference: null,
-					stampDuty: null,
-					socialCharge: null,
-					dueDate: null,
-					paymentMethod: null,
-					iban: null,
-					transmissionId: null,
-					lines: [
-						{
-							description: 'Two days of consulting',
-							quantity: 2,
-							unitPrice: minorUnits(50000),
-							amount: minorUnits(100000),
-							taxRate: 22,
-							taxTreatmentCode: null,
-							workUnitIds: [day1.id, day2.id]
-						}
-					]
-				},
-				{ kind: 'human', email: 'lorenzo@example.com' },
-				'invoiced end of month',
-				tx
-			);
+		const invoiceRow = await createInvoice(
+			{
+				contractId: contractRow.id,
+				number: 'INV-0001',
+				issueDate: '2024-06-30',
+				documentType: 'invoice',
+				currency: 'EUR',
+				taxTreatmentCode: null,
+				statutoryReference: null,
+				stampDuty: null,
+				socialCharge: null,
+				dueDate: null,
+				paymentMethod: null,
+				iban: null,
+				transmissionId: null,
+				lines: [
+					{
+						description: 'Two days of consulting',
+						quantity: 2,
+						unitPrice: minorUnits(50000),
+						amount: minorUnits(100000),
+						taxRate: 22,
+						taxTreatmentCode: null,
+						workUnitIds: [day1.id, day2.id]
+					}
+				]
+			},
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'invoiced end of month',
+			tx
+		);
 
-			expect(invoiceRow.taxableAmount).toBe(100000);
-			expect(invoiceRow.taxAmount).toBe(22000);
-			expect(invoiceRow.total).toBe(122000);
-			// No due date supplied: computed from the contract's net-30 terms,
-			// with the source visible on the row, not just inferred by absence.
-			expect(invoiceRow.dueDate).toBe('2024-07-30');
-			expect(invoiceRow.dueDateSource).toBe('computed');
+		expect(invoiceRow.taxableAmount).toBe(100000);
+		expect(invoiceRow.taxAmount).toBe(22000);
+		expect(invoiceRow.total).toBe(122000);
+		// No due date supplied: computed from the contract's net-30 terms,
+		// with the source visible on the row, not just inferred by absence.
+		expect(invoiceRow.dueDate).toBe('2024-07-30');
+		expect(invoiceRow.dueDateSource).toBe('computed');
 
-			const refreshedDay1 = await getWorkUnit(day1.id, tx);
-			const refreshedDay2 = await getWorkUnit(day2.id, tx);
-			expect(refreshedDay1.state).toBe('invoiced');
-			expect(refreshedDay2.state).toBe('invoiced');
+		const refreshedDay1 = await getWorkUnit(day1.id, tx);
+		const refreshedDay2 = await getWorkUnit(day2.id, tx);
+		expect(refreshedDay1.state).toBe('invoiced');
+		expect(refreshedDay2.state).toBe('invoiced');
 
-			const withLines = await getInvoiceWithLines(invoiceRow.id);
-			expect(withLines?.lines).toHaveLength(1);
-			expect(withLines?.lines[0].days.map((d) => d.id).sort()).toEqual([day1.id, day2.id].sort());
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const withLines = await getInvoiceWithLines(invoiceRow.id, tx);
+		expect(withLines?.lines).toHaveLength(1);
+		expect(withLines?.lines[0].days.map((d) => d.id).sort()).toEqual([day1.id, day2.id].sort());
+	});
 });
 
 test('a supplied due date is stored verbatim, sourced as "document"', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const invoiceRow = await createInvoice(
-				{
-					contractId: contractRow.id,
-					number: 'INV-0002',
-					issueDate: '2024-06-30',
-					documentType: 'invoice',
-					currency: 'EUR',
-					taxTreatmentCode: null,
-					statutoryReference: null,
-					stampDuty: null,
-					socialCharge: null,
-					dueDate: '2024-08-15',
-					paymentMethod: null,
-					iban: null,
-					transmissionId: null,
-					lines: [
-						{
-							description: 'Flat fee',
-							quantity: 1,
-							unitPrice: minorUnits(100000),
-							amount: minorUnits(100000),
-							taxRate: 0,
-							taxTreatmentCode: 'N2.2',
-							workUnitIds: []
-						}
-					]
-				},
-				{ kind: 'human', email: 'lorenzo@example.com' },
-				'invoiced',
-				tx
-			);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const invoiceRow = await createInvoice(
+			{
+				contractId: contractRow.id,
+				number: 'INV-0002',
+				issueDate: '2024-06-30',
+				documentType: 'invoice',
+				currency: 'EUR',
+				taxTreatmentCode: null,
+				statutoryReference: null,
+				stampDuty: null,
+				socialCharge: null,
+				dueDate: '2024-08-15',
+				paymentMethod: null,
+				iban: null,
+				transmissionId: null,
+				lines: [
+					{
+						description: 'Flat fee',
+						quantity: 1,
+						unitPrice: minorUnits(100000),
+						amount: minorUnits(100000),
+						taxRate: 0,
+						taxTreatmentCode: 'N2.2',
+						workUnitIds: []
+					}
+				]
+			},
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'invoiced',
+			tx
+		);
 
-			expect(invoiceRow.dueDate).toBe('2024-08-15');
-			expect(invoiceRow.dueDateSource).toBe('document');
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		expect(invoiceRow.dueDate).toBe('2024-08-15');
+		expect(invoiceRow.dueDateSource).toBe('document');
+	});
 });
 
 test('the database rejects an invoice whose lines do not sum to its stated taxable amount', async () => {
@@ -262,114 +255,106 @@ test('the database rejects an invoice whose total does not equal taxable + tax +
 });
 
 test('recording a payment sets paid_on, and the invoice no longer appears in the unpaid list', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const invoiceRow = await createInvoice(
-				{
-					contractId: contractRow.id,
-					number: 'INV-0003',
-					issueDate: '2024-01-01',
-					documentType: 'invoice',
-					currency: 'EUR',
-					taxTreatmentCode: null,
-					statutoryReference: null,
-					stampDuty: null,
-					socialCharge: null,
-					dueDate: '2024-01-15',
-					paymentMethod: null,
-					iban: null,
-					transmissionId: null,
-					lines: [
-						{
-							description: 'Flat fee',
-							quantity: 1,
-							unitPrice: minorUnits(50000),
-							amount: minorUnits(50000),
-							taxRate: 0,
-							taxTreatmentCode: null,
-							workUnitIds: []
-						}
-					]
-				},
-				{ kind: 'human', email: 'lorenzo@example.com' },
-				'invoiced',
-				tx
-			);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const invoiceRow = await createInvoice(
+			{
+				contractId: contractRow.id,
+				number: 'INV-0003',
+				issueDate: '2024-01-01',
+				documentType: 'invoice',
+				currency: 'EUR',
+				taxTreatmentCode: null,
+				statutoryReference: null,
+				stampDuty: null,
+				socialCharge: null,
+				dueDate: '2024-01-15',
+				paymentMethod: null,
+				iban: null,
+				transmissionId: null,
+				lines: [
+					{
+						description: 'Flat fee',
+						quantity: 1,
+						unitPrice: minorUnits(50000),
+						amount: minorUnits(50000),
+						taxRate: 0,
+						taxTreatmentCode: null,
+						workUnitIds: []
+					}
+				]
+			},
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'invoiced',
+			tx
+		);
 
-			const unpaidBefore = await listUnpaidInvoices();
-			expect(unpaidBefore.some((row) => row.invoice.id === invoiceRow.id)).toBe(true);
+		const unpaidBefore = await listUnpaidInvoices(tx);
+		expect(unpaidBefore.some((row) => row.invoice.id === invoiceRow.id)).toBe(true);
 
-			const paid = await recordPayment(invoiceRow.id, '2024-02-01');
-			expect(paid.paidOn).toBe('2024-02-01');
+		const paid = await recordPayment(invoiceRow.id, '2024-02-01', tx);
+		expect(paid.paidOn).toBe('2024-02-01');
 
-			const unpaidAfter = await listUnpaidInvoices();
-			expect(unpaidAfter.some((row) => row.invoice.id === invoiceRow.id)).toBe(false);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const unpaidAfter = await listUnpaidInvoices(tx);
+		expect(unpaidAfter.some((row) => row.invoice.id === invoiceRow.id)).toBe(false);
+	});
 });
 
 test('a day linked to an unpaid invoice line is not itself transitioned to "paid": paid is derived from the invoice, not stored on the day', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const day = await createWorkUnit(
-				{
-					contractId: contractRow.id,
-					date: '2024-01-05',
-					quantity: 1,
-					scope: 'Work.',
-					state: 'worked'
-				},
-				{ kind: 'human', email: 'lorenzo@example.com' },
-				'worked',
-				tx
-			);
-			const invoiceRow = await createInvoice(
-				{
-					contractId: contractRow.id,
-					number: 'INV-0004',
-					issueDate: '2024-01-01',
-					documentType: 'invoice',
-					currency: 'EUR',
-					taxTreatmentCode: null,
-					statutoryReference: null,
-					stampDuty: null,
-					socialCharge: null,
-					dueDate: '2024-01-15',
-					paymentMethod: null,
-					iban: null,
-					transmissionId: null,
-					lines: [
-						{
-							description: 'A day of work',
-							quantity: 1,
-							unitPrice: minorUnits(50000),
-							amount: minorUnits(50000),
-							taxRate: 0,
-							taxTreatmentCode: null,
-							workUnitIds: [day.id]
-						}
-					]
-				},
-				{ kind: 'human', email: 'lorenzo@example.com' },
-				'invoiced',
-				tx
-			);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const day = await createWorkUnit(
+			{
+				contractId: contractRow.id,
+				date: '2024-01-05',
+				quantity: 1,
+				scope: 'Work.',
+				state: 'worked'
+			},
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'worked',
+			tx
+		);
+		const invoiceRow = await createInvoice(
+			{
+				contractId: contractRow.id,
+				number: 'INV-0004',
+				issueDate: '2024-01-01',
+				documentType: 'invoice',
+				currency: 'EUR',
+				taxTreatmentCode: null,
+				statutoryReference: null,
+				stampDuty: null,
+				socialCharge: null,
+				dueDate: '2024-01-15',
+				paymentMethod: null,
+				iban: null,
+				transmissionId: null,
+				lines: [
+					{
+						description: 'A day of work',
+						quantity: 1,
+						unitPrice: minorUnits(50000),
+						amount: minorUnits(50000),
+						taxRate: 0,
+						taxTreatmentCode: null,
+						workUnitIds: [day.id]
+					}
+				]
+			},
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'invoiced',
+			tx
+		);
 
-			await recordPayment(invoiceRow.id, '2024-02-01');
+		await recordPayment(invoiceRow.id, '2024-02-01', tx);
 
-			const refreshedDay = await getWorkUnit(day.id, tx);
-			// The row itself is unchanged by paying the invoice — no cascade
-			// wrote 'paid' onto it. `routes/invoices/[id]` derives the display
-			// status from the invoice's own paidOn instead.
-			expect(refreshedDay.state).toBe('invoiced');
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const refreshedDay = await getWorkUnit(day.id, tx);
+		// The row itself is unchanged by paying the invoice — no cascade
+		// wrote 'paid' onto it. `routes/invoices/[id]` derives the display
+		// status from the invoice's own paidOn instead.
+		expect(refreshedDay.state).toBe('invoiced');
+	});
 });
 
 test('linking a line to a day still on "proposed" is rejected by the existing state machine, not pre-validated here', async () => {

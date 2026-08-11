@@ -6,7 +6,8 @@
 // — never a missing field or a thrown error.
 
 import { afterAll, expect, test } from 'vitest';
-import { client, db } from '../../db';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
+import { client } from '../../db';
 import { fiscalProfile } from '../../db/schema/fiscal';
 import { evaluateCharges } from '../pack';
 import { buildRegistry, lookupPack } from '../registry';
@@ -49,20 +50,16 @@ test('resolution finds the generic pack by id and version', () => {
 });
 
 test('a taxpayer on the generic pack resolves end to end, ceilings included as empty', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			await tx.insert(fiscalProfile).values({
-				packId: 'generic',
-				packVersion: '1',
-				validFrom: '2024-01-01',
-				validTo: null
-			});
+	await inRolledBackTransaction(async (tx) => {
+		await tx.insert(fiscalProfile).values({
+			packId: 'generic',
+			packVersion: '1',
+			validFrom: '2024-01-01',
+			validTo: null
+		});
 
-			const resolved = await resolveActiveFiscalPack(tx, '2024-06-01');
-			expect(resolved?.pack.id).toBe('generic');
-			expect(resolved?.pack.ceilings).toEqual([]);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const resolved = await resolveActiveFiscalPack(tx, '2024-06-01');
+		expect(resolved?.pack.id).toBe('generic');
+		expect(resolved?.pack.ceilings).toEqual([]);
+	});
 });

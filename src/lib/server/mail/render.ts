@@ -33,6 +33,13 @@ export type EmailTemplateContext = {
 	period: { from: string; to: string };
 	register: Register;
 	language: ContractTemplateLanguage;
+	/**
+	 * The date this context speaks as of, so `{{days_late}}` agrees with
+	 * whatever the caller already decided "now" is. Optional, defaulting to
+	 * the real clock, because a template rendered outside a dunning flow has
+	 * no such date to offer.
+	 */
+	today?: Date;
 };
 
 function placeholderValues(
@@ -52,7 +59,7 @@ function placeholderValues(
 		// template is only ever opened from an overdue invoice
 		// (`src/lib/server/mail/dunning.ts`), so that case does not arise
 		// in practice, but nothing here hides it if it did.
-		days_late: formatDays(daysLate(context.invoice.dueDate), language)
+		days_late: formatDays(daysLate(context.invoice.dueDate, context.today), language)
 	};
 }
 

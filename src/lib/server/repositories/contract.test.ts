@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
+import { rejection } from '$lib/server/db/pg-error';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
@@ -61,92 +63,83 @@ async function insertContract(tx: Parameters<Parameters<typeof db.transaction>[0
 }
 
 test('setHostedExtractionConsentDocument archives the document owned by the contract and points at it', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
 
-			const updated = await setHostedExtractionConsentDocument(
-				contractRow.id,
-				{
-					bytes: new TextEncoder().encode('I consent to hosted extraction for Acme SRL'),
-					mime: 'application/pdf',
-					originalName: 'consent.pdf',
-					provenance: 'upload' as const,
-					confidential: true
-				},
-				tx
-			);
+		const updated = await setHostedExtractionConsentDocument(
+			contractRow.id,
+			{
+				bytes: new TextEncoder().encode('I consent to hosted extraction for Acme SRL'),
+				mime: 'application/pdf',
+				originalName: 'consent.pdf',
+				provenance: 'upload' as const,
+				confidential: true
+			},
+			tx
+		);
 
-			expect(updated.hostedExtractionConsentDocumentId).not.toBeNull();
-			const consentDocument = await getDocument(updated.hostedExtractionConsentDocumentId!, tx);
-			expect(consentDocument).toMatchObject({
-				ownerType: 'contract',
-				ownerId: contractRow.id,
-				contractId: contractRow.id,
-				originalName: 'consent.pdf'
-			});
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		expect(updated.hostedExtractionConsentDocumentId).not.toBeNull();
+		const consentDocument = await getDocument(updated.hostedExtractionConsentDocumentId!, tx);
+		expect(consentDocument).toMatchObject({
+			ownerType: 'contract',
+			ownerId: contractRow.id,
+			contractId: contractRow.id,
+			originalName: 'consent.pdf'
+		});
+	});
 });
 
 test('revokeHostedExtractionConsent clears the link without deleting the archived document', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const updated = await setHostedExtractionConsentDocument(
-				contractRow.id,
-				{
-					bytes: new TextEncoder().encode('consent'),
-					mime: 'application/pdf',
-					originalName: 'consent.pdf',
-					provenance: 'upload' as const,
-					confidential: true
-				},
-				tx
-			);
-			const documentId = updated.hostedExtractionConsentDocumentId!;
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const updated = await setHostedExtractionConsentDocument(
+			contractRow.id,
+			{
+				bytes: new TextEncoder().encode('consent'),
+				mime: 'application/pdf',
+				originalName: 'consent.pdf',
+				provenance: 'upload' as const,
+				confidential: true
+			},
+			tx
+		);
+		const documentId = updated.hostedExtractionConsentDocumentId!;
 
-			const revoked = await revokeHostedExtractionConsent(contractRow.id, tx);
-			expect(revoked.hostedExtractionConsentDocumentId).toBeNull();
+		const revoked = await revokeHostedExtractionConsent(contractRow.id, tx);
+		expect(revoked.hostedExtractionConsentDocumentId).toBeNull();
 
-			const stillArchived = await getDocument(documentId, tx);
-			expect(stillArchived).toBeDefined();
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const stillArchived = await getDocument(documentId, tx);
+		expect(stillArchived).toBeDefined();
+	});
 });
 
 test("pointing hosted_extraction_consent_document_id at a document that is not this contract's own evidence is rejected", async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const otherContractRow = await insertContract(tx);
-			// A document archived under a *different* contract's own evidence.
-			const foreignDocument = await storeDocument(
-				{
-					bytes: new TextEncoder().encode("someone else's consent"),
-					mime: 'application/pdf',
-					originalName: 'other.pdf',
-					provenance: 'upload' as const,
-					contractId: otherContractRow.id,
-					confidential: true,
-					ownerType: 'contract' as const,
-					ownerId: otherContractRow.id
-				},
-				tx
-			);
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const otherContractRow = await insertContract(tx);
+		// A document archived under a *different* contract's own evidence.
+		const foreignDocument = await storeDocument(
+			{
+				bytes: new TextEncoder().encode("someone else's consent"),
+				mime: 'application/pdf',
+				originalName: 'other.pdf',
+				provenance: 'upload' as const,
+				contractId: otherContractRow.id,
+				confidential: true,
+				ownerType: 'contract' as const,
+				ownerId: otherContractRow.id
+			},
+			tx
+		);
 
-			await expect(
-				tx
-					.update(contract)
-					.set({ hostedExtractionConsentDocumentId: foreignDocument.id })
-					.where(eq(contract.id, contractRow.id))
-			).rejects.toThrow(/must reference a document archived as this contract's own evidence/);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const refusal = await rejection(() =>
+			tx
+				.update(contract)
+				.set({ hostedExtractionConsentDocumentId: foreignDocument.id })
+				.where(eq(contract.id, contractRow.id))
+		);
+		expect(refusal.message).toMatch(
+			/must reference a document archived as this contract's own evidence/
+		);
+	});
 });

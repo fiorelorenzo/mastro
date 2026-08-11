@@ -1,5 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
+import { rejection } from '$lib/server/db/pg-error';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract, rateCard } from './index';
 import type { ExpensePolicy, PaymentTerms } from './contract';
@@ -64,34 +66,28 @@ function dailyCard(contractId: string, validFrom: string, validTo: string | null
 }
 
 test('adjacent validity periods are both accepted', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			await tx.insert(rateCard).values(dailyCard(contractRow.id, '2024-01-01', '2024-06-30'));
-			await tx.insert(rateCard).values(dailyCard(contractRow.id, '2024-07-01', null));
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		await tx.insert(rateCard).values(dailyCard(contractRow.id, '2024-01-01', '2024-06-30'));
+		await tx.insert(rateCard).values(dailyCard(contractRow.id, '2024-07-01', null));
 
-			const cards = await tx.select().from(rateCard).where(eq(rateCard.contractId, contractRow.id));
-			expect(cards).toHaveLength(2);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const cards = await tx.select().from(rateCard).where(eq(rateCard.contractId, contractRow.id));
+		expect(cards).toHaveLength(2);
+	});
 });
 
 test('an overlapping validity period is rejected by the database, not only by application code', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			await tx.insert(rateCard).values(dailyCard(contractRow.id, '2024-01-01', null));
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		await tx.insert(rateCard).values(dailyCard(contractRow.id, '2024-01-01', null));
 
-			await expect(
+		expect(
+			await rejection(() =>
 				tx.insert(rateCard).values(dailyCard(contractRow.id, '2024-06-01', null))
-			).rejects.toMatchObject({
-				code: '23P01',
-				constraint_name: 'rate_card_no_overlapping_validity'
-			});
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+			)
+		).toMatchObject({
+			code: '23P01',
+			constraint_name: 'rate_card_no_overlapping_validity'
+		});
+	});
 });

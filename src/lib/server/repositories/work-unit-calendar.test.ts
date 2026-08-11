@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
+import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract, workUnit } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
@@ -63,42 +64,38 @@ async function insertContract(tx: Parameters<Parameters<typeof db.transaction>[0
 }
 
 test('listWorkUnitsBetween returns only the days inside the inclusive range, ordered by date', async () => {
-	await expect(
-		db.transaction(async (tx) => {
-			const contractRow = await insertContract(tx);
-			const actor = { kind: 'human' as const, email: 'lorenzo@example.com' };
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const actor = { kind: 'human' as const, email: 'lorenzo@example.com' };
 
-			await createWorkUnit(
-				{ contractId: contractRow.id, date: '2024-05-31', quantity: 1, scope: 'Before the range.' },
-				actor,
-				'seed',
-				tx
-			);
-			const inside1 = await createWorkUnit(
-				{ contractId: contractRow.id, date: '2024-06-01', quantity: 1, scope: 'First of June.' },
-				actor,
-				'seed',
-				tx
-			);
-			const inside2 = await createWorkUnit(
-				{ contractId: contractRow.id, date: '2024-06-30', quantity: 0.5, scope: 'Last of June.' },
-				actor,
-				'seed',
-				tx
-			);
-			await createWorkUnit(
-				{ contractId: contractRow.id, date: '2024-07-01', quantity: 1, scope: 'After the range.' },
-				actor,
-				'seed',
-				tx
-			);
+		await createWorkUnit(
+			{ contractId: contractRow.id, date: '2024-05-31', quantity: 1, scope: 'Before the range.' },
+			actor,
+			'seed',
+			tx
+		);
+		const inside1 = await createWorkUnit(
+			{ contractId: contractRow.id, date: '2024-06-01', quantity: 1, scope: 'First of June.' },
+			actor,
+			'seed',
+			tx
+		);
+		const inside2 = await createWorkUnit(
+			{ contractId: contractRow.id, date: '2024-06-30', quantity: 0.5, scope: 'Last of June.' },
+			actor,
+			'seed',
+			tx
+		);
+		await createWorkUnit(
+			{ contractId: contractRow.id, date: '2024-07-01', quantity: 1, scope: 'After the range.' },
+			actor,
+			'seed',
+			tx
+		);
 
-			const rows = await listWorkUnitsBetween('2024-06-01', '2024-06-30', tx);
-			expect(rows.map((row) => row.id)).toEqual([inside1.id, inside2.id]);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const rows = await listWorkUnitsBetween('2024-06-01', '2024-06-30', tx);
+		expect(rows.map((row) => row.id)).toEqual([inside1.id, inside2.id]);
+	});
 });
 
 test('getMostRecentContractId names the contract behind the latest inserted day, null with no history', async () => {
@@ -110,39 +107,35 @@ test('getMostRecentContractId names the contract behind the latest inserted day,
 	// so that tie never happens outside a rollback-per-test setup; here we
 	// just set `createdAt` explicitly instead of depending on wall-clock
 	// spacing between two calls in the same transaction.
-	await expect(
-		db.transaction(async (tx) => {
-			expect(await getMostRecentContractId(tx)).toBeNull();
+	await inRolledBackTransaction(async (tx) => {
+		expect(await getMostRecentContractId(tx)).toBeNull();
 
-			const contractA = await insertContract(tx);
-			const contractB = await insertContract(tx);
-			const actor = { kind: 'human' as const, email: 'lorenzo@example.com' };
+		const contractA = await insertContract(tx);
+		const contractB = await insertContract(tx);
+		const actor = { kind: 'human' as const, email: 'lorenzo@example.com' };
 
-			const dayForA = await createWorkUnit(
-				{ contractId: contractA.id, date: '2024-06-01', quantity: 1, scope: 'For A.' },
-				actor,
-				'seed',
-				tx
-			);
-			await tx
-				.update(workUnit)
-				.set({ createdAt: new Date('2024-06-01T10:00:00Z') })
-				.where(eq(workUnit.id, dayForA.id));
-			expect(await getMostRecentContractId(tx)).toBe(contractA.id);
+		const dayForA = await createWorkUnit(
+			{ contractId: contractA.id, date: '2024-06-01', quantity: 1, scope: 'For A.' },
+			actor,
+			'seed',
+			tx
+		);
+		await tx
+			.update(workUnit)
+			.set({ createdAt: new Date('2024-06-01T10:00:00Z') })
+			.where(eq(workUnit.id, dayForA.id));
+		expect(await getMostRecentContractId(tx)).toBe(contractA.id);
 
-			const dayForB = await createWorkUnit(
-				{ contractId: contractB.id, date: '2024-06-02', quantity: 1, scope: 'For B.' },
-				actor,
-				'seed',
-				tx
-			);
-			await tx
-				.update(workUnit)
-				.set({ createdAt: new Date('2024-06-01T11:00:00Z') })
-				.where(eq(workUnit.id, dayForB.id));
-			expect(await getMostRecentContractId(tx)).toBe(contractB.id);
-
-			tx.rollback();
-		})
-	).rejects.toThrow();
+		const dayForB = await createWorkUnit(
+			{ contractId: contractB.id, date: '2024-06-02', quantity: 1, scope: 'For B.' },
+			actor,
+			'seed',
+			tx
+		);
+		await tx
+			.update(workUnit)
+			.set({ createdAt: new Date('2024-06-01T11:00:00Z') })
+			.where(eq(workUnit.id, dayForB.id));
+		expect(await getMostRecentContractId(tx)).toBe(contractB.id);
+	});
 });
