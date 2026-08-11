@@ -7,18 +7,16 @@
 // `createProposal` (`repositories/proposal.ts`) — this module never calls
 // that itself, since it has no write access to do so.
 
-export type ExtractionProvider = 'local' | 'hosted';
-
 export interface ExtractionRequest {
 	/** The document the extraction reads. The runner re-derives this
 	 * document's `contractId` from its own scoped database read and
 	 * rejects the job if it disagrees with `contractId` below — a
-	 * defense-in-depth check against a producer bug routing a document to
-	 * the wrong contract's consent decision. */
+	 * defence-in-depth check against a producer bug naming the wrong
+	 * contract. */
 	documentId: string;
-	/** The contract `content` is being extracted on behalf of. Routing
-	 * (`routing.ts`) reads this contract's
-	 * `hosted_extraction_consent_document_id`, never `documentId`'s. */
+	/** The contract `content` is being extracted on behalf of. The runner
+	 * re-derives it from `documentId` and rejects a job whose claim
+	 * disagrees, which is the one check it still makes for itself. */
 	contractId: string;
 	/** What kind of proposal this becomes once accepted — passed straight
 	 * through to `proposal.targetType` by whichever producer calls this;
@@ -35,10 +33,6 @@ export interface ExtractionRequest {
 	 * substrate every producer shares; it hardcodes no extraction prompt
 	 * of its own. */
 	instructions: string;
-	/** Omitted or `'local'`: the default, always allowed. `'hosted'`:
-	 * refused outright (`HostedExtractionRefused`) unless `contractId`'s
-	 * `hosted_extraction_consent_document_id` is set. */
-	requestedProvider?: ExtractionProvider;
 }
 
 /** What a model call is expected to answer with once its response text is

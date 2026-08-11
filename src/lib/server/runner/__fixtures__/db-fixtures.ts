@@ -77,15 +77,10 @@ export async function insertCommittedDocument(
 	return row;
 }
 
-/** Releases the FK from `contract` to its consent document (if any),
- * deletes every document owned by this contract, then the contract and
- * client rows themselves — the reverse of insertion order, respecting
- * every `ON DELETE RESTRICT` foreign key involved. */
+/** Deletes every document owned by this contract, then the contract and
+ * client rows themselves — the reverse of insertion order, respecting every
+ * `ON DELETE RESTRICT` foreign key involved. */
 export async function deleteCommittedContract(contractId: string, clientId: string): Promise<void> {
-	await db
-		.update(contract)
-		.set({ hostedExtractionConsentDocumentId: null })
-		.where(eq(contract.id, contractId));
 	await db.delete(document).where(eq(document.contractId, contractId));
 	await db.delete(contract).where(eq(contract.id, contractId));
 	await db.delete(client).where(eq(client.id, clientId));

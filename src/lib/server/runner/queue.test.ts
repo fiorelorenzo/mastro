@@ -117,9 +117,9 @@ function spawnRunnerWatch(dir: string, extraEnv: Record<string, string> = {}) {
 			PATH: process.env.PATH ?? '',
 			RUNNER_DATABASE_URL: runnerDatabaseUrl,
 			RUNNER_QUEUE_DIR: dir,
-			RUNNER_LOCAL_AGENT_COMMAND: process.execPath,
-			RUNNER_LOCAL_AGENT_ARGS: JSON.stringify([FIXTURE_AGENT]),
-			RUNNER_LOCAL_AGENT_ENV: JSON.stringify({
+			RUNNER_AGENT_COMMAND: process.execPath,
+			RUNNER_AGENT_ARGS: JSON.stringify([FIXTURE_AGENT]),
+			RUNNER_AGENT_ENV: JSON.stringify({
 				FAKE_AGENT_DELAY_MS: '1500',
 				FAKE_AGENT_RESPONSE: JSON.stringify({
 					excerpt: 'ok for Thursday',

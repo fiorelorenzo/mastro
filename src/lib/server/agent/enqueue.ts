@@ -16,35 +16,17 @@ import { dayExtractionInstructions } from './day-extraction';
 
 export interface EnqueueOutcome {
 	readonly enqueued: number;
-	/** Threads skipped because their contract has no consent document on
-	 * file. Not an error: it is the normal state of a contract nobody has
-	 * asked, and the count is worth seeing so a self-hoster can tell
-	 * "nothing arrived" from "nothing may be read". */
-	readonly withoutConsent: number;
 	readonly alreadyProposed: number;
 }
 
-/**
- * Queues one extraction job per archived message that has none yet.
- *
- * The consent check happens here as well as in the runner, and that is
- * not redundant: `routing.ts` refuses a job that should never have been
- * made, which is a loud failure in `failed/` for a human to look at,
- * while this skips making it in the first place. A contract nobody
- * consented for should produce silence, not a queue full of refusals.
- */
+/** Queues one extraction job per archived message that has none yet. */
 export async function enqueueDayExtractions(queueDir: string): Promise<EnqueueOutcome> {
 	let enqueued = 0;
-	let withoutConsent = 0;
 	let alreadyProposed = 0;
 
 	for (const thread of await listInboundThreadsAwaitingExtraction()) {
 		const contract = await getContract(thread.contractId);
 		if (!contract) continue;
-		if (contract.hostedExtractionConsentDocumentId === null) {
-			withoutConsent += 1;
-			continue;
-		}
 		if ((await listProposalsForDocument(thread.documentId)).length > 0) {
 			alreadyProposed += 1;
 			continue;
@@ -61,10 +43,9 @@ export async function enqueueDayExtractions(queueDir: string): Promise<EnqueueOu
 			contractId: thread.contractId,
 			targetType: 'work_unit',
 			content: bytes.toString('utf8'),
-			instructions: dayExtractionInstructions(thread.receivedAt.toISOString().slice(0, 10)),
-			requestedProvider: 'hosted'
+			instructions: dayExtractionInstructions(thread.receivedAt.toISOString().slice(0, 10))
 		});
 		enqueued += 1;
 	}
-	return { enqueued, withoutConsent, alreadyProposed };
+	return { enqueued, alreadyProposed };
 }

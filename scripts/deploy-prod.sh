@@ -107,11 +107,11 @@ built_image="$(docker image inspect -f '{{.Id}}' mastro-prod-web)"
 # absent one: #82's own acceptance is that the product degrades to manual
 # entry when the runner is not there.
 services=(db web)
-if grep -qE '^RUNNER_LOCAL_AGENT_COMMAND=.+' "$ENV_FILE"; then
+if grep -qE '^RUNNER_AGENT_COMMAND=.+' "$ENV_FILE"; then
   services+=(runner)
-  echo "==> runner: a local agent command is configured, starting it"
+  echo "==> runner: an agent command is configured, starting it"
 else
-  echo "==> runner: no local agent command configured, leaving it stopped"
+  echo "==> runner: no agent command configured, leaving it stopped"
 fi
 
 rollback() {

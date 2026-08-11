@@ -148,12 +148,11 @@ instead of asking for a wider grant "while you're at it".
 
 The ACP runner (#82, `docs/agent-runner.md`) needs no credential from Google at
 all — it never touches this instance's sign-in or mail configuration. What it
-needs, if you want it running, is a local or hosted model reachable as an
-ACP-speaking CLI command (`RUNNER_LOCAL_AGENT_COMMAND` /
-`RUNNER_HOSTED_AGENT_COMMAND` in `.env.prod`) and its own database password
+needs, if you want it running, is a model reachable as an ACP-speaking CLI
+command (`RUNNER_AGENT_COMMAND` in `.env.prod`) and its own database password
 (`RUNNER_DB_PASSWORD`, generated the same way as `BETTER_AUTH_SECRET` above).
 
-Leaving `RUNNER_LOCAL_AGENT_COMMAND` unset, or not running the `runner` service
+Leaving `RUNNER_AGENT_COMMAND` unset, or not running the `runner` service
 in `compose.prod.yaml` at all, is a fully supported configuration: the rest of
 the product works exactly the same, and nothing on startup or in the interface
 mentions the runner when it is absent. Read `docs/agent-runner.md` before

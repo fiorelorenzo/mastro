@@ -66,9 +66,9 @@ services:
   # The ACP runner (#82): its own credentials, its own database role
   # (mastro_runner, drizzle/0035_acp_runner_role.sql), no published port
   # at all — it never accepts inbound connections, only reads a local job
-  # queue directory and reaches out to whichever local or hosted model
-  # agent command it is configured with. Optional: comment this whole
-  # service out (or leave RUNNER_LOCAL_AGENT_COMMAND unset) and the rest
+  # queue directory and reaches out to the model agent command it is
+  # configured with. Optional: comment this whole service out (or leave
+  # RUNNER_AGENT_COMMAND unset) and the rest
   # of the stack is unaffected — see docs/agent-runner.md, invariant 3's
   # other half ("a runner failure degrades to manual entry, never breaks
   # the ledger") is what this absence is supposed to prove.

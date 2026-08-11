@@ -17,28 +17,11 @@ export function connectRunnerDb(databaseUrl: string): RunnerDb {
 }
 
 /**
- * The one column model routing needs (#81's decision comment on #82):
- * null for a contract with no hosted-extraction consent on file, and null
- * — indistinguishably, from this role's read scope — for a contract id
- * that does not exist at all. Both cases refuse hosted the same way
- * (`routing.ts`), so the distinction never matters to a caller.
- */
-export async function getHostedExtractionConsentDocumentId(
-	sql: RunnerDb,
-	contractId: string
-): Promise<string | null> {
-	const rows = await sql<{ hosted_extraction_consent_document_id: string | null }[]>`
-		SELECT hosted_extraction_consent_document_id FROM contract WHERE id = ${contractId}
-	`;
-	return rows[0]?.hosted_extraction_consent_document_id ?? null;
-}
-
-/**
  * The contract a document actually belongs to, read independently of
  * whatever a job claims — `job.ts` compares this against the job's own
  * `contractId` before any content reaches a model, so a producer bug
- * naming the wrong contract cannot silently borrow a different contract's
- * hosted-extraction consent.
+ * naming the wrong contract cannot have this document extracted against
+ * it.
  */
 export async function getDocumentContractId(
 	sql: RunnerDb,

@@ -2,9 +2,9 @@
 // hand, never in CI: it needs credentials CI does not have and makes one
 // network call per case.
 //
-//   RUNNER_HOSTED_AGENT_COMMAND=npx \
-//   RUNNER_HOSTED_AGENT_ARGS='["-y","@zed-industries/claude-code-acp"]' \
-//   RUNNER_HOSTED_AGENT_ENV="{\"CLAUDE_CODE_OAUTH_TOKEN\":\"$CLAUDE_CODE_OAUTH_TOKEN\",\"PATH\":\"$PATH\",\"HOME\":\"$HOME\"}" \
+//   RUNNER_AGENT_COMMAND=npx \
+//   RUNNER_AGENT_ARGS='["-y","@zed-industries/claude-code-acp"]' \
+//   RUNNER_AGENT_ENV="{\"CLAUDE_CODE_OAUTH_TOKEN\":\"$CLAUDE_CODE_OAUTH_TOKEN\",\"PATH\":\"$PATH\",\"HOME\":\"$HOME\"}" \
 //   node scripts/score-day-corpus.ts
 //
 // It reports a number and the failures. A corpus run that only prints a
@@ -36,7 +36,7 @@ const corpus: Case[] = JSON.parse(
 );
 
 const config = loadRunnerConfig(process.env);
-const model = new AcpAgentModel('hosted', config.hostedAgent, config.modelTimeoutMs);
+const model = new AcpAgentModel(config.agent, config.modelTimeoutMs);
 
 let passed = 0;
 const failures: string[] = [];

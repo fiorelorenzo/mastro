@@ -7,34 +7,23 @@
 // something this file hardcodes.
 
 import { getDocumentContractId, type RunnerDb } from './db.ts';
-import { resolveProvider } from './routing.ts';
 import type { ExtractionModel } from './model.ts';
 import type { ExtractionRequest, ProposalCandidate } from './types.ts';
 
-export interface ExtractionModels {
-	readonly local: ExtractionModel;
-	readonly hosted: ExtractionModel;
-}
-
 /**
- * Runs `request` through routing, then the model routing selects, and
- * returns a `ProposalCandidate` — never a database write. Two checks
- * happen before the model is ever touched:
+ * Runs `request` through the model and returns a `ProposalCandidate` —
+ * never a database write.
  *
- * 1. `request.documentId` is re-read from the database and its actual
- *    `contractId` is compared against `request.contractId`. A mismatch is
- *    rejected outright — a producer bug pointing a document at the wrong
- *    contract must not be able to borrow that other contract's hosted
- *    consent.
- * 2. `resolveProvider` decides local or hosted from the real database
- *    column, not from `request.requestedProvider` alone — a caller can
- *    ask, it cannot decide.
- *
- * Only after both pass does `models.local`/`models.hosted` get called.
+ * One check happens first: `request.documentId` is re-read from the
+ * database and its actual `contractId` compared against
+ * `request.contractId`. A mismatch is rejected outright, so a producer bug
+ * naming the wrong contract cannot have this document extracted against
+ * it. That check is the runner's own, made from its own scoped read rather
+ * than trusting the job file.
  */
 export async function processExtractionJob(
 	sql: RunnerDb,
-	models: ExtractionModels,
+	model: ExtractionModel,
 	request: ExtractionRequest
 ): Promise<ProposalCandidate> {
 	const actualContractId = await getDocumentContractId(sql, request.documentId);
@@ -49,9 +38,6 @@ export async function processExtractionJob(
 				`${request.contractId} as the job claimed`
 		);
 	}
-
-	const provider = await resolveProvider(sql, request.contractId, request.requestedProvider);
-	const model = provider === 'hosted' ? models.hosted : models.local;
 
 	const { text } = await model.call({
 		instructions: request.instructions,

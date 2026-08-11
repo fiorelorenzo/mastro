@@ -50,7 +50,6 @@ export type RunExtraction = (request: {
 	targetType: string;
 	content: string;
 	instructions: string;
-	requestedProvider: 'hosted';
 }) => Promise<ProposalCandidate>;
 
 export interface DayProposalOutcome {
@@ -67,12 +66,6 @@ export interface DayProposalOutcome {
  * approves. A message that approves nothing writes nothing at all, rather
  * than an empty proposal for a human to dismiss.
  *
- * Always asks for the hosted provider, because there is no other one
- * (#81, revised): a contract with no consent document on file is refused
- * by `routing.ts` before any content leaves this process, and that
- * refusal propagates to the caller rather than being swallowed here. A
- * caller that would rather skip such contracts quietly should check the
- * contract first; this function will not decide that on its behalf.
  */
 export async function proposeDaysFromMessage(
 	source: DayProposalSource,
@@ -84,8 +77,7 @@ export async function proposeDaysFromMessage(
 		contractId: source.contractId,
 		targetType: 'work_unit',
 		content: source.content,
-		instructions: dayExtractionInstructions(source.messageDate),
-		requestedProvider: 'hosted'
+		instructions: dayExtractionInstructions(source.messageDate)
 	});
 	return writeDayProposals(source, candidate, executor);
 }
