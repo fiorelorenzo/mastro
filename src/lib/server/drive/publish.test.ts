@@ -210,7 +210,18 @@ test('publishAllPending publishes every unmirrored document and skips one alread
 
 		const outcomes = await publishAllPending(target, folderConfig, tx);
 
-		expect(outcomes).toHaveLength(1);
-		expect(outcomes[0]).toEqual({ ok: true, remoteFileId: expect.stringContaining(second.id) });
+		// This publishes every unmirrored document in the instance, so the
+		// assertion is about this test's own two: the first was already
+		// mirrored and must not be touched again, the second must be
+		// published. Another test's committed fixtures may legitimately add
+		// outcomes of their own.
+		expect(outcomes).toContainEqual({
+			ok: true,
+			remoteFileId: expect.stringContaining(second.id)
+		});
+		expect(outcomes).not.toContainEqual({
+			ok: true,
+			remoteFileId: expect.stringContaining(first.id)
+		});
 	});
 });

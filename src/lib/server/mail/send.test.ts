@@ -7,7 +7,15 @@ import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { minorUnits } from '$lib/money';
 import { client as pool, db } from '$lib/server/db';
-import { client, contract, invoice, invoiceLine, sentEmail, workUnit } from '$lib/server/db/schema';
+import {
+	client,
+	contract,
+	emailTemplate,
+	invoice,
+	invoiceLine,
+	sentEmail,
+	workUnit
+} from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { createApproval } from '$lib/server/repositories/approval';
 import { createWorkUnit } from '$lib/server/repositories/work-unit';
@@ -201,11 +209,29 @@ async function seed(tx: Tx) {
 		.set({ state: 'invoiced', invoiceLineId: lineRow.id })
 		.where(eq(workUnit.id, day.id));
 
-	return contractRow;
+	const [templateRow] = await tx
+		.insert(emailTemplate)
+		.values({
+			contractId: contractRow.id,
+			name: 'Invoice cover note',
+			subject: 'Invoice {{invoice_number}}',
+			body: 'Days worked: {{day_list}} ({{day_total}}). Amount: {{amount}}.',
+			attachmentKinds: ['day_register_pdf', 'day_register_csv'],
+			trigger: { kind: 'manual' }
+		})
+		.returning();
+
+	return { contractRow, templateRow };
 }
 
+/**
+ * The shape `dispatchEmail` takes. `id` is filled in per test from a real
+ * `email_template` row: `sent_email.email_template_id` is a uuid with a
+ * foreign key, so a literal like `'template-1'` fails the insert — which is
+ * exactly what both real-send tests were doing, invisibly, in CI.
+ */
 const template = {
-	id: 'template-1',
+	id: '',
 	contractId: '',
 	subject: 'Invoice {{invoice_number}}',
 	body: 'Days worked: {{day_list}} ({{day_total}}). Amount: {{amount}}.',
@@ -222,9 +248,9 @@ const context = {
 
 test('auto-send off: prepares nothing sent, touches neither SMTP nor IMAP', async () => {
 	await inRolledBackTransaction(async (tx) => {
-		const contractRow = await seed(tx);
+		const { contractRow, templateRow } = await seed(tx);
 		const prepared = await prepareEmail(
-			{ ...template, contractId: contractRow.id },
+			{ ...template, id: templateRow.id, contractId: contractRow.id },
 			{
 				...context,
 				register: { contractId: contractRow.id, ...context.period, entries: [], totalQuantity: 0 }
@@ -248,10 +274,11 @@ test.skipIf(!mailboxAvailable)(
 	'auto-send on: sends for real, appends to Sent, and logs the send',
 	async () => {
 		await inRolledBackTransaction(async (tx) => {
-			const contractRow = await seed(tx);
+			const { contractRow, templateRow } = await seed(tx);
 			const prepared = await prepareEmail(
 				{
 					...template,
+					id: templateRow.id,
 					contractId: contractRow.id,
 					subject: `${template.subject} ${crypto.randomUUID()}`
 				},
@@ -288,10 +315,11 @@ test.skipIf(!mailboxAvailable)(
 	'a manual send always requires dispatchEmail explicitly, regardless of the auto-send flag',
 	async () => {
 		await inRolledBackTransaction(async (tx) => {
-			const contractRow = await seed(tx);
+			const { contractRow, templateRow } = await seed(tx);
 			const prepared = await prepareEmail(
 				{
 					...template,
+					id: templateRow.id,
 					contractId: contractRow.id,
 					subject: `${template.subject} ${crypto.randomUUID()}`
 				},
