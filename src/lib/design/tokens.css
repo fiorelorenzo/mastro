@@ -1,0 +1,201 @@
+/*
+ * The interface tokens (#199, #200). The other half of the design system:
+ * `palette.css` next to this file is the *chart* palette — eight validated
+ * categorical hues, a certainty ramp, a status scale — and it stays exactly
+ * as it is. This file is everything the interface needs and the chart
+ * system deliberately does not define: spacing, type, radius, elevation,
+ * a primary colour, a focus ring.
+ *
+ * It is a separate file on purpose. `palette.test.ts` parses `palette.css`
+ * and asserts its `:root` block matches `palette.ts` *exactly* (`toEqual`,
+ * not a subset), so a token added there fails a test that is doing its job.
+ * Add interface tokens here; add chart tokens there, in both places.
+ *
+ * Values are direction B2, "Ledger with confidence", chosen 2026-08-13 and
+ * drawn in `docs/specs/ux-review/mockups/` — which stays the reference
+ * rendering, and whose `system.css` these values are lifted from.
+ *
+ * Light and dark are designed as two sets, never one inverted, for the same
+ * reason `palette.ts` says it: an inversion produces a dark theme where the
+ * greys are right and nothing else is.
+ */
+
+/* ── typeface ──────────────────────────────────────────────────────────
+ * Self-hosted, latin subset, so the product renders identically with no
+ * network and reaches no third party. SIL Open Font License 1.1; the
+ * licence travels with the files in `static/fonts/`.
+ *
+ * Sans is one variable face covering 400–600. Mono is three static faces:
+ * money, dates and reference numbers are set in it, and it carries the
+ * tabular figures a column of amounts needs.
+ */
+@font-face {
+	font-family: 'IBM Plex Sans';
+	font-style: normal;
+	font-weight: 400 600;
+	font-display: swap;
+	src: url('/fonts/IBMPlexSans-var.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'IBM Plex Mono';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('/fonts/IBMPlexMono-400.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'IBM Plex Mono';
+	font-style: normal;
+	font-weight: 500;
+	font-display: swap;
+	src: url('/fonts/IBMPlexMono-500.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'IBM Plex Mono';
+	font-style: normal;
+	font-weight: 600;
+	font-display: swap;
+	src: url('/fonts/IBMPlexMono-600.woff2') format('woff2');
+}
+
+:root {
+	/* ── type ───────────────────────────────────────────────────────────
+	 * Seven steps and no more. Every font-size in the product resolves to
+	 * one of these; a size that is not on the scale is a bug, not a nuance.
+	 * The fallback stack matters: Plex may not have arrived yet on a cold
+	 * load, and the product must not reflow when it does.
+	 */
+	--font-ui:
+		'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+	--font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+	--text-2xs: 0.6875rem; /* 11px — axis labels, the smallest legible thing */
+	--text-xs: 0.75rem; /* 12px — badges, hints, table headers */
+	--text-sm: 0.8125rem; /* 13px — secondary text, table cells */
+	--text-md: 0.9375rem; /* 15px — body, form controls */
+	--text-lg: 1.0625rem; /* 17px — card and section titles */
+	--text-xl: 1.25rem; /* 20px — page sections */
+	--text-2xl: 1.625rem; /* 26px — page titles */
+	--text-3xl: 2rem; /* 32px — the one figure per screen that matters */
+
+	--weight-regular: 400;
+	--weight-medium: 500;
+	--weight-bold: 600;
+
+	/* ── space ──────────────────────────────────────────────────────────
+	 * A 4px base. `--space-touch` is the minimum hit area for anything a
+	 * thumb has to find: it exists because `day/new` sized its controls for
+	 * touch by hand and nothing made that the rule.
+	 */
+	--space-1: 0.25rem;
+	--space-2: 0.5rem;
+	--space-3: 0.75rem;
+	--space-4: 1rem;
+	--space-5: 1.5rem;
+	--space-6: 2rem;
+	--space-7: 3rem;
+	--space-8: 4rem;
+	--space-touch: 44px;
+
+	/* ── shape ──────────────────────────────────────────────────────────
+	 * Three radii by role, replacing the six unnamed values the review
+	 * counted (0, 4, 6, 8, 10, 999). Elevation is two levels and one
+	 * shadow: page-embedded things are flat, overlays are raised. A card
+	 * does not float.
+	 */
+	--radius-sm: 6px; /* controls, badges, inputs */
+	--radius-md: 10px; /* cards, chart frames, dialogs */
+	--radius-full: 999px; /* pills and count badges */
+	--shadow-card: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 3px rgb(16 24 40 / 0.08);
+	--shadow-overlay: 0 8px 24px rgb(16 24 40 / 0.16);
+
+	/* ── interface colour ───────────────────────────────────────────────
+	 * Distinct from the chart palette and from the text colour. The CTA
+	 * used to be `var(--text-primary)` — text colour doing duty as a brand
+	 * colour — which made "change the primary action's colour" a
+	 * search-and-replace across seventeen forms.
+	 *
+	 * `--surface-*` extends the two levels `palette.css` defines for chart
+	 * chrome with the two the interface needs: a nested/selected row and an
+	 * overlay that must not be the same as a card.
+	 */
+	--surface-2: #f7f8fa;
+	--surface-overlay: #ffffff;
+	--line: #e3e6eb;
+	--line-strong: #cbd1da;
+
+	--color-primary: #1a56db;
+	--color-primary-ink: #ffffff;
+	--color-danger: #c2261f;
+	--color-danger-ink: #ffffff;
+	--color-focus: #1a56db;
+
+	/* Row heights, so a table, a list and a form agree what "a row" is. */
+	--row-comfortable: 44px;
+	--row-compact: 32px;
+}
+
+/* Dark follows the same resolution rules as the chart palette: the OS by
+   default, an explicit `data-theme` stamp overriding it either way, with
+   `:where()` keeping the media block below the toggle in specificity. */
+@media (prefers-color-scheme: dark) {
+	:root:where(:not([data-theme='light'])) {
+		--surface-2: #1c222b;
+		--surface-overlay: #1c222b;
+		--line: #262d38;
+		--line-strong: #39424f;
+
+		--color-primary: #5b8df2;
+		--color-primary-ink: #08111f;
+		--color-danger: #f0776f;
+		--color-danger-ink: #1c0806;
+		--color-focus: #5b8df2;
+
+		--shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
+		--shadow-overlay: 0 8px 24px rgb(0 0 0 / 0.5);
+	}
+}
+
+:root[data-theme='dark'] {
+	--surface-2: #1c222b;
+	--surface-overlay: #1c222b;
+	--line: #262d38;
+	--line-strong: #39424f;
+
+	--color-primary: #5b8df2;
+	--color-primary-ink: #08111f;
+	--color-danger: #f0776f;
+	--color-danger-ink: #1c0806;
+	--color-focus: #5b8df2;
+
+	--shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
+	--shadow-overlay: 0 8px 24px rgb(0 0 0 / 0.5);
+}
+
+/* ── the base the tokens imply ─────────────────────────────────────────
+ * Only what every screen needs and no screen should restate: the product
+ * typeface, the body size, and one focus ring. The focus ring is here
+ * rather than in a component because it must be impossible to build a
+ * control without one — the audit found three `:focus-visible` rules in
+ * the entire application.
+ */
+body {
+	font-family: var(--font-ui);
+	font-size: var(--text-md);
+	line-height: 1.45;
+	color: var(--text-primary);
+	background: var(--surface-page);
+	-webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+	outline: 2px solid var(--color-focus);
+	outline-offset: 2px;
+	border-radius: var(--radius-sm);
+}
+
+/* Money and counts are tabular everywhere, without each table remembering. */
+.tabular {
+	font-variant-numeric: tabular-nums;
+	font-feature-settings: 'tnum' 1;
+}

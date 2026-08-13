@@ -1,2 +1,5 @@
 @import 'tailwindcss';
+/* The chart palette (validated, asserted by palette.test.ts) and then the
+   interface tokens, which must stay out of that file. See tokens.css. */
 @import '../lib/design/palette.css';
+@import '../lib/design/tokens.css';
