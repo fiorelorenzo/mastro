@@ -18,6 +18,18 @@ import { legalText } from '$lib/legal/legal-text';
  * plain data addition here whenever real invoicing needs it — see the PR
  * description for what is and is not modelled.
  *
+ * `defaultTreatment` (#216) is that unannotated default case itself:
+ * `{ kind: 'ordinary', taxRate: 22 }`, no code, no legal text — Italy's
+ * standard VAT rate, in force since 1 October 2013 (D.P.R. 26 ottobre
+ * 1972, n. 633, art. 16, comma 1, as raised from 21 to 22 per cento by
+ * art. 40, comma 1-ter, decreto-legge 6 luglio 2011, n. 98, itself
+ * amended into effect by decreto-legge 28 giugno 2013, n. 76; corroborated
+ * by multiple 2026-dated practitioner guides, not read directly against
+ * the consolidated D.P.R. text). Only the flat-percentage figure is
+ * modelled: the reduced (4%, 10%) rates neither pack ships today are a
+ * plain data addition on `treatments`, the same as the rest of this
+ * file's own catalogue gap.
+ *
  * Source, checked at implementation time (2026-08-07): D.P.R. 26 ottobre
  * 1972, n. 633, art. 7-ter, comma 1, lettera a) (services are taxable where
  * the business customer is established, so a service to a customer
@@ -52,11 +64,15 @@ export const itStandardPack: FiscalPack = {
 			legalText: legalText(
 				'it',
 				"Operazione non soggetta ad IVA ai sensi dell'articolo 7-ter del D.P.R. 26 ottobre 1972, n. 633"
-			)
+			),
+			// Out of scope, not exempt: 0 is the correct rate for "not
+			// subject", not a stand-in for "unknown".
+			taxRate: 0
 		}
 	],
 	charges: [],
 	// Shared with it-flat-rate; see that file's comment on 'FPR12'.
 	formats: ['FPR12'],
-	unresolvedRevenue: 'carries_forward'
+	unresolvedRevenue: 'carries_forward',
+	defaultTreatment: { kind: 'ordinary', taxRate: 22 }
 };

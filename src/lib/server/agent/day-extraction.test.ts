@@ -1,7 +1,10 @@
 import { expect, test } from 'vitest';
 import {
+	dayConfidence,
 	parseExtractedDays,
 	validateDays,
+	yearRolloverFlag,
+	YEAR_ROLLOVER_CONFIDENCE_CAP,
 	type DayExtractionContext,
 	type ExtractedDay
 } from './day-extraction';
@@ -12,6 +15,7 @@ const message =
 const context: DayExtractionContext = {
 	startsOn: '2026-01-01',
 	endsOn: '2026-12-31',
+	messageDate: '2026-02-02',
 	allowedQuantities: [1, 0.5],
 	content: message
 };
@@ -163,4 +167,63 @@ test('widening never invents: a fallback that is not verbatim leaves the day ref
 	});
 	expect(accepted).toEqual([]);
 	expect(rejected[0].reason).toMatch(/too short to be evidence/);
+});
+
+test('a date in a different calendar year than the message is flagged, not rejected', () => {
+	const { accepted, rejected } = validateDays(
+		[
+			day({ date: '2026-12-29' }),
+			day({ date: '2027-01-01', excerpt: 'ti confermo il 3 febbraio' })
+		],
+		{ ...context, messageDate: '2026-12-15', endsOn: null }
+	);
+	expect(rejected).toEqual([]);
+	expect(accepted[0].flagReason).toBeNull();
+	expect(accepted[1].flagReason).toMatch(/different calendar year/);
+});
+
+test('a date more than 60 days before the message date is flagged', () => {
+	const { accepted } = validateDays([day({ date: '2026-02-03' })], {
+		...context,
+		startsOn: '2025-01-01',
+		messageDate: '2026-06-01'
+	});
+	expect(accepted[0].flagReason).toMatch(/more than 60 days before/);
+});
+
+test('a date within 60 days, same year, is not flagged', () => {
+	const { accepted } = validateDays([day({ date: '2026-02-03' })], {
+		...context,
+		messageDate: '2026-02-02'
+	});
+	expect(accepted[0].flagReason).toBeNull();
+});
+
+test('yearRolloverFlag is a pure date comparison, no model involved', () => {
+	expect(yearRolloverFlag('2025-12-29', '2026-12-15')).toMatch(/different calendar year/);
+	expect(yearRolloverFlag('2026-01-01', '2026-12-15')).toMatch(/more than 60 days before/);
+	expect(yearRolloverFlag('2026-12-10', '2026-12-15')).toBeNull();
+	// Forward into next year is still flagged: the guard is a flag, not a
+	// verdict, and a correct rollover deserves the same second look as a
+	// wrong one.
+	expect(yearRolloverFlag('2027-01-01', '2026-12-15')).toMatch(/different calendar year/);
+});
+
+test('dayConfidence never raises confidence, and folds the guard reason onto the model\u2019s own', () => {
+	const flagged = { ...day(), flagReason: 'a reason from the guard' };
+	const clean = { ...day(), flagReason: null };
+
+	expect(dayConfidence(clean, 0.9, undefined)).toEqual({ confidence: 0.9, confidenceReason: null });
+	expect(dayConfidence(clean, 0.9, 'model doubt')).toEqual({
+		confidence: 0.9,
+		confidenceReason: 'model doubt'
+	});
+	expect(dayConfidence(flagged, 0.95, undefined)).toEqual({
+		confidence: YEAR_ROLLOVER_CONFIDENCE_CAP,
+		confidenceReason: 'a reason from the guard'
+	});
+	expect(dayConfidence(flagged, 0.1, 'model doubt')).toEqual({
+		confidence: 0.1,
+		confidenceReason: 'model doubt; a reason from the guard'
+	});
 });

@@ -9,7 +9,7 @@ import { afterAll, expect, test } from 'vitest';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client } from '../../db';
 import { fiscalProfile } from '../../db/schema/fiscal';
-import { evaluateCharges } from '../pack';
+import { evaluateCharges, resolveDefaultTaxTreatment } from '../pack';
 import { buildRegistry, lookupPack } from '../registry';
 import { resolvePackAt } from '../resolve';
 import { resolveActiveFiscalPack } from '../profile';
@@ -22,7 +22,10 @@ afterAll(async () => {
 test('the generic pack declares every capability, with the fiscal ones empty', () => {
 	expect(genericPack.basis).toBe('accrual');
 	expect(genericPack.fiscalYear).toEqual({ startMonth: 1, startDay: 1 });
-	expect(genericPack.ceilings).toEqual([]);
+});
+
+test('the generic pack has no opinion on tax treatment — the manual fallback applies (#216)', () => {
+	expect(resolveDefaultTaxTreatment(genericPack)).toBeNull();
 	expect(genericPack.treatments).toEqual([]);
 	expect(genericPack.charges).toEqual([]);
 	expect(genericPack.formats).toEqual([]);

@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import { expense, invoice, invoiceLine, type DocumentProvenance } from '$lib/server/db/schema';
 import type { MinorUnits } from '$lib/money';
@@ -24,6 +24,24 @@ export type ExpenseReceiptInput = {
 export async function listExpensesForContract(contractId: string) {
 	return db.query.expense.findMany({
 		where: eq(expense.contractId, contractId),
+		orderBy: asc(expense.date)
+	});
+}
+
+/** Expenses a contract's next invoice can rebill: reimbursable, and not
+ * already linked to a line — mirrors `listEligibleWorkUnitsForInvoicing`'s
+ * own eligibility read for days. The picker `routes/invoices/new` builds
+ * expense lines from (#217). */
+export async function listEligibleExpensesForRebilling(
+	contractId: string,
+	executor: DbExecutor = db
+) {
+	return executor.query.expense.findMany({
+		where: and(
+			eq(expense.contractId, contractId),
+			eq(expense.reimbursable, true),
+			isNull(expense.invoiceLineId)
+		),
 		orderBy: asc(expense.date)
 	});
 }
@@ -121,8 +139,12 @@ export async function attachExpenseReceipt(
 	});
 }
 
-export async function getExpenseReceipts(expenseId: string) {
-	return listDocumentsForOwner('expense', expenseId);
+/** Every document archived against this expense — its receipt, when one
+ *  is on file (#215's "receipt on an expense"). Optional `executor` the
+ *  same reason every other reader here has one: a test wants it scoped
+ *  to its own rolled-back transaction. */
+export async function getExpenseReceipts(expenseId: string, executor: DbExecutor = db) {
+	return listDocumentsForOwner('expense', expenseId, executor);
 }
 
 /**
@@ -132,8 +154,12 @@ export async function getExpenseReceipts(expenseId: string) {
  * migration) rejects this outright once `invoiceLineId` is already set —
  * a constraint, not a convention this function could forget to check.
  */
-export async function rebillExpense(expenseId: string, invoiceLineId: string) {
-	const [row] = await db
+export async function rebillExpense(
+	expenseId: string,
+	invoiceLineId: string,
+	executor: DbExecutor = db
+) {
+	const [row] = await executor
 		.update(expense)
 		.set({ invoiceLineId })
 		.where(eq(expense.id, expenseId))

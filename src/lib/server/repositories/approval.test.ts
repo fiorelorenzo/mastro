@@ -1,17 +1,20 @@
+import { eq } from 'drizzle-orm';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
-import { client, contract } from '$lib/server/db/schema';
+import { client, contract, document } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import {
 	createApproval,
+	createApprovalForDocument,
 	documentBelongsToApproval,
 	getApprovalDocument,
 	listApprovalsForContract
 } from './approval';
+import { storeDocument } from './document';
 
 // Needs a migrated database: `pnpm db:up && pnpm db:migrate`. Postgres work
 // happens inside a transaction that is always rolled back, same pattern as
@@ -104,5 +107,57 @@ test('creating an approval archives its proof and links it in both directions', 
 
 		const forContract = await listApprovalsForContract(contractRow.id, tx);
 		expect(forContract.map((a) => a.id)).toEqual([approvalRow.id]);
+	});
+});
+
+test('createApprovalForDocument records an approval against an existing document, without archiving it again', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const bytes = new TextEncoder().encode(
+			'From: ops@client.example\r\n\r\nYes, go ahead with the three days next week.'
+		);
+		// Simulates the mail poller's own starting state (`mail/poll.ts`):
+		// archived and owned by the contract before anything downstream has
+		// decided what it specifically evidences.
+		const archived = await storeDocument(
+			{
+				bytes,
+				mime: 'message/rfc822',
+				originalName: 'thread.eml',
+				provenance: 'mail',
+				contractId: contractRow.id,
+				confidential: true,
+				ownerType: 'contract',
+				ownerId: contractRow.id
+			},
+			tx
+		);
+
+		const approvalRow = await createApprovalForDocument(
+			{
+				contractId: contractRow.id,
+				channel: 'email',
+				sender: 'ops@client.example',
+				receivedAt: new Date('2024-05-01T09:00:00Z'),
+				messageId: '<abc@example.com>',
+				excerpt: 'Yes, go ahead with the three days next week.',
+				origin: { kind: 'agent', proposalReference: 'proposal-1' },
+				documentId: archived.id
+			},
+			tx
+		);
+
+		expect(approvalRow.documentId).toBe(archived.id);
+
+		// The same row, re-pointed — never a second archive of the same
+		// bytes, unlike `createApproval`.
+		const linked = await getApprovalDocument(approvalRow.id, tx);
+		expect(linked?.id).toBe(archived.id);
+		expect(linked?.hash).toBe(archived.hash);
+		expect(await documentBelongsToApproval(archived.id, approvalRow.id, tx)).toBe(true);
+
+		const [refetched] = await tx.select().from(document).where(eq(document.id, archived.id));
+		expect(refetched.ownerType).toBe('approval');
+		expect(refetched.ownerId).toBe(approvalRow.id);
 	});
 });

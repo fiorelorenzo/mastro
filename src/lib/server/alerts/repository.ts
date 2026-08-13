@@ -49,6 +49,7 @@ export async function fetchContractsForDeadlineAlerts(
 	const rows = await executor
 		.select({
 			contractId: contract.id,
+			clientId: client.id,
 			contractTitle: contract.title,
 			clientLegalName: client.legalName,
 			endsOn: contract.endsOn,
@@ -72,6 +73,7 @@ export async function fetchContractsForBillablePeriod(
 	const contracts = await executor
 		.select({
 			contractId: contract.id,
+			clientId: client.id,
 			contractTitle: contract.title,
 			clientLegalName: client.legalName,
 			invoicingCadence: contract.invoicingCadence
@@ -112,6 +114,7 @@ export async function fetchWorkedWithoutApprovalRows(
 		.select({
 			workUnitId: workUnit.id,
 			contractId: contract.id,
+			clientId: client.id,
 			contractTitle: contract.title,
 			clientLegalName: client.legalName,
 			date: workUnit.date
@@ -143,6 +146,7 @@ export async function fetchApprovalUnactionedRows(
 		.select({
 			approvalId: approval.id,
 			contractId: contract.id,
+			clientId: client.id,
 			contractTitle: contract.title,
 			clientLegalName: client.legalName,
 			receivedAt: approval.receivedAt
@@ -246,6 +250,8 @@ export async function fetchMirrorFailureRows(
 	const documents = await executor
 		.select({
 			documentId: document.id,
+			contractId: contract.id,
+			clientId: client.id,
 			createdAt: document.createdAt,
 			contractTitle: contract.title,
 			clientLegalName: client.legalName

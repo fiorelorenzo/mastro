@@ -145,3 +145,26 @@ export function formatDateTime(instant: string | Date, locale: Locale = getLocal
 	const value = typeof instant === 'string' ? new Date(instant) : instant;
 	return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(value);
 }
+
+/**
+ * A Monday-first week as a compact range, e.g. `3–9 August` in English and
+ * `3–9 agosto` in Italian — the phone month agenda's own section heading
+ * (#221), where a dense list groups by week instead of drawing every empty
+ * day. `Intl`'s own range formatter already orders day/month per locale and
+ * folds in the month (or year, crossing one) only where the two dates
+ * actually differ; `formatRangeToParts` rather than `formatRange` because
+ * the plain range formatter zero-pads the day number ("03–09") in every
+ * locale this product ships, which no single-date formatter here does.
+ */
+export function formatWeekRange(start: string, end: string, locale: Locale = getLocale()): string {
+	const startDate = new Date(`${start}T00:00:00Z`);
+	const endDate = new Date(`${end}T00:00:00Z`);
+	const parts = new Intl.DateTimeFormat(locale, {
+		day: 'numeric',
+		month: 'long',
+		timeZone: 'UTC'
+	}).formatRangeToParts(startDate, endDate);
+	return parts
+		.map((part) => (part.type === 'day' ? String(Number(part.value)) : part.value))
+		.join('');
+}

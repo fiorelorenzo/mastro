@@ -2,6 +2,7 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import { contractCrumbs } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import { getContractWithClient } from '$lib/server/repositories/contract';
+import { toSourceDocumentValue } from '$lib/server/repositories/document';
 import {
 	attachExpenseReceipt,
 	getExpense,
@@ -26,7 +27,7 @@ export const load: PageServerLoad = async ({ params }) => {
 	return {
 		contract,
 		expense,
-		existingReceiptName: receipts[0]?.originalName ?? null,
+		existingReceipt: receipts[0] ? toSourceDocumentValue(receipts[0]) : null,
 		crumbs
 	};
 };

@@ -86,12 +86,18 @@ function parseExtractionResult(text: string, request: ExtractionRequest): Propos
 		);
 	}
 
-	const { excerpt, confidence, proposedFields } = parsed as Record<string, unknown>;
+	const { excerpt, confidence, confidenceReason, proposedFields } = parsed as Record<
+		string,
+		unknown
+	>;
 	if (typeof excerpt !== 'string' || excerpt.trim() === '') {
 		throw new Error(`model response's excerpt is not a non-blank string: ${truncate(text)}`);
 	}
 	if (typeof confidence !== 'number' || confidence < 0 || confidence > 1) {
 		throw new Error(`model response's confidence is not a number in [0, 1]: ${truncate(text)}`);
+	}
+	if (confidenceReason !== undefined && typeof confidenceReason !== 'string') {
+		throw new Error(`model response's confidenceReason is not a string: ${truncate(text)}`);
 	}
 	if (
 		typeof proposedFields !== 'object' ||
@@ -107,7 +113,10 @@ function parseExtractionResult(text: string, request: ExtractionRequest): Propos
 		targetType: request.targetType,
 		proposedFields: proposedFields as Record<string, unknown>,
 		excerpt,
-		confidence
+		confidence,
+		...(typeof confidenceReason === 'string' && confidenceReason.trim() !== ''
+			? { confidenceReason: confidenceReason.trim() }
+			: {})
 	};
 }
 

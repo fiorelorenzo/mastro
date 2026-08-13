@@ -104,7 +104,12 @@ async function applyCompletedJob(
 			endsOn: contract.endsOn,
 			// The message as it was sent to the model, straight off the job:
 			// every excerpt is checked against it.
-			content: job.request.content
+			content: job.request.content,
+			// What "has no inbound thread to date it by" above is actually
+			// for (#244): the year-rollover guard needs the message's own
+			// date, and the queue file never carried one — only the thread
+			// row did.
+			messageDate: thread.receivedAt.toISOString().slice(0, 10)
 		},
 		job.result,
 		executor

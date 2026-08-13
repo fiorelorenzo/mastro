@@ -42,6 +42,7 @@ export type {
 
 // ── form controls — Field owns label/hint/error/aria wiring; the others
 // are thin wrappers around their native element (see field-context.ts) ──
+export { default as Button } from './Button.svelte';
 export { default as Field } from './Field.svelte';
 export { default as Input } from './Input.svelte';
 export { default as Textarea } from './Textarea.svelte';
@@ -76,3 +77,13 @@ export {
 export { default as Amount } from './Amount.svelte';
 export { default as AmountInput } from './AmountInput.svelte';
 export { formatAmountValue, type AmountSize, type AmountValue } from './amount-format';
+
+// ── evidence — the archived original behind an approval, a proposal, an
+// invoice or an expense, linked identically everywhere the row exists;
+// see source-document.ts for why the provenance union is duplicated ──
+export { default as SourceDocument } from './SourceDocument.svelte';
+export {
+	DOCUMENT_PROVENANCES,
+	documentProvenanceLabel,
+	type DocumentProvenanceValue
+} from './source-document';

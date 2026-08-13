@@ -27,6 +27,6 @@
 		{values}
 		errors={form?.errors ?? {}}
 		submitLabel={m.expense_form_submit_save()}
-		existingReceiptName={data.existingReceiptName}
+		existingReceipt={data.existingReceipt}
 	/>
 </Page>

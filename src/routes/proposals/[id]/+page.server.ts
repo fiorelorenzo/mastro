@@ -2,6 +2,7 @@ import { error, fail } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
 import { proposalsCrumbs } from '$lib/nav/crumbs';
 import { getContract } from '$lib/server/repositories/contract';
+import { getDocument, toSourceDocumentValue } from '$lib/server/repositories/document';
 import {
 	acceptProposal,
 	diffProposalFields,
@@ -48,7 +49,10 @@ export const load: PageServerLoad = async ({ params }) => {
 	const row = await getProposal(params.id);
 	if (!row) error(404, m.proposal_detail_not_found());
 
-	const contract = await getContract(row.contractId);
+	const [contract, document] = await Promise.all([
+		getContract(row.contractId),
+		getDocument(row.documentId)
+	]);
 	const crumbs = proposalsCrumbs();
 
 	return {
@@ -67,6 +71,7 @@ export const load: PageServerLoad = async ({ params }) => {
 			changes: diffProposalFields(row)
 		},
 		contract: contract ? { id: contract.id, title: contract.title } : null,
+		sourceDocument: document ? toSourceDocumentValue(document) : null,
 		crumbs
 	};
 };

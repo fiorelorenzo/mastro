@@ -3,6 +3,7 @@
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate, formatMinorUnits } from '$lib/i18n/format';
 	import LegalText from '$lib/legal/LegalText.svelte';
+	import SourceDocument from '$lib/design/SourceDocument.svelte';
 	import Page from '$lib/layout/Page.svelte';
 	import Section from '$lib/layout/Section.svelte';
 	import RecordList from '$lib/layout/RecordList.svelte';
@@ -214,5 +215,13 @@
 				rowKey={(expenseRow) => expenseRow.id}
 			/>
 		{/if}
+	</Section>
+
+	<Section title={m.invoice_detail_documents_heading()}>
+		{#each data.documents as document (document.id)}
+			<SourceDocument {document} />
+		{:else}
+			<SourceDocument document={null} />
+		{/each}
 	</Section>
 </Page>

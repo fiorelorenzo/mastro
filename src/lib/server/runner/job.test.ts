@@ -125,11 +125,61 @@ test('a successful call returns a ProposalCandidate shaped from the model respon
 	});
 });
 
+test('a successful call with a confidenceReason carries it through; a blank one is dropped', async () => {
+	const contractRow = await insertCommittedContract();
+	cleanup.push(() => deleteCommittedContract(contractRow.id, contractRow.clientId));
+	const documentRow = await insertCommittedDocument(contractRow.id);
+	runnerSql = connectRunnerDb(runnerDatabaseUrl);
+
+	const model: ExtractionModel = {
+		async call() {
+			return {
+				text: JSON.stringify({
+					excerpt: 'confermo dal 29 dicembre',
+					confidence: 0.2,
+					confidenceReason: '  the year is not written and the range crosses a boundary  ',
+					proposedFields: { date: '2026-12-29', quantity: 1 }
+				})
+			};
+		}
+	};
+
+	const result = await processExtractionJob(
+		runnerSql,
+		model,
+		baseRequest({ documentId: documentRow.id, contractId: contractRow.id })
+	);
+	expect(result.confidenceReason).toBe('the year is not written and the range crosses a boundary');
+
+	const blankModel: ExtractionModel = {
+		async call() {
+			return {
+				text: JSON.stringify({
+					excerpt: 'ok for Thursday',
+					confidence: 0.9,
+					confidenceReason: '',
+					proposedFields: { date: '2024-01-04', quantity: 1 }
+				})
+			};
+		}
+	};
+	const blankResult = await processExtractionJob(
+		runnerSql,
+		blankModel,
+		baseRequest({ documentId: documentRow.id, contractId: contractRow.id })
+	);
+	expect(blankResult.confidenceReason).toBeUndefined();
+});
+
 test.each([
 	['not json at all', 'is not valid JSON'],
 	[JSON.stringify({ excerpt: 'x' }), 'missing one of'],
 	[JSON.stringify({ excerpt: '', confidence: 0.5, proposedFields: {} }), 'not a non-blank string'],
 	[JSON.stringify({ excerpt: 'x', confidence: 2, proposedFields: {} }), 'not a number in'],
+	[
+		JSON.stringify({ excerpt: 'x', confidence: 0.5, confidenceReason: 3, proposedFields: {} }),
+		'confidenceReason is not a string'
+	],
 	[JSON.stringify({ excerpt: 'x', confidence: 0.5, proposedFields: 'nope' }), 'not an object']
 ])(
 	'a malformed model response %s is a loud error, never a best-effort guess',

@@ -15,6 +15,12 @@ import type { FiscalPack } from '../pack';
  * here, but `'carries_forward'` is also the only value that can never
  * silently drop real revenue, which is the one property this pack keeps
  * even with no jurisdiction modelled behind it.
+ *
+ * `defaultTreatment` (#216) is left absent, unlike the arrays above: an
+ * unmodelled jurisdiction genuinely has no opinion on tax treatment, and
+ * `[]` would be a specific, wrong claim (0% VAT) rather than an honest
+ * "not represented" — the invoice screen's manual fallback exists for
+ * exactly this pack.
  */
 export const genericPack: FiscalPack = {
 	id: 'generic',

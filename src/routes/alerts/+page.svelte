@@ -1,15 +1,31 @@
+<!--
+	The alert feed (#220): every row deep-links to its subject and carries
+	the action that resolves it — the fix for the sharpest defect the UX
+	audit found ("gli avvisi non si possono agire"): the old page rendered
+	title/body and threw every id `alerts/types.ts` carries away, leaving
+	"Conferma presa visione" (a severity-rank silencer) as the only verb.
+	`alerts/actions.ts`'s `alertResolution` supplies the link/action pair
+	per alert kind, computed server-side in `+page.server.ts` so this file
+	stays presentation only. Severity is a rail (`box-shadow: inset`, the
+	mockup's own `.att--critical`) plus a `Badge`, replacing the 14px
+	`StatusIndicator` glyph the audit flagged as too light for the one
+	thing on this page that triages it. Acknowledge is demoted to a
+	tertiary `Button` — it stays, but it is no longer the only verb.
+-->
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDateTime } from '$lib/i18n/format';
-	import { StatusIndicator, type StatusLevel } from '$lib/design';
+	import Badge from '$lib/design/Badge.svelte';
+	import Button from '$lib/design/Button.svelte';
 	import Page from '$lib/layout/Page.svelte';
+	import type { AlertSeverity } from '$lib/server/db/schema/alert';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
-	function severityLabel(severity: StatusLevel): string {
+	function severityLabel(severity: AlertSeverity): string {
 		if (severity === 'critical') return m.alerts_severity_critical();
 		if (severity === 'serious') return m.alerts_severity_serious();
 		return m.alerts_severity_warning();
@@ -28,34 +44,100 @@
 	{#if data.alerts.length === 0}
 		<p class="mt-4 text-sm opacity-70">{m.alerts_page_empty()}</p>
 	{:else}
-		<ul class="mt-4 flex flex-col gap-4">
+		<ul class="alert-list">
 			{#each data.alerts as alert (alert.key)}
-				<li class="border p-4">
-					<div class="flex flex-wrap items-start justify-between gap-4">
-						<div>
-							<StatusIndicator level={alert.severity} label={severityLabel(alert.severity)} />
-							<p class="mt-1 font-medium">{alert.title}</p>
-							<p class="text-sm opacity-70">{alert.body}</p>
-							{#if alert.acknowledged}
-								<p class="mt-1 text-xs opacity-70">
-									{m.alerts_page_acknowledged_by({
-										by: alert.acknowledgedBy ?? '',
-										at: alert.acknowledgedAt ? formatDateTime(alert.acknowledgedAt) : ''
-									})}
-								</p>
+				<li class="alert severity-{alert.severity}">
+					<div class="alert-body">
+						<Badge variant={alert.severity} label={severityLabel(alert.severity)} size="sm" />
+						<p class="alert-title">{alert.title}</p>
+						<p class="alert-detail">{alert.body}</p>
+						{#if alert.acknowledged}
+							<p class="alert-ack">
+								{m.alerts_page_acknowledged_by({
+									by: alert.acknowledgedBy ?? '',
+									at: alert.acknowledgedAt ? formatDateTime(alert.acknowledgedAt) : ''
+								})}
+							</p>
+						{/if}
+						<div class="alert-actions">
+							<Button href={alert.actionHref} variant="primary" size="sm">
+								{alert.actionLabel}
+							</Button>
+							{#if alert.subjectHref !== alert.actionHref}
+								<Button href={alert.subjectHref} variant="secondary" size="sm">
+									{alert.subjectLabel}
+								</Button>
+							{/if}
+							{#if !alert.acknowledged}
+								<form method="POST" action="?/acknowledge" use:enhance>
+									<input type="hidden" name="key" value={alert.key} />
+									<Button type="submit" variant="tertiary" size="sm">
+										{m.alerts_page_acknowledge_button()}
+									</Button>
+								</form>
 							{/if}
 						</div>
-						{#if !alert.acknowledged}
-							<form method="POST" action="?/acknowledge" use:enhance class="shrink-0">
-								<input type="hidden" name="key" value={alert.key} />
-								<button type="submit" class="border px-3 py-1.5 text-sm">
-									{m.alerts_page_acknowledge_button()}
-								</button>
-							</form>
-						{/if}
 					</div>
 				</li>
 			{/each}
 		</ul>
 	{/if}
 </Page>
+
+<style>
+	.alert-list {
+		margin-top: var(--space-4);
+		display: flex;
+		flex-direction: column;
+		border: 1px solid var(--line);
+		border-radius: var(--radius-md);
+		overflow: hidden;
+	}
+	.alert {
+		padding: var(--space-3) var(--space-4);
+		border-bottom: 1px solid var(--line);
+	}
+	.alert:last-child {
+		border-bottom: none;
+	}
+	/* The rail (mockup's `.att--critical`/`.att--serious`/`.att--warning`):
+	   real visual weight for severity, replacing the 14px status glyph. */
+	.severity-critical {
+		box-shadow: inset 3px 0 0 var(--status-critical);
+	}
+	.severity-serious {
+		box-shadow: inset 3px 0 0 var(--status-serious);
+	}
+	.severity-warning {
+		box-shadow: inset 3px 0 0 var(--status-warning);
+	}
+	.alert-body {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: var(--space-1);
+	}
+	.alert-title {
+		margin: 0;
+		font-size: var(--text-md);
+		font-weight: var(--weight-medium);
+		color: var(--text-primary);
+	}
+	.alert-detail {
+		margin: 0;
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
+	}
+	.alert-ack {
+		margin: 0;
+		font-size: var(--text-xs);
+		color: var(--text-muted);
+	}
+	.alert-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		flex-wrap: wrap;
+		margin-top: var(--space-1);
+	}
+</style>

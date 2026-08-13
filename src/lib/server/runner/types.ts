@@ -44,6 +44,12 @@ export interface ExtractionResult {
 	proposedFields: Record<string, unknown>;
 	excerpt: string;
 	confidence: number;
+	/** The model's own short reason for a lowered confidence (#244) —
+	 * present when it had something to explain, absent when confidence is
+	 * high. Carried straight through to `proposal.confidenceReason`, and
+	 * folded together with the year-rollover guard's own reason by
+	 * `day-extraction.ts`'s `dayConfidence` when both apply. */
+	confidenceReason?: string;
 }
 
 /** `ExtractionResult` plus the identifying fields `ProposalInput` also

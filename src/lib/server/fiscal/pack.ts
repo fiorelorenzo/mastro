@@ -5,7 +5,7 @@
 // interface below is missing a capability and should grow one, per
 // AGENTS.md invariant 1.
 
-import { minorUnits, scaleMinorUnits, type MinorUnits } from '$lib/money';
+import { minorUnits, scaleMinorUnits, sumMinorUnits, type MinorUnits } from '$lib/money';
 import type { LegalText } from '$lib/legal/legal-text';
 import type { LabelBundle } from './label';
 
@@ -117,6 +117,11 @@ export interface TaxTreatment {
 	readonly code: string;
 	readonly label: LabelBundle;
 	readonly legalText: LegalText;
+	/** The rate an invoice line under this treatment carries — 0 for an
+	 * exemption or an out-of-scope operation, the only cases either shipped
+	 * pack declares today; the interface does not assume 0 for every future
+	 * treatment (a reduced rate is still "a treatment"). */
+	readonly taxRate: number;
 }
 
 export type ChargeAmount =
@@ -138,6 +143,14 @@ export interface FiscalRuleCondition {
 	readonly value: number;
 }
 
+/** Which invoice-level charge slot a statutory charge fills. `invoice`
+ * carries exactly two named charge columns (`stamp_duty`, `social_charge`)
+ * — a charge declares which one it is so `evaluateInvoiceCharges` can sum
+ * into them without the engine ever matching a pack's own charge `id`
+ * (AGENTS.md invariant 1: no country-specific logic outside a pack, and an
+ * id like `it-flat-rate-virtual-stamp-duty` is exactly that). */
+export type StatutoryChargeSlot = 'stamp_duty' | 'social_charge';
+
 /**
  * A statutory charge (stamp duty, a social-security surcharge). The
  * canonical example is a stamp duty that applies only once an invoice total
@@ -151,6 +164,7 @@ export interface StatutoryCharge {
 	readonly amount: ChargeAmount;
 	/** Absent means the charge always applies. */
 	readonly appliesWhen?: FiscalRuleCondition;
+	readonly slot: StatutoryChargeSlot;
 }
 
 /**
@@ -184,6 +198,33 @@ export interface StatutoryCharge {
 export type UnresolvedRevenueTreatment = 'carries_forward';
 
 /**
+ * What an invoice takes when nothing about it calls for one of
+ * `treatments`'s exceptional cases (#216/#217) — resolved by
+ * `resolveDefaultTaxTreatment`, never by the engine branching on a pack's
+ * `id`.
+ *
+ * `'ordinary'`: the jurisdiction's unannotated default case (it-standard's
+ * domestic, standard-rate invoice, which needs no code or statutory text
+ * at all) — `taxRate` is the rate that applies.
+ *
+ * `'treatment'`: `code` names one of `treatments` that applies to every
+ * invoice under this pack, unconditionally (it-flat-rate's regime never
+ * charges VAT on anything it invoices — comma 58 draws no exception) — its
+ * own `taxRate`/`legalText` are read off that entry, never duplicated
+ * here.
+ *
+ * Absent on the pack itself: this jurisdiction is not modelled deeply
+ * enough to have an opinion (`generic`, and every ad-hoc pack this
+ * engine's own tests build for something unrelated to tax) — the caller
+ * falls back to asking a human, the "manual fallback for a document that
+ * doesn't match a modelled pack entry" the UX review's recommendation
+ * names.
+ */
+export type DefaultTaxTreatment =
+	| { readonly kind: 'ordinary'; readonly taxRate: number }
+	| { readonly kind: 'treatment'; readonly code: string };
+
+/**
  * A jurisdiction pack: basis, fiscal year, ceilings, treatments, charges,
  * invoice formats and labels, all as data. `id` plus `version` identify it
  * (by convention `<country>-<regime>`, resolved case by case in
@@ -211,6 +252,8 @@ export interface FiscalPack {
 	readonly formats: readonly string[];
 	/** #122: see `UnresolvedRevenueTreatment`. */
 	readonly unresolvedRevenue: UnresolvedRevenueTreatment;
+	/** Absent means this pack has no opinion — see `DefaultTaxTreatment`. */
+	readonly defaultTreatment?: DefaultTaxTreatment;
 }
 
 function parseIsoDate(date: string): Date {
@@ -303,4 +346,59 @@ export function evaluateCharges(
 			(charge) => charge.appliesWhen === undefined || conditionHolds(charge.appliesWhen, facts)
 		)
 		.map((charge) => ({ charge, amount: amountOf(charge.amount, facts) }));
+}
+
+export interface ResolvedTaxTreatment {
+	readonly code: string | null;
+	readonly taxRate: number;
+	readonly legalText: LegalText | null;
+}
+
+/**
+ * The tax treatment and rate an invoice takes under `pack` absent any
+ * reason to pick one of its exceptional `treatments` by hand — the pure
+ * read of `defaultTreatment` a caller resolves against, never a second
+ * copy of "which treatment applies" logic per pack (#216).
+ *
+ * `null` when the pack declares no `defaultTreatment` at all: the
+ * caller's manual fallback, per `DefaultTaxTreatment`'s own doc.
+ */
+export function resolveDefaultTaxTreatment(pack: FiscalPack): ResolvedTaxTreatment | null {
+	const defaultTreatment = pack.defaultTreatment;
+	if (defaultTreatment === undefined) return null;
+	if (defaultTreatment.kind === 'ordinary') {
+		return { code: null, taxRate: defaultTreatment.taxRate, legalText: null };
+	}
+	const treatment = pack.treatments.find((t) => t.code === defaultTreatment.code);
+	if (!treatment) {
+		throw new Error(
+			`pack ${pack.id}@${pack.version} names '${defaultTreatment.code}' as its default treatment but declares no treatment with that code`
+		);
+	}
+	return { code: treatment.code, taxRate: treatment.taxRate, legalText: treatment.legalText };
+}
+
+export interface EvaluatedInvoiceCharges {
+	readonly stampDuty: MinorUnits | null;
+	readonly socialCharge: MinorUnits | null;
+}
+
+/**
+ * `evaluateCharges`'s results, summed into the two named charge columns
+ * `invoice` carries (`stamp_duty`, `social_charge`) by each charge's own
+ * `slot` — `null` when nothing in `pack.charges` fills a slot, so a caller
+ * can assign the result straight onto `invoice.stampDuty`/
+ * `invoice.socialCharge` without inventing a zero for a pack (like
+ * `it-standard`) that charges neither.
+ */
+export function evaluateInvoiceCharges(
+	pack: FiscalPack,
+	facts: Readonly<Record<string, number>>
+): EvaluatedInvoiceCharges {
+	const evaluated = evaluateCharges(pack, facts);
+	const bySlot = (slot: StatutoryChargeSlot): MinorUnits | null => {
+		const matches = evaluated.filter((e) => e.charge.slot === slot);
+		return matches.length > 0 ? sumMinorUnits(matches.map((e) => e.amount)) : null;
+	};
+	return { stampDuty: bySlot('stamp_duty'), socialCharge: bySlot('social_charge') };
 }

@@ -27,6 +27,7 @@ function alert(overrides: Partial<Alert> = {}): Alert {
 		detail: {
 			type: 'contract_expiring',
 			contractId: 'c-1',
+			clientId: 'cl-1',
 			contractTitle: 'Consulting agreement',
 			clientLegalName: 'Acme Srl',
 			endsOn: '2026-09-01',

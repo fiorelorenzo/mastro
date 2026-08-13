@@ -1,18 +1,31 @@
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
 import { expect, test } from 'vitest';
 import type { DbExecutor } from '$lib/server/db';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import {
+	approval,
 	client,
 	contract,
-	document,
 	inboundThread,
 	rateCard,
 	type ExpensePolicy
 } from '$lib/server/db/schema';
-import { listProposalsForDocument } from '$lib/server/repositories/proposal';
+import { storeDocument } from '$lib/server/repositories/document';
+import {
+	acceptProposal,
+	createProposal,
+	listProposalsForDocument,
+	rejectProposal
+} from '$lib/server/repositories/proposal';
+import {
+	getWorkUnit,
+	listEligibleWorkUnitsForInvoicing,
+	listWorkUnitsBetween,
+	transitionWorkUnit
+} from '$lib/server/repositories/work-unit';
 import { enqueueJob, listPendingJobs, markJobDone, readPendingJob } from '$lib/server/runner/queue';
 import type { ProposalCandidate } from '$lib/server/runner/types';
 import { drainCompletedJobs } from './drain';
@@ -22,6 +35,11 @@ import { drainCompletedJobs } from './drain';
  * runner's side leaves an answer in `done/`, and draining it writes the
  * proposals a human reviews. What a real model answers is the corpus's
  * question (`scripts/score-day-corpus.ts`), not this one's.
+ *
+ * The document is archived through `storeDocument` (real bytes, with a
+ * `From` header) rather than a bare row, because #209's whole-path test
+ * below accepts proposals produced from it, and `acceptProposal` reads
+ * the archived message back to build the approval it rests on.
  */
 async function seed(tx: DbExecutor) {
 	const [clientRow] = await tx
@@ -60,20 +78,27 @@ async function seed(tx: DbExecutor) {
 		unit: 'day',
 		allowedFractions: [1, 0.5]
 	});
-	const [documentRow] = await tx
-		.insert(document)
-		.values({
-			hash: 'b'.repeat(64),
+	const documentRow = await storeDocument(
+		{
+			bytes: new TextEncoder().encode(
+				[
+					'From: ops@acme.example',
+					'To: agent@mastro.example',
+					'Subject: Giornate',
+					'',
+					'Confermo il 3 e il 4 febbraio, la seconda mezza.'
+				].join('\r\n')
+			),
 			mime: 'message/rfc822',
-			size: 64,
 			originalName: 'thread.eml',
 			provenance: 'mail',
 			contractId: contractRow.id,
 			confidential: true,
 			ownerType: 'contract',
 			ownerId: contractRow.id
-		})
-		.returning();
+		},
+		tx
+	);
 	await tx.insert(inboundThread).values({
 		contractId: contractRow.id,
 		documentId: documentRow.id,
@@ -145,4 +170,120 @@ test('a completed job becomes one proposal per day, and a replay does not double
 	expect(outcome.second).toMatchObject({ applied: 0, skipped: 1 });
 	expect(outcome.afterReplay).toHaveLength(2);
 	expect(await listPendingJobs(dir)).toEqual([]);
+});
+
+/**
+ * #209's own acceptance: the whole loop, end to end — a queued extraction,
+ * a drained answer, a human accept — ending with a day that (a) is
+ * `approved`, (b) is linked to an approval whose excerpt and document are
+ * the source message's, (c) appears in the month's feed, and (d) becomes
+ * invoiceable once marked `worked`. A third, declined proposal from the
+ * same message proves reject still leaves nothing behind.
+ */
+test('#209: the whole path — queued extraction, drained answer, human accept — ends with an invoiceable day', async () => {
+	const dir = await mkdtemp(join(tmpdir(), 'mastro-agent-loop-'));
+
+	const outcome = await inRolledBackTransaction(async (tx) => {
+		const { contractId, documentId } = await seed(tx);
+		await completeOneJob(dir, documentId, contractId);
+		await drainCompletedJobs(dir, tx);
+
+		const proposals = await listProposalsForDocument(documentId, tx);
+		expect(proposals).toHaveLength(2);
+		const [thursday, friday] = proposals;
+
+		// The human accept — each proposal reviewed and decided on its own,
+		// the review screen's actual shape (#83), even though both rest on
+		// the same email.
+		const acceptedThursday = await acceptProposal(
+			thursday.id,
+			{ decidedBy: 'lorenzo@example.com' },
+			tx
+		);
+		const acceptedFriday = await acceptProposal(
+			friday.id,
+			{ decidedBy: 'lorenzo@example.com' },
+			tx
+		);
+
+		const dayOne = await getWorkUnit(acceptedThursday.resultId as string, tx);
+		const dayTwo = await getWorkUnit(acceptedFriday.resultId as string, tx);
+
+		const [approvalRow] = await tx
+			.select()
+			.from(approval)
+			.where(eq(approval.id, dayOne!.approvalId as string));
+
+		// (c) appears in the month's feed — the calendar's own query
+		// (`listWorkUnitsBetween`), unfiltered by state.
+		const inMonth = await listWorkUnitsBetween('2026-02-01', '2026-02-28', tx);
+
+		// (d) becomes invoiceable once marked worked — a further, separate
+		// human action; accepting a proposal never claims to know the day
+		// was actually worked.
+		const worked = await transitionWorkUnit(
+			dayOne!.id,
+			{ state: 'worked' },
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'actually worked it',
+			tx
+		);
+		const eligible = await listEligibleWorkUnitsForInvoicing(contractId, tx);
+
+		// Reject still leaves nothing behind: a third day the model
+		// proposed from the same message, but a human declines.
+		const declined = await createProposal(
+			{
+				documentId,
+				contractId,
+				targetType: 'work_unit',
+				proposedFields: { date: '2026-02-05', quantity: 1, scope: 'Analisi' },
+				excerpt: 'not actually confirmed',
+				confidence: 0.3
+			},
+			tx
+		);
+		await rejectProposal(declined.id, 'lorenzo@example.com', tx);
+		const rejectedDayCount = (await listWorkUnitsBetween('2026-02-05', '2026-02-05', tx)).length;
+		const approvalsForContract = await tx
+			.select()
+			.from(approval)
+			.where(eq(approval.contractId, contractId));
+
+		return {
+			documentId,
+			dayOne,
+			dayTwo,
+			approvalRow,
+			inMonth,
+			worked,
+			eligible,
+			rejectedDayCount,
+			approvalCount: approvalsForContract.length
+		};
+	});
+
+	expect(outcome.dayOne?.state).toBe('approved');
+	expect(outcome.dayTwo?.state).toBe('approved');
+	expect(outcome.dayOne?.approvalId).toBeTruthy();
+	// One approval, not one per day: both proposals came from the same
+	// source message.
+	expect(outcome.dayTwo?.approvalId).toBe(outcome.dayOne?.approvalId);
+	expect(outcome.approvalCount).toBe(1);
+
+	expect(outcome.approvalRow.channel).toBe('email');
+	expect(outcome.approvalRow.sender).toBe('ops@acme.example');
+	expect(outcome.approvalRow.messageId).toBe('<probe@example.com>');
+	// The excerpt is the day's own span, not the whole message.
+	expect(outcome.approvalRow.excerpt).toBe('Confermo il 3');
+	expect(outcome.approvalRow.documentId).toBe(outcome.documentId);
+
+	expect(outcome.inMonth.map((row) => row.id)).toEqual(
+		expect.arrayContaining([outcome.dayOne!.id, outcome.dayTwo!.id])
+	);
+
+	expect(outcome.worked.state).toBe('worked');
+	expect(outcome.eligible.map((row) => row.id)).toContain(outcome.dayOne!.id);
+
+	expect(outcome.rejectedDayCount).toBe(0);
 });

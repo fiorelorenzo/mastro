@@ -1,7 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
-import { evaluateCharges, fiscalYearOf, type FiscalPack } from './pack';
+import {
+	evaluateCharges,
+	evaluateInvoiceCharges,
+	fiscalYearOf,
+	resolveDefaultTaxTreatment,
+	type FiscalPack
+} from './pack';
 import { minorUnits } from '$lib/money';
 import { buildRegistry } from './registry';
 import { resolvePackAt } from './resolve';
@@ -44,10 +50,12 @@ test('resolution and charge evaluation work on a pack the engine has never seen'
 				id: 'imaginary-duty',
 				label: { en: 'Imaginary duty', it: 'Imposta immaginaria' },
 				amount: { kind: 'fixed', minorUnits: minorUnits(500) },
-				appliesWhen: { fact: 'invoiceTotal', comparator: 'gt', value: 1000 }
+				appliesWhen: { fact: 'invoiceTotal', comparator: 'gt', value: 1000 },
+				slot: 'stamp_duty'
 			}
 		],
-		unresolvedRevenue: 'carries_forward'
+		unresolvedRevenue: 'carries_forward',
+		defaultTreatment: { kind: 'ordinary', taxRate: 19 }
 	};
 
 	const registry = buildRegistry([imaginary]);
@@ -60,4 +68,13 @@ test('resolution and charge evaluation work on a pack the engine has never seen'
 	expect(evaluateCharges(imaginary, { invoiceTotal: 2000 })).toEqual([
 		{ charge: imaginary.charges[0], amount: 500 }
 	]);
+	expect(evaluateInvoiceCharges(imaginary, { invoiceTotal: 2000 })).toEqual({
+		stampDuty: 500,
+		socialCharge: null
+	});
+	expect(resolveDefaultTaxTreatment(imaginary)).toEqual({
+		code: null,
+		taxRate: 19,
+		legalText: null
+	});
 });

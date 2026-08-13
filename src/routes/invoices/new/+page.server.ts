@@ -1,11 +1,31 @@
 import { fail, redirect } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
 import { invoicesCrumbs } from '$lib/nav/crumbs';
+import { db } from '$lib/server/db';
 import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
+import { resolveRateCard } from '$lib/server/domain/rate-card';
+import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
+import { resolveActiveFiscalPack } from '$lib/server/fiscal/profile';
 import { listContractsWithClient } from '$lib/server/repositories/contract';
-import { createInvoice } from '$lib/server/repositories/invoice';
-import { parseInvoiceForm } from '$lib/server/repositories/invoice-form';
+import { listEligibleExpensesForRebilling } from '$lib/server/repositories/expense';
+import {
+	createInvoice,
+	type InvoiceInput,
+	type InvoiceLineInput
+} from '$lib/server/repositories/invoice';
+import {
+	buildDayLines,
+	buildExpenseLines,
+	buildManualLine,
+	NO_TAXABLE_AMOUNT,
+	parseInvoiceForm,
+	parseManualInvoiceTax,
+	resolveInvoiceTax,
+	type UnratedInvoiceLine
+} from '$lib/server/repositories/invoice-form';
+import { listRateCards } from '$lib/server/repositories/rate-card';
 import { listEligibleWorkUnitsForInvoicing } from '$lib/server/repositories/work-unit';
+import { minorUnitsFromMajor, sumMinorUnits } from '$lib/money';
 import type { Actions, PageServerLoad } from './$types';
 
 // Contract selection happens in a GET step (`?contractId=`) before the
@@ -15,21 +35,167 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ url }) => {
 	const contracts = await listContractsWithClient();
 	const contractId = url.searchParams.get('contractId') ?? '';
-	const eligibleDays = contractId ? await listEligibleWorkUnitsForInvoicing(contractId) : [];
+	const selectedContract = contracts.find((c) => c.id === contractId) ?? null;
+
+	const [rateCards, eligibleDaysRaw, eligibleExpensesRaw, activePack] = contractId
+		? await Promise.all([
+				listRateCards(contractId),
+				listEligibleWorkUnitsForInvoicing(contractId),
+				listEligibleExpensesForRebilling(contractId),
+				resolveActiveFiscalPack(db, new Date().toISOString().slice(0, 10))
+			])
+		: [[], [], [], null];
+
+	const currency = selectedContract?.currency ?? '';
+
+	// Priced up front, at load time, so the day picker's running total
+	// (#217's "changing the selection changes the total") is a client-side
+	// sum over data already on the page — no round trip needed to see it
+	// change. `rateCardId` lets the client group checked days by card the
+	// same way `buildDayLines` will at submission time, purely for the
+	// live preview; the submission itself always re-prices from scratch.
+	const eligibleDays = eligibleDaysRaw.map((day) => {
+		const card = resolveRateCard(rateCards, day.date);
+		const price = card
+			? priceWorkUnitOnDate({ date: day.date, quantity: Number(day.quantity) }, rateCards)
+			: null;
+		return {
+			id: day.id,
+			date: day.date,
+			quantity: Number(day.quantity),
+			scope: day.scope,
+			rateCardId: card?.id ?? null,
+			amount: price === null || !currency ? null : minorUnitsFromMajor(price, currency)
+		};
+	});
+
+	const eligibleExpenses = eligibleExpensesRaw.map((expense) => ({
+		id: expense.id,
+		date: expense.date,
+		description: expense.description,
+		amount: expense.amount
+	}));
+
+	// A preview only — resolved against today, since the issue date is not
+	// typed yet on a fresh form. The actual invoice always re-resolves
+	// against whatever issue date is actually submitted (see the action
+	// below), so a stale preview here can never produce a wrong invoice,
+	// only a momentarily misleading one.
+	const taxPreview = resolveInvoiceTax(activePack?.pack ?? null, NO_TAXABLE_AMOUNT);
+
 	const crumbs = invoicesCrumbs();
-	return { contracts, selectedContractId: contractId, eligibleDays, crumbs };
+	return {
+		contracts,
+		selectedContractId: contractId,
+		eligibleDays,
+		eligibleExpenses,
+		taxPreview,
+		crumbs
+	};
 };
 
 export const actions: Actions = {
 	default: async ({ request, locals }) => {
 		const formData = await request.formData();
-		const result = parseInvoiceForm(formData);
-		if (!result.ok) return fail(400, { errors: result.errors, values: result.values });
+		const parsed = parseInvoiceForm(formData);
+		if (!parsed.ok) return fail(400, { errors: parsed.errors, values: parsed.values });
+		const { core, values } = parsed;
+
+		const [rateCards, eligibleDays, eligibleExpenses] = await Promise.all([
+			listRateCards(core.contractId),
+			listEligibleWorkUnitsForInvoicing(core.contractId),
+			listEligibleExpensesForRebilling(core.contractId)
+		]);
+
+		const eligibleDaysById = new Map(eligibleDays.map((day) => [day.id, day]));
+		const eligibleExpensesById = new Map(eligibleExpenses.map((expense) => [expense.id, expense]));
+
+		if (core.workUnitIds.some((id) => !eligibleDaysById.has(id))) {
+			return fail(400, {
+				errors: { workUnitIds: m.invoice_validation_workunit_ineligible() },
+				values
+			});
+		}
+		if (core.expenseIds.some((id) => !eligibleExpensesById.has(id))) {
+			return fail(400, {
+				errors: { expenseIds: m.invoice_validation_expense_ineligible() },
+				values
+			});
+		}
+
+		const selectedDays = core.workUnitIds.map((id) => {
+			const day = eligibleDaysById.get(id)!;
+			return { id: day.id, date: day.date, quantity: Number(day.quantity) };
+		});
+		const dayLinesResult = buildDayLines(selectedDays, rateCards, core.currency);
+		if (!dayLinesResult.ok) {
+			return fail(400, { errors: { workUnitIds: m.invoice_validation_day_unpriced() }, values });
+		}
+
+		const selectedExpenses = core.expenseIds.map((id) => {
+			const expense = eligibleExpensesById.get(id)!;
+			return { id: expense.id, description: expense.description, amount: expense.amount };
+		});
+		const expenseLines = buildExpenseLines(selectedExpenses);
+		const manualLines = core.manualLine ? [buildManualLine(core.manualLine)] : [];
+
+		const baseLines: UnratedInvoiceLine[] = [
+			...dayLinesResult.lines,
+			...expenseLines,
+			...manualLines
+		];
+		const taxableAmount = sumMinorUnits(baseLines.map((line) => line.amount));
+
+		const resolvedPack = await resolveActiveFiscalPack(db, core.issueDate);
+		const tax = resolveInvoiceTax(resolvedPack?.pack ?? null, taxableAmount);
+
+		let taxTreatmentCode: string | null;
+		let taxRate: number;
+		let statutoryReference: InvoiceInput['statutoryReference'];
+		let stampDuty: InvoiceInput['stampDuty'];
+		let socialCharge: InvoiceInput['socialCharge'];
+
+		if (tax.source === 'pack') {
+			taxTreatmentCode = tax.treatmentCode;
+			taxRate = tax.taxRate;
+			statutoryReference = tax.statutoryReference;
+			stampDuty = tax.stampDuty;
+			socialCharge = tax.socialCharge;
+		} else {
+			const manualTax = parseManualInvoiceTax(values, core.currency);
+			if (!manualTax.ok) return fail(400, { errors: manualTax.errors, values });
+			taxTreatmentCode = manualTax.tax.taxTreatmentCode;
+			taxRate = manualTax.tax.taxRate;
+			statutoryReference = manualTax.tax.statutoryReference;
+			stampDuty = manualTax.tax.stampDuty;
+			socialCharge = manualTax.tax.socialCharge;
+		}
+
+		const lines: InvoiceLineInput[] = baseLines.map((line) => ({
+			...line,
+			taxRate,
+			taxTreatmentCode
+		}));
 
 		let invoiceRow;
 		try {
 			invoiceRow = await createInvoice(
-				result.input,
+				{
+					contractId: core.contractId,
+					number: core.number,
+					issueDate: core.issueDate,
+					documentType: core.documentType,
+					currency: core.currency,
+					taxTreatmentCode,
+					statutoryReference,
+					stampDuty,
+					socialCharge,
+					dueDate: core.dueDate,
+					paymentMethod: core.paymentMethod,
+					iban: core.iban,
+					transmissionId: core.transmissionId,
+					lines
+				},
 				{ kind: 'human', email: locals.user!.email },
 				'entered manually from the issued document'
 			);
@@ -37,7 +203,7 @@ export const actions: Actions = {
 			if (isPostgresConstraintViolation(error, '23505', 'invoice_contract_number_unique')) {
 				return fail(400, {
 					errors: { number: m.invoice_validation_number_duplicate() },
-					values: result.values
+					values
 				});
 			}
 			throw error;

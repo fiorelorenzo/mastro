@@ -2,11 +2,13 @@
 	import * as m from '$lib/paraglide/messages';
 	import { formatAmount, formatDate, formatDateTime, formatNumber } from '$lib/i18n/format';
 	import DataTable from '$lib/design/charts/DataTable.svelte';
+	import SourceDocument from '$lib/design/SourceDocument.svelte';
 	import Page from '$lib/layout/Page.svelte';
 	import type { TableColumn } from '$lib/design/charts/types';
 	import DayStateBadge from '../DayStateBadge.svelte';
 	import { workUnitStateLabel, type WorkUnitStateValue } from '../work-unit-state';
 	import type { ActionData, PageProps } from './$types';
+	import Button from '$lib/design/Button.svelte';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
@@ -79,29 +81,42 @@
 				{m.day_detail_approval_none()}
 			{/if}
 		</dd>
+		<dt class="opacity-70">{m.day_detail_document_label()}</dt>
+		<dd><SourceDocument document={data.sourceDocument} /></dd>
 	</dl>
 
-	{#if data.linkableApprovals.length > 0}
-		<form method="POST" action="?/link" class="mt-6 flex flex-col gap-3 border p-4">
-			<h2 class="text-base font-medium">{m.day_detail_approval_link_heading()}</h2>
-			<label class="flex flex-col gap-1 text-sm">
-				<span>{m.day_detail_approval_select_label()}</span>
-				<select name="approvalId" required class="border px-3 py-3 text-base">
-					<option value="" disabled selected>{m.day_detail_approval_select_placeholder()}</option>
-					{#each data.linkableApprovals as approval (approval.id)}
-						<option value={approval.id}
-							>{approval.sender} — {formatDateTime(approval.receivedAt)}</option
-						>
-					{/each}
-				</select>
-			</label>
-			{#if form?.linkError}<span class="text-sm text-red-700">{form.linkError}</span>{/if}
-			<button type="submit" class="w-fit border px-4 py-3 text-base">
-				{m.day_detail_approval_link_submit()}
-			</button>
-		</form>
-	{:else if data.workUnit.state === 'worked_without_approval'}
-		<p class="mt-6 text-sm opacity-70">{m.day_detail_approval_link_empty()}</p>
+	{#if data.workUnit.state === 'worked_without_approval'}
+		<div class="mt-6 flex flex-col gap-4">
+			<Button
+				href="/approvals/new?contractId={data.contract.id}&workUnitId={data.workUnit.id}"
+				variant="primary"
+				size="lg"
+			>
+				{m.day_detail_approval_record_link()}
+			</Button>
+			{#if data.linkableApprovals.length > 0}
+				<form method="POST" action="?/link" class="flex flex-col gap-3 border p-4">
+					<h2 class="text-base font-medium">{m.day_detail_approval_link_heading()}</h2>
+					<label class="flex flex-col gap-1 text-sm">
+						<span>{m.day_detail_approval_select_label()}</span>
+						<select name="approvalId" required class="border px-3 py-3 text-base">
+							<option value="" disabled selected
+								>{m.day_detail_approval_select_placeholder()}</option
+							>
+							{#each data.linkableApprovals as approval (approval.id)}
+								<option value={approval.id}
+									>{approval.sender} — {formatDateTime(approval.receivedAt)}</option
+								>
+							{/each}
+						</select>
+					</label>
+					{#if form?.linkError}<span class="text-sm text-red-700">{form.linkError}</span>{/if}
+					<button type="submit" class="w-fit border px-4 py-3 text-base">
+						{m.day_detail_approval_link_submit()}
+					</button>
+				</form>
+			{/if}
+		</div>
 	{/if}
 
 	{#if data.transitions.length > 0}

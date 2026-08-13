@@ -20,6 +20,7 @@ import { client, contract } from '../../db/schema';
 import type { ExpensePolicy, PaymentTerms } from '../../db/schema/contract';
 import { fiscalProfile } from '../../db/schema/fiscal';
 import { defaultRegistry, lookupPack } from '../registry';
+import { resolveDefaultTaxTreatment } from '../pack';
 import { resolveActiveFiscalPack } from '../profile';
 import { itStandardPack } from './it-standard';
 
@@ -52,6 +53,11 @@ test('an ordinary VAT treatment is available, with its own legal text', () => {
 	for (const treatment of itStandardPack.treatments) {
 		expect(treatment.legalText.language).toBe('it');
 	}
+});
+
+test('the default treatment is the ordinary case: no code, no legal text, the standard 22% rate (#216)', () => {
+	const treatment = resolveDefaultTaxTreatment(itStandardPack);
+	expect(treatment).toEqual({ code: null, taxRate: 22, legalText: null });
 });
 
 test('the pack ships registered by default, resolvable by id and version', () => {

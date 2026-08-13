@@ -77,6 +77,7 @@ function severityForDaysElapsed(
 
 export interface ContractDeadlineRow {
 	readonly contractId: string;
+	readonly clientId: string;
 	readonly contractTitle: string;
 	readonly clientLegalName: string;
 	readonly endsOn: string;
@@ -101,6 +102,7 @@ export function detectContractExpiring(
 			makeAlert(row.contractId, severity, {
 				type: 'contract_expiring',
 				contractId: row.contractId,
+				clientId: row.clientId,
 				contractTitle: row.contractTitle,
 				clientLegalName: row.clientLegalName,
 				endsOn: row.endsOn,
@@ -134,6 +136,7 @@ export function detectRenewalWindowOpen(
 			makeAlert(row.contractId, severity, {
 				type: 'renewal_window_open',
 				contractId: row.contractId,
+				clientId: row.clientId,
 				contractTitle: row.contractTitle,
 				clientLegalName: row.clientLegalName,
 				endsOn: row.endsOn,
@@ -148,6 +151,7 @@ export function detectRenewalWindowOpen(
 export interface WorkedWithoutApprovalRow {
 	readonly workUnitId: string;
 	readonly contractId: string;
+	readonly clientId: string;
 	readonly contractTitle: string;
 	readonly clientLegalName: string;
 	readonly date: string;
@@ -165,6 +169,7 @@ export function detectWorkedWithoutApproval(rows: readonly WorkedWithoutApproval
 			type: 'worked_without_approval',
 			workUnitId: row.workUnitId,
 			contractId: row.contractId,
+			clientId: row.clientId,
 			contractTitle: row.contractTitle,
 			clientLegalName: row.clientLegalName,
 			date: row.date,
@@ -176,6 +181,7 @@ export function detectWorkedWithoutApproval(rows: readonly WorkedWithoutApproval
 export interface ApprovalUnactionedRow {
 	readonly approvalId: string;
 	readonly contractId: string;
+	readonly clientId: string;
 	readonly contractTitle: string;
 	readonly clientLegalName: string;
 	readonly receivedAt: Date;
@@ -207,6 +213,7 @@ export function detectApprovalUnactioned(
 				type: 'approval_unactioned',
 				approvalId: row.approvalId,
 				contractId: row.contractId,
+				clientId: row.clientId,
 				contractTitle: row.contractTitle,
 				clientLegalName: row.clientLegalName,
 				receivedAt: row.receivedAt.toISOString(),
@@ -291,6 +298,7 @@ function addDaysIso(dateIso: string, days: number): string {
 
 export interface BillablePeriodRow {
 	readonly contractId: string;
+	readonly clientId: string;
 	readonly contractTitle: string;
 	readonly clientLegalName: string;
 	readonly invoicingCadence: InvoicingCadence;
@@ -339,6 +347,7 @@ export function detectBillablePeriodClosed(
 			makeAlert(row.contractId, severity, {
 				type: 'billable_period_closed',
 				contractId: row.contractId,
+				clientId: row.clientId,
 				contractTitle: row.contractTitle,
 				clientLegalName: row.clientLegalName,
 				periodEnd: addDaysIso(currentStart, -1),
@@ -480,6 +489,8 @@ export function detectBackupFailure(latestRun: BackupRunRow | null, asOfDate: Da
 
 export interface MirrorCandidateRow {
 	readonly documentId: string;
+	readonly contractId: string;
+	readonly clientId: string;
 	readonly contractTitle: string;
 	readonly clientLegalName: string;
 	readonly createdAt: Date;
@@ -506,6 +517,8 @@ export function detectMirrorFailure(rows: readonly MirrorCandidateRow[], asOfDat
 				makeAlert(row.documentId, 'critical', {
 					type: 'mirror_failure',
 					documentId: row.documentId,
+					contractId: row.contractId,
+					clientId: row.clientId,
 					contractTitle: row.contractTitle,
 					clientLegalName: row.clientLegalName,
 					reason: 'failure',
@@ -520,6 +533,8 @@ export function detectMirrorFailure(rows: readonly MirrorCandidateRow[], asOfDat
 				makeAlert(row.documentId, 'serious', {
 					type: 'mirror_failure',
 					documentId: row.documentId,
+					contractId: row.contractId,
+					clientId: row.clientId,
 					contractTitle: row.contractTitle,
 					clientLegalName: row.clientLegalName,
 					reason: 'stale',

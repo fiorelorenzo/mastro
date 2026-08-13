@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
+	import { Field, SegmentedControl } from '$lib/design';
 	import type { ContractFormValues } from '$lib/server/repositories/contract-form';
 	import {
 		contractRenewalTypes,
@@ -30,6 +31,21 @@
 	let renewalType = $state(values.renewalType);
 	let paymentTermsKind = $state(values.paymentTermsKind);
 	let expensePolicyKind = $state(values.expensePolicyKind);
+
+	// #211: the approval requirement is never defaulted — `values.requiresPriorApproval`
+	// is `null` on a brand-new contract (nothing chosen yet) and a real
+	// boolean once either a submission or an existing contract has made the
+	// choice. The segmented control shows neither option pressed until one
+	// is; `requiresPriorApprovalChoice` stays `''` in that case, which is
+	// deliberately not a legal form value (`parseContractForm` rejects it)
+	// rather than a default in disguise.
+	let requiresPriorApprovalChoice = $state(
+		values.requiresPriorApproval === true
+			? 'required'
+			: values.requiresPriorApproval === false
+				? 'not_required'
+				: ''
+	);
 </script>
 
 <form method="POST" class="mt-6 flex flex-col gap-6">
@@ -55,6 +71,7 @@
 					<option value={status} selected={values.status === status}>{statusLabel(status)}</option>
 				{/each}
 			</select>
+			<span class="text-xs opacity-70">{m.contract_form_status_hint()}</span>
 			{#if errors.status}<span class="text-xs font-semibold">{errors.status}</span>{/if}
 		</label>
 		<label class="flex flex-col gap-1 text-sm">
@@ -230,10 +247,35 @@
 
 	<fieldset class="flex flex-col gap-3">
 		<legend class="text-sm font-semibold">{m.contract_form_approval_and_expenses_legend()}</legend>
-		<label class="flex items-center gap-2 text-sm">
-			<input type="checkbox" name="requiresPriorApproval" checked={values.requiresPriorApproval} />
-			{m.contract_form_requires_prior_approval_label()}
-		</label>
+		<Field
+			label={m.contract_form_requires_prior_approval_label()}
+			error={errors.requiresPriorApproval}
+			required
+		>
+			<SegmentedControl
+				bind:value={requiresPriorApprovalChoice}
+				label={m.contract_form_requires_prior_approval_label()}
+				options={[
+					{
+						value: 'required',
+						label: m.contract_form_requires_prior_approval_required_option()
+					},
+					{
+						value: 'not_required',
+						label: m.contract_form_requires_prior_approval_not_required_option()
+					}
+				]}
+			/>
+		</Field>
+		<input type="hidden" name="requiresPriorApproval" value={requiresPriorApprovalChoice} />
+		<div class="approval-consequences">
+			<p class:approval-consequence--active={requiresPriorApprovalChoice === 'required'}>
+				{m.contract_form_requires_prior_approval_required_consequence()}
+			</p>
+			<p class:approval-consequence--active={requiresPriorApprovalChoice === 'not_required'}>
+				{m.contract_form_requires_prior_approval_not_required_consequence()}
+			</p>
+		</div>
 		<label class="flex flex-col gap-1 text-sm">
 			{m.contract_form_expense_policy_kind_label()}
 			<select
@@ -283,3 +325,24 @@
 
 	<button type="submit" class="w-fit border px-4 py-2 text-sm">{submitLabel}</button>
 </form>
+
+<style>
+	/* #211: both consequences of the approval decision stay visible and
+	   equally muted until one is chosen — emphasis moves to the chosen
+	   option's consequence afterward, but neither is ever hidden, so the
+	   choice can never be made without reading what it does. */
+	.approval-consequences {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+	}
+	.approval-consequences p {
+		margin: 0;
+		font-size: var(--text-xs);
+		color: var(--text-muted);
+	}
+	.approval-consequences p.approval-consequence--active {
+		color: var(--text-secondary);
+		font-weight: var(--weight-medium);
+	}
+</style>

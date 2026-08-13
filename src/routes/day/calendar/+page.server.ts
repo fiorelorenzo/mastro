@@ -3,7 +3,6 @@ import { listContracts } from '$lib/server/repositories/contract';
 import { listRateCards } from '$lib/server/repositories/rate-card';
 import { listWorkUnitsBetween } from '$lib/server/repositories/work-unit';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
-import { dayCountsTowardAmount, dayCountsTowardDays } from '../work-unit-state';
 import { monthRange, startOfMonth } from './month-grid';
 import type { PageServerLoad } from './$types';
 
@@ -57,23 +56,8 @@ export const load: PageServerLoad = async ({ url }) => {
 		else entriesByDate.set(entry.date, [entry]);
 	}
 
-	// "Days worked" counts every day that actually happened, billable or
-	// not; the amount total only counts what will actually be invoiced —
-	// see `dayCountsTowardDays`/`dayCountsTowardAmount` for exactly which
-	// states fall on which side. Amounts are grouped by currency rather
-	// than assumed uniform: nothing stops two contracts on different
-	// currencies both landing days in the same month.
-	let totalDays = 0;
-	const totalsByCurrency = new Map<string, number>();
-	for (const entry of entries) {
-		if (dayCountsTowardDays(entry.state)) totalDays += entry.quantity;
-		if (dayCountsTowardAmount(entry.state) && entry.amount !== null && entry.currency) {
-			totalsByCurrency.set(
-				entry.currency,
-				(totalsByCurrency.get(entry.currency) ?? 0) + entry.amount
-			);
-		}
-	}
-
-	return { monthStart, entries, entriesByDate, totalDays, totalsByCurrency };
+	// Per-cell and per-month aggregation (state badge, quantity, value,
+	// approved/proposed/worked totals) is `calendar-cells.ts`'s job — kept
+	// out of `load` so it stays testable without a database.
+	return { monthStart, entries, entriesByDate };
 };

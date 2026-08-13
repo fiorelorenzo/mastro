@@ -19,7 +19,7 @@
 	// pattern `ClientForm.svelte` uses — no $state needed.
 	let quantity = $state(form?.values.quantity ?? '1');
 	let contractId = $state(form?.values.contractId ?? data.defaultContractId);
-	let approvalId = $state(form?.values.approvalId ?? '');
+	let approvalId = $state(form?.values.approvalId ?? data.defaultApprovalId ?? '');
 
 	// The idempotency key #62's offline queue and the server share (see
 	// createWorkUnit): generated fresh for every attempt this page makes,

@@ -7,7 +7,8 @@ import {
 	formatDays,
 	formatMinorUnits,
 	formatNumber,
-	formatPercent
+	formatPercent,
+	formatWeekRange
 } from './format';
 
 test('the same figure renders with each locale’s own decimal separator', () => {
@@ -88,4 +89,24 @@ test('a timestamp renders with locale-appropriate date and time, in the reader�
 test('a Date and its equivalent ISO instant string format identically', () => {
 	const instant = new Date('2024-06-15T09:05:00Z');
 	expect(formatDateTime(instant, 'en')).toBe(formatDateTime('2024-06-15T09:05:00Z', 'en'));
+});
+
+// ICU's own range separator is U+2013 flanked by U+2009 thin spaces (not the
+// plain space every other formatter in this file uses) whenever the two
+// dates differ — invisible in a diff, so do not "clean up" the spacing
+// around the dash below by hand.
+test('a week range reads compactly within one month, in each locale’s own day/month order', () => {
+	expect(formatWeekRange('2026-08-03', '2026-08-09', 'en')).toBe('August 3 – 9');
+	expect(formatWeekRange('2026-08-03', '2026-08-09', 'it')).toBe('3–9 agosto');
+});
+
+test('a week range crossing a month boundary names both months, without a zero-padded day', () => {
+	expect(formatWeekRange('2026-07-27', '2026-08-02', 'en')).toBe('July 27 – August 2');
+	expect(formatWeekRange('2026-07-27', '2026-08-02', 'it')).toBe('27 luglio – 2 agosto');
+});
+
+test('a week range crossing a year boundary names both years', () => {
+	expect(formatWeekRange('2026-12-28', '2027-01-03', 'it')).toBe(
+		'28 dicembre 2026 – 3 gennaio 2027'
+	);
 });

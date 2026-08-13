@@ -156,7 +156,11 @@ export const itFlatRatePack: FiscalPack = {
 			legalText: legalText(
 				'it',
 				"Operazione senza applicazione dell'IVA, ai sensi dell'articolo 1, comma 58, della legge 23 dicembre 2014, n. 190"
-			)
+			),
+			// The regime never charges VAT, on anything — the reasoning
+			// `defaultTreatment` below relies on to apply this treatment
+			// unconditionally, rather than only when some condition holds.
+			taxRate: 0
 		}
 	],
 	charges: [
@@ -169,7 +173,8 @@ export const itFlatRatePack: FiscalPack = {
 			),
 			// 2.00 EUR, due once a document not subject to VAT exceeds 77.47 EUR.
 			amount: { kind: 'fixed', minorUnits: minorUnits(200) },
-			appliesWhen: { fact: 'invoiceTotal', comparator: 'gt', value: 7747 }
+			appliesWhen: { fact: 'invoiceTotal', comparator: 'gt', value: 7747 },
+			slot: 'stamp_duty'
 		},
 		{
 			id: 'it-flat-rate-social-security-surcharge',
@@ -186,7 +191,8 @@ export const itFlatRatePack: FiscalPack = {
 			// job. What the pack fixes is the rate and its one statutory
 			// effect that matters here — it counts towards the ceilings
 			// above even though it is not taxable income.
-			amount: { kind: 'percentage', rate: 0.04, of: 'invoiceTotal' }
+			amount: { kind: 'percentage', rate: 0.04, of: 'invoiceTotal' },
+			slot: 'social_charge'
 		}
 	],
 	// FatturaPA, format id 'FPR12' (fattura verso privati) — shared with
@@ -194,5 +200,9 @@ export const itFlatRatePack: FiscalPack = {
 	// here): both regimes' consultants file the same national format.
 	formats: ['FPR12'],
 	// #122: see the header comment's last source entry.
-	unresolvedRevenue: 'carries_forward'
+	unresolvedRevenue: 'carries_forward',
+	// Comma 58 draws no exception for any kind of operation this regime
+	// invoices — N2.2 is not one exceptional case among others, it is what
+	// every invoice under this pack takes (#216).
+	defaultTreatment: { kind: 'treatment', code: 'N2.2' }
 };

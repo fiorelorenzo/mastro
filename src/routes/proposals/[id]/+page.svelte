@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import SourceDocument from '$lib/design/SourceDocument.svelte';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDateTime, formatPercent } from '$lib/i18n/format';
 	import Page from '$lib/layout/Page.svelte';
@@ -41,6 +42,10 @@
 			<blockquote class="mt-2 border-l-2 pl-3 text-sm italic opacity-90">
 				{data.proposal.excerpt}
 			</blockquote>
+			<div class="mt-3">
+				<p class="text-xs font-medium opacity-70">{m.proposal_detail_document_label()}</p>
+				<SourceDocument document={data.sourceDocument} />
+			</div>
 		</section>
 
 		<section class="border p-4">

@@ -53,11 +53,28 @@ export const load: PageServerLoad = async ({ url }) => {
 
 	// "The contract used most recently" (#24) — falls back to the first
 	// active contract when nothing has ever been recorded yet, or when the
-	// most recently used one is no longer active.
+	// most recently used one is no longer active. `?contractId=` (the
+	// `approval_unactioned` alert's primary action, `alerts/actions.ts`)
+	// overrides both when it names a real, still-active contract.
+	const requestedContractId = url.searchParams.get('contractId');
 	const defaultContractId =
-		(mostRecentContractId && contracts.some((c) => c.id === mostRecentContractId)
-			? mostRecentContractId
-			: contracts[0]?.id) ?? '';
+		(requestedContractId && contracts.some((c) => c.id === requestedContractId)
+			? requestedContractId
+			: mostRecentContractId && contracts.some((c) => c.id === mostRecentContractId)
+				? mostRecentContractId
+				: contracts[0]?.id) ?? '';
+
+	// `?approvalId=` only takes effect once it actually belongs to the
+	// resolved contract — a stale or mismatched id from an old alert link
+	// is silently dropped rather than crashing the form.
+	const requestedApprovalId = url.searchParams.get('approvalId');
+	const defaultApprovalId =
+		requestedApprovalId &&
+		(approvalsByContract[defaultContractId] ?? []).some(
+			(approval) => approval.id === requestedApprovalId
+		)
+			? requestedApprovalId
+			: '';
 
 	const requestedDate = url.searchParams.get('date');
 	const defaultDate =
@@ -67,7 +84,14 @@ export const load: PageServerLoad = async ({ url }) => {
 
 	const crumbs = calendarCrumbs();
 
-	return { contracts, approvalsByContract, defaultContractId, defaultDate, crumbs };
+	return {
+		contracts,
+		approvalsByContract,
+		defaultContractId,
+		defaultApprovalId,
+		defaultDate,
+		crumbs
+	};
 };
 
 export const actions: Actions = {

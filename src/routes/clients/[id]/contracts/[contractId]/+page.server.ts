@@ -2,8 +2,10 @@ import { error, fail } from '@sveltejs/kit';
 import { clientCrumbs } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import { renewalWindowOpensOn } from '$lib/server/domain/contract';
-import { getContractWithClient } from '$lib/server/repositories/contract';
+import { listApprovalsForContract } from '$lib/server/repositories/approval';
+import { getContractDocuments, getContractWithClient } from '$lib/server/repositories/contract';
 import { listClauseNotes } from '$lib/server/repositories/clause-note';
+import { toSourceDocumentValue } from '$lib/server/repositories/document';
 import {
 	listExpensesForContract,
 	listInvoiceLinesForContract,
@@ -22,11 +24,13 @@ export const load: PageServerLoad = async ({ params }) => {
 	const contract = await loadContract(params.id, params.contractId);
 	if (!contract) error(404, m.contract_not_found());
 
-	const [rateCards, clauseNotes, expenses, invoiceLines] = await Promise.all([
+	const [rateCards, clauseNotes, expenses, invoiceLines, documents, approvals] = await Promise.all([
 		listRateCards(contract.id),
 		listClauseNotes(contract.id),
 		listExpensesForContract(contract.id),
-		listInvoiceLinesForContract(contract.id)
+		listInvoiceLinesForContract(contract.id),
+		getContractDocuments(contract.id),
+		listApprovalsForContract(contract.id)
 	]);
 
 	// The trail is built here because only this query knows the client's name
@@ -42,6 +46,20 @@ export const load: PageServerLoad = async ({ params }) => {
 		clauseNotes,
 		expenses,
 		invoiceLines,
+		// Raw archived mail and any other document still owned by the
+		// contract itself, not by one of its approvals, expenses or
+		// invoices (#215's "the consent-era documents that remain").
+		documents: documents.map(toSourceDocumentValue),
+		// Every approval recorded against this contract (#210), newest
+		// last — `documentId` is the archived proof, one click away via
+		// `/documents/[id]`.
+		approvals: approvals.map((row) => ({
+			id: row.id,
+			channel: row.channel,
+			sender: row.sender,
+			receivedAt: row.receivedAt.toISOString(),
+			documentId: row.documentId
+		})),
 		crumbs,
 		renewalWindowOpensOn: renewalWindowOpensOn(contract)?.toISOString().slice(0, 10) ?? null
 	};

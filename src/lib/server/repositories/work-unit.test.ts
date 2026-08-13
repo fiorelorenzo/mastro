@@ -10,6 +10,7 @@ import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { createApproval } from './approval';
 import {
+	createApprovedWorkUnit,
 	createWorkUnit,
 	getWorkUnit,
 	getWorkUnitDocument,
@@ -155,6 +156,55 @@ test("a day's archived original is reachable in one query, once an approval is l
 
 		const original = await getWorkUnitDocument(row.id, tx);
 		expect(original?.originalName).toBe('approval.eml');
+	});
+});
+
+test('createApprovedWorkUnit inserts proposed and transitions to approved in one step, never inserting approved directly', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx, true);
+		const approvalRow = await createApproval(
+			{
+				contractId: contractRow.id,
+				channel: 'email',
+				sender: 'client@example.com',
+				receivedAt: new Date('2024-06-01T09:00:00Z'),
+				messageId: '<xyz@example.com>',
+				excerpt: 'Please proceed with the migration next week.',
+				origin: { kind: 'manual' },
+				document: {
+					bytes: new TextEncoder().encode('Please proceed with the migration next week.'),
+					mime: 'message/rfc822',
+					originalName: 'approval.eml',
+					provenance: 'mail',
+					confidential: true
+				}
+			},
+			tx
+		);
+
+		const row = await createApprovedWorkUnit(
+			{ contractId: contractRow.id, date: '2024-06-10', quantity: 1, scope: 'Migrated the API.' },
+			approvalRow.id,
+			{ kind: 'agent', proposalReference: 'proposal-1' },
+			'accepted from proposal proposal-1',
+			tx
+		);
+
+		expect(row.state).toBe('approved');
+		expect(row.approvalId).toBe(approvalRow.id);
+
+		// Two writes, not one: the state machine forbids an INSERT that
+		// starts at 'approved' (drizzle/0012), so this must have gone
+		// through 'proposed' first, and the log proves it.
+		const log = await listWorkUnitTransitions(row.id, tx);
+		expect(log.map((entry) => [entry.fromState, entry.toState])).toEqual([
+			[null, 'proposed'],
+			['proposed', 'approved']
+		]);
+		expect(log.map((entry) => entry.reason)).toEqual([
+			'accepted from proposal proposal-1',
+			'accepted from proposal proposal-1'
+		]);
 	});
 });
 

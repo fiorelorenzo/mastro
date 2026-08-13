@@ -3,9 +3,11 @@ import * as m from '$lib/paraglide/messages';
 import { calendarCrumbs } from '$lib/nav/crumbs';
 import { getApproval, listApprovalsForContract } from '$lib/server/repositories/approval';
 import { getContract } from '$lib/server/repositories/contract';
+import { toSourceDocumentValue } from '$lib/server/repositories/document';
 import { listRateCards } from '$lib/server/repositories/rate-card';
 import {
 	getWorkUnit,
+	getWorkUnitDocument,
 	linkApprovalToWorkUnit,
 	listWorkUnitTransitions
 } from '$lib/server/repositories/work-unit';
@@ -16,11 +18,12 @@ export const load: PageServerLoad = async ({ params }) => {
 	const workUnit = await getWorkUnit(params.id);
 	if (!workUnit) error(404, m.day_detail_not_found());
 
-	const [contract, transitions, rateCards, approval] = await Promise.all([
+	const [contract, transitions, rateCards, approval, sourceDocument] = await Promise.all([
 		getContract(workUnit.contractId),
 		listWorkUnitTransitions(workUnit.id),
 		listRateCards(workUnit.contractId),
-		workUnit.approvalId ? getApproval(workUnit.approvalId) : null
+		workUnit.approvalId ? getApproval(workUnit.approvalId) : null,
+		getWorkUnitDocument(workUnit.id)
 	]);
 	if (!contract) error(404, m.day_detail_not_found());
 
@@ -56,6 +59,7 @@ export const load: PageServerLoad = async ({ params }) => {
 		approval: approval
 			? { id: approval.id, sender: approval.sender, receivedAt: approval.receivedAt.toISOString() }
 			: null,
+		sourceDocument: sourceDocument ? toSourceDocumentValue(sourceDocument) : null,
 		linkableApprovals,
 		transitions: transitions.map((t) => ({
 			fromState: t.fromState,

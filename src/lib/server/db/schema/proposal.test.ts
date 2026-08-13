@@ -124,6 +124,52 @@ test('a blank excerpt is rejected by the database', async () => {
 	});
 });
 
+test('a blank confidence_reason is rejected by the database, but null is fine', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
+
+		expect(
+			await rejection(
+				() =>
+					tx
+						.insert(proposal)
+						.values(proposalFields(contractRow.id, documentRow.id, { confidenceReason: '   ' })),
+				tx
+			)
+		).toMatchObject({ code: '23514', constraint_name: 'proposal_confidence_reason_not_blank' });
+
+		const [row] = await tx
+			.insert(proposal)
+			.values(proposalFields(contractRow.id, documentRow.id, { confidenceReason: null }))
+			.returning();
+		expect(row.confidenceReason).toBeNull();
+	});
+});
+
+test('a blank validation_error is rejected by the database, but null is fine', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
+
+		expect(
+			await rejection(
+				() =>
+					tx
+						.insert(proposal)
+						.values(proposalFields(contractRow.id, documentRow.id, { validationError: '   ' })),
+				tx
+			)
+		).toMatchObject({ code: '23514', constraint_name: 'proposal_validation_error_not_blank' });
+
+		const [row] = await tx
+			.insert(proposal)
+			.values(proposalFields(contractRow.id, documentRow.id, { validationError: null }))
+			.returning();
+		expect(row.validationError).toBeNull();
+	});
+});
+
 test('a confidence outside 0..1 is rejected by the database', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const contractRow = await insertContract(tx);
@@ -223,6 +269,43 @@ test('the proposed fields, excerpt and confidence cannot change after creation',
 						tx
 							.update(proposal)
 							.set({ excerpt: 'a different sentence entirely' })
+							.where(eq(proposal.id, row.id)),
+					tx
+				)
+			).message
+		).toMatch(/immutable after creation/);
+	});
+});
+
+test('confidence_reason and validation_error cannot change after creation either', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
+		const [row] = await tx
+			.insert(proposal)
+			.values(proposalFields(contractRow.id, documentRow.id, { confidenceReason: 'a reason' }))
+			.returning();
+
+		expect(
+			(
+				await rejection(
+					() =>
+						tx
+							.update(proposal)
+							.set({ confidenceReason: 'a different reason' })
+							.where(eq(proposal.id, row.id)),
+					tx
+				)
+			).message
+		).toMatch(/immutable after creation/);
+
+		expect(
+			(
+				await rejection(
+					() =>
+						tx
+							.update(proposal)
+							.set({ validationError: 'quantity must be greater than 0' })
 							.where(eq(proposal.id, row.id)),
 					tx
 				)
