@@ -1,0 +1,221 @@
+{
+	"contract-a-day-rate-approval.pdf": {
+		"seconds": 20.4,
+		"parsed": {
+			"contract": {
+				"title": "Consulenza ottimizzazione processi produttivi — Vetraria del Garda",
+				"clientLegalName": "Vetraria del Garda S.p.A.",
+				"clientTaxId": "02871450230",
+				"startsOn": "2025-09-01",
+				"endsOn": "2026-08-31",
+				"renewalType": "none",
+				"renewalNoticeDays": null,
+				"terminationNoticeDays": 45,
+				"paymentTerms": {
+					"kind": "net",
+					"days": 30
+				},
+				"currency": "EUR",
+				"requiresPriorApproval": true,
+				"expensePolicy": {
+					"kind": "reimbursed_at_cost",
+					"capAmount": null
+				}
+			},
+			"rateCards": [
+				{
+					"kind": "daily",
+					"amount": 650,
+					"unit": "day",
+					"validFrom": "2025-09-01",
+					"validTo": "2026-08-31",
+					"allowedFractions": [0.5]
+				}
+			],
+			"flags": [
+				{
+					"field": "expensePolicy",
+					"clause": "Art. 4",
+					"why": "Le spese sono rimborsate a piè di lista ma solo se preventivamente autorizzate per iscritto; non è chiaro se l'assenza di autorizzazione preventiva significhi 'non rimborsate' (cap implicito a zero) o semplicemente una condizione procedurale.",
+					"readings": [
+						"reimbursed_at_cost con condizione di previa autorizzazione scritta",
+						"not_reimbursed se l'autorizzazione non viene ottenuta"
+					]
+				}
+			]
+		},
+		"error": null,
+		"raw": "```json\n{\n  \"contract\": {\n    \"title\": \"Consulenza ottimizzazione processi produttivi — Vetraria del Garda\",\n    \"clientLegalName\": \"Vetraria del Garda S.p.A.\",\n    \"clientTaxId\": \"02871450230\",\n    \"startsOn\": \"2025-09-01\",\n    \"endsOn\": \"2026-08-31\",\n    \"renewalType\": \"none\",\n    \"renewalNoticeDays\": null,\n    \"terminationNoticeDays\": 45,\n    \"paymentTerms\": {\"kind\":\"net\",\"days\":30},\n    \"currency\": \"EUR\",\n    \"requiresPriorApproval\": true,\n    \"expensePolicy\": {\"kind\":\"reimbursed_at_cost\",\"capAmount\":null}\n  },\n  \"rateCards\": [\n    {\"kind\":\"daily\",\"amount\":650,\"unit\":\"day\",\"validFrom\":\"2025-09-01\",\"validTo\":\"2026-08-31\",\"allowedFractions\":[0.5]}\n  ],\n  \"flags\": [\n    {\n      \"field\": \"expensePolicy\",\n      \"clause\": \"Art. 4\",\n      \"why\": \"Le spese sono rimborsate a piè di lista ma solo se preventivamente autorizzate per iscritto; non è chiaro se l'assenza di autorizzazione preventiva significhi 'non rimborsate' (cap implicito a zero) o semplicemente una condizione procedurale.\",\n      \"readings\": [\n        \"reimbursed_at_cost con condizione di previa autorizzazione scritta\",\n        \"not_reimbursed se l'autorizzazione non viene ottenuta\"\n      ]\n    }\n  ]\n}\n```"
+	},
+	"contract-b-continuous-concentration-cap.pdf": {
+		"seconds": 18.3,
+		"parsed": {
+			"contract": {
+				"title": "Contratto di assistenza tecnica continuativa — Rep. n. 3/2026",
+				"clientLegalName": "Bramante Costruzioni S.r.l.",
+				"clientTaxId": "03456781098",
+				"startsOn": "2026-01-01",
+				"endsOn": "2026-12-31",
+				"renewalType": "tacit",
+				"renewalNoticeDays": 60,
+				"terminationNoticeDays": 90,
+				"paymentTerms": {
+					"kind": "net",
+					"days": 30
+				},
+				"currency": "EUR",
+				"requiresPriorApproval": false,
+				"expensePolicy": {
+					"kind": "reimbursed_with_cap",
+					"capAmount": 500
+				}
+			},
+			"rateCards": [
+				{
+					"kind": "hourly",
+					"amount": 95,
+					"unit": "hour",
+					"validFrom": "2026-01-01",
+					"validTo": null,
+					"allowedFractions": []
+				}
+			],
+			"flags": [
+				{
+					"field": "rateCards[0].allowedFractions",
+					"clause": "Art. 2",
+					"why": "Il contratto prevede un minimo fatturabile di 2 ore per singolo intervento, ma non specifica se siano ammesse frazioni orarie (mezz'ore, quarti d'ora) oltre quel minimo. Non è chiaro se il tracciamento debba essere a ore intere o se frazioni siano consentite.",
+					"readings": [
+						"Solo ore intere, con minimo di 2 per intervento",
+						"Frazioni orarie ammesse (es. 2.5h, 3.25h), purché il totale per intervento sia almeno 2 ore"
+					]
+				},
+				{
+					"field": "expensePolicy.capAmount",
+					"clause": "Art. 5",
+					"why": "Il tetto di € 500 è espresso come limite mensile. Non è chiaro se si tratti di un tetto per singola fattura/periodo o di un tetto annuale ripartito mensilmente, né se un eventuale residuo non utilizzato in un mese sia cumulabile.",
+					"readings": [
+						"€ 500 per mese solare, non cumulabile",
+						"€ 500 per mese come soglia indicativa, con possibilità di compensazione tra mesi"
+					]
+				}
+			]
+		},
+		"error": null,
+		"raw": "```json\n{\n  \"contract\": {\n    \"title\": \"Contratto di assistenza tecnica continuativa — Rep. n. 3/2026\",\n    \"clientLegalName\": \"Bramante Costruzioni S.r.l.\",\n    \"clientTaxId\": \"03456781098\",\n    \"startsOn\": \"2026-01-01\",\n    \"endsOn\": \"2026-12-31\",\n    \"renewalType\": \"tacit\",\n    \"renewalNoticeDays\": 60,\n    \"terminationNoticeDays\": 90,\n    \"paymentTerms\": {\"kind\": \"net\", \"days\": 30},\n    \"currency\": \"EUR\",\n    \"requiresPriorApproval\": false,\n    \"expensePolicy\": {\"kind\": \"reimbursed_with_cap\", \"capAmount\": 500}\n  },\n  \"rateCards\": [\n    {\n      \"kind\": \"hourly\",\n      \"amount\": 95,\n      \"unit\": \"hour\",\n      \"validFrom\": \"2026-01-01\",\n      \"validTo\": null,\n      \"allowedFractions\": []\n    }\n  ],\n  \"flags\": [\n    {\n      \"field\": \"rateCards[0].allowedFractions\",\n      \"clause\": \"Art. 2\",\n      \"why\": \"Il contratto prevede un minimo fatturabile di 2 ore per singolo intervento, ma non specifica se siano ammesse frazioni orarie (mezz'ore, quarti d'ora) oltre quel minimo. Non è chiaro se il tracciamento debba essere a ore intere o se frazioni siano consentite.\",\n      \"readings\": [\n        \"Solo ore intere, con minimo di 2 per intervento\",\n        \"Frazioni orarie ammesse (es. 2.5h, 3.25h), purché il totale per intervento sia almeno 2 ore\"\n      ]\n    },\n    {\n      \"field\": \"expensePolicy.capAmount\",\n      \"clause\": \"Art. 5\",\n      \"why\": \"Il tetto di € 500 è espresso come limite mensile. Non è chiaro se si tratti di un tetto per singola fattura/periodo o di un tetto annuale ripartito mensilmente, né se un eventuale residuo non utilizzato in un mese sia cumulabile.\",\n      \"readings\": [\n        \"€ 500 per mese solare, non cumulabile\",\n        \"€ 500 per mese come soglia indicativa, con possibilità di compensazione tra mesi\"\n      ]\n    }\n  ]\n}\n```"
+	},
+	"contract-c-monthly-retainer.pdf": {
+		"seconds": 17.9,
+		"parsed": {
+			"contract": {
+				"title": "Consulenza strategica in comunicazione",
+				"clientLegalName": "Ottavia Media Group S.r.l.",
+				"clientTaxId": "04521367890",
+				"startsOn": "2026-01-01",
+				"endsOn": "2026-12-31",
+				"renewalType": "tacit",
+				"renewalNoticeDays": 30,
+				"terminationNoticeDays": 30,
+				"paymentTerms": {
+					"kind": "net",
+					"days": 15
+				},
+				"currency": "EUR",
+				"requiresPriorApproval": false,
+				"expensePolicy": {
+					"kind": "not_reimbursed",
+					"capAmount": null
+				}
+			},
+			"rateCards": [
+				{
+					"kind": "fixed_recurring",
+					"amount": 2400,
+					"unit": "month",
+					"validFrom": "2026-01-01",
+					"validTo": null,
+					"allowedFractions": []
+				}
+			],
+			"flags": [
+				{
+					"field": "rateCards[0].allowedFractions",
+					"clause": "Art. 1, Art. 2",
+					"why": "Il contratto prevede un canone forfettario mensile per reperibilità e supporto continuativo, non collegato a giornate o ore. Non è chiaro se sia possibile fatturare frazioni di mese (ad esempio in caso di recesso inframmensile).",
+					"readings": [
+						"Il canone è indivisibile: anche un mese parziale genera il canone intero",
+						"In caso di recesso inframmensile il canone è dovuto pro rata"
+					]
+				}
+			]
+		},
+		"error": null,
+		"raw": "```json\n{\n  \"contract\": {\n    \"title\": \"Consulenza strategica in comunicazione\",\n    \"clientLegalName\": \"Ottavia Media Group S.r.l.\",\n    \"clientTaxId\": \"04521367890\",\n    \"startsOn\": \"2026-01-01\",\n    \"endsOn\": \"2026-12-31\",\n    \"renewalType\": \"tacit\",\n    \"renewalNoticeDays\": 30,\n    \"terminationNoticeDays\": 30,\n    \"paymentTerms\": {\"kind\":\"net\",\"days\":15},\n    \"currency\": \"EUR\",\n    \"requiresPriorApproval\": false,\n    \"expensePolicy\": {\"kind\":\"not_reimbursed\",\"capAmount\":null}\n  },\n  \"rateCards\": [\n    {\"kind\":\"fixed_recurring\",\"amount\":2400,\"unit\":\"month\",\"validFrom\":\"2026-01-01\",\"validTo\":null,\"allowedFractions\":[]}\n  ],\n  \"flags\": [\n    {\n      \"field\": \"rateCards[0].allowedFractions\",\n      \"clause\": \"Art. 1, Art. 2\",\n      \"why\": \"Il contratto prevede un canone forfettario mensile per reperibilità e supporto continuativo, non collegato a giornate o ore. Non è chiaro se sia possibile fatturare frazioni di mese (ad esempio in caso di recesso inframmensile).\",\n      \"readings\": [\n        \"Il canone è indivisibile: anche un mese parziale genera il canone intero\",\n        \"In caso di recesso inframmensile il canone è dovuto pro rata\"\n      ]\n    }\n  ]\n}\n```"
+	},
+	"contract-d-awkward-addendum-renewal.pdf": {
+		"seconds": 22.1,
+		"parsed": {
+			"contract": {
+				"title": "Contratto di consulenza tecnica Rep. n. 2/2025",
+				"clientLegalName": "Nord Meccanica S.p.A.",
+				"clientTaxId": "01987654321",
+				"startsOn": "2025-02-01",
+				"endsOn": "2027-01-31",
+				"renewalType": null,
+				"renewalNoticeDays": 60,
+				"terminationNoticeDays": 30,
+				"paymentTerms": {
+					"kind": "day_of_month",
+					"day": 0,
+					"monthOffset": 2
+				},
+				"currency": "EUR",
+				"requiresPriorApproval": true,
+				"expensePolicy": {
+					"kind": "reimbursed_with_cap",
+					"capAmount": 300
+				}
+			},
+			"rateCards": [
+				{
+					"kind": "daily",
+					"amount": 580,
+					"unit": "day",
+					"validFrom": "2025-02-01",
+					"validTo": "2026-03-31",
+					"allowedFractions": [0.5]
+				},
+				{
+					"kind": "daily",
+					"amount": 620,
+					"unit": "day",
+					"validFrom": "2026-04-01",
+					"validTo": null,
+					"allowedFractions": [0.5]
+				}
+			],
+			"flags": [
+				{
+					"field": "renewalType",
+					"clause": "Art. 4 e Art. 9",
+					"why": "L'Art. 4 prevede il rinnovo tacito per 12 mesi salvo disdetta con 60 giorni di preavviso. L'Art. 9 dice espressamente che il contratto cessa automaticamente alla scadenza senza possibilità di rinnovo tacito o automatico, e che ogni prosecuzione richiede un nuovo accordo scritto. Le due clausole sono in contraddizione diretta.",
+					"readings": [
+						"tacit: il rinnovo tacito dell'Art. 4 prevale come clausola specifica sulla durata, e l'Art. 9 si limita a ribadire che oltre il periodo rinnovato non c'è ulteriore automatismo",
+						"none: l'Art. 9, essendo successivo e più restrittivo, deroga all'Art. 4 e il contratto cessa il 31 gennaio 2027 senza alcun rinnovo"
+					]
+				},
+				{
+					"field": "paymentTerms",
+					"clause": "Art. 6",
+					"why": "La formula '60 giorni data fattura fine mese' è un termine commerciale italiano che si presta a due letture sul giorno esatto di scadenza del pagamento.",
+					"readings": [
+						"La data di partenza è la fine del mese in cui la fattura è emessa, e il pagamento scade 60 giorni dopo (es. fattura del 15 marzo: partenza 31 marzo, scadenza 30 maggio)",
+						"La data di partenza è la data della fattura, i 60 giorni decorrono da quella e il pagamento avviene alla fine del mese in cui cadono (es. fattura del 15 marzo: 60 giorni = 14 maggio, fine mese = 31 maggio)"
+					]
+				}
+			]
+		},
+		"error": null,
+		"raw": "\n\n```json\n{\n  \"contract\": {\n    \"title\": \"Contratto di consulenza tecnica Rep. n. 2/2025\",\n    \"clientLegalName\": \"Nord Meccanica S.p.A.\",\n    \"clientTaxId\": \"01987654321\",\n    \"startsOn\": \"2025-02-01\",\n    \"endsOn\": \"2027-01-31\",\n    \"renewalType\": null,\n    \"renewalNoticeDays\": 60,\n    \"terminationNoticeDays\": 30,\n    \"paymentTerms\": {\"kind\": \"day_of_month\", \"day\": 0, \"monthOffset\": 2},\n    \"currency\": \"EUR\",\n    \"requiresPriorApproval\": true,\n    \"expensePolicy\": {\"kind\": \"reimbursed_with_cap\", \"capAmount\": 300}\n  },\n  \"rateCards\": [\n    {\"kind\": \"daily\", \"amount\": 580, \"unit\": \"day\", \"validFrom\": \"2025-02-01\", \"validTo\": \"2026-03-31\", \"allowedFractions\": [0.5]},\n    {\"kind\": \"daily\", \"amount\": 620, \"unit\": \"day\", \"validFrom\": \"2026-04-01\", \"validTo\": null, \"allowedFractions\": [0.5]}\n  ],\n  \"flags\": [\n    {\n      \"field\": \"renewalType\",\n      \"clause\": \"Art. 4 e Art. 9\",\n      \"why\": \"L'Art. 4 prevede il rinnovo tacito per 12 mesi salvo disdetta con 60 giorni di preavviso. L'Art. 9 dice espressamente che il contratto cessa automaticamente alla scadenza senza possibilità di rinnovo tacito o automatico, e che ogni prosecuzione richiede un nuovo accordo scritto. Le due clausole sono in contraddizione diretta.\",\n      \"readings\": [\n        \"tacit: il rinnovo tacito dell'Art. 4 prevale come clausola specifica sulla durata, e l'Art. 9 si limita a ribadire che oltre il periodo rinnovato non c'è ulteriore automatismo\",\n        \"none: l'Art. 9, essendo successivo e più restrittivo, deroga all'Art. 4 e il contratto cessa il 31 gennaio 2027 senza alcun rinnovo\"\n      ]\n    },\n    {\n      \"field\": \"paymentTerms\",\n      \"clause\": \"Art. 6\",\n      \"why\": \"La formula '60 giorni data fattura fine mese' è un termine commerciale italiano che si presta a due letture sul giorno esatto di scadenza del pagamento.\",\n      \"readings\": [\n        \"La data di partenza è la fine del mese in cui la fattura è emessa, e il pagamento scade 60 giorni dopo (es. fattura del 15 marzo: partenza 31 marzo, scadenza 30 maggio)\",\n        \"La data di partenza è la data della fattura, i 60 giorni decorrono da quella e il pagamento avviene alla fine del mese in cui cadono (es. fattura del 15 marzo: 60 giorni = 14 maggio, fine mese = 31 maggio)\"\n      ]\n    }\n  ]\n}\n```"
+	}
+}

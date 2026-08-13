@@ -1,0 +1,173 @@
+{
+	"invoice-1-outgoing-ordinario.pdf": {
+		"seconds": 17.3,
+		"parsed": {
+			"invoice": {
+				"direction": "outgoing",
+				"number": "2026/018",
+				"issueDate": "2026-08-05",
+				"dueDate": "2026-09-04",
+				"documentType": "invoice",
+				"currency": "EUR",
+				"counterpartyLegalName": "Vetraria del Garda S.p.A.",
+				"counterpartyTaxId": "02871450230",
+				"taxableAmountMinor": 440500,
+				"taxAmountMinor": 96910,
+				"totalMinor": 537410,
+				"taxTreatmentCode": null,
+				"statutoryReference": {
+					"text": "Operazione soggetta a ritenuta d'acconto ai sensi dell'art. 25 D.P.R. 29 settembre 1973, n. 600.",
+					"language": "it"
+				},
+				"stampDutyMinor": null,
+				"paymentMethod": "bonifico bancario",
+				"iban": "IT60X0542811101000000123456"
+			},
+			"lines": [
+				{
+					"description": "Attività di consulenza — luglio 2026 — giornate intere approvate",
+					"quantity": 6,
+					"unitPriceMinor": 65000,
+					"amountMinor": 390000,
+					"taxRate": 22
+				},
+				{
+					"description": "Attività di consulenza — luglio 2026 — mezza giornata approvata",
+					"quantity": 1,
+					"unitPriceMinor": 32500,
+					"amountMinor": 32500,
+					"taxRate": 22
+				},
+				{
+					"description": "Rimborso spese di trasferta (vitto, trasporto) — luglio 2026, come da documentazione allegata, autorizzate dal Cliente",
+					"quantity": 1,
+					"unitPriceMinor": 18000,
+					"amountMinor": 18000,
+					"taxRate": 22
+				}
+			],
+			"flags": []
+		},
+		"error": null,
+		"raw": "```json\n{\n  \"invoice\": {\n    \"direction\": \"outgoing\",\n    \"number\": \"2026/018\",\n    \"issueDate\": \"2026-08-05\",\n    \"dueDate\": \"2026-09-04\",\n    \"documentType\": \"invoice\",\n    \"currency\": \"EUR\",\n    \"counterpartyLegalName\": \"Vetraria del Garda S.p.A.\",\n    \"counterpartyTaxId\": \"02871450230\",\n    \"taxableAmountMinor\": 440500,\n    \"taxAmountMinor\": 96910,\n    \"totalMinor\": 537410,\n    \"taxTreatmentCode\": null,\n    \"statutoryReference\": {\n      \"text\": \"Operazione soggetta a ritenuta d'acconto ai sensi dell'art. 25 D.P.R. 29 settembre 1973, n. 600.\",\n      \"language\": \"it\"\n    },\n    \"stampDutyMinor\": null,\n    \"paymentMethod\": \"bonifico bancario\",\n    \"iban\": \"IT60X0542811101000000123456\"\n  },\n  \"lines\": [\n    {\n      \"description\": \"Attività di consulenza — luglio 2026 — giornate intere approvate\",\n      \"quantity\": 6,\n      \"unitPriceMinor\": 65000,\n      \"amountMinor\": 390000,\n      \"taxRate\": 22\n    },\n    {\n      \"description\": \"Attività di consulenza — luglio 2026 — mezza giornata approvata\",\n      \"quantity\": 1,\n      \"unitPriceMinor\": 32500,\n      \"amountMinor\": 32500,\n      \"taxRate\": 22\n    },\n    {\n      \"description\": \"Rimborso spese di trasferta (vitto, trasporto) — luglio 2026, come da documentazione allegata, autorizzate dal Cliente\",\n      \"quantity\": 1,\n      \"unitPriceMinor\": 18000,\n      \"amountMinor\": 18000,\n      \"taxRate\": 22\n    }\n  ],\n  \"flags\": []\n}\n```"
+	},
+	"invoice-2-outgoing-forfettario.pdf": {
+		"seconds": 14.4,
+		"parsed": {
+			"invoice": {
+				"direction": "outgoing",
+				"number": "2026/019",
+				"issueDate": "2026-08-01",
+				"dueDate": "2026-08-16",
+				"documentType": "invoice",
+				"currency": "EUR",
+				"counterpartyLegalName": "Ottavia Media Group S.r.l.",
+				"counterpartyTaxId": "04521367890",
+				"taxableAmountMinor": 240000,
+				"taxAmountMinor": 0,
+				"totalMinor": 240200,
+				"taxTreatmentCode": null,
+				"statutoryReference": {
+					"text": "Operazione effettuata ai sensi dell'art. 1, commi 54–89, della Legge 23 dicembre 2014, n. 190 e successive modificazioni (regime forfettario) — operazione non soggetta ad IVA ai sensi dell'art. 1, comma 58, L. 190/2014, e non soggetta a ritenuta d'acconto ai sensi dell'art. 1, comma 67, L. 190/2014.",
+					"language": "it"
+				},
+				"stampDutyMinor": 200,
+				"paymentMethod": "bonifico bancario, a 15 giorni data fattura",
+				"iban": "IT60X0542811101000000123456"
+			},
+			"lines": [
+				{
+					"description": "Canone di consulenza strategica in comunicazione e media relations — agosto 2026 (Contratto Rep. n. 1/2026 del 15/12/2025)",
+					"quantity": 1,
+					"unitPriceMinor": 240000,
+					"amountMinor": 240000,
+					"taxRate": 0
+				}
+			],
+			"flags": []
+		},
+		"error": null,
+		"raw": "```json\n{\n  \"invoice\": {\n    \"direction\": \"outgoing\",\n    \"number\": \"2026/019\",\n    \"issueDate\": \"2026-08-01\",\n    \"dueDate\": \"2026-08-16\",\n    \"documentType\": \"invoice\",\n    \"currency\": \"EUR\",\n    \"counterpartyLegalName\": \"Ottavia Media Group S.r.l.\",\n    \"counterpartyTaxId\": \"04521367890\",\n    \"taxableAmountMinor\": 240000,\n    \"taxAmountMinor\": 0,\n    \"totalMinor\": 240200,\n    \"taxTreatmentCode\": null,\n    \"statutoryReference\": {\n      \"text\": \"Operazione effettuata ai sensi dell'art. 1, commi 54–89, della Legge 23 dicembre 2014, n. 190 e successive modificazioni (regime forfettario) — operazione non soggetta ad IVA ai sensi dell'art. 1, comma 58, L. 190/2014, e non soggetta a ritenuta d'acconto ai sensi dell'art. 1, comma 67, L. 190/2014.\",\n      \"language\": \"it\"\n    },\n    \"stampDutyMinor\": 200,\n    \"paymentMethod\": \"bonifico bancario, a 15 giorni data fattura\",\n    \"iban\": \"IT60X0542811101000000123456\"\n  },\n  \"lines\": [\n    {\n      \"description\": \"Canone di consulenza strategica in comunicazione e media relations — agosto 2026 (Contratto Rep. n. 1/2026 del 15/12/2025)\",\n      \"quantity\": 1,\n      \"unitPriceMinor\": 240000,\n      \"amountMinor\": 240000,\n      \"taxRate\": 0\n    }\n  ],\n  \"flags\": []\n}\n```"
+	},
+	"invoice-3-outgoing-rounding-mixed.pdf": {
+		"seconds": 13.4,
+		"parsed": {
+			"invoice": {
+				"direction": "outgoing",
+				"number": "2026/020",
+				"issueDate": "2026-08-04",
+				"dueDate": "2026-09-03",
+				"documentType": "invoice",
+				"currency": "EUR",
+				"counterpartyLegalName": "Bramante Costruzioni S.r.l.",
+				"counterpartyTaxId": "03456781098",
+				"taxableAmountMinor": 266000,
+				"taxAmountMinor": 58520,
+				"totalMinor": 324521,
+				"taxTreatmentCode": null,
+				"statutoryReference": {
+					"text": "Operazione soggetta a ritenuta d'acconto ai sensi dell'art. 25 D.P.R. 29 settembre 1973, n. 600",
+					"language": "it"
+				},
+				"stampDutyMinor": null,
+				"paymentMethod": "bonifico bancario",
+				"iban": "IT60X0542811101000000123456"
+			},
+			"lines": [
+				{
+					"description": "Assistenza tecnica continuativa — pianificazione cantieri e controllo di gestione — luglio 2026 (rendiconto ore allegato)",
+					"quantity": 28,
+					"unitPriceMinor": 9500,
+					"amountMinor": 266000,
+					"taxRate": 22
+				}
+			],
+			"flags": [
+				{
+					"field": "totalMinor",
+					"why": "Il totale stampato (€ 3.245,21 = 324521) differisce di +1 centesimo dalla somma imponibile + IVA (266000 + 58520 = 324520). Il documento stesso segnala l'arrotondamento di +€ 0,01. Riportato il valore stampato."
+				}
+			]
+		},
+		"error": null,
+		"raw": "```json\n{\n  \"invoice\": {\n    \"direction\": \"outgoing\",\n    \"number\": \"2026/020\",\n    \"issueDate\": \"2026-08-04\",\n    \"dueDate\": \"2026-09-03\",\n    \"documentType\": \"invoice\",\n    \"currency\": \"EUR\",\n    \"counterpartyLegalName\": \"Bramante Costruzioni S.r.l.\",\n    \"counterpartyTaxId\": \"03456781098\",\n    \"taxableAmountMinor\": 266000,\n    \"taxAmountMinor\": 58520,\n    \"totalMinor\": 324521,\n    \"taxTreatmentCode\": null,\n    \"statutoryReference\": {\n      \"text\": \"Operazione soggetta a ritenuta d'acconto ai sensi dell'art. 25 D.P.R. 29 settembre 1973, n. 600\",\n      \"language\": \"it\"\n    },\n    \"stampDutyMinor\": null,\n    \"paymentMethod\": \"bonifico bancario\",\n    \"iban\": \"IT60X0542811101000000123456\"\n  },\n  \"lines\": [\n    {\n      \"description\": \"Assistenza tecnica continuativa — pianificazione cantieri e controllo di gestione — luglio 2026 (rendiconto ore allegato)\",\n      \"quantity\": 28,\n      \"unitPriceMinor\": 9500,\n      \"amountMinor\": 266000,\n      \"taxRate\": 22\n    }\n  ],\n  \"flags\": [\n    {\n      \"field\": \"totalMinor\",\n      \"why\": \"Il totale stampato (€ 3.245,21 = 324521) differisce di +1 centesimo dalla somma imponibile + IVA (266000 + 58520 = 324520). Il documento stesso segnala l'arrotondamento di +€ 0,01. Riportato il valore stampato.\"\n    }\n  ]\n}\n```"
+	},
+	"invoice-4-incoming-reverse-charge.pdf": {
+		"seconds": 11.8,
+		"parsed": {
+			"invoice": {
+				"direction": "incoming",
+				"number": "NF-2026-08217",
+				"issueDate": "2026-08-03",
+				"dueDate": "2026-08-03",
+				"documentType": "invoice",
+				"currency": "EUR",
+				"counterpartyLegalName": "NimbusFlow Technologies Ltd",
+				"counterpartyTaxId": "IE9825613S",
+				"taxableAmountMinor": 46800,
+				"taxAmountMinor": 0,
+				"totalMinor": 46800,
+				"taxTreatmentCode": null,
+				"statutoryReference": {
+					"text": "Reverse charge: VAT to be accounted for by the recipient under Article 44 of Council Directive 2006/112/EC and Article 7-ter, D.P.R. 633/1972. This supply is not subject to Irish VAT.",
+					"language": "en"
+				},
+				"stampDutyMinor": null,
+				"paymentMethod": "credit card on file (automatic)",
+				"iban": null
+			},
+			"lines": [
+				{
+					"description": "NimbusFlow Pro plan — annual subscription, project management software (Aug 2026 – Jul 2027)",
+					"quantity": 1,
+					"unitPriceMinor": 46800,
+					"amountMinor": 46800,
+					"taxRate": 0
+				}
+			],
+			"flags": []
+		},
+		"error": null,
+		"raw": "\n\n```json\n{\n  \"invoice\": {\n    \"direction\": \"incoming\",\n    \"number\": \"NF-2026-08217\",\n    \"issueDate\": \"2026-08-03\",\n    \"dueDate\": \"2026-08-03\",\n    \"documentType\": \"invoice\",\n    \"currency\": \"EUR\",\n    \"counterpartyLegalName\": \"NimbusFlow Technologies Ltd\",\n    \"counterpartyTaxId\": \"IE9825613S\",\n    \"taxableAmountMinor\": 46800,\n    \"taxAmountMinor\": 0,\n    \"totalMinor\": 46800,\n    \"taxTreatmentCode\": null,\n    \"statutoryReference\": {\n      \"text\": \"Reverse charge: VAT to be accounted for by the recipient under Article 44 of Council Directive 2006/112/EC and Article 7-ter, D.P.R. 633/1972. This supply is not subject to Irish VAT.\",\n      \"language\": \"en\"\n    },\n    \"stampDutyMinor\": null,\n    \"paymentMethod\": \"credit card on file (automatic)\",\n    \"iban\": null\n  },\n  \"lines\": [\n    {\n      \"description\": \"NimbusFlow Pro plan — annual subscription, project management software (Aug 2026 – Jul 2027)\",\n      \"quantity\": 1,\n      \"unitPriceMinor\": 46800,\n      \"amountMinor\": 46800,\n      \"taxRate\": 0\n    }\n  ],\n  \"flags\": []\n}\n```"
+	}
+}

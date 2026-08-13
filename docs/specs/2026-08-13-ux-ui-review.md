@@ -161,6 +161,11 @@ These are defects with or without a redesign. Ranked by what they cost.
 
 ## 5. The two decisions
 
+> **Decided 2026-08-13: direction B2, "Ledger with confidence".** IBM Plex Sans
+> for the interface and IBM Plex Mono for money, dates and reference numbers; a
+> real surface hierarchy; 10px radius, soft elevation, 44px rows. The mockup
+> renders in it by default. Decision A is still open.
+
 Everything else follows from these. They are independent.
 
 ### Decision A — how far the redesign goes

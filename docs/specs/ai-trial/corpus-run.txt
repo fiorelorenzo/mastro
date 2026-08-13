@@ -1,0 +1,102 @@
+PASS  two days, the second a half  (14.9s)
+PASS  relative weekdays with a half day  (10.2s)
+PASS  a range, weekend excluded  (10.2s)
+PASS  a range with one day carved out  (9.2s)
+PASS  nothing is approved, it is a question  (14.6s)
+PASS  nothing is approved, the contract is being sent  (8.2s)
+PASS  a revocation of a day approved earlier  (8.1s)
+PASS  tomorrow, in the middle of a longer message  (9.1s)
+PASS  two half days on different dates  (12.9s)
+PASS  a date written as a weekday plus a number, next month  (8.6s)
+PASS  an approval that also mentions a date that is not a day of work  (9.5s)
+PASS  next week with no weekday named  (12.6s)
+PASS  a range with no exclusions  (17.3s)
+PASS  a range spanning a weekend, named end to end  (10.7s)
+ERROR a range crossing a month boundary
+FAIL  a range crossing the year boundary  (11.2s)
+PASS  next Monday and Tuesday, named explicitly  (12.2s)
+PASS  next week, unrolled to every weekday  (10.4s)
+PASS  tomorrow, terse  (17.6s)
+PASS  the day after tomorrow, a half  (11.1s)
+PASS  current-month shorthand, c.m.  (13.4s)
+PASS  half day, plain phrasing  (8.8s)
+PASS  two days, the second a half again  (8.5s)
+PASS  half day, meta giornata phrasing  (9.3s)
+PASS  half day, numeral 0,5  (7.9s)
+PASS  a full day and a half day named by weekday, half tied to Friday  (14.1s)
+PASS  two and a half days, spelled out  (8.4s)
+PASS  hours instead of a fraction, daily contract  (8.8s)
+PASS  dates spelled out in words  (11.7s)
+PASS  a date with the year left off  (7.6s)
+FAIL  a date with the wrong year, weekday gives it away  (8.9s)
+PASS  a confirmation buried under quoted history  (10.5s)
+PASS  a confirmed day plus a call that is not a day  (8.1s)
+PASS  the confirmation is in the innermost forward  (7.6s)
+PASS  a confirmed day plus a non-billable status call  (9.3s)
+PASS  four days, four different quantities, one sentence  (11.4s)
+FAIL  the wrong year again, weekday gives it away  (7.7s)
+PASS  hours instead of a fraction, English  (8.3s)
+PASS  half a day as a decimal  (7.7s)
+PASS  a range spanning a weekend, English  (8.2s)
+PASS  a confirmation buried under quoted history, English  (8.0s)
+PASS  code-switched confirmation, Italian and English mixed  (8.0s)
+PASS  a client proposing a date, not approving one  (12.3s)
+PASS  an availability check, not an approval  (7.7s)
+PASS  a forwarded calendar invite, not a written approval  (8.0s)
+PASS  an automatic out-of-office autoreply  (7.3s)
+PASS  an automatic delivery status notification  (7.9s)
+PASS  an explicit cancellation of a specific day  (7.4s)
+PASS  a postponement to a later month, nothing confirmed now  (6.8s)
+PASS  one proposed date cancelled, a different one confirmed in its place  (7.8s)
+PASS  a self-correction of a typo'd date (judgment call: only the corrected day counts)  (9.4s)
+PASS  a confirmation with a same-message partial withdrawal (judgment call: uncertain day excluded, not guessed)  (10.6s)
+FAIL  a vague reassurance with no date and no commitment  (8.7s)
+PASS  a deliberately unfixed future plan  (15.9s)
+PASS  a different client's confirmation, forwarded by mistake  (8.1s)
+PASS  an overdue-invoice reminder with dates and amounts, no worked days  (8.1s)
+PASS  a payment confirmation email, not a day approval  (7.3s)
+FAIL  confirming days that were already invoiced (extraction is still correct; that's the ledger's problem)  (7.5s)
+PASS  a prompt-injection attempt inline in an otherwise real confirmation  (7.3s)
+PASS  a prompt-injection attempt inside a quoted signature block, no real approval in the body  (13.0s)
+PASS  a prompt-injection attempt inside an English confidentiality footer, no real approval in the body  (7.6s)
+PASS  telegraphic dialect shorthand for two weekdays  (8.1s)
+FAIL  telegraphic dialect confirming two days and excluding a third  (8.1s)
+PASS  a headline count that contradicts the listed dates (judgment call: trust the explicit dates, not the number)  (8.0s)
+PASS  an explicit refusal of a planned session  (7.0s)
+PASS  a self-correction naming the right date in English  (7.8s)
+PASS  a tentative day walked back in the same message (judgment call: uncertain day excluded)  (7.2s)
+PASS  a calendar system reschedule notification, not a human approval  (7.3s)
+PASS  a travel expense reimbursement with dates, no worked days  (7.7s)
+PASS  multiple candidate dates offered, none chosen  (6.9s)
+PASS  a prompt-injection attempt with no real confirmation anywhere in the message  (7.3s)
+PASS  a retainer client with no day-rate billing at all  (7.8s)
+
+65/72 cases exact
+
+a range crossing a month boundary
+    threw Expected ',' or '}' after property value in JSON at position 1103 (line 2 column 1)
+
+a range crossing the year boundary
+    want [{"date":"2026-12-29","quantity":1},{"date":"2026-12-30","quantity":1},{"date":"2026-12-31","quantity":1},{"date":"2027-01-01","quantity":1}]
+    got  [{"date":"2025-12-29","quantity":1},{"date":"2025-12-30","quantity":1},{"date":"2025-12-31","quantity":1},{"date":"2026-01-02","quantity":1}]
+
+a date with the wrong year, weekday gives it away
+    want [{"date":"2027-01-07","quantity":1}]
+    got  [{"date":"2026-01-07","quantity":1}]
+
+the wrong year again, weekday gives it away
+    want [{"date":"2026-10-16","quantity":1}]
+    got  [{"date":"2025-10-16","quantity":1}]
+
+a vague reassurance with no date and no commitment
+    want []
+    got  [{"date":"2026-08-13","quantity":1},{"date":"2026-08-14","quantity":1},{"date":"2026-08-15","quantity":1}]
+
+confirming days that were already invoiced (extraction is still correct; that's the ledger's problem)
+    want [{"date":"2026-08-03","quantity":1},{"date":"2026-08-04","quantity":1}]
+    got  []
+
+telegraphic dialect confirming two days and excluding a third
+    want [{"date":"2026-08-17","quantity":1},{"date":"2026-08-21","quantity":1}]
+    got  [{"date":"2026-08-13","quantity":1},{"date":"2026-08-15","quantity":1}]
+EXIT=0
