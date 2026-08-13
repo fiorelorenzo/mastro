@@ -30,6 +30,7 @@ const consequence = { en: 'Regime lost', it: 'Regime perso' };
 function contractRow(overrides: Partial<ContractDeadlineRow> = {}): ContractDeadlineRow {
 	return {
 		contractId: 'contract-1',
+		clientId: 'client-1',
 		contractTitle: 'Consulting agreement',
 		clientLegalName: 'Acme Srl',
 		endsOn: '2026-09-06',
@@ -146,6 +147,7 @@ test('worked_without_approval is always critical', () => {
 		{
 			workUnitId: 'wu-1',
 			contractId: 'c-1',
+			clientId: 'client-1',
 			contractTitle: 'Consulting agreement',
 			clientLegalName: 'Acme Srl',
 			date: '2026-08-01',
@@ -169,6 +171,7 @@ function approvalRow(daysAgo: number) {
 	return {
 		approvalId: 'approval-1',
 		contractId: 'contract-1',
+		clientId: 'client-1',
 		contractTitle: 'Consulting agreement',
 		clientLegalName: 'Acme Srl',
 		receivedAt
@@ -249,6 +252,7 @@ test('billable_period_closed never fires for on_completion contracts', () => {
 	const rows = [
 		{
 			contractId: 'c-1',
+			clientId: 'client-1',
 			contractTitle: 'One-off engagement',
 			clientLegalName: 'Acme Srl',
 			invoicingCadence: 'on_completion' as const,
@@ -262,6 +266,7 @@ test('billable_period_closed does not fire while every eligible day is still ins
 	const rows = [
 		{
 			contractId: 'c-1',
+			clientId: 'client-1',
 			contractTitle: 'Monthly retainer',
 			clientLegalName: 'Acme Srl',
 			invoicingCadence: 'monthly' as const,
@@ -275,6 +280,7 @@ test('billable_period_closed fires the moment a period boundary passes over an u
 	const rows = [
 		{
 			contractId: 'c-1',
+			clientId: 'client-1',
 			contractTitle: 'Monthly retainer',
 			clientLegalName: 'Acme Srl',
 			invoicingCadence: 'monthly' as const,
@@ -290,6 +296,7 @@ test('billable_period_closed severity escalates the longer the closed period sit
 	const rows = () => [
 		{
 			contractId: 'c-1',
+			clientId: 'client-1',
 			contractTitle: 'Monthly retainer',
 			clientLegalName: 'Acme Srl',
 			invoicingCadence: 'monthly' as const,
@@ -495,6 +502,8 @@ test('mirror_failure fires critical with the recorded detail on an explicit fail
 		[
 			{
 				documentId: 'doc-1',
+				contractId: 'contract-1',
+				clientId: 'client-1',
 				contractTitle: 'Consulting agreement',
 				clientLegalName: 'Acme Srl',
 				createdAt: new Date('2026-08-07T11:30:00.000Z'),
@@ -519,6 +528,8 @@ test('mirror_failure fires serious once a document has sat unmirrored, with no a
 		[
 			{
 				documentId: 'doc-1',
+				contractId: 'contract-1',
+				clientId: 'client-1',
 				contractTitle: 'Consulting agreement',
 				clientLegalName: 'Acme Srl',
 				createdAt: new Date('2026-08-06T09:00:00.000Z'), // 27h ago
@@ -535,6 +546,8 @@ test('mirror_failure is silent within the grace period when nothing has been att
 		[
 			{
 				documentId: 'doc-1',
+				contractId: 'contract-1',
+				clientId: 'client-1',
 				contractTitle: 'Consulting agreement',
 				clientLegalName: 'Acme Srl',
 				createdAt: new Date('2026-08-07T10:00:00.000Z'), // 2h ago

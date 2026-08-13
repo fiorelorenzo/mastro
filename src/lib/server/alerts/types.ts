@@ -48,6 +48,7 @@ export type AlertDetail =
 	| {
 			readonly type: 'contract_expiring';
 			readonly contractId: string;
+			readonly clientId: string;
 			readonly contractTitle: string;
 			readonly clientLegalName: string;
 			readonly endsOn: string;
@@ -56,6 +57,7 @@ export type AlertDetail =
 	| {
 			readonly type: 'renewal_window_open';
 			readonly contractId: string;
+			readonly clientId: string;
 			readonly contractTitle: string;
 			readonly clientLegalName: string;
 			readonly endsOn: string;
@@ -66,6 +68,7 @@ export type AlertDetail =
 			readonly type: 'worked_without_approval';
 			readonly workUnitId: string;
 			readonly contractId: string;
+			readonly clientId: string;
 			readonly contractTitle: string;
 			readonly clientLegalName: string;
 			readonly date: string;
@@ -75,6 +78,7 @@ export type AlertDetail =
 			readonly type: 'approval_unactioned';
 			readonly approvalId: string;
 			readonly contractId: string;
+			readonly clientId: string;
 			readonly contractTitle: string;
 			readonly clientLegalName: string;
 			readonly receivedAt: string;
@@ -94,6 +98,7 @@ export type AlertDetail =
 	| {
 			readonly type: 'billable_period_closed';
 			readonly contractId: string;
+			readonly clientId: string;
 			readonly contractTitle: string;
 			readonly clientLegalName: string;
 			readonly periodEnd: string;
@@ -126,6 +131,8 @@ export type AlertDetail =
 	| {
 			readonly type: 'mirror_failure';
 			readonly documentId: string;
+			readonly contractId: string;
+			readonly clientId: string;
 			readonly contractTitle: string;
 			readonly clientLegalName: string;
 			readonly reason: 'failure' | 'stale';

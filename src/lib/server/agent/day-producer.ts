@@ -19,6 +19,7 @@ import { createProposal, type ProposalRow } from '$lib/server/repositories/propo
 import type { DbExecutor } from '$lib/server/db';
 import type { ProposalCandidate } from '$lib/server/runner/types';
 import {
+	dayConfidence,
 	dayExtractionInstructions,
 	parseExtractedDays,
 	validateDays,
@@ -88,7 +89,7 @@ export async function proposeDaysFromMessage(
  * it on disk, so re-calling the model to get it back would be absurd.
  */
 export async function writeDayProposals(
-	source: Omit<DayProposalSource, 'messageDate'>,
+	source: DayProposalSource,
 	candidate: ProposalCandidate,
 	executor?: DbExecutor
 ): Promise<DayProposalOutcome> {
@@ -103,6 +104,15 @@ export async function writeDayProposals(
 
 	const proposals: ProposalRow[] = [];
 	for (const day of accepted) {
+		// The model's own confidence and reason, folded together with the
+		// year-rollover guard's own (#244): the guard only ever lowers, so a
+		// day it caught can never end up looking as settled as the model
+		// itself believed.
+		const { confidence, confidenceReason } = dayConfidence(
+			day,
+			candidate.confidence,
+			candidate.confidenceReason
+		);
 		proposals.push(
 			await createProposal(
 				{
@@ -124,7 +134,8 @@ export async function writeDayProposals(
 					// a Friday should not have to read the sentence about
 					// Thursday to do it.
 					excerpt: day.excerpt,
-					confidence: candidate.confidence
+					confidence,
+					confidenceReason
 				},
 				executor
 			)
@@ -134,7 +145,7 @@ export async function writeDayProposals(
 }
 
 async function extractionContext(
-	source: Omit<DayProposalSource, 'messageDate'>,
+	source: DayProposalSource,
 	executor?: DbExecutor
 ): Promise<DayExtractionContext> {
 	const rateCards = executor
@@ -149,6 +160,7 @@ async function extractionContext(
 	return {
 		startsOn: source.startsOn,
 		endsOn: source.endsOn,
+		messageDate: source.messageDate,
 		allowedQuantities,
 		content: source.content
 	};

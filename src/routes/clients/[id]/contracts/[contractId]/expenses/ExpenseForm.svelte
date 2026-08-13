@@ -1,12 +1,14 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
+	import SourceDocument from '$lib/design/SourceDocument.svelte';
+	import type { DocumentProvenanceValue } from '$lib/design/source-document';
 	import type { ExpenseFormValues } from '$lib/server/repositories/expense-form';
 
 	let {
 		values,
 		errors = {},
 		submitLabel,
-		existingReceiptName = null
+		existingReceipt = null
 	}: {
 		values: ExpenseFormValues;
 		errors?: Record<string, string>;
@@ -14,7 +16,12 @@
 		/** The receipt already on file, if any — the upload field is only
 		 * offered when there is none yet, since a document is immutable
 		 * once ingested (#49) and this form has no "replace" action. */
-		existingReceiptName?: string | null;
+		existingReceipt?: {
+			id: string;
+			originalName: string;
+			provenance: DocumentProvenanceValue;
+			createdAt: string;
+		} | null;
 	} = $props();
 
 	let preAuthorised = $state(values.preAuthorised);
@@ -58,10 +65,8 @@
 
 	<div class="flex flex-col gap-1 text-sm">
 		{m.expense_form_receipt_label()}
-		{#if existingReceiptName}
-			<p class="text-sm opacity-70">
-				{m.expense_form_receipt_on_file({ name: existingReceiptName })}
-			</p>
+		{#if existingReceipt}
+			<SourceDocument document={existingReceipt} />
 		{:else}
 			<input type="file" name="receipt" class="border px-2 py-1" />
 			<label class="flex items-center gap-2 text-sm">

@@ -6,7 +6,7 @@ import { afterAll, expect, test } from 'vitest';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client } from '../../db';
 import { fiscalProfile } from '../../db/schema/fiscal';
-import { evaluateCharges } from '../pack';
+import { evaluateCharges, evaluateInvoiceCharges, resolveDefaultTaxTreatment } from '../pack';
 import { buildRegistry, defaultRegistry, lookupPack } from '../registry';
 import { resolvePackAt } from '../resolve';
 import { resolveActiveFiscalPack } from '../profile';
@@ -74,6 +74,22 @@ test('both charges apply together on a large invoice, each computed independentl
 	expect(evaluated.map((e) => e.charge.id).sort()).toEqual(
 		['it-flat-rate-social-security-surcharge', 'it-flat-rate-virtual-stamp-duty'].sort()
 	);
+});
+
+test('the default treatment is the unconditional exempt code, VAT-exempt, with its own statutory text (#216)', () => {
+	const treatment = resolveDefaultTaxTreatment(itFlatRatePack);
+	expect(treatment?.code).toBe('N2.2');
+	expect(treatment?.taxRate).toBe(0);
+	expect(treatment?.legalText?.language).toBe('it');
+	expect(treatment?.legalText?.text).toBe(
+		"Operazione senza applicazione dell'IVA, ai sensi dell'articolo 1, comma 58, della legge 23 dicembre 2014, n. 190"
+	);
+});
+
+test('evaluateInvoiceCharges sums the virtual stamp duty and the INPS surcharge into their own named slots', () => {
+	const result = evaluateInvoiceCharges(itFlatRatePack, { invoiceTotal: 50_000 });
+	expect(result.stampDuty).toBe(200);
+	expect(result.socialCharge).toBe(2_000);
 });
 
 test('the pack ships registered by default, resolvable by id and version', () => {

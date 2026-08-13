@@ -1,16 +1,13 @@
 import { getLocale } from '$lib/paraglide/runtime';
+import { alertResolution } from '$lib/server/alerts/actions';
 import { listActiveAlerts } from '$lib/server/alerts/engine';
 import { alertMessage } from '$lib/server/alerts/render';
 import { acknowledgeAlert } from '$lib/server/alerts/state';
 import type { Actions, PageServerLoad } from './$types';
 
-function todayIso(): string {
-	return new Date().toISOString().slice(0, 10);
-}
-
 export const load: PageServerLoad = async () => {
 	const locale = getLocale();
-	const alerts = await listActiveAlerts(todayIso());
+	const alerts = await listActiveAlerts(new Date().toISOString().slice(0, 10));
 	return {
 		alerts: alerts.map((alert) => ({
 			key: alert.key,
@@ -19,7 +16,8 @@ export const load: PageServerLoad = async () => {
 			acknowledged: alert.acknowledged,
 			acknowledgedAt: alert.acknowledgedAt,
 			acknowledgedBy: alert.acknowledgedBy,
-			...alertMessage(alert, locale)
+			...alertMessage(alert, locale),
+			...alertResolution(alert.detail, locale)
 		}))
 	};
 };
@@ -33,7 +31,7 @@ export const actions: Actions = {
 		const key = String(formData.get('key') ?? '');
 		if (!key) return;
 
-		const alerts = await listActiveAlerts(todayIso());
+		const alerts = await listActiveAlerts(new Date().toISOString().slice(0, 10));
 		const alert = alerts.find((candidate) => candidate.key === key);
 		if (!alert) return;
 

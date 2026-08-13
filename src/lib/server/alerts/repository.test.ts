@@ -146,15 +146,16 @@ async function insertDocument(tx: DbExecutor, contractId: string) {
 
 // ── fetchContractsForDeadlineAlerts ─────────────────────────────────────
 
-test('fetchContractsForDeadlineAlerts returns only active contracts with an end date', async () => {
+test('fetchContractsForDeadlineAlerts returns only active contracts with an end date, with its clientId', async () => {
 	await inRolledBackTransaction(async (tx) => {
-		const { contractRow: withEnd } = await insertContract(tx, { endsOn: '2026-12-31' });
+		const { clientRow, contractRow: withEnd } = await insertContract(tx, { endsOn: '2026-12-31' });
 		await insertContract(tx, { endsOn: null }); // no end date: no deadline to speak of
 		await insertContract(tx, { endsOn: '2026-12-31', status: 'draft' }); // not active yet
 
 		const rows = await fetchContractsForDeadlineAlerts(tx);
 		expect(rows).toHaveLength(1);
 		expect(rows[0].contractId).toBe(withEnd.id);
+		expect(rows[0].clientId).toBe(clientRow.id);
 	});
 });
 
@@ -162,7 +163,7 @@ test('fetchContractsForDeadlineAlerts returns only active contracts with an end 
 
 test('fetchWorkedWithoutApprovalRows returns a day currently at risk and drops one recovered by a late approval', async () => {
 	await inRolledBackTransaction(async (tx) => {
-		const { contractRow } = await insertContract(tx, { requiresPriorApproval: true });
+		const { clientRow, contractRow } = await insertContract(tx, { requiresPriorApproval: true });
 
 		const atRisk = await createWorkUnit(
 			{
@@ -204,6 +205,7 @@ test('fetchWorkedWithoutApprovalRows returns a day currently at risk and drops o
 		const ids = rows.map((r) => r.workUnitId);
 		expect(ids).toContain(atRisk.id);
 		expect(ids).not.toContain(recovered.id);
+		expect(rows.find((r) => r.workUnitId === atRisk.id)?.clientId).toBe(clientRow.id);
 	});
 });
 
@@ -211,7 +213,7 @@ test('fetchWorkedWithoutApprovalRows returns a day currently at risk and drops o
 
 test('fetchApprovalUnactionedRows returns an approval with no linked day and drops one that is linked', async () => {
 	await inRolledBackTransaction(async (tx) => {
-		const { contractRow } = await insertContract(tx);
+		const { clientRow, contractRow } = await insertContract(tx);
 		const unactioned = await insertApproval(tx, contractRow.id);
 		const actioned = await insertApproval(tx, contractRow.id);
 		// `approved` is reached, never inserted (drizzle/0012): a day starts at
@@ -240,6 +242,7 @@ test('fetchApprovalUnactionedRows returns an approval with no linked day and dro
 		const ids = rows.map((r) => r.approvalId);
 		expect(ids).toContain(unactioned.id);
 		expect(ids).not.toContain(actioned.id);
+		expect(rows.find((r) => r.approvalId === unactioned.id)?.clientId).toBe(clientRow.id);
 	});
 });
 
@@ -247,7 +250,7 @@ test('fetchApprovalUnactionedRows returns an approval with no linked day and dro
 
 test('fetchContractsForBillablePeriod only returns a periodic contract that actually has unbilled eligible days', async () => {
 	await inRolledBackTransaction(async (tx) => {
-		const { contractRow: withEligible } = await insertContract(tx, {
+		const { clientRow, contractRow: withEligible } = await insertContract(tx, {
 			invoicingCadence: 'monthly'
 		});
 		await createWorkUnit(
@@ -270,6 +273,7 @@ test('fetchContractsForBillablePeriod only returns a periodic contract that actu
 		const ids = rows.map((r) => r.contractId);
 		expect(ids).toEqual([withEligible.id]);
 		expect(rows[0].eligibleDates).toEqual(['2026-01-05']);
+		expect(rows[0].clientId).toBe(clientRow.id);
 	});
 });
 
@@ -310,7 +314,7 @@ test('fetchMirrorFailureRows is empty when the mirror is not configured, even wi
 
 test('fetchMirrorFailureRows excludes an already-mirrored document and attaches the latest run for one still pending', async () => {
 	await inRolledBackTransaction(async (tx) => {
-		const { contractRow } = await insertContract(tx);
+		const { clientRow, contractRow } = await insertContract(tx);
 		const pending = await insertDocument(tx, contractRow.id);
 		const mirrored = await insertDocument(tx, contractRow.id);
 		await tx.update(document).set({ remoteFileId: 'remote-1' }).where(eq(document.id, mirrored.id));
@@ -340,6 +344,8 @@ test('fetchMirrorFailureRows excludes an already-mirrored document and attaches 
 			status: 'failure',
 			detail: 'second attempt, the latest'
 		});
+		expect(rows.find((row) => row.documentId === pending.id)?.contractId).toBe(contractRow.id);
+		expect(rows.find((row) => row.documentId === pending.id)?.clientId).toBe(clientRow.id);
 	});
 });
 

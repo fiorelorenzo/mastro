@@ -2,15 +2,26 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
 import { invoicesCrumbs } from '$lib/nav/crumbs';
 import { daysLate, isOverdue } from '$lib/server/domain/invoice';
-import { getInvoiceWithLines, recordPayment } from '$lib/server/repositories/invoice';
+import { toSourceDocumentValue } from '$lib/server/repositories/document';
+import {
+	getInvoiceDocuments,
+	getInvoiceWithLines,
+	recordPayment
+} from '$lib/server/repositories/invoice';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
 	const invoiceRow = await getInvoiceWithLines(params.id);
 	if (!invoiceRow) error(404, m.invoice_not_found());
+	const documents = await getInvoiceDocuments(invoiceRow.id);
 	const crumbs = invoicesCrumbs();
 	return {
 		invoice: invoiceRow,
+		// The archived original(s): an import stores the structured
+		// document plus any attachment alongside it (`persist.ts`), a
+		// hand-entered invoice none — #215's "the archived original of an
+		// imported invoice".
+		documents: documents.map(toSourceDocumentValue),
 		// Today, at UTC midnight as an ISO date — what the "paid on" field
 		// defaults to (#27's "defaults to today"), computed once here so the
 		// form and any later reasoning about it agree on the same instant.

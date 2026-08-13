@@ -8,19 +8,32 @@
 // (`routes/proposals`), never the producer's.
 //
 // Accepting is the "no bypass" half of invariant 3: it does not insert a
-// row directly, it calls the same repository function (`createWorkUnit`,
-// today) a human's own form submission calls, inside one transaction with
-// the proposal's own status update. A rejected write there — a database
-// constraint a manual entry would also trip — rolls the whole thing back,
-// proposal included, so a proposal can never end up marked `accepted` next
-// to a row that was never actually written. `proposal.test.ts` proves this
-// both ways: a valid proposal produces exactly what a human's own entry
-// would, and an invalid one produces nothing at all, in either case.
+// row directly, it calls the same repository functions (`createWorkUnit`,
+// `transitionWorkUnit`, `createApprovalForDocument`) a human's own form
+// submissions call, inside one transaction with the proposal's own status
+// update. A rejected write there — a database constraint a manual entry
+// would also trip — rolls the whole thing back, proposal included, so a
+// proposal can never end up marked `accepted` next to a row that was
+// never actually written. `proposal.test.ts` proves this both ways: a
+// valid proposal produces exactly what a human's own entry would, and an
+// invalid one produces nothing at all, in either case.
+//
+// A `work_unit` proposal specifically writes the day already `approved`
+// (#209), never merely `proposed`: the proposal exists only because a
+// human wrote something approving it, which is precisely the evidence
+// the `approved` state requires. `applyProposal` below creates or reuses
+// the `approval` row that evidence rests on before recording the day —
+// "reuses" because several proposals can share one source document (one
+// email approving several days), and #209's contract is one `approval`
+// per document, not one per accepted day.
 
 import { desc, eq } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import { proposal, type ProposalStatus, type ProposalTargetType } from '$lib/server/db/schema';
-import { createWorkUnit, type WorkUnitInput } from './work-unit';
+import { createApprovalForDocument } from './approval';
+import { getDocument, readDocumentBytes } from './document';
+import { getInboundThreadForDocument } from './inbound-thread';
+import { createApprovedWorkUnit, getWorkUnit, type WorkUnitInput } from './work-unit';
 
 export type ProposalRow = typeof proposal.$inferSelect;
 
@@ -31,10 +44,28 @@ export type ProposalInput = {
 	proposedFields: Record<string, unknown>;
 	excerpt: string;
 	confidence: number;
+	/** The producer's own reason for a lowered confidence (#244) — see
+	 * `proposal.confidenceReason`'s own doc comment. */
+	confidenceReason?: string | null;
 };
 
+/**
+ * Writes a proposal, first checking `input.proposedFields` against the
+ * same constraints the target table would enforce on an INSERT (#245) and
+ * recording what it finds on `validationError` rather than discovering it
+ * later at `acceptProposal` time, after a human has already decided. See
+ * `proposalValidationError` below for what "the same constraints" means.
+ */
 export async function createProposal(input: ProposalInput, executor: DbExecutor = db) {
-	const [row] = await executor.insert(proposal).values(input).returning();
+	const validationError = proposalValidationError(
+		input.targetType,
+		input.contractId,
+		input.proposedFields
+	);
+	const [row] = await executor
+		.insert(proposal)
+		.values({ ...input, validationError })
+		.returning();
 	return row;
 }
 
@@ -70,11 +101,9 @@ export async function listProposals(status: ProposalStatus | undefined, executor
  * A producer targeting `'work_unit'` supplies `proposedFields` as
  * `{ date: string, quantity: number, scope: string, notes?: string }` —
  * `contractId` is never duplicated inside the JSON blob, it is read off
- * `proposal.contractId` itself. `state` always starts `'proposed'`:
- * accepting this proposal records the day, it does not also approve it —
- * whether accepting a day proposal from an approval thread should also
- * create the `approval` row it rests on is #85's decision, not this one's
- * (see #81's comment on that issue).
+ * `proposal.contractId` itself. This only shapes the day's own fields;
+ * `applyProposal` is what decides the state it lands in and the approval
+ * it is linked to (#209).
  */
 function workUnitInputFromFields(
 	row: Pick<ProposalRow, 'contractId'>,
@@ -88,6 +117,141 @@ function workUnitInputFromFields(
 		throw new Error("proposal field 'notes' must be a string when present");
 	}
 	return { contractId: row.contractId, date, quantity, scope, notes: notes ?? null };
+}
+
+/**
+ * Checks `fields` against the same constraints the target table would
+ * actually enforce on an INSERT — evaluated here, at creation, rather
+ * than discovered by a failed `applyProposal` after a human has already
+ * clicked Accept (#245: the contract-PDF spike's `paymentTerms: {day: 0}`
+ * is exactly this failure, on a target type this table does not support
+ * yet). Returns what's wrong, naming the field, or null when every field
+ * `applyProposal`'s own switch would read is one the table would accept.
+ *
+ * Deliberately narrower than a full schema: it checks only what the
+ * database itself checks — types, `NOT NULL`, and the `CHECK` constraints
+ * `applyProposal` would actually hit — not the business rules a
+ * producer's own validation (`day-extraction.ts`'s `validateDays`, for
+ * `work_unit`) already enforces before a proposal is ever created. The
+ * same exhaustive `switch` as `applyProposal`, for the same reason: a new
+ * target type without a case here fails to compile.
+ */
+function proposalValidationError(
+	targetType: ProposalTargetType,
+	contractId: string,
+	fields: Record<string, unknown>
+): string | null {
+	switch (targetType) {
+		case 'work_unit': {
+			let input: WorkUnitInput;
+			try {
+				input = workUnitInputFromFields({ contractId }, fields);
+			} catch (error) {
+				return error instanceof Error ? error.message : String(error);
+			}
+			// work_unit_quantity_positive
+			if (input.quantity <= 0) {
+				return `quantity ${input.quantity} must be greater than 0`;
+			}
+			// numeric(6, 2): four digits before the point, two after.
+			if (!Number.isFinite(input.quantity) || Math.abs(input.quantity) >= 10_000) {
+				return `quantity ${input.quantity} does not fit the work_unit table's numeric(6,2) column`;
+			}
+			// A date `parseExtractedDays`'s regex would accept but is not a
+			// real calendar day, e.g. 2026-02-31.
+			const parsed = new Date(`${input.date}T00:00:00Z`);
+			if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== input.date) {
+				return `date ${input.date} is not a real date`;
+			}
+			return null;
+		}
+	}
+}
+
+/**
+ * The `From:` header off a raw RFC 822 message — `applyProposal`'s only
+ * source for `approval.sender` when a `work_unit` proposal is accepted
+ * (#209): the archived message is the evidence, so the sender is read
+ * off it directly rather than trusted from a second, separately
+ * maintained copy (nothing upstream of this table records the envelope
+ * sender today). Headers only, unfolded per RFC 5322 §2.2.3 (a
+ * continuation line starts with whitespace); the body past the first
+ * blank line is never scanned. Prefers the address inside `<...>` over
+ * the header's raw value, since `"Name" <addr>` is the common shape and
+ * the address is what actually identifies who wrote it.
+ */
+function extractSender(raw: Buffer): string {
+	const headerBlock = raw.toString('utf8').split(/\r?\n\r?\n/)[0] ?? '';
+	const unfolded: string[] = [];
+	for (const line of headerBlock.split(/\r?\n/)) {
+		if (/^[ \t]/.test(line) && unfolded.length > 0) {
+			unfolded[unfolded.length - 1] += ' ' + line.trim();
+		} else {
+			unfolded.push(line);
+		}
+	}
+	const fromLine = unfolded.find((line) => /^from\s*:/i.test(line));
+	if (!fromLine) {
+		throw new Error('source message has no From header to record as the approval sender');
+	}
+	const value = fromLine.replace(/^from\s*:/i, '').trim();
+	const sender = (value.match(/<([^>]+)>/)?.[1] ?? value).trim();
+	if (!sender) {
+		throw new Error('source message has a blank From header');
+	}
+	return sender;
+}
+
+/**
+ * The `approval` a `work_unit` proposal's accept writes the day against
+ * (#209) — created from the proposal's own source document, or reused
+ * when an earlier proposal from that same document already created one.
+ * "Reused" is deliberate, not incidental: one email can produce several
+ * day proposals ("ok for Thursday and Friday"), each its own `proposal`
+ * row a human accepts separately, but they are one act of approval, so
+ * they share one `approval` row, never one each. The search is sibling
+ * proposals for the same `documentId` that are already `accepted` with a
+ * `resultId` — the day that write produced — rather than anything keyed
+ * on document content, since `documentId` is exactly what ties every
+ * proposal from one message together (`listProposalsForDocument`).
+ *
+ * Building a fresh approval reads the source message's own `From` header
+ * for `sender` and its `inbound_thread` row for `receivedAt`/`messageId`
+ * — both facts of the envelope, never the model's. `channel` is inferred
+ * from the document's own provenance: every proposal today is produced
+ * from a `'mail'` document (`agent/day-producer.ts`), so this only ever
+ * resolves to `'email'` in practice; `'other'` is a defensive fallback a
+ * future non-mail producer would hit, not a case this table exercises yet.
+ */
+async function approvalForDocument(row: ProposalRow, executor: DbExecutor): Promise<string> {
+	for (const sibling of await listProposalsForDocument(row.documentId, executor)) {
+		if (sibling.status !== 'accepted' || !sibling.resultId) continue;
+		const siblingWorkUnit = await getWorkUnit(sibling.resultId, executor);
+		if (siblingWorkUnit?.approvalId) return siblingWorkUnit.approvalId;
+	}
+
+	const thread = await getInboundThreadForDocument(row.documentId, executor);
+	if (!thread) {
+		throw new Error(`document ${row.documentId} has no inbound thread to record an approval from`);
+	}
+	const sourceDocument = await getDocument(row.documentId, executor);
+	if (!sourceDocument) throw new Error(`document ${row.documentId} not found`);
+	const bytes = await readDocumentBytes(sourceDocument);
+
+	const created = await createApprovalForDocument(
+		{
+			contractId: row.contractId,
+			channel: sourceDocument.provenance === 'mail' ? 'email' : 'other',
+			sender: extractSender(bytes),
+			receivedAt: thread.receivedAt,
+			messageId: thread.messageId,
+			excerpt: row.excerpt,
+			origin: { kind: 'agent', proposalReference: row.id },
+			documentId: row.documentId
+		},
+		executor
+	);
+	return created.id;
 }
 
 /**
@@ -109,8 +273,10 @@ async function applyProposal(
 ): Promise<string> {
 	switch (row.targetType) {
 		case 'work_unit': {
-			const created = await createWorkUnit(
+			const approvalId = await approvalForDocument(row, executor);
+			const created = await createApprovedWorkUnit(
 				workUnitInputFromFields(row, fields),
+				approvalId,
 				{ kind: 'agent', proposalReference: row.id },
 				`accepted from proposal ${row.id}`,
 				executor
@@ -140,6 +306,15 @@ export type AcceptProposalInput = {
  * whole transaction rolls back and the proposal is left exactly as it was,
  * still `pending`: an accept attempt that fails produces neither a ledger
  * row nor a false `accepted` record.
+ *
+ * `proposedFields` merged with `edits` is checked against
+ * `proposalValidationError` before `applyProposal` ever runs (#245): a
+ * field the target table would reject is refused here, by name, instead
+ * of surfacing as a raw constraint violation after `approvalForDocument`
+ * or `createWorkUnit` already started writing. Checked against
+ * `acceptedFields`, not the `validationError` stored on the row at
+ * creation — an edit that fixes the offending field must be allowed
+ * through.
  */
 export async function acceptProposal(
 	id: string,
@@ -154,6 +329,17 @@ export async function acceptProposal(
 		}
 
 		const acceptedFields = { ...row.proposedFields, ...(input.edits ?? {}) };
+		// Re-checked against what is about to be written, not the
+		// `validationError` stored at creation (#245): an edit on the review
+		// screen that fixes the offending field must be allowed through, the
+		// same way a proposal that was fine as proposed must stay refused if
+		// an edit breaks it. Whichever it is, this runs before `applyProposal`
+		// ever reaches `createWorkUnit`/`approvalForDocument`, so a rejected
+		// accept here never touches either.
+		const validationError = proposalValidationError(row.targetType, row.contractId, acceptedFields);
+		if (validationError !== null) {
+			throw new Error(`proposal ${id} cannot be accepted as proposed: ${validationError}`);
+		}
 		const resultId = await applyProposal(row, acceptedFields, executor);
 
 		const [updated] = await executor

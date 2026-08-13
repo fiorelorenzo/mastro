@@ -41,7 +41,23 @@ export type ProposalTargetType = 'work_unit';
  * comment on #86 for why this is called out rather than silently handled.
  *
  * `confidence` is the producer's own declared confidence, 0 (no confidence)
- * to 1 (certain), never computed after the fact.
+ * to 1 (certain), never computed after the fact. `confidenceReason` is the
+ * producer's own short explanation for a lowered confidence — the model's,
+ * for day extraction (#244: "the year is not written and nothing anchors
+ * it", "the message reads as non-committal"), or the year-rollover guard's
+ * own reason when that code-level check is the one that lowered it
+ * (`YEAR_ROLLOVER_CONFIDENCE_CAP` in `agent/day-extraction.ts`). Null means
+ * there was nothing to explain, not that the field went unset.
+ *
+ * `validationError` is set once, at creation, by `createProposal` itself
+ * (#245): the first field `proposedFields` carries that the target table's
+ * own constraints would reject, found out here rather than by a failed
+ * `applyProposal` INSERT after a human already clicked Accept — the
+ * contract-PDF spike's `paymentTerms: {day: 0}` is exactly this failure.
+ * Null means every field the target's own dispatcher reads is one the
+ * table would actually accept; non-null names what would fail and why, so
+ * the review screen can show "needs correction" instead of an Accept
+ * button that fails.
  *
  * `acceptedFields`, `resultId`, `decidedBy` and `decidedAt` are all null
  * until the proposal is decided, and populated together, exactly once, by
@@ -65,6 +81,8 @@ export const proposal = pgTable('proposal', {
 	proposedFields: jsonb('proposed_fields').$type<Record<string, unknown>>().notNull(),
 	excerpt: text('excerpt').notNull(),
 	confidence: numeric('confidence', { precision: 3, scale: 2, mode: 'number' }).notNull(),
+	confidenceReason: text('confidence_reason'),
+	validationError: text('validation_error'),
 	status: proposalStatus('status').notNull().default('pending'),
 	acceptedFields: jsonb('accepted_fields').$type<Record<string, unknown>>(),
 	// The id of the row the accepted proposal produced. Not a foreign key:

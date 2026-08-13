@@ -3,9 +3,16 @@ import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { minorUnits } from '$lib/money';
 import { sql } from 'drizzle-orm';
 import { client as pool, db } from '$lib/server/db';
-import { client, contract, invoice, invoiceLine } from '$lib/server/db/schema';
+import { client, contract, document, invoice, invoiceLine } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
-import { createInvoice, getInvoiceWithLines, listUnpaidInvoices, recordPayment } from './invoice';
+import {
+	createInvoice,
+	getInvoiceDocuments,
+	getInvoiceWithLines,
+	listUnpaidInvoices,
+	recordPayment
+} from './invoice';
+import { createExpense } from './expense';
 import { createWorkUnit, getWorkUnit } from './work-unit';
 
 // Needs a migrated database: `pnpm db:up && pnpm db:migrate`. Postgres work
@@ -130,6 +137,107 @@ test('an invoice created manually with lines whose amounts add up succeeds, and 
 		const withLines = await getInvoiceWithLines(invoiceRow.id, tx);
 		expect(withLines?.lines).toHaveLength(1);
 		expect(withLines?.lines[0].days.map((d) => d.id).sort()).toEqual([day1.id, day2.id].sort());
+	});
+});
+
+test('a line with expenseIds rebills each expense onto it (#217), the same way workUnitIds links days', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const expenseRow = await createExpense(
+			{
+				contractId: contractRow.id,
+				date: '2024-06-05',
+				description: 'Train ticket',
+				amount: minorUnits(4200),
+				preAuthorised: false,
+				authorisationReference: null
+			},
+			null,
+			tx
+		);
+
+		const invoiceRow = await createInvoice(
+			{
+				contractId: contractRow.id,
+				number: 'INV-EXP-0001',
+				issueDate: '2024-06-30',
+				documentType: 'invoice',
+				currency: 'EUR',
+				taxTreatmentCode: null,
+				statutoryReference: null,
+				stampDuty: null,
+				socialCharge: null,
+				dueDate: null,
+				paymentMethod: null,
+				iban: null,
+				transmissionId: null,
+				lines: [
+					{
+						description: 'Expense rebill: Train ticket',
+						quantity: 1,
+						unitPrice: minorUnits(4200),
+						amount: minorUnits(4200),
+						taxRate: 0,
+						taxTreatmentCode: null,
+						workUnitIds: [],
+						expenseIds: [expenseRow.id]
+					}
+				]
+			},
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'invoiced',
+			tx
+		);
+
+		const withLines = await getInvoiceWithLines(invoiceRow.id, tx);
+		expect(withLines?.lines).toHaveLength(1);
+		expect(withLines?.lines[0].expenses.map((e) => e.id)).toEqual([expenseRow.id]);
+
+		const refreshed = await tx.query.expense.findFirst({
+			where: (e, { eq }) => eq(e.id, expenseRow.id)
+		});
+		expect(refreshed?.invoiceLineId).toBe(withLines?.lines[0].id);
+	});
+});
+
+test('a line with no workUnitIds and no expenseIds is a manual line — the structural marker, no schema column needed', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const invoiceRow = await createInvoice(
+			{
+				contractId: contractRow.id,
+				number: 'INV-MANUAL-0001',
+				issueDate: '2024-06-30',
+				documentType: 'invoice',
+				currency: 'EUR',
+				taxTreatmentCode: null,
+				statutoryReference: null,
+				stampDuty: null,
+				socialCharge: null,
+				dueDate: null,
+				paymentMethod: null,
+				iban: null,
+				transmissionId: null,
+				lines: [
+					{
+						description: 'Genuine exception',
+						quantity: 1,
+						unitPrice: minorUnits(10000),
+						amount: minorUnits(10000),
+						taxRate: 0,
+						taxTreatmentCode: null,
+						workUnitIds: []
+					}
+				]
+			},
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'invoiced',
+			tx
+		);
+
+		const withLines = await getInvoiceWithLines(invoiceRow.id, tx);
+		expect(withLines?.lines[0].days).toEqual([]);
+		expect(withLines?.lines[0].expenses).toEqual([]);
 	});
 });
 
@@ -406,4 +514,81 @@ test('linking a line to a day still on "proposed" is rejected by the existing st
 	expect((failure as Error & { cause?: { message?: string } }).cause?.message).toMatch(
 		/illegal work_unit transition/
 	);
+});
+
+test("#215: an imported invoice's archived original is reachable, a hand-entered one has none", async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const day = await createWorkUnit(
+			{
+				contractId: contractRow.id,
+				date: '2024-06-10',
+				quantity: 1,
+				scope: 'Day one.',
+				state: 'worked'
+			},
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'worked as agreed',
+			tx
+		);
+		const invoiceRow = await createInvoice(
+			{
+				contractId: contractRow.id,
+				number: 'INV-0001',
+				issueDate: '2024-06-30',
+				documentType: 'invoice',
+				currency: 'EUR',
+				taxTreatmentCode: null,
+				statutoryReference: null,
+				stampDuty: null,
+				socialCharge: null,
+				dueDate: null,
+				paymentMethod: null,
+				iban: null,
+				transmissionId: null,
+				lines: [
+					{
+						description: 'One day of consulting',
+						quantity: 1,
+						unitPrice: minorUnits(50000),
+						amount: minorUnits(50000),
+						taxRate: 22,
+						taxTreatmentCode: null,
+						workUnitIds: [day.id],
+						expenseIds: []
+					}
+				]
+			},
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'invoiced end of month',
+			tx
+		);
+
+		// Entered by hand, the way this whole file's other invoices are —
+		// nothing archived against it (`persist.ts` is the only writer of
+		// `ownerType: 'invoice'` documents, and it never ran here).
+		expect(await getInvoiceDocuments(invoiceRow.id, tx)).toEqual([]);
+
+		// The shape an import leaves behind (`persist.ts`'s own
+		// `storeDocument` call, reproduced directly since none of this
+		// exercises the blob store).
+		const [documentRow] = await tx
+			.insert(document)
+			.values({
+				hash: 'a'.repeat(64),
+				mime: 'application/xml',
+				size: 10,
+				originalName: 'invoice-0001.xml',
+				provenance: 'folder_import',
+				contractId: contractRow.id,
+				confidential: true,
+				ownerType: 'invoice',
+				ownerId: invoiceRow.id
+			})
+			.returning();
+
+		const documents = await getInvoiceDocuments(invoiceRow.id, tx);
+		expect(documents.map((d) => d.id)).toEqual([documentRow.id]);
+		expect(documents[0].originalName).toBe('invoice-0001.xml');
+	});
 });

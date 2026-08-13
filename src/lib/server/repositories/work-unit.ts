@@ -94,6 +94,39 @@ export async function createWorkUnit(
 	});
 }
 
+/**
+ * Creates a day already `approved`, linked to `approvalId`, in the two
+ * writes the state machine requires — INSERT can only start a row at
+ * `'proposed'`, `'worked'` or `'worked_without_approval'` (#21), never
+ * `'approved'` directly, so this inserts `proposed` and immediately
+ * transitions it. Both writes share one transaction: a crash between
+ * them must never leave a `proposed` day sitting next to evidence that
+ * already exists for it. `acceptProposal` (#209) is the caller this
+ * exists for — a proposal derived from a written approval already
+ * carries the evidence `approved` requires, so accepting one records the
+ * day past `proposed` in the same act, leaving only `worked` to a human
+ * who actually did it.
+ */
+export async function createApprovedWorkUnit(
+	input: WorkUnitInput,
+	approvalId: string,
+	actor: TransitionActor,
+	reason: string,
+	tx?: DbExecutor
+) {
+	const run = async (executor: DbExecutor) => {
+		const created = await createWorkUnit(input, actor, reason, executor);
+		return transitionWorkUnit(
+			created.id,
+			{ state: 'approved', approvalId },
+			actor,
+			reason,
+			executor
+		);
+	};
+	return tx ? run(tx) : db.transaction(run);
+}
+
 /** Applies `changes` to a day and records why. Illegal transitions and a
  * missing approval on a contract that requires one are rejected by the
  * database (#21), not here — this function does not pre-validate anything

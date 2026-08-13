@@ -96,3 +96,24 @@ export async function setDocumentRemoteFileId(
 		.returning();
 	return row;
 }
+
+/** The subset of a `document` row every loader hands to `SourceDocument`
+ * (`$lib/design/SourceDocument.svelte`) — id, original file name, kind
+ * and archive date, `createdAt` serialised the way every loader here
+ * already serialises a `Date` column for the client. One function so
+ * the several call sites this wave adds (#215: the day, proposal,
+ * invoice, expense and contract loaders) agree on the shape rather than
+ * each inlining its own pick. */
+export function toSourceDocumentValue(doc: {
+	id: string;
+	originalName: string;
+	provenance: DocumentProvenance;
+	createdAt: Date;
+}) {
+	return {
+		id: doc.id,
+		originalName: doc.originalName,
+		provenance: doc.provenance,
+		createdAt: doc.createdAt.toISOString()
+	};
+}

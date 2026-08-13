@@ -22,6 +22,8 @@ import {
 } from '$lib/money';
 import type { InvoiceDocumentType } from '$lib/server/import/invoice';
 import type { ExistingInvoiceRecord } from '$lib/server/import/dedup';
+import { listDocumentsForOwner } from './document';
+import { rebillExpense } from './expense';
 import { transitionWorkUnit } from './work-unit';
 
 export type InvoiceLineInput = {
@@ -34,6 +36,14 @@ export type InvoiceLineInput = {
 	/** Days this line bills. Each moves to `invoiced` through the existing
 	 * state machine (#26) — never assigned directly to `state`. */
 	workUnitIds: string[];
+	/** Expenses this line rebills (#217) — each moves to rebilled through
+	 * `rebillExpense`, the same "assign through the existing mechanism,
+	 * never a second one" choice `workUnitIds` already makes. Optional,
+	 * defaulting to none: every pre-existing caller that never rebills an
+	 * expense through a line (the importer, every alert/ceiling/revenue
+	 * fixture that only needs an invoice to exist) is unaffected.
+	 * `routes/invoices/new` is the one caller that always supplies it. */
+	expenseIds?: string[];
 };
 
 export type InvoiceInput = {
@@ -141,6 +151,10 @@ export async function createInvoice(
 					executor
 				);
 			}
+
+			for (const expenseId of line.expenseIds ?? []) {
+				await rebillExpense(expenseId, lineRow.id, executor);
+			}
 		}
 
 		return invoiceRow;
@@ -193,6 +207,15 @@ export async function getInvoiceWithLines(id: string, executor: DbExecutor = db)
 	}
 
 	return { ...invoiceRow, lines: [...linesById.values()] };
+}
+
+/** Every document archived against this invoice — for an import, the
+ *  structured original plus any attachments alongside it (`persist.ts`
+ *  stores each as its own row, same `ownerType: 'invoice'`); for a
+ *  hand-entered invoice, none (#215's "the archived original of an
+ *  imported invoice"). */
+export async function getInvoiceDocuments(id: string, executor: DbExecutor = db) {
+	return listDocumentsForOwner('invoice', id, executor);
 }
 
 /**

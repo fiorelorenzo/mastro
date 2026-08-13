@@ -4,11 +4,13 @@
 	import {
 		formatAmount,
 		formatDate,
+		formatDateTime,
 		formatDays,
 		formatMinorUnits,
 		formatNumber
 	} from '$lib/i18n/format';
 	import { factLine } from '$lib/nav/crumbs';
+	import SourceDocument from '$lib/design/SourceDocument.svelte';
 	import Page from '$lib/layout/Page.svelte';
 	import Section from '$lib/layout/Section.svelte';
 	import RecordList from '$lib/layout/RecordList.svelte';
@@ -25,6 +27,7 @@
 		rateCardKindLabel,
 		rateUnitLabel
 	} from './rate-cards/rate-card-enums';
+	import { noticeChannelLabel, type NoticeChannelValue } from '../../../notice-channel';
 	import type { ActionData, PageData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
@@ -41,6 +44,7 @@
 	type RateCardRow = PageData['rateCards'][number];
 	type ClauseNoteRow = PageData['clauseNotes'][number];
 	type ExpenseRow = PageData['expenses'][number];
+	type ApprovalRow = PageData['approvals'][number];
 
 	const rateCardColumns: readonly RecordColumn<RateCardRow>[] = $derived([
 		{
@@ -120,6 +124,20 @@
 			format: (row: ExpenseRow) =>
 				row.invoiceLineId ? m.expense_rebilled_yes() : m.expense_rebilled_no()
 		}
+	]);
+
+	const approvalColumns: readonly RecordColumn<ApprovalRow>[] = $derived([
+		{
+			key: 'receivedAt',
+			label: m.contract_approval_column_received_at(),
+			format: (row: ApprovalRow) => formatDateTime(row.receivedAt)
+		},
+		{
+			key: 'channel',
+			label: m.contract_approval_column_channel(),
+			format: (row: ApprovalRow) => noticeChannelLabel(row.channel as NoticeChannelValue)
+		},
+		{ key: 'sender', label: m.contract_approval_column_sender() }
 	]);
 
 	// The one row action `RecordList` cannot express: rebilling posts a form
@@ -253,6 +271,26 @@
 		</dl>
 	</Section>
 
+	<Section title={m.contract_approval_section_heading()}>
+		{#snippet actions()}
+			<a href="{resolve('/approvals/new')}?contractId={contract.id}" class="underline"
+				>{m.contract_approval_record_link()}</a
+			>
+		{/snippet}
+
+		{#if data.approvals.length === 0}
+			<p class="text-sm opacity-70">{m.contract_approval_empty()}</p>
+		{:else}
+			<RecordList
+				columns={approvalColumns}
+				rows={data.approvals}
+				caption={m.contract_approval_section_heading()}
+				rowKey={(row) => row.id}
+				rowHref={(row) => resolve('/documents/[id]', { id: row.documentId })}
+			/>
+		{/if}
+	</Section>
+
 	<Section title={m.rate_card_section_heading()}>
 		{#snippet actions()}
 			<a
@@ -331,5 +369,13 @@
 				</ul>
 			{/if}
 		{/if}
+	</Section>
+
+	<Section title={m.contract_documents_heading()}>
+		{#each data.documents as document (document.id)}
+			<SourceDocument {document} />
+		{:else}
+			<SourceDocument document={null} />
+		{/each}
 	</Section>
 </Page>

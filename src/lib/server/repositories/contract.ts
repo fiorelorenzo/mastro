@@ -9,6 +9,7 @@ import {
 	type InvoicingCadence,
 	type PaymentTerms
 } from '$lib/server/db/schema';
+import { listDocumentsForOwner } from './document';
 
 export type ContractInput = {
 	clientId: string;
@@ -72,6 +73,19 @@ export async function getContract(id: string, executor: DbExecutor = db) {
 
 export async function getContractWithClient(id: string) {
 	return db.query.contract.findFirst({ where: eq(contract.id, id), with: { client: true } });
+}
+
+/** Every document still owned by the contract itself rather than by one
+ *  of its approvals, expenses or invoices — raw inbound mail archived by
+ *  the poller (`inbound-thread.ts`'s own `ownerType: 'contract'`
+ *  comment) that has not yet become anything more specific, plus the
+ *  consent-era documents #196 left in place when the hosted-extraction
+ *  gate they were archived under came out. Nothing re-points these
+ *  except the flows that create an approval, an expense receipt or an
+ *  imported invoice, so this is the one place they stay reachable
+ *  (#215's "anywhere else `listDocumentsForOwner` can answer"). */
+export async function getContractDocuments(id: string, executor: DbExecutor = db) {
+	return listDocumentsForOwner('contract', id, executor);
 }
 
 export async function createContract(input: ContractInput) {

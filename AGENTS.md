@@ -46,6 +46,14 @@ A day's life is `proposed → approved → worked → invoiced → paid`, with t
 archived document). A `fiscal_profile` points at a **jurisdiction pack** for a period
 of time. `ceiling`s come either from a pack or from a contract.
 
+**What a proposal produces.** `acceptProposal` (#209) never leaves a day at
+`proposed`: a proposal exists only because a human wrote something approving it, so
+accepting one creates or reuses the `approval` that written evidence is, and writes
+the `work_unit` straight to `approved`, linked to it, in the same transaction. Only
+`worked` is left to a human, because the product cannot know a day was actually
+worked. Several proposals from one source document (one email approving several
+days) share one `approval`, never one each.
+
 Five invariants. Breaking one is a defect even if the tests pass:
 
 1. **No country-specific logic outside a jurisdiction pack.** No `if (country ===

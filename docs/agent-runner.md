@@ -39,9 +39,11 @@ For each job, the runner:
    (`acp-client.ts`): spawns the configured CLI agent as a subprocess, completes
    the `initialize`/`session/new` handshake, sends one prompt, reads back the
    agent's text.
-3. Parses that text as `{ proposedFields, excerpt, confidence }` (`job.ts`).
-   Anything that does not parse into exactly this shape is a thrown error naming
-   what was wrong — never a best-effort guess.
+3. Parses that text as `{ proposedFields, excerpt, confidence, confidenceReason? }`
+   (`job.ts`) — `confidenceReason` is optional, present when the model had a
+   reason for a lowered confidence (#244). Anything that does not parse into
+   exactly this shape is a thrown error naming what was wrong — never a
+   best-effort guess.
 4. Prints the result as one JSON line on stdout and moves the job file to
    `done/`.
 

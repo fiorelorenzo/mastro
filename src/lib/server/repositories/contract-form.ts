@@ -29,7 +29,7 @@ export type ContractFormValues = {
 	invoicingCadence: string;
 	currency: string;
 	taxTreatment: string;
-	requiresPriorApproval: boolean;
+	requiresPriorApproval: boolean | null;
 	expensePolicyKind: string;
 	expensePolicyCapAmount: string;
 	requiresExpensePreAuthorisation: boolean;
@@ -132,7 +132,15 @@ export function parseContractForm(formData: FormData): ContractFormResult {
 	const taxTreatment = string('taxTreatment');
 	if (!taxTreatment) errors.taxTreatment = m.contract_validation_tax_treatment_required();
 
-	const requiresPriorApproval = formData.get('requiresPriorApproval') === 'on';
+	// #211: no silent default. The submitted value must be one of the two
+	// explicit choices the form offers (`SegmentedControl`, never a
+	// checkbox) — anything else, including nothing chosen at all, is a
+	// validation error rather than a boolean coerced from absence.
+	const requiresPriorApprovalRaw = string('requiresPriorApproval');
+	let requiresPriorApproval: boolean | null = null;
+	if (requiresPriorApprovalRaw === 'required') requiresPriorApproval = true;
+	else if (requiresPriorApprovalRaw === 'not_required') requiresPriorApproval = false;
+	else errors.requiresPriorApproval = m.contract_validation_requires_prior_approval_required();
 
 	const expensePolicyKind = string('expensePolicyKind');
 	const expensePolicyCapAmountRaw = string('expensePolicyCapAmount');
@@ -194,7 +202,12 @@ export function parseContractForm(formData: FormData): ContractFormResult {
 		status: statusRaw
 	};
 
-	if (Object.keys(errors).length > 0 || !paymentTerms || !expensePolicy) {
+	if (
+		Object.keys(errors).length > 0 ||
+		!paymentTerms ||
+		!expensePolicy ||
+		requiresPriorApproval === null
+	) {
 		return { ok: false, errors, values };
 	}
 

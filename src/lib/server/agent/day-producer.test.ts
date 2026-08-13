@@ -11,6 +11,7 @@ import {
 } from '$lib/server/db/schema';
 import type { DbExecutor } from '$lib/server/db';
 import type { ProposalCandidate } from '$lib/server/runner/types';
+import { YEAR_ROLLOVER_CONFIDENCE_CAP } from './day-extraction';
 import { proposeDaysFromMessage, type RunExtraction } from './day-producer';
 
 /** #85. The model is scripted here: what a real one answers is the
@@ -176,5 +177,52 @@ test('a day the contract cannot sell is reported, not written', async () => {
 		expect(proposals[0].proposedFields).toMatchObject({ date: '2026-02-06' });
 		expect(rejected).toHaveLength(1);
 		expect(rejected[0].reason).toMatch(/rate cards sell/);
+	});
+});
+
+test('#244: a day the year-rollover guard catches is still written, capped at the guard\u2019s confidence ceiling', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+
+		const { proposals, rejected } = await proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'Ciao, confermo dal 29 dicembre al 2 gennaio, giornata intera.',
+				messageDate: '2026-12-15',
+				startsOn: contractRow.startsOn,
+				// Open-ended so the day rolling into next year is not refused
+				// by the ordinary contract-term check — the guard, not that
+				// check, is what this test is about.
+				endsOn: null
+			},
+			answer({
+				days: [
+					{
+						date: '2026-12-29',
+						quantity: 1,
+						scope: 'Analisi',
+						excerpt: 'confermo dal 29 dicembre'
+					},
+					{
+						date: '2027-01-01',
+						quantity: 1,
+						scope: 'Analisi',
+						excerpt: 'al 2 gennaio, giornata intera'
+					}
+				]
+			}),
+			tx
+		);
+
+		expect(rejected).toEqual([]);
+		expect(proposals).toHaveLength(2);
+		// Same year, well within 60 days: nothing to flag.
+		expect(proposals[0].confidence).toBe(0.82);
+		expect(proposals[0].confidenceReason).toBeNull();
+		// A different calendar year than the message: capped and explained,
+		// never left to read as settled just because the model was sure.
+		expect(proposals[1].confidence).toBeLessThanOrEqual(YEAR_ROLLOVER_CONFIDENCE_CAP);
+		expect(proposals[1].confidenceReason).toMatch(/different calendar year/);
 	});
 });
