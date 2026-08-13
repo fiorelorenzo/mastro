@@ -219,6 +219,7 @@ database really answers.
 | `pnpm db:generate`            | Generate SQL from the TypeScript schema               |
 | `pnpm db:generate:custom`     | Empty migration to hand-write SQL into                |
 | `pnpm messages:compile`       | Regenerate `src/lib/paraglide` from `messages/*.json` |
+| `pnpm seed:demo`              | Three-archetype demo instance, idempotent             |
 
 Ports are fixed (app `5187`, Postgres `5436`) so this project can run beside the
 others on the same box, and both are overridable per checkout from `.env`
@@ -338,3 +339,16 @@ test that watches two constraints fire needs a savepoint: `rejection(fn, tx)`
 error, `code` and `constraint_name` included, from behind Drizzle's `Failed query:`
 wrapper. Asserting against that wrapper is how a dozen constraint tests came to name
 constraints that had never fired.
+
+**A test runs against a database that has data in it.** `pnpm seed:demo` is part of
+the verification sweep, so a test that only passes on an empty instance is broken,
+and it will be a reviewer looking at a realistic screen who finds out. Two shapes
+cause almost all of it. A query that reads "the most recent row" or counts a whole
+table sees the seed's rows too: scope every assertion to the ids the test itself
+created. And `fiscal_profile` carries a database-wide exclusion constraint on the
+validity period, where an instance's current profile is legitimately open-ended —
+an open-ended range overlaps every other range, so no start date is far enough
+away. A fixture either sits in a past era disjoint from every other test file's,
+or takes the timeline exclusively for the length of its own rolled-back
+transaction. Picking a "far future" year is the trick that looked safe for months
+and never was (#225).
