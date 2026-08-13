@@ -1,0 +1,40 @@
+<!--
+  The shared shell. Copy verbatim into every desktop screen; change only
+  which .nav-item carries aria-current="page" and the badge counts if the
+  screen implies different ones. The nav groups are the IA proposed in
+  appendix 01: the daily loop first, the record second, setup last.
+-->
+<aside class="sidebar">
+	<div class="brand">mastro</div>
+	<nav class="nav">
+		<div class="nav-group">
+			<a class="nav-item" href="#" aria-current="page"><span class="nav-ico">◎</span> Oggi</a>
+			<a class="nav-item" href="#"
+				><span class="nav-ico">▤</span> Da rivedere
+				<span class="badge badge--count badge--critical" style="margin-left: auto">3</span></a
+			>
+			<a class="nav-item" href="#"><span class="nav-ico">▦</span> Calendario</a>
+		</div>
+		<div class="nav-group">
+			<div class="nav-title">Registro</div>
+			<a class="nav-item" href="#"><span class="nav-ico">◫</span> Clienti</a>
+			<a class="nav-item" href="#"
+				><span class="nav-ico">€</span> Fatture
+				<span class="badge badge--count badge--warning" style="margin-left: auto">1</span></a
+			>
+		</div>
+		<div class="nav-group">
+			<div class="nav-title">Ingresso</div>
+			<a class="nav-item" href="#"><span class="nav-ico">✉</span> Posta</a>
+			<a class="nav-item" href="#"><span class="nav-ico">↥</span> Import</a>
+		</div>
+		<div class="nav-spacer"></div>
+		<div class="nav-group">
+			<a class="nav-item" href="#"><span class="nav-ico">⚙</span> Impostazioni</a>
+		</div>
+		<div class="nav-foot">
+			<span>lorenzo@example.com</span>
+			<span class="inline"><a href="#">English</a> <span class="faint">italiano</span></span>
+		</div>
+	</nav>
+</aside>

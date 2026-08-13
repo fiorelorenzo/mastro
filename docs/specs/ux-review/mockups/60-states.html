@@ -1,0 +1,438 @@
+<section class="g-screen" id="states">
+	<h2>Avvisi e stati del sistema</h2>
+	<p class="g-note">
+		Oggi ogni avviso ha un solo verbo — "Conferma presa visione" — che azzera il badge della barra
+		laterale senza toccare il problema sottostante: la giornata del 21 luglio resta senza
+		approvazione e la fattura 2026/011 resta scaduta, comunque la si guardi (difetto 2). Un
+		tentativo di sollecito su una fattura non scaduta mostra oggi un <code>400</code> grezzo, perché
+		non esiste un <code>+error.svelte</code> da nessuna parte nel prodotto (difetto 20). La coda
+		offline scrive silenziosamente sul telefono e non è visibile da nessun'altra schermata (difetto
+		19). I sette blocchi sotto sostituiscono la frase grigia isolata e il crash della prima
+		esecuzione con stati vuoti, di errore, di caricamento e offline che offrono sempre una via
+		d'uscita.
+	</p>
+
+	<h3 class="g-label">1 — Avvisi, azionabili</h3>
+	<div class="app">
+		<aside class="sidebar">
+			<div class="brand">mastro</div>
+			<nav class="nav">
+				<div class="nav-group">
+					<a class="nav-item" href="#"><span class="nav-ico">◎</span> Oggi</a>
+					<a class="nav-item" href="#" aria-current="page"
+						><span class="nav-ico">▤</span> Da rivedere
+						<span class="badge badge--count badge--critical" style="margin-left: auto">3</span></a
+					>
+					<a class="nav-item" href="#"><span class="nav-ico">▦</span> Calendario</a>
+				</div>
+				<div class="nav-group">
+					<div class="nav-title">Registro</div>
+					<a class="nav-item" href="#"><span class="nav-ico">◫</span> Clienti</a>
+					<a class="nav-item" href="#"
+						><span class="nav-ico">€</span> Fatture
+						<span class="badge badge--count badge--warning" style="margin-left: auto">1</span></a
+					>
+				</div>
+				<div class="nav-group">
+					<div class="nav-title">Ingresso</div>
+					<a class="nav-item" href="#"><span class="nav-ico">✉</span> Posta</a>
+					<a class="nav-item" href="#"><span class="nav-ico">↥</span> Import</a>
+				</div>
+				<div class="nav-spacer"></div>
+				<div class="nav-group">
+					<a class="nav-item" href="#"><span class="nav-ico">⚙</span> Impostazioni</a>
+				</div>
+				<div class="nav-foot">
+					<span>lorenzo@example.com</span>
+					<span class="inline"><a href="#">English</a> <span class="faint">italiano</span></span>
+				</div>
+			</nav>
+		</aside>
+		<div class="main">
+			<div class="page">
+				<div class="page-header">
+					<div class="title-row">
+						<h1>Avvisi</h1>
+						<a href="#">Preferenze</a>
+					</div>
+					<p class="subtitle">
+						Ogni avviso è un lavoro da chiudere, non una notifica da silenziare.
+					</p>
+				</div>
+				<div class="section">
+					<div class="spread">
+						<div class="tabs" role="tablist" aria-label="Filtra avvisi">
+							<button class="tab" type="button" role="tab" aria-selected="true">
+								Da sistemare
+							</button>
+							<button class="tab" type="button" role="tab" aria-selected="false">Tutti</button>
+							<button class="tab" type="button" role="tab" aria-selected="false">Letti</button>
+						</div>
+						<span class="inline"
+							><span class="badge badge--count badge--critical">3</span>
+							<span class="muted">da sistemare</span></span
+						>
+					</div>
+					<div class="card card--flush">
+						<div class="att att--critical">
+							<div class="att-body">
+								<div class="att-title">Giornata lavorata senza approvazione</div>
+								<div class="att-detail">
+									Nordwind Logistics S.p.A. — Contratto quadro 2026, 21 lug 2026: registrata come
+									lavorata, nessuna conferma scritta in archivio. Vale
+									<span class="amt">700,00 €</span>.
+								</div>
+								<div class="att-actions">
+									<a class="btn btn--primary btn--sm" href="#">Collega un'approvazione</a>
+									<a class="btn btn--sm" href="#">Apri la giornata del 21 lug</a>
+									<button class="btn btn--ghost btn--sm" type="button">Segna come letto</button>
+								</div>
+							</div>
+						</div>
+						<div class="att att--critical">
+							<div class="att-body">
+								<div class="att-title">Fattura scaduta da 34 giorni</div>
+								<div class="att-detail">
+									2026/011 — Bellani &amp; Partners, scaduta il 10 lug 2026, totale
+									<span class="amt">2.647,40 €</span>.
+								</div>
+								<div class="att-actions">
+									<a class="btn btn--primary btn--sm" href="#">Invia sollecito</a>
+									<a class="btn btn--sm" href="#">Apri fattura 2026/011</a>
+									<button class="btn btn--ghost btn--sm" type="button">Segna come letto</button>
+								</div>
+							</div>
+						</div>
+						<div class="att att--info">
+							<div class="att-body">
+								<div class="att-title">2 proposte in attesa di revisione</div>
+								<div class="att-detail">
+									Nordwind — 17 e 18 ago 2026 (18 ago mezza giornata), da
+									<span class="mono">conferma-agosto.eml</span> di Paola Ricci, 11 ago 2026.
+								</div>
+								<div class="att-actions">
+									<a class="btn btn--primary btn--sm" href="#">Rivedi le proposte</a>
+									<a class="btn btn--sm" href="#">Apri la mail</a>
+									<button class="btn btn--ghost btn--sm" type="button">Segna come letto</button>
+								</div>
+							</div>
+						</div>
+						<div class="att att--warning">
+							<div class="att-body">
+								<div class="att-title">Casella di posta: tutto regolare</div>
+								<div class="att-detail">
+									Ultimo controllo oggi alle 08:15, esito ok. Solo informativo, nessuna azione
+									richiesta.
+								</div>
+								<div class="att-actions">
+									<a class="btn btn--sm" href="#">Apri Impostazioni → Posta</a>
+									<button class="btn btn--ghost btn--sm" type="button">Segna come letto</button>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<h3 class="g-label">2 — Stati vuoti, tre significati diversi</h3>
+	<div class="cols-3 grid">
+		<div class="card">
+			<div class="empty">
+				<div class="empty-ico" aria-hidden="true">◫</div>
+				<div class="empty-title">Nessun cliente ancora</div>
+				<p class="empty-body">
+					Aggiungi il primo cliente per iniziare a registrare contratti, giornate e fatture: mastro
+					costruisce calendario e avvisi a partire da qui.
+				</p>
+				<button class="btn btn--primary" type="button">Nuovo cliente</button>
+			</div>
+		</div>
+		<div class="card">
+			<div class="empty">
+				<div class="empty-ico" aria-hidden="true">€</div>
+				<div class="empty-title">Nessuna fattura scaduta</div>
+				<p class="empty-body">
+					Con il filtro "Scadute" attivo non ci sono fatture in ritardo in questo momento. Le altre
+					fatture del periodo restano visibili togliendo il filtro.
+				</p>
+				<button class="btn" type="button">Mostra tutte</button>
+			</div>
+		</div>
+		<div class="card">
+			<div class="empty">
+				<div class="empty-ico" aria-hidden="true">▦</div>
+				<div class="empty-title">Nessuna giornata ad agosto</div>
+				<p class="empty-body">
+					Non risulta nessuna giornata registrata per questo mese, né lavorata né proposta. Non è un
+					errore: puoi registrarne una in qualsiasi momento.
+				</p>
+				<button class="btn btn--primary" type="button">Registra una giornata</button>
+			</div>
+		</div>
+	</div>
+
+	<h3 class="g-label">3 — Stati di errore, una sola forma (difetto 20)</h3>
+	<div class="cols-2 grid">
+		<div class="card">
+			<div class="stack">
+				<span class="badge badge--critical badge--lg">404</span>
+				<h3>Questa fattura non esiste</h3>
+				<p class="muted">
+					Il collegamento seguito punta a una fattura che non è mai stata creata o è stata rimossa.
+					Controlla l'indirizzo, oppure torna all'elenco.
+				</p>
+				<div class="inline">
+					<a class="btn btn--primary" href="#">Torna a Fatture</a>
+					<a class="btn btn--ghost" href="#">Vai a Oggi</a>
+				</div>
+			</div>
+		</div>
+		<div class="card">
+			<div class="stack">
+				<span class="badge badge--warning badge--lg">400</span>
+				<h3>La fattura 2026/014 non è scaduta</h3>
+				<p class="muted">
+					Un sollecito si può preparare solo per una fattura scaduta. Questa non lo è: risulta già
+					pagata.
+				</p>
+				<dl class="pairs">
+					<dt>Scadenza prevista</dt>
+					<dd>30 ago 2026 — netto 30 dall'emissione</dd>
+					<dt>Stato attuale</dt>
+					<dd>Pagata il 28 lug 2026</dd>
+				</dl>
+				<div class="inline">
+					<a class="btn btn--primary" href="#">Apri fattura 2026/014</a>
+					<a class="btn btn--ghost" href="#">Torna a Fatture</a>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<h3 class="g-label">4 — Caricamento e salvataggio</h3>
+	<div class="cols-2 grid">
+		<div class="card card--flush">
+			<div class="card-head">
+				<h3>Giornate del mese</h3>
+				<span class="faint">in caricamento…</span>
+			</div>
+			<table class="table--flush table">
+				<caption class="sr">
+					Giornate del mese, dati in caricamento
+				</caption>
+				<thead>
+					<tr>
+						<th scope="col">Data</th>
+						<th scope="col">Cliente</th>
+						<th scope="col" class="num">Importo</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td><span class="skeleton" style="width: 64px"></span></td>
+						<td><span class="skeleton" style="width: 132px"></span></td>
+						<td class="num">
+							<span class="skeleton" style="width: 56px; margin-left: auto"></span>
+						</td>
+					</tr>
+					<tr>
+						<td><span class="skeleton" style="width: 64px"></span></td>
+						<td><span class="skeleton" style="width: 96px"></span></td>
+						<td class="num">
+							<span class="skeleton" style="width: 56px; margin-left: auto"></span>
+						</td>
+					</tr>
+					<tr>
+						<td><span class="skeleton" style="width: 64px"></span></td>
+						<td><span class="skeleton" style="width: 112px"></span></td>
+						<td class="num">
+							<span class="skeleton" style="width: 56px; margin-left: auto"></span>
+						</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+		<div class="card">
+			<div class="stack">
+				<h3>Registra giornata</h3>
+				<div class="field">
+					<label class="label" for="st-contract">Contratto</label>
+					<select class="select" id="st-contract">
+						<option>Contratto quadro 2026 — piattaforma logistica</option>
+					</select>
+				</div>
+				<div class="field">
+					<label class="label" for="st-date">Data</label>
+					<input class="input" id="st-date" type="text" value="13 ago 2026" />
+				</div>
+				<div class="inline">
+					<button class="btn btn--primary" type="button" aria-busy="true">Salva giornata</button>
+					<button class="btn" type="button" disabled>Annulla</button>
+				</div>
+				<p class="hint">
+					Salvataggio in corso — il modulo resta bloccato finché il server non conferma, così una
+					rete lenta non produce un doppio invio.
+				</p>
+			</div>
+		</div>
+	</div>
+
+	<h3 class="g-label">5 — Offline, sul telefono (difetto 19)</h3>
+	<div class="phone">
+		<div class="phone-status">
+			<span>9:41</span>
+			<span>Nessuna rete · 82%</span>
+		</div>
+		<div class="phone-body">
+			<div class="banner banner--warning">
+				<span
+					><strong>Sei offline.</strong> La giornata viene salvata sul telefono e inviata appena
+					torna la rete.</span
+				>
+			</div>
+			<div class="field">
+				<label class="label" for="ph-contract">Contratto</label>
+				<select class="select" id="ph-contract">
+					<option>Contratto quadro 2026 — piattaforma logistica</option>
+				</select>
+			</div>
+			<div class="field">
+				<label class="label" for="ph-date">Data</label>
+				<input class="input" id="ph-date" type="text" value="13 ago 2026" />
+			</div>
+			<div class="seg seg--block" role="group" aria-label="Durata giornata">
+				<button type="button" aria-pressed="true">Giornata intera</button>
+				<button type="button" aria-pressed="false">Mezza giornata</button>
+			</div>
+			<button class="btn btn--primary btn--block" type="button">Registra offline</button>
+			<div>
+				<div class="label">In coda su questo telefono</div>
+				<ul class="rows">
+					<li class="row">
+						<div class="row-main">
+							<div class="row-title">13 ago 2026 — giornata intera</div>
+							<div class="row-meta">Nordwind Logistics — in attesa di rete</div>
+						</div>
+						<span class="badge badge--info">In coda</span>
+					</li>
+				</ul>
+			</div>
+		</div>
+		<div class="phone-bar">
+			<a class="phone-tab" href="#" aria-current="page"><span class="ico">◎</span>Oggi</a>
+			<a class="phone-tab" href="#"><span class="ico">▦</span>Calendario</a>
+			<a class="phone-tab" href="#"><span class="ico">▤</span>Da rivedere</a>
+			<a class="phone-tab" href="#"><span class="ico">€</span>Fatture</a>
+			<a class="phone-tab" href="#"><span class="ico">⚙</span>Altro</a>
+		</div>
+	</div>
+
+	<h3 class="g-label">6 — Overlay: conferma distruttiva e conferma di salvataggio</h3>
+	<div class="g-pair">
+		<div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlg-reject-title">
+			<h3 id="dlg-reject-title">Rifiutare la proposta del 18 agosto?</h3>
+			<p class="muted">
+				La proposta viene da <span class="mono">conferma-agosto.eml</span> (Paola Ricci, 11 ago
+				2026). Rifiutandola la mail resta archiviata come prova, ma la mezza giornata non entra nel
+				registro e andrà richiesta di nuovo se serve.
+			</p>
+			<div class="inline">
+				<button class="btn btn--ghost" type="button">Annulla</button>
+				<button class="btn btn--danger" type="button">Rifiuta proposta</button>
+			</div>
+		</div>
+		<div class="toast">
+			<span class="badge badge--good">Salvata</span>
+			<span>Giornata del 13 agosto registrata.</span>
+			<button class="btn btn--ghost btn--sm" type="button">Annulla</button>
+		</div>
+	</div>
+
+	<h3 class="g-label">7 — Impostazioni, stato di salute del sistema</h3>
+	<div class="card card--flush">
+		<div class="card-head">
+			<h3>Impostazioni</h3>
+			<span class="faint">7 voci</span>
+		</div>
+		<ul class="rows">
+			<li class="row">
+				<div class="row-main">
+					<div class="row-title">Profilo fiscale</div>
+					<div class="row-meta">Regime forfettario, in vigore dal 1 gen 2026</div>
+				</div>
+				<div class="row-actions">
+					<span class="badge badge--good">Configurato</span>
+					<a class="btn btn--ghost btn--sm" href="#">Vedi soglie</a>
+				</div>
+			</li>
+			<li class="row">
+				<div class="row-main">
+					<div class="row-title">Ultimo backup</div>
+					<div class="row-meta">Oggi alle 03:17 · 412 MB</div>
+				</div>
+				<div class="row-actions">
+					<span class="badge badge--good">OK</span>
+					<a class="btn btn--ghost btn--sm" href="#">Dettagli</a>
+				</div>
+			</li>
+			<li class="row">
+				<div class="row-main">
+					<div class="row-title">Ultimo controllo posta</div>
+					<div class="row-meta">Oggi alle 08:15 · nessun errore</div>
+				</div>
+				<div class="row-actions">
+					<span class="badge badge--good">OK</span>
+					<a class="btn btn--ghost btn--sm" href="#">Apri Posta</a>
+				</div>
+			</li>
+			<li class="row">
+				<div class="row-main">
+					<div class="row-title">Runner di estrazione</div>
+					<div class="row-meta">
+						Non configurato: senza un runner ACP le proposte automatiche da email e documenti
+						restano disattivate — le giornate vanno inserite a mano.
+					</div>
+				</div>
+				<div class="row-actions">
+					<span class="badge badge--warning">Non configurato</span>
+					<a class="btn btn--ghost btn--sm" href="#">Guida</a>
+				</div>
+			</li>
+			<li class="row">
+				<div class="row-main">
+					<div class="row-title">Notifiche push</div>
+					<div class="row-meta">Non attive su questo dispositivo</div>
+				</div>
+				<div class="row-actions">
+					<span class="badge badge--info">Non attive</span>
+					<button class="btn btn--primary btn--sm" type="button">Attiva</button>
+				</div>
+			</li>
+			<li class="row">
+				<div class="row-main">
+					<div class="row-title">Tema</div>
+					<div class="row-meta">Segue il sistema finché non scegli un tema fisso</div>
+				</div>
+				<div class="row-actions">
+					<div class="seg" role="group" aria-label="Tema">
+						<button type="button" aria-pressed="true">Sistema</button>
+						<button type="button" aria-pressed="false">Chiaro</button>
+						<button type="button" aria-pressed="false">Scuro</button>
+					</div>
+				</div>
+			</li>
+			<li class="row">
+				<div class="row-main">
+					<div class="row-title">Lingua</div>
+					<div class="row-meta">Italiano</div>
+				</div>
+				<div class="row-actions inline">
+					<a href="#">English</a>
+					<span class="faint">italiano</span>
+				</div>
+			</li>
+		</ul>
+	</div>
+</section>

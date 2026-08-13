@@ -1,0 +1,224 @@
+<section class="g-screen" id="components">
+	<h2>Il sistema, pezzo per pezzo</h2>
+	<p class="g-note">
+		Questi sono i componenti che oggi non esistono: nell'app ci sono 21 stringhe di classe diverse
+		per i bottoni, 46 input con lo stile scritto a mano riga per riga, due regole
+		<code>:hover</code> in tutto il prodotto e nessuno stato di caricamento. Qui ogni controllo ha i
+		suoi stati, e cambiando direzione in alto cambia tutto senza toccare una riga di markup.
+	</p>
+
+	<div class="g-label">Colori della direzione attiva</div>
+	<div class="card">
+		<div class="g-swatches">
+			<div class="g-swatch"><i style="background: var(--surface-page)"></i>pagina</div>
+			<div class="g-swatch"><i style="background: var(--surface-1)"></i>superficie</div>
+			<div class="g-swatch"><i style="background: var(--surface-2)"></i>superficie 2</div>
+			<div class="g-swatch"><i style="background: var(--ink)"></i>testo</div>
+			<div class="g-swatch"><i style="background: var(--ink-2)"></i>testo 2</div>
+			<div class="g-swatch"><i style="background: var(--ink-3)"></i>testo 3</div>
+			<div class="g-swatch"><i style="background: var(--primary)"></i>primario</div>
+			<div class="g-swatch"><i style="background: var(--danger)"></i>pericolo</div>
+			<div class="g-swatch"><i style="background: var(--status-good)"></i>ok</div>
+			<div class="g-swatch"><i style="background: var(--status-warning)"></i>attenzione</div>
+			<div class="g-swatch"><i style="background: var(--status-serious)"></i>serio</div>
+			<div class="g-swatch"><i style="background: var(--status-critical)"></i>critico</div>
+		</div>
+		<p class="hint" style="margin-top: var(--space-3)">
+			Le quattro tinte di stato vengono dalla palette già validata in
+			<code>src/lib/design/palette.ts</code> e non cambiano fra le direzioni: sono l'unica parte del
+			sistema che non è in discussione.
+		</p>
+	</div>
+
+	<div class="g-label">Tipografia</div>
+	<div class="card stack">
+		<div style="font-size: var(--text-2xl); font-weight: var(--weight-bold)">
+			Contratto quadro 2026 — piattaforma logistica
+		</div>
+		<div style="font-size: var(--text-xl); font-weight: var(--weight-bold)">Titolo di sezione</div>
+		<div style="font-size: var(--text-lg); font-weight: var(--weight-med)">Titolo di scheda</div>
+		<div style="font-size: var(--text-md)">
+			Testo corrente: le giornate sono fatturabili solo previa conferma scritta del referente.
+		</div>
+		<div style="font-size: var(--text-sm)" class="muted">
+			Testo secondario, righe di tabella, etichette dei campi.
+		</div>
+		<div style="font-size: var(--text-xs)" class="faint">
+			Testo minore: scadenze, note, unità di misura.
+		</div>
+		<hr class="sep" />
+		<div class="inline" style="gap: var(--space-6); align-items: baseline">
+			<span class="amt amt--fig">3.150,00 €</span>
+			<span class="amt amt--md">700,00 €</span>
+			<span class="amt" style="font-size: var(--text-sm)">46,00 €</span>
+		</div>
+		<p class="hint">
+			Tre misure per il denaro, tutte con cifre tabulari: la cifra di testata, la cella di tabella,
+			l'importo dentro una frase. Oggi ogni pagina sceglie la sua.
+		</p>
+	</div>
+
+	<div class="g-label">Bottoni e stati</div>
+	<div class="card stack">
+		<div class="inline">
+			<button class="btn btn--primary">Registra una giornata</button>
+			<button class="btn">Rivedi le proposte</button>
+			<button class="btn btn--danger">Rifiuta</button>
+			<button class="btn btn--ghost">Annulla</button>
+			<button class="btn btn--sm">Azione piccola</button>
+			<button class="btn btn--primary btn--lg">Azione da telefono</button>
+		</div>
+		<div class="inline">
+			<button class="btn btn--primary" disabled>Disabilitato</button>
+			<button class="btn btn--primary" aria-busy="true">Salvataggio</button>
+			<button class="btn">Salva <span class="kbd">⌘↵</span></button>
+			<span class="muted" style="font-size: var(--text-sm)"
+				>← passa il mouse sopra: oggi nessuno di questi reagisce</span
+			>
+		</div>
+	</div>
+
+	<div class="g-label">Campi</div>
+	<div class="card">
+		<div class="cols-3 grid">
+			<div class="field">
+				<label class="label" for="c-1">Cliente</label>
+				<select class="select" id="c-1">
+					<option>Nordwind Logistics S.p.A.</option>
+					<option>Bellani &amp; Partners</option>
+					<option>Fermata Digitale S.r.l.</option>
+				</select>
+				<span class="hint">Solo i contratti attivi.</span>
+			</div>
+			<div class="field">
+				<label class="label" for="c-2">Data</label>
+				<input class="input" id="c-2" type="date" value="2026-08-13" />
+			</div>
+			<div class="field">
+				<label class="label" for="c-3">Tariffa</label>
+				<input class="input input--num" id="c-3" value="700,00" />
+				<span class="hint">La virgola decimale è accettata (oggi no).</span>
+			</div>
+			<div class="field">
+				<label class="label" for="c-4">Preavviso di rinnovo</label>
+				<input class="input" id="c-4" value="0" aria-invalid="true" aria-describedby="c-4-e" />
+				<span class="err" id="c-4-e"
+					>Con rinnovo esplicito servono almeno 1 giorno di preavviso.</span
+				>
+			</div>
+			<div class="field">
+				<label class="label" for="c-5">Quanto</label>
+				<div class="seg" role="group" id="c-5">
+					<button type="button" aria-pressed="true">Giornata intera</button>
+					<button type="button" aria-pressed="false">Mezza</button>
+				</div>
+			</div>
+			<div class="field">
+				<label class="label" for="c-6">Cosa hai fatto</label>
+				<input class="input" id="c-6" placeholder="es. migrazione API, sprint 4" />
+			</div>
+		</div>
+		<hr class="sep" />
+		<label class="check">
+			<input type="checkbox" checked />
+			<span
+				>Serve un'approvazione scritta prima di lavorare
+				<span class="hint" style="display: block"
+					>Una giornata registrata come lavorata senza approvazione finisce nello stato di
+					rischio.</span
+				></span
+			>
+		</label>
+	</div>
+
+	<div class="g-label">Stati e contrassegni</div>
+	<div class="card stack">
+		<div class="inline">
+			<span class="badge">Bozza</span>
+			<span class="badge badge--info">Proposta</span>
+			<span class="badge badge--good">Approvata</span>
+			<span class="badge badge--good">Pagata</span>
+			<span class="badge badge--warning">Scade fra 3 giorni</span>
+			<span class="badge badge--serious">Contestata</span>
+			<span class="badge badge--critical">Lavorata senza approvazione</span>
+			<span class="badge badge--critical">Scaduta da 34 giorni</span>
+			<span class="badge badge--count badge--critical">3</span>
+			<span class="badge badge--lg badge--info">2 proposte</span>
+		</div>
+		<p class="hint">
+			Ogni stato porta un glifo oltre al colore, come già fa
+			<code>StatusIndicator</code> nei grafici: il colore da solo non dice mai niente.
+		</p>
+	</div>
+
+	<div class="g-label">Tabella</div>
+	<div class="card card--flush">
+		<table class="table--flush table">
+			<caption class="sr">
+				Fatture non pagate
+			</caption>
+			<thead>
+				<tr>
+					<th scope="col">Numero</th>
+					<th scope="col">Cliente</th>
+					<th scope="col">Scadenza</th>
+					<th scope="col">Stato</th>
+					<th scope="col" class="num">Giornate</th>
+					<th scope="col" class="num">Totale</th>
+				</tr>
+			</thead>
+			<tbody>
+				<tr>
+					<td class="mono"><a href="#">2026/011</a></td>
+					<td>Bellani &amp; Partners</td>
+					<td>10 lug 2026</td>
+					<td><span class="badge badge--critical">In ritardo di 34 giorni</span></td>
+					<td class="num">3,5</td>
+					<td class="num"><span class="amt">2.647,40 €</span></td>
+				</tr>
+				<tr>
+					<td class="mono"><a href="#">2026/015</a></td>
+					<td>Fermata Digitale S.r.l.</td>
+					<td>16 ago 2026</td>
+					<td><span class="badge badge--warning">Scade fra 3 giorni</span></td>
+					<td class="num">—</td>
+					<td class="num"><span class="amt">2.196,00 €</span></td>
+				</tr>
+			</tbody>
+			<tfoot>
+				<tr>
+					<td colspan="5">Da incassare</td>
+					<td class="num"><span class="amt">4.843,40 €</span></td>
+				</tr>
+			</tfoot>
+		</table>
+	</div>
+
+	<div class="g-label">Misuratore di soglia</div>
+	<div class="card">
+		<div class="meter">
+			<div class="spread">
+				<div>
+					<div class="stat-label">Soglia ricavi, regime forfettario</div>
+					<span class="amt amt--fig">3.150,00 €</span>
+					<span class="muted">su 85.000,00 €</span>
+				</div>
+				<span class="badge badge--good badge--lg">Entro la soglia</span>
+			</div>
+			<div class="meter-track">
+				<div class="meter-fill" style="width: 3.7%"></div>
+				<div class="meter-fill meter-fill--projected" style="left: 3.7%; width: 4.2%"></div>
+				<div class="meter-mark meter-mark--warn" style="left: 80%"></div>
+			</div>
+			<div class="meter-scale"><span>0</span><span>soglia 85.000,00 €</span></div>
+			<div class="meter-legend">
+				<span><i class="swatch" style="background: var(--certainty-committed)"></i>incassato</span>
+				<span
+					><i class="swatch" style="background: var(--certainty-projected)"></i>proiezione a fine
+					anno 6.750,00 € (8%)</span
+				>
+				<span><i class="swatch" style="background: var(--status-warning)"></i>avviso all'80%</span>
+			</div>
+		</div>
+	</div>
+</section>

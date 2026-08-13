@@ -1,0 +1,580 @@
+<section class="g-screen" id="contract">
+	<p class="g-label">Dettaglio contratto</p>
+	<p class="g-note">
+		Oggi questa pagina è cinque liste di nomi di colonna e non mostra né le giornate né le fatture
+		del contratto (difetto 12): per sapere se tutto ciò che è stato lavorato è stato anche approvato
+		e incassato bisogna uscire dalla pagina e filtrare a mano il calendario e le fatture. Qui la
+		vista si apre sull'esposizione — giornate, valore, incassato — poi elenca le giornate con il
+		loro stato reale, compresa quella lavorata senza approvazione scritta. Il listino in vigore oggi
+		è marcato in modo esplicito (difetto 14) invece di restare una riga qualunque in una tabella
+		piatta.
+	</p>
+
+	<div class="app">
+		<aside class="sidebar">
+			<div class="brand">mastro</div>
+			<nav class="nav">
+				<div class="nav-group">
+					<a class="nav-item" href="#"><span class="nav-ico">◎</span> Oggi</a>
+					<a class="nav-item" href="#"
+						><span class="nav-ico">▤</span> Da rivedere
+						<span class="badge badge--count badge--critical" style="margin-left: auto">3</span></a
+					>
+					<a class="nav-item" href="#"><span class="nav-ico">▦</span> Calendario</a>
+				</div>
+				<div class="nav-group">
+					<div class="nav-title">Registro</div>
+					<a class="nav-item" href="#" aria-current="page"
+						><span class="nav-ico">◫</span> Clienti</a
+					>
+					<a class="nav-item" href="#"
+						><span class="nav-ico">€</span> Fatture
+						<span class="badge badge--count badge--warning" style="margin-left: auto">1</span></a
+					>
+				</div>
+				<div class="nav-group">
+					<div class="nav-title">Ingresso</div>
+					<a class="nav-item" href="#"><span class="nav-ico">✉</span> Posta</a>
+					<a class="nav-item" href="#"><span class="nav-ico">↥</span> Import</a>
+				</div>
+				<div class="nav-spacer"></div>
+				<div class="nav-group">
+					<a class="nav-item" href="#"><span class="nav-ico">⚙</span> Impostazioni</a>
+				</div>
+				<div class="nav-foot">
+					<span>lorenzo@example.com</span>
+					<span class="inline"><a href="#">English</a> <span class="faint">italiano</span></span>
+				</div>
+			</nav>
+		</aside>
+
+		<main class="main">
+			<div class="page">
+				<div class="page-header">
+					<div class="crumbs">
+						<a href="#">Clienti</a>
+						<span aria-hidden="true">›</span>
+						<a href="#">Nordwind Logistics S.p.A.</a>
+					</div>
+					<div class="title-row">
+						<div class="stack">
+							<h1>Contratto quadro 2026 — piattaforma logistica</h1>
+							<div class="inline">
+								<p class="subtitle">Nordwind Logistics S.p.A.</p>
+								<span class="badge badge--good">Attivo</span>
+							</div>
+						</div>
+						<div class="inline">
+							<button class="btn btn--primary" type="button">Registra una giornata</button>
+							<button class="btn" type="button">Nuova fattura</button>
+							<button class="btn btn--ghost" type="button">Modifica</button>
+						</div>
+					</div>
+				</div>
+
+				<div class="section">
+					<div class="card">
+						<div class="grid" style="grid-template-columns: repeat(5, minmax(0, 1fr))">
+							<div class="stat">
+								<span class="stat-label">Giornate quest'anno</span>
+								<span class="stat-value">6,5</span>
+								<span class="stat-sub">giorni</span>
+							</div>
+							<div class="stat">
+								<span class="stat-label">Valore lavorato</span>
+								<span class="stat-value"><span class="amt">4.550,00 €</span></span>
+								<span class="stat-sub">imponibile</span>
+							</div>
+							<div class="stat">
+								<span class="stat-label">Da incassare</span>
+								<span class="stat-value"><span class="amt">0,00 €</span></span>
+								<span class="stat-sub">nessuna fattura aperta</span>
+							</div>
+							<div class="stat">
+								<span class="stat-label">Incassato</span>
+								<span class="stat-value"><span class="amt">3.843,00 €</span></span>
+								<span class="stat-sub">fattura 2026/014</span>
+							</div>
+							<div class="stat">
+								<span class="stat-label">Tariffa in vigore</span>
+								<span class="stat-value"><span class="amt">700,00 €</span></span>
+								<span class="stat-sub">al giorno</span>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="section">
+					<div class="banner banner--warning">
+						<div>
+							<strong>Rinnovo esplicito.</strong> La finestra per rifiutare il rinnovo si apre il
+							<strong>1 nov 2026</strong> — preavviso di 60 giorni prima della scadenza del 31 dic
+							2026. Il preavviso di recesso ordinario resta di 30 giorni.
+						</div>
+					</div>
+				</div>
+
+				<div class="section">
+					<div class="section-head">
+						<h2>Giornate</h2>
+						<a href="#">Vedi tutte →</a>
+					</div>
+					<div class="card card--flush">
+						<table class="table--flush table">
+							<caption class="sr">
+								Giornate più recenti registrate su questo contratto, con il loro stato
+							</caption>
+							<thead>
+								<tr>
+									<th scope="col">Data</th>
+									<th scope="col">Stato</th>
+									<th scope="col" class="num">Giornate</th>
+									<th scope="col" class="num">Valore</th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>18 ago 2026</td>
+									<td><span class="badge badge--warning">Proposta</span></td>
+									<td class="num">0,5 g</td>
+									<td class="num"><span class="amt">350,00 €</span></td>
+								</tr>
+								<tr>
+									<td>17 ago 2026</td>
+									<td><span class="badge badge--warning">Proposta</span></td>
+									<td class="num">1 g</td>
+									<td class="num"><span class="amt">700,00 €</span></td>
+								</tr>
+								<tr>
+									<td>4 ago 2026</td>
+									<td><span class="badge badge--info">Approvata</span></td>
+									<td class="num">1 g</td>
+									<td class="num"><span class="amt">700,00 €</span></td>
+								</tr>
+								<tr>
+									<td>3 ago 2026</td>
+									<td><span class="badge badge--info">Approvata</span></td>
+									<td class="num">1 g</td>
+									<td class="num"><span class="amt">700,00 €</span></td>
+								</tr>
+								<tr>
+									<td>
+										<div class="stack" style="gap: 2px">
+											<span>21 lug 2026</span>
+											<span class="hint">Intervento telefonico — nessuna conferma scritta</span>
+										</div>
+									</td>
+									<td><span class="badge badge--critical">Senza approvazione</span></td>
+									<td class="num">1 g</td>
+									<td class="num"><span class="amt">700,00 €</span></td>
+								</tr>
+								<tr>
+									<td>15 lug 2026</td>
+									<td><span class="badge badge--good">Fatturata</span></td>
+									<td class="num">1 g</td>
+									<td class="num"><span class="amt">700,00 €</span></td>
+								</tr>
+								<tr>
+									<td>14 lug 2026</td>
+									<td><span class="badge badge--good">Fatturata</span></td>
+									<td class="num">1 g</td>
+									<td class="num"><span class="amt">700,00 €</span></td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+
+				<div class="cols-2 grid">
+					<div class="section">
+						<div class="section-head">
+							<h2>Fatture</h2>
+						</div>
+						<div class="card card--flush">
+							<table class="table--flush table">
+								<caption class="sr">
+									Fatture emesse a fronte di questo contratto
+								</caption>
+								<thead>
+									<tr>
+										<th scope="col">Numero</th>
+										<th scope="col">Emessa</th>
+										<th scope="col">Stato</th>
+										<th scope="col" class="num">Totale</th>
+									</tr>
+								</thead>
+								<tbody>
+									<tr>
+										<td>2026/014</td>
+										<td>31 lug 2026</td>
+										<td>
+											<span class="badge badge--good">Pagata</span>
+											<span class="hint">28 lug 2026</span>
+										</td>
+										<td class="num"><span class="amt">3.843,00 €</span></td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
+
+					<div class="section">
+						<div class="section-head">
+							<h2>Tariffe</h2>
+						</div>
+						<div class="card card--flush">
+							<table class="table--flush table">
+								<caption class="sr">
+									Listini applicati a questo contratto, con il periodo di validità
+								</caption>
+								<thead>
+									<tr>
+										<th scope="col">Valido dal</th>
+										<th scope="col">Valido al</th>
+										<th scope="col" class="num">Importo</th>
+										<th scope="col">Stato</th>
+									</tr>
+								</thead>
+								<tbody>
+									<tr>
+										<td>1 gen 2026</td>
+										<td>aperto</td>
+										<td class="num"><span class="amt">700,00 €</span> / giorno</td>
+										<td><span class="badge badge--info">In vigore</span></td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+
+				<div class="section">
+					<div class="section-head">
+						<h2>Spese</h2>
+					</div>
+					<div class="card card--flush">
+						<table class="table--flush table">
+							<caption class="sr">
+								Spese sostenute su questo contratto, con lo stato di rifatturazione
+							</caption>
+							<thead>
+								<tr>
+									<th scope="col">Data</th>
+									<th scope="col">Descrizione</th>
+									<th scope="col" class="num">Importo</th>
+									<th scope="col">Stato</th>
+									<th scope="col"><span class="sr">Azioni</span></th>
+								</tr>
+							</thead>
+							<tbody>
+								<tr>
+									<td>14 lug 2026</td>
+									<td>Treno Milano — Verona</td>
+									<td class="num"><span class="amt">46,00 €</span></td>
+									<td><span class="badge badge--info">Pre-autorizzata</span></td>
+									<td><button class="btn btn--sm" type="button">Rifattura</button></td>
+								</tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+
+				<div class="section">
+					<div class="section-head">
+						<h2>Clausole interpretate</h2>
+					</div>
+					<div class="card stack">
+						<div class="stack" style="gap: 4px">
+							<span class="label">Art. 7.2 — testo letterale</span>
+							<div class="mono muted">
+								«Le giornate sono fatturabili solo previa conferma scritta del referente di
+								progetto.»
+							</div>
+						</div>
+						<div class="stack" style="gap: 4px">
+							<span class="label">Interpretazione adottata</span>
+							<div>
+								Una mail del referente vale come conferma scritta; la conferma verbale non basta —
+								per questo la giornata del 21 luglio, confermata solo per telefono, resta segnalata
+								come priva di approvazione.
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="section">
+					<div class="section-head">
+						<h2>Termini</h2>
+					</div>
+					<div class="card">
+						<dl class="pairs">
+							<dt>Termini di pagamento</dt>
+							<dd>Netto 30 giorni</dd>
+							<dt>Cadenza di fatturazione</dt>
+							<dd>Mensile</dd>
+							<dt>Valuta</dt>
+							<dd>EUR</dd>
+							<dt>Regime fiscale</dt>
+							<dd>Standard</dd>
+							<dt>Tipo di rinnovo</dt>
+							<dd>Esplicito</dd>
+							<dt>Preavviso di rinnovo</dt>
+							<dd>60 giorni — la finestra per rifiutarlo si apre il 1 nov 2026</dd>
+							<dt>Preavviso di recesso</dt>
+							<dd>30 giorni</dd>
+							<dt>Politica sulle spese</dt>
+							<dd>Rimborsate a costo</dd>
+							<dt>Pre-autorizzazione spese</dt>
+							<dd>Non richiesta a livello di contratto (questa spesa lo era comunque)</dd>
+							<dt>Approvazione scritta preventiva</dt>
+							<dd>Richiesta prima di lavorare una giornata</dd>
+							<dt>Cartella posta</dt>
+							<dd>Nordwind</dd>
+							<dt>Lingua dei modelli</dt>
+							<dd>Italiano</dd>
+						</dl>
+					</div>
+				</div>
+			</div>
+		</main>
+	</div>
+
+	<p class="g-label">Nuovo contratto</p>
+	<p class="g-note">
+		Nel form attuale la richiesta di approvazione scritta preventiva è una casella di spunta senza
+		accento, spenta per default e con lo stesso peso visivo di ogni altro campo (difetto 1): un
+		contratto può andare in produzione con la protezione centrale del prodotto silenziosamente
+		disattivata, senza che nulla lo segnali. Qui la scelta è promossa al secondo gruppo del form,
+		resa come due opzioni esplicite invece di una casella anonima, con un promemoria di cosa
+		comporta ciascuna.
+	</p>
+
+	<div class="app">
+		<aside class="sidebar">
+			<div class="brand">mastro</div>
+			<nav class="nav">
+				<div class="nav-group">
+					<a class="nav-item" href="#"><span class="nav-ico">◎</span> Oggi</a>
+					<a class="nav-item" href="#"
+						><span class="nav-ico">▤</span> Da rivedere
+						<span class="badge badge--count badge--critical" style="margin-left: auto">3</span></a
+					>
+					<a class="nav-item" href="#"><span class="nav-ico">▦</span> Calendario</a>
+				</div>
+				<div class="nav-group">
+					<div class="nav-title">Registro</div>
+					<a class="nav-item" href="#" aria-current="page"
+						><span class="nav-ico">◫</span> Clienti</a
+					>
+					<a class="nav-item" href="#"
+						><span class="nav-ico">€</span> Fatture
+						<span class="badge badge--count badge--warning" style="margin-left: auto">1</span></a
+					>
+				</div>
+				<div class="nav-group">
+					<div class="nav-title">Ingresso</div>
+					<a class="nav-item" href="#"><span class="nav-ico">✉</span> Posta</a>
+					<a class="nav-item" href="#"><span class="nav-ico">↥</span> Import</a>
+				</div>
+				<div class="nav-spacer"></div>
+				<div class="nav-group">
+					<a class="nav-item" href="#"><span class="nav-ico">⚙</span> Impostazioni</a>
+				</div>
+				<div class="nav-foot">
+					<span>lorenzo@example.com</span>
+					<span class="inline"><a href="#">English</a> <span class="faint">italiano</span></span>
+				</div>
+			</nav>
+		</aside>
+
+		<main class="main">
+			<div class="page page--narrow">
+				<div class="page-header">
+					<div class="crumbs">
+						<a href="#">Clienti</a>
+						<span aria-hidden="true">›</span>
+						<a href="#">Nordwind Logistics S.p.A.</a>
+					</div>
+					<h1>Nuovo contratto per Nordwind Logistics S.p.A.</h1>
+				</div>
+
+				<form class="stack">
+					<div class="card stack">
+						<h2>Identità</h2>
+						<div class="field">
+							<label class="label" for="ct-title">Titolo</label>
+							<input
+								class="input"
+								id="ct-title"
+								type="text"
+								value="Contratto quadro 2026 — piattaforma logistica"
+							/>
+						</div>
+						<div class="field">
+							<label class="label" for="ct-client">Cliente</label>
+							<select class="select" id="ct-client">
+								<option selected>Nordwind Logistics S.p.A.</option>
+								<option>Bellani &amp; Partners</option>
+								<option>Fermata Digitale S.r.l.</option>
+							</select>
+						</div>
+						<div class="cols-2 grid">
+							<div class="field">
+								<label class="label" for="ct-status">Stato</label>
+								<select class="select" id="ct-status">
+									<option>Bozza</option>
+									<option selected>Attivo</option>
+									<option>Sospeso</option>
+									<option>Concluso</option>
+								</select>
+							</div>
+							<div class="field">
+								<label class="label" for="ct-start">Decorrenza</label>
+								<input class="input" id="ct-start" type="date" value="2026-01-01" />
+							</div>
+						</div>
+						<div class="field">
+							<label class="label" for="ct-end">Scadenza</label>
+							<input class="input" id="ct-end" type="date" value="2026-12-31" />
+							<span class="hint">Lascia vuoto per un contratto senza scadenza definita.</span>
+						</div>
+					</div>
+
+					<div class="card stack">
+						<h2>Approvazioni</h2>
+						<div class="field">
+							<span class="label" id="ct-approval-label"
+								>Serve l'approvazione scritta del referente prima di lavorare una giornata?</span
+							>
+							<div class="seg seg--block" role="group" aria-labelledby="ct-approval-label">
+								<button type="button" aria-pressed="true">Serve approvazione scritta</button>
+								<button type="button" aria-pressed="false">Non serve</button>
+							</div>
+							<span class="hint"
+								>Con "Serve approvazione scritta", una giornata proposta resta in attesa finché non
+								arriva una conferma scritta del referente; scelta l'altra opzione, ogni giornata
+								registrata è fatturabile da subito.</span
+							>
+						</div>
+					</div>
+
+					<div class="card stack">
+						<h2>Denaro</h2>
+						<div class="cols-2 grid">
+							<div class="field">
+								<label class="label" for="ct-terms">Termini di pagamento</label>
+								<select class="select" id="ct-terms">
+									<option selected>Giorni netti</option>
+									<option>Giorno del mese</option>
+								</select>
+							</div>
+							<div class="field">
+								<label class="label" for="ct-net-days">Giorni netti</label>
+								<input class="input input--num" id="ct-net-days" type="text" value="30" />
+							</div>
+						</div>
+						<div class="cols-2 grid">
+							<div class="field">
+								<label class="label" for="ct-cadence">Cadenza di fatturazione</label>
+								<select class="select" id="ct-cadence">
+									<option selected>Mensile</option>
+									<option>Trimestrale</option>
+									<option>Su singola giornata</option>
+								</select>
+							</div>
+							<div class="field">
+								<label class="label" for="ct-currency">Valuta</label>
+								<input class="input" id="ct-currency" type="text" value="EUR" />
+							</div>
+						</div>
+						<div class="field">
+							<label class="label" for="ct-tax">Regime fiscale</label>
+							<input class="input" id="ct-tax" type="text" value="standard" list="ct-tax-codes" />
+							<datalist id="ct-tax-codes">
+								<option value="standard"></option>
+								<option value="forfettario"></option>
+								<option value="reverse_charge"></option>
+							</datalist>
+							<span class="hint">Codici del pacchetto di giurisdizione attivo.</span>
+						</div>
+					</div>
+
+					<div class="card stack">
+						<h2>Rinnovo e recesso</h2>
+						<div class="field">
+							<label class="label" for="ct-renewal">Tipo di rinnovo</label>
+							<select class="select" id="ct-renewal">
+								<option>Nessuno</option>
+								<option>Tacito</option>
+								<option selected>Esplicito</option>
+							</select>
+						</div>
+						<div class="field">
+							<label class="label" for="ct-renewal-notice">Preavviso di rinnovo (giorni)</label>
+							<input class="input input--num" id="ct-renewal-notice" type="text" value="60" />
+							<span class="hint">Campo visibile solo perché il tipo di rinnovo è "Esplicito".</span>
+						</div>
+						<div class="field">
+							<label class="label" for="ct-term-notice">Preavviso di recesso (giorni)</label>
+							<input class="input input--num" id="ct-term-notice" type="text" value="30" />
+						</div>
+					</div>
+
+					<div class="card stack">
+						<h2>Spese</h2>
+						<div class="field">
+							<label class="label" for="ct-expense-policy">Politica sulle spese</label>
+							<select class="select" id="ct-expense-policy">
+								<option>Non rimborsate</option>
+								<option selected>Rimborsate a costo</option>
+								<option>Rimborsate con massimale</option>
+							</select>
+						</div>
+						<div class="check">
+							<input type="checkbox" id="ct-preauth" />
+							<label for="ct-preauth"
+								>Richiede la pre-autorizzazione per le spese rimborsabili</label
+							>
+						</div>
+					</div>
+
+					<div class="card stack">
+						<h2>Comunicazioni</h2>
+						<div class="cols-2 grid">
+							<div class="field">
+								<label class="label" for="ct-lang">Lingua dei modelli</label>
+								<select class="select" id="ct-lang">
+									<option selected>Italiano</option>
+									<option>English</option>
+								</select>
+								<span class="hint"
+									>Segue la lingua del cliente (Nordwind Logistics S.p.A. — Italia).</span
+								>
+							</div>
+							<div class="field">
+								<label class="label" for="ct-folder">Cartella posta</label>
+								<input
+									class="input"
+									id="ct-folder"
+									type="text"
+									value="Nordwind/2026"
+									aria-invalid="true"
+									aria-describedby="ct-folder-err"
+								/>
+								<span class="err" id="ct-folder-err"
+									>Il nome della cartella non può contenere "/". Usa un nome semplice, ad esempio
+									"Nordwind".</span
+								>
+							</div>
+						</div>
+					</div>
+
+					<div class="card spread">
+						<button class="btn btn--ghost" type="button">Annulla</button>
+						<button class="btn btn--primary" type="submit">Crea contratto</button>
+					</div>
+				</form>
+			</div>
+		</main>
+	</div>
+</section>

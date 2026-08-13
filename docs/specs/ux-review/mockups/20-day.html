@@ -1,0 +1,757 @@
+<section class="g-screen" id="day">
+	<p class="g-note">
+		Registrare una giornata resta il gesto più frequente del prodotto. Il campo "Quantità"
+		ridondante sparisce — il segmento Giornata intera/Mezza giornata resta l'unico controllo per lo
+		stesso valore — e selezionando data e contratto compaiono subito l'importo e lo stato di
+		approvazione, chiudendo la metà del difetto 18 ("il modulo non mostra né denaro né contesto di
+		approvazione"). L'altra metà del difetto 18, il punto d'accesso da un solo tocco, resta compito
+		della shell/FAB su un'altra schermata; il conteggio onesto qui, a 390px e con data e contratto
+		già quelli giusti, è 1 tocco per mettere a fuoco Ambito e digitare una decina di parole più 1
+		tocco su Salva — 2 tocchi e una frase breve; cambiare contratto o aprire la mezza giornata
+		aggiunge 1-2 tocchi ciascuno.
+	</p>
+	<div class="g-pair">
+		<div class="g-col">
+			<div class="g-label">Mobile — nuova giornata</div>
+			<div class="phone">
+				<div class="phone-status">
+					<span>9:41</span>
+					<span>LTE ●●●●</span>
+				</div>
+				<div class="phone-body">
+					<a class="subtitle" href="#">← Calendario</a>
+					<h1>Registra una giornata</h1>
+					<div class="field">
+						<label class="label" for="date-m">Data</label>
+						<input id="date-m" class="input input--lg" type="date" value="2026-08-13" />
+					</div>
+					<div class="field">
+						<label class="label" for="contract-m">Contratto</label>
+						<select id="contract-m" class="select select--lg">
+							<option selected>Nordwind Logistics — Contratto quadro 2026 · 700,00 €/giorno</option>
+							<option>Bellani &amp; Partners — Assistenza continuativa · 620,00 €/giorno</option>
+							<option>Fermata Digitale — Retainer mensile · 1.800,00 €/mese</option>
+						</select>
+					</div>
+					<div class="banner banner--warning" role="status">
+						<span aria-hidden="true">▲</span>
+						<div class="stack">
+							<div>
+								<strong>Nessuna approvazione scritta per il 13 agosto 2026</strong> su questo
+								contratto. Salvare questa giornata come lavorata la registrerà subito come
+								<em>lavorata senza approvazione</em> — vedi la giornata del 21 luglio più sotto.
+							</div>
+							<div class="row-actions">
+								<button type="button" class="btn btn--sm">Registra come proposta</button>
+							</div>
+						</div>
+					</div>
+					<div class="field">
+						<span class="label" id="qty-label-m">Quanto</span>
+						<div class="seg seg--lg seg--block" role="group" aria-labelledby="qty-label-m">
+							<button type="button" aria-pressed="true">Giornata intera</button>
+							<button type="button" aria-pressed="false">Mezza giornata</button>
+						</div>
+					</div>
+					<div class="field">
+						<label class="label" for="scope-m">Ambito</label>
+						<input
+							id="scope-m"
+							class="input input--lg"
+							type="text"
+							placeholder="es. sopralluogo cliente, sprint 4"
+							required
+							aria-required="true"
+						/>
+					</div>
+					<div class="stat">
+						<span class="stat-label">Vale</span>
+						<span class="stat-value amt">700,00 €</span>
+						<span class="stat-sub">700,00 €/giorno · 1 giornata intera</span>
+					</div>
+					<button type="submit" class="btn btn--primary btn--lg btn--block">
+						Salva <span class="kbd">⌘↵</span>
+					</button>
+				</div>
+				<div class="phone-bar">
+					<a class="phone-tab" href="#"><span class="ico" aria-hidden="true">◎</span>Oggi</a>
+					<a class="phone-tab" href="#"><span class="ico" aria-hidden="true">▦</span>Calendario</a>
+					<a class="phone-tab" href="#"><span class="ico" aria-hidden="true">◫</span>Clienti</a>
+					<a class="phone-tab" href="#"><span class="ico" aria-hidden="true">€</span>Fatture</a>
+					<a class="phone-tab" href="#"><span class="ico" aria-hidden="true">⋯</span>Altro</a>
+				</div>
+			</div>
+		</div>
+		<div class="g-col">
+			<div class="g-label">Desktop — nuova giornata</div>
+			<div class="app">
+				<aside class="sidebar">
+					<div class="brand">mastro</div>
+					<nav class="nav">
+						<div class="nav-group">
+							<a class="nav-item" href="#" aria-current="page"
+								><span class="nav-ico">◎</span> Oggi</a
+							>
+							<a class="nav-item" href="#"
+								><span class="nav-ico">▤</span> Da rivedere
+								<span class="badge badge--count badge--critical" style="margin-left: auto"
+									>3</span
+								></a
+							>
+							<a class="nav-item" href="#"><span class="nav-ico">▦</span> Calendario</a>
+						</div>
+						<div class="nav-group">
+							<div class="nav-title">Registro</div>
+							<a class="nav-item" href="#"><span class="nav-ico">◫</span> Clienti</a>
+							<a class="nav-item" href="#"
+								><span class="nav-ico">€</span> Fatture
+								<span class="badge badge--count badge--warning" style="margin-left: auto"
+									>1</span
+								></a
+							>
+						</div>
+						<div class="nav-group">
+							<div class="nav-title">Ingresso</div>
+							<a class="nav-item" href="#"><span class="nav-ico">✉</span> Posta</a>
+							<a class="nav-item" href="#"><span class="nav-ico">↥</span> Import</a>
+						</div>
+						<div class="nav-spacer"></div>
+						<div class="nav-group">
+							<a class="nav-item" href="#"><span class="nav-ico">⚙</span> Impostazioni</a>
+						</div>
+						<div class="nav-foot">
+							<span>lorenzo@example.com</span>
+							<span class="inline"
+								><a href="#">English</a> <span class="faint">italiano</span></span
+							>
+						</div>
+					</nav>
+				</aside>
+				<main class="main">
+					<div class="page page--narrow">
+						<div class="page-header">
+							<div class="crumbs">
+								<a href="#">Oggi</a> <span>/</span> <span>Nuova giornata</span>
+							</div>
+							<div class="title-row"><h1>Registra una giornata</h1></div>
+						</div>
+						<div class="card">
+							<form class="stack">
+								<div class="field">
+									<label class="label" for="date-d">Data</label>
+									<input id="date-d" class="input input--lg" type="date" value="2026-08-13" />
+								</div>
+								<div class="field">
+									<label class="label" for="contract-d">Contratto</label>
+									<select id="contract-d" class="select select--lg">
+										<option selected>
+											Nordwind Logistics — Contratto quadro 2026 · 700,00 €/giorno
+										</option>
+										<option>
+											Bellani &amp; Partners — Assistenza continuativa · 620,00 €/giorno
+										</option>
+										<option>Fermata Digitale — Retainer mensile · 1.800,00 €/mese</option>
+									</select>
+								</div>
+								<div class="banner banner--warning" role="status">
+									<span aria-hidden="true">▲</span>
+									<div class="stack">
+										<div>
+											<strong>Nessuna approvazione scritta per il 13 agosto 2026</strong> su questo
+											contratto. Salvare questa giornata come lavorata la registrerà subito come
+											<em>lavorata senza approvazione</em> — vedi la giornata del 21 luglio più
+											sotto.
+										</div>
+										<div class="row-actions">
+											<button type="button" class="btn btn--sm">Registra come proposta</button>
+										</div>
+									</div>
+								</div>
+								<div class="field">
+									<span class="label" id="qty-label-d">Quanto</span>
+									<div class="seg seg--lg seg--block" role="group" aria-labelledby="qty-label-d">
+										<button type="button" aria-pressed="true">Giornata intera</button>
+										<button type="button" aria-pressed="false">Mezza giornata</button>
+									</div>
+								</div>
+								<div class="field">
+									<label class="label" for="scope-d">Ambito</label>
+									<input
+										id="scope-d"
+										class="input input--lg"
+										type="text"
+										placeholder="es. sopralluogo cliente, sprint 4"
+										required
+										aria-required="true"
+									/>
+								</div>
+								<div class="stat">
+									<span class="stat-label">Vale</span>
+									<span class="stat-value amt">700,00 €</span>
+									<span class="stat-sub">700,00 €/giorno · 1 giornata intera</span>
+								</div>
+								<button type="submit" class="btn btn--primary btn--lg btn--block">
+									Salva <span class="kbd">⌘↵</span>
+								</button>
+							</form>
+						</div>
+					</div>
+				</main>
+			</div>
+		</div>
+	</div>
+	<p class="g-note">
+		Il calendario torna a essere un calendario e basta: niente più <code>ChartFrame</code> con il
+		suo interruttore Grafico/Tabella, che oggi fa sparire la griglia sotto i 640px (difetto 16). Le
+		celle occupate portano subito importo e stato — "Approvata" piena, "Proposta" tratteggiata — e
+		ogni cella libera mostra il "+" per aggiungere una giornata, senza dover scoprire l'affordance
+		passandoci sopra col mouse. Nessuna cella scende sotto 74px di altezza in nessuna direzione.
+	</p>
+	<div class="g-pair">
+		<div class="g-col">
+			<div class="g-label">Desktop — calendario</div>
+			<div class="app">
+				<aside class="sidebar">
+					<div class="brand">mastro</div>
+					<nav class="nav">
+						<div class="nav-group">
+							<a class="nav-item" href="#"><span class="nav-ico">◎</span> Oggi</a>
+							<a class="nav-item" href="#"
+								><span class="nav-ico">▤</span> Da rivedere
+								<span class="badge badge--count badge--critical" style="margin-left: auto"
+									>3</span
+								></a
+							>
+							<a class="nav-item" href="#" aria-current="page"
+								><span class="nav-ico">▦</span> Calendario</a
+							>
+						</div>
+						<div class="nav-group">
+							<div class="nav-title">Registro</div>
+							<a class="nav-item" href="#"><span class="nav-ico">◫</span> Clienti</a>
+							<a class="nav-item" href="#"
+								><span class="nav-ico">€</span> Fatture
+								<span class="badge badge--count badge--warning" style="margin-left: auto"
+									>1</span
+								></a
+							>
+						</div>
+						<div class="nav-group">
+							<div class="nav-title">Ingresso</div>
+							<a class="nav-item" href="#"><span class="nav-ico">✉</span> Posta</a>
+							<a class="nav-item" href="#"><span class="nav-ico">↥</span> Import</a>
+						</div>
+						<div class="nav-spacer"></div>
+						<div class="nav-group">
+							<a class="nav-item" href="#"><span class="nav-ico">⚙</span> Impostazioni</a>
+						</div>
+						<div class="nav-foot">
+							<span>lorenzo@example.com</span>
+							<span class="inline"
+								><a href="#">English</a> <span class="faint">italiano</span></span
+							>
+						</div>
+					</nav>
+				</aside>
+				<main class="main">
+					<div class="page">
+						<div class="page-header">
+							<div class="crumbs"><span>Calendario</span></div>
+						</div>
+						<div class="section">
+							<div class="spread">
+								<div class="inline">
+									<button type="button" class="btn btn--sm" aria-label="Mese precedente">
+										‹ Luglio
+									</button>
+									<button type="button" class="btn btn--sm">Oggi</button>
+									<button type="button" class="btn btn--sm" aria-label="Mese successivo">
+										Settembre ›
+									</button>
+									<h2>agosto 2026</h2>
+								</div>
+								<div class="inline">
+									<div class="stat">
+										<span class="stat-label">Approvate</span>
+										<span class="stat-value">2</span>
+									</div>
+									<div class="stat">
+										<span class="stat-label">Proposte</span>
+										<span class="stat-value">1,5</span>
+									</div>
+									<div class="stat">
+										<span class="stat-label">Lavorate</span>
+										<span class="stat-value">0</span>
+									</div>
+									<div class="stat">
+										<span class="stat-label">Valore</span>
+										<span class="stat-value amt">1.750,00 €</span>
+									</div>
+								</div>
+							</div>
+						</div>
+						<div class="section">
+							<div class="card card--flush">
+								<div
+									class="cal"
+									role="grid"
+									aria-label="Giornate di agosto 2026, una cella per giorno"
+								>
+									<div class="cal-head">lun</div>
+									<div class="cal-head">mar</div>
+									<div class="cal-head">mer</div>
+									<div class="cal-head">gio</div>
+									<div class="cal-head">ven</div>
+									<div class="cal-head">sab</div>
+									<div class="cal-head">dom</div>
+									<div class="cal-cell cal-cell--out">
+										<span class="cal-date">27</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 27 luglio 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell cal-cell--out">
+										<span class="cal-date">28</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 28 luglio 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell cal-cell--out">
+										<span class="cal-date">29</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 29 luglio 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell cal-cell--out">
+										<span class="cal-date">30</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 30 luglio 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell cal-cell--out">
+										<span class="cal-date">31</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 31 luglio 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">1</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 1 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">2</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 2 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">3</span>
+										<span class="cal-chip cal-chip--approved"
+											><span>Approvata · 1 g</span><span class="amt">700,00 €</span></span
+										>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 3 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">4</span>
+										<span class="cal-chip cal-chip--approved"
+											><span>Approvata · 1 g</span><span class="amt">700,00 €</span></span
+										>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 4 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">5</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 5 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">6</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 6 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">7</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 7 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">8</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 8 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">9</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 9 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">10</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 10 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">11</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 11 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">12</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 12 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell cal-cell--today">
+										<span class="cal-date" aria-current="date">13</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 13 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">14</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 14 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">15</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 15 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">16</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 16 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">17</span>
+										<span class="cal-chip cal-chip--proposed"><span>Proposta · 1 g</span></span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 17 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">18</span>
+										<span class="cal-chip cal-chip--proposed"><span>Proposta · 0,5 g</span></span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 18 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">19</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 19 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">20</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 20 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">21</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 21 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">22</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 22 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">23</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 23 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">24</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 24 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">25</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 25 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">26</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 26 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">27</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 27 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">28</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 28 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">29</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 29 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">30</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 30 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell">
+										<span class="cal-date">31</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 31 agosto 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell cal-cell--out">
+										<span class="cal-date">1</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 1 settembre 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell cal-cell--out">
+										<span class="cal-date">2</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 2 settembre 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell cal-cell--out">
+										<span class="cal-date">3</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 3 settembre 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell cal-cell--out">
+										<span class="cal-date">4</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 4 settembre 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell cal-cell--out">
+										<span class="cal-date">5</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 5 settembre 2026"
+											>+</a
+										>
+									</div>
+									<div class="cal-cell cal-cell--out">
+										<span class="cal-date">6</span>
+										<a class="cal-add" href="#" aria-label="Aggiungi giornata il 6 settembre 2026"
+											>+</a
+										>
+									</div>
+								</div>
+							</div>
+						</div>
+						<div class="section">
+							<div class="meter-legend">
+								<span class="inline"
+									><span class="cal-chip cal-chip--approved"><span>Approvata</span></span> giornata
+									confermata da un'approvazione scritta</span
+								>
+								<span class="inline"
+									><span class="cal-chip cal-chip--proposed"><span>Proposta</span></span> in attesa
+									di conferma dell'agente</span
+								>
+								<span class="inline"
+									><span class="cal-chip cal-chip--risk"><span>Rischio</span></span> lavorata senza
+									approvazione — vedi il dettaglio sotto</span
+								>
+							</div>
+						</div>
+					</div>
+				</main>
+			</div>
+		</div>
+		<div class="g-col">
+			<div class="g-label">Mobile — agenda del mese</div>
+			<div class="phone">
+				<div class="phone-status">
+					<span>9:41</span>
+					<span>LTE ●●●●</span>
+				</div>
+				<div class="phone-body">
+					<div class="spread">
+						<h1>agosto 2026</h1>
+						<div class="inline">
+							<button type="button" class="btn btn--sm" aria-label="Mese precedente">‹</button>
+							<button type="button" class="btn btn--sm" aria-label="Mese successivo">›</button>
+						</div>
+					</div>
+					<div class="inline">
+						<span class="stat"
+							><span class="stat-label">Approvate</span><span class="stat-value">2</span></span
+						>
+						<span class="stat"
+							><span class="stat-label">Proposte</span><span class="stat-value">1,5</span></span
+						>
+						<span class="stat"
+							><span class="stat-label">Valore</span
+							><span class="stat-value amt">1.750,00 €</span></span
+						>
+					</div>
+					<div class="stack">
+						<div class="section-head"><h3>3–9 agosto</h3></div>
+						<ul class="rows" aria-label="Giornate della settimana dal 3 al 9 agosto">
+							<li class="row">
+								<span class="row-ico" aria-hidden="true">03</span>
+								<span class="row-main">
+									<span class="row-title">Nordwind — Contratto quadro 2026</span>
+									<span class="row-meta">Giornata intera · piattaforma logistica</span>
+								</span>
+								<span class="row-actions">
+									<span class="badge badge--good">Approvata</span>
+									<span class="amt num">700,00 €</span>
+								</span>
+							</li>
+							<li class="row">
+								<span class="row-ico" aria-hidden="true">04</span>
+								<span class="row-main">
+									<span class="row-title">Nordwind — Contratto quadro 2026</span>
+									<span class="row-meta">Giornata intera · piattaforma logistica</span>
+								</span>
+								<span class="row-actions">
+									<span class="badge badge--good">Approvata</span>
+									<span class="amt num">700,00 €</span>
+								</span>
+							</li>
+						</ul>
+						<div class="section-head"><h3>17–23 agosto</h3></div>
+						<ul class="rows" aria-label="Giornate della settimana dal 17 al 23 agosto">
+							<li class="row">
+								<span class="row-ico" aria-hidden="true">17</span>
+								<span class="row-main">
+									<span class="row-title">Nordwind — Contratto quadro 2026</span>
+									<span class="row-meta">Giornata intera · piattaforma logistica</span>
+								</span>
+								<span class="row-actions">
+									<span class="badge badge--info">Proposta</span>
+									<span class="amt num">700,00 €</span>
+								</span>
+							</li>
+							<li class="row">
+								<span class="row-ico" aria-hidden="true">18</span>
+								<span class="row-main">
+									<span class="row-title">Nordwind — Contratto quadro 2026</span>
+									<span class="row-meta">Mezza giornata · piattaforma logistica</span>
+								</span>
+								<span class="row-actions">
+									<span class="badge badge--info">Proposta</span>
+									<span class="amt num">350,00 €</span>
+								</span>
+							</li>
+						</ul>
+						<p class="empty-body">
+							Le settimane senza giornate registrate (10–16, 24–31 agosto) non occupano righe:
+							l'elenco denso mostra solo ciò che è successo, non una tabella dell'intero mese.
+						</p>
+					</div>
+				</div>
+				<div class="phone-bar">
+					<a class="phone-tab" href="#"><span class="ico" aria-hidden="true">◎</span>Oggi</a>
+					<a class="phone-tab" href="#" aria-current="page"
+						><span class="ico" aria-hidden="true">▦</span>Calendario</a
+					>
+					<a class="phone-tab" href="#"><span class="ico" aria-hidden="true">◫</span>Clienti</a>
+					<a class="phone-tab" href="#"><span class="ico" aria-hidden="true">€</span>Fatture</a>
+					<a class="phone-tab" href="#"><span class="ico" aria-hidden="true">⋯</span>Altro</a>
+				</div>
+			</div>
+		</div>
+	</div>
+	<p class="g-note">
+		Il difetto 5 dell'analisi è preciso: la macchina a stati permette il passaggio
+		<code>lavorata senza approvazione → non fatturabile</code>, ma nessuna schermata del prodotto lo
+		offre — l'unica via d'uscita implementata è collegare un'approvazione che, per questa giornata,
+		non esiste. Qui la giornata a rischio del 21 luglio riceve entrambe le azioni: "Collega
+		un'approvazione" resta primaria per il caso comune, ma "Segna non fatturabile" è finalmente un
+		bottone reale, non una modifica diretta al database.
+	</p>
+	<div class="card card--flush" style="max-width: 640px">
+		<div class="card-head">
+			<h2>21 luglio 2026</h2>
+			<span class="badge badge--critical badge--lg">Lavorata senza approvazione</span>
+		</div>
+		<div class="card-body stack">
+			<dl class="pairs">
+				<dt>Contratto</dt>
+				<dd>Contratto quadro 2026 — piattaforma logistica</dd>
+				<dt>Cliente</dt>
+				<dd>Nordwind Logistics S.p.A.</dd>
+				<dt>Quantità</dt>
+				<dd>1 giornata intera</dd>
+				<dt>Valore</dt>
+				<dd><span class="amt num">700,00 €</span></dd>
+				<dt>Ambito</dt>
+				<dd>Intervento urgente su richiesta telefonica</dd>
+			</dl>
+			<div class="banner banner--critical">
+				<span aria-hidden="true">■</span>
+				<div>
+					<strong>Manca l'approvazione scritta.</strong> Nessuna mail o documento del referente
+					copre questa data — l'intervento fu confermato solo per telefono. L'art. 7.2 del contratto
+					richiede una mail del referente; una conferma verbale non basta.
+				</div>
+			</div>
+			<div class="row-actions">
+				<button type="button" class="btn btn--primary">Collega un'approvazione</button>
+				<button type="button" class="btn">Segna non fatturabile</button>
+				<button type="button" class="btn btn--ghost">Modifica</button>
+			</div>
+			<h3>Cronologia</h3>
+			<table class="table">
+				<caption class="sr">
+					Cronologia degli stati della giornata del 21 luglio 2026
+				</caption>
+				<thead>
+					<tr>
+						<th scope="col">Quando</th>
+						<th scope="col">Passaggio</th>
+						<th scope="col">Attore</th>
+						<th scope="col">Motivo</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
+						<td>21 lug 2026, 09:15</td>
+						<td>— → lavorata senza approvazione</td>
+						<td>Lorenzo Bianchi</td>
+						<td>Registrata direttamente: intervento urgente confermato solo per telefono</td>
+					</tr>
+					<tr>
+						<td>21 lug 2026, 09:15</td>
+						<td>Contrassegnata a rischio</td>
+						<td>Sistema</td>
+						<td>
+							Il contratto richiede approvazione scritta preventiva; nessuna trovata per questa data
+						</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+	</div>
+</section>

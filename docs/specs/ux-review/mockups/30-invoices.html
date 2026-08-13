@@ -1,0 +1,442 @@
+<section class="g-screen" id="invoices">
+	<h2>Fatture — scadenzario, dettaglio e mobile</h2>
+
+	<div class="g-col">
+		<div class="g-label">Desktop — scadenzario (/fatture)</div>
+		<p class="g-note">
+			Oggi <code>/fatture</code> interroga solo <code>listUnpaidInvoices()</code>: una fattura
+			pagata è raggiungibile solo digitandone l'URL — il difetto 11. I tab Tutte / Da incassare /
+			Scadute / Pagate coprono l'intero ciclo di vita e riportano lo stato a un badge colorato con
+			glifo ed etichetta, non più un'etichetta piatta identica per ogni riga (la severità oggi
+			scartata). Le fasce di scadenza raggruppano le fatture con un subtotale ciascuna, così si vede
+			in un colpo d'occhio cosa è scaduto da un mese e cosa scade tra pochi giorni.
+		</p>
+		<div class="app">
+			<aside class="sidebar">
+				<div class="brand">mastro</div>
+				<nav class="nav">
+					<div class="nav-group">
+						<a class="nav-item" href="#"><span class="nav-ico">◎</span> Oggi</a>
+						<a class="nav-item" href="#"
+							><span class="nav-ico">▤</span> Da rivedere
+							<span class="badge badge--count badge--critical" style="margin-left: auto">3</span></a
+						>
+						<a class="nav-item" href="#"><span class="nav-ico">▦</span> Calendario</a>
+					</div>
+					<div class="nav-group">
+						<div class="nav-title">Registro</div>
+						<a class="nav-item" href="#"><span class="nav-ico">◫</span> Clienti</a>
+						<a class="nav-item" href="#" aria-current="page"
+							><span class="nav-ico">€</span> Fatture
+							<span class="badge badge--count badge--warning" style="margin-left: auto">1</span></a
+						>
+					</div>
+					<div class="nav-group">
+						<div class="nav-title">Ingresso</div>
+						<a class="nav-item" href="#"><span class="nav-ico">✉</span> Posta</a>
+						<a class="nav-item" href="#"><span class="nav-ico">↥</span> Import</a>
+					</div>
+					<div class="nav-spacer"></div>
+					<div class="nav-group">
+						<a class="nav-item" href="#"><span class="nav-ico">⚙</span> Impostazioni</a>
+					</div>
+					<div class="nav-foot">
+						<span>lorenzo@example.com</span>
+						<span class="inline"><a href="#">English</a> <span class="faint">italiano</span></span>
+					</div>
+				</nav>
+			</aside>
+			<div class="main">
+				<div class="page">
+					<div class="page-header">
+						<div class="title-row">
+							<div class="stack">
+								<h1>Fatture</h1>
+								<p class="subtitle">Scadenzario e incassi, di tutti i clienti.</p>
+							</div>
+							<a class="btn btn--ghost" href="#">Nuova fattura</a>
+						</div>
+					</div>
+					<div class="section">
+						<div class="tabs" role="tablist" aria-label="Filtro fatture">
+							<button class="tab" role="tab" aria-selected="false">Tutte</button>
+							<button class="tab" role="tab" aria-selected="true">
+								<span class="inline"
+									>Da incassare <span class="badge badge--count badge--warning">2</span></span
+								>
+							</button>
+							<button class="tab" role="tab" aria-selected="false">
+								<span class="inline"
+									>Scadute <span class="badge badge--count badge--critical">1</span></span
+								>
+							</button>
+							<button class="tab" role="tab" aria-selected="false">Pagate</button>
+						</div>
+						<div class="cols-3 grid">
+							<div class="stat">
+								<span class="stat-label">Da incassare</span>
+								<span class="stat-value"><span class="amt">4.843,40 €</span></span>
+								<span class="stat-sub">2 fatture aperte</span>
+							</div>
+							<div class="stat">
+								<span class="stat-label">Scaduto</span>
+								<span class="stat-value"><span class="amt">2.647,40 €</span></span>
+								<span class="stat-sub">1 fattura, 34 giorni di ritardo</span>
+							</div>
+							<div class="stat">
+								<span class="stat-label">Incassato quest'anno</span>
+								<span class="stat-value"><span class="amt">3.843,00 €</span></span>
+								<span class="stat-sub">1 fattura pagata</span>
+							</div>
+						</div>
+					</div>
+					<div class="section">
+						<div class="card card--flush">
+							<table class="table--flush table">
+								<caption class="sr">
+									Fatture da incassare, raggruppate per fascia di scadenza
+								</caption>
+								<thead>
+									<tr>
+										<th scope="col">Numero</th>
+										<th scope="col">Cliente</th>
+										<th scope="col">Emessa</th>
+										<th scope="col">Scadenza</th>
+										<th scope="col">Stato</th>
+										<th scope="col" class="num">Giornate</th>
+										<th scope="col" class="num">Totale</th>
+										<th scope="col"><span class="sr">Azioni</span></th>
+									</tr>
+								</thead>
+								<tbody>
+									<tr class="group-row">
+										<td colspan="8">Scadute da oltre 30 giorni</td>
+									</tr>
+									<tr>
+										<td><a class="mono" href="#">2026/011</a></td>
+										<td>Bellani &amp; Partners</td>
+										<td>30 giu 2026</td>
+										<td>10 lug 2026</td>
+										<td><span class="badge badge--critical">In ritardo di 34 giorni</span></td>
+										<td class="num">3,5</td>
+										<td class="num"><span class="amt">2.647,40 €</span></td>
+										<td class="row-actions">
+											<button class="btn btn--sm" type="button">Sollecita</button>
+										</td>
+									</tr>
+									<tr>
+										<td colspan="6"><strong>Subtotale fascia</strong></td>
+										<td class="num"><strong class="amt">2.647,40 €</strong></td>
+										<td></td>
+									</tr>
+									<tr class="group-row">
+										<td colspan="8">In scadenza entro 7 giorni</td>
+									</tr>
+									<tr>
+										<td><a class="mono" href="#">2026/015</a></td>
+										<td>Fermata Digitale S.r.l.</td>
+										<td>1 ago 2026</td>
+										<td>16 ago 2026</td>
+										<td><span class="badge badge--warning">Scade tra 3 giorni</span></td>
+										<td class="num faint">—</td>
+										<td class="num"><span class="amt">2.196,00 €</span></td>
+										<td class="row-actions"></td>
+									</tr>
+									<tr>
+										<td colspan="6"><strong>Subtotale fascia</strong></td>
+										<td class="num"><strong class="amt">2.196,00 €</strong></td>
+										<td></td>
+									</tr>
+									<tr class="group-row">
+										<td colspan="8">Non ancora scadute</td>
+									</tr>
+									<tr>
+										<td colspan="6" class="muted">
+											Nessuna fattura non ancora scaduta al momento.
+										</td>
+										<td class="num muted"><span class="amt">0,00 €</span></td>
+										<td></td>
+									</tr>
+								</tbody>
+								<tfoot>
+									<tr>
+										<td colspan="6">Totale da incassare</td>
+										<td class="num"><span class="amt amt--md">4.843,40 €</span></td>
+										<td></td>
+									</tr>
+								</tfoot>
+							</table>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="g-col">
+		<div class="g-label">Desktop — dettaglio fattura (/fatture/2026-011)</div>
+		<p class="g-note">
+			La riga di fattura oggi somma tre numeri battuti a mano — quantità, prezzo unitario, importo —
+			senza verificare che coincidano con le giornate spuntate (difetto 7): qui ogni riga elenca
+			sotto di sé le giornate che la compongono, con data, quantità e importo, così il totale si
+			legge come una somma verificabile e non come un'affermazione. La card Documento apre
+			l'originale archiviato che il database già collega alla fattura ma che l'interfaccia attuale
+			non espone da nessuna parte (difetto 9). L'azione di sollecito, oggi un link sottolineato
+			indistinguibile dal breadcrumb sopra di esso, qui è il primo pulsante della barra, in primary.
+		</p>
+		<div class="app">
+			<aside class="sidebar">
+				<div class="brand">mastro</div>
+				<nav class="nav">
+					<div class="nav-group">
+						<a class="nav-item" href="#"><span class="nav-ico">◎</span> Oggi</a>
+						<a class="nav-item" href="#"
+							><span class="nav-ico">▤</span> Da rivedere
+							<span class="badge badge--count badge--critical" style="margin-left: auto">3</span></a
+						>
+						<a class="nav-item" href="#"><span class="nav-ico">▦</span> Calendario</a>
+					</div>
+					<div class="nav-group">
+						<div class="nav-title">Registro</div>
+						<a class="nav-item" href="#"><span class="nav-ico">◫</span> Clienti</a>
+						<a class="nav-item" href="#" aria-current="page"
+							><span class="nav-ico">€</span> Fatture
+							<span class="badge badge--count badge--warning" style="margin-left: auto">1</span></a
+						>
+					</div>
+					<div class="nav-group">
+						<div class="nav-title">Ingresso</div>
+						<a class="nav-item" href="#"><span class="nav-ico">✉</span> Posta</a>
+						<a class="nav-item" href="#"><span class="nav-ico">↥</span> Import</a>
+					</div>
+					<div class="nav-spacer"></div>
+					<div class="nav-group">
+						<a class="nav-item" href="#"><span class="nav-ico">⚙</span> Impostazioni</a>
+					</div>
+					<div class="nav-foot">
+						<span>lorenzo@example.com</span>
+						<span class="inline"><a href="#">English</a> <span class="faint">italiano</span></span>
+					</div>
+				</nav>
+			</aside>
+			<div class="main">
+				<div class="page">
+					<div class="page-header">
+						<div class="crumbs">
+							<a href="#">Fatture</a>
+							<span>/</span>
+							<span>2026/011</span>
+						</div>
+						<div class="title-row">
+							<div class="stack">
+								<h1 class="mono">2026/011</h1>
+								<div class="inline">
+									<span class="badge badge--critical">Scaduta da 34 giorni</span>
+								</div>
+								<p class="subtitle">
+									Bellani &amp; Partners — Assistenza continuativa data platform
+								</p>
+							</div>
+							<div class="inline">
+								<a class="btn btn--primary" href="#">Prepara un sollecito</a>
+								<button class="btn" type="button">Registra il pagamento</button>
+								<button class="btn btn--danger" type="button">Contesta</button>
+								<a class="btn btn--ghost" href="#">Scarica PDF</a>
+							</div>
+						</div>
+					</div>
+					<div class="cols-2-1 grid">
+						<div class="card card--flush">
+							<div class="card-head">
+								<h2 class="h3">Righe e giornate</h2>
+							</div>
+							<table class="table--flush table">
+								<caption class="sr">
+									Righe e giornate della fattura 2026/011
+								</caption>
+								<thead>
+									<tr>
+										<th scope="col">Descrizione</th>
+										<th scope="col" class="num">Giornate</th>
+										<th scope="col" class="num">Prezzo unitario</th>
+										<th scope="col" class="num">Imponibile</th>
+									</tr>
+								</thead>
+								<tbody>
+									<tr>
+										<td>Giornate giugno 2026</td>
+										<td class="num">3,5</td>
+										<td class="num"><span class="amt">620,00 €</span></td>
+										<td class="num"><span class="amt">2.170,00 €</span></td>
+									</tr>
+									<tr class="group-row">
+										<td colspan="4">Giornate incluse in questa riga</td>
+									</tr>
+									<tr>
+										<td class="muted">2 giu 2026 — giornata intera</td>
+										<td class="num">1</td>
+										<td class="num"><span class="amt">620,00 €</span></td>
+										<td class="num"><span class="amt">620,00 €</span></td>
+									</tr>
+									<tr>
+										<td class="muted">3 giu 2026 — giornata intera</td>
+										<td class="num">1</td>
+										<td class="num"><span class="amt">620,00 €</span></td>
+										<td class="num"><span class="amt">620,00 €</span></td>
+									</tr>
+									<tr>
+										<td class="muted">16 giu 2026 — giornata intera</td>
+										<td class="num">1</td>
+										<td class="num"><span class="amt">620,00 €</span></td>
+										<td class="num"><span class="amt">620,00 €</span></td>
+									</tr>
+									<tr>
+										<td class="muted">17 giu 2026 — mezza giornata</td>
+										<td class="num">0,5</td>
+										<td class="num"><span class="amt">620,00 €</span></td>
+										<td class="num"><span class="amt">310,00 €</span></td>
+									</tr>
+								</tbody>
+								<tfoot>
+									<tr>
+										<td colspan="3">Imponibile</td>
+										<td class="num"><span class="amt">2.170,00 €</span></td>
+									</tr>
+									<tr>
+										<td colspan="3">IVA 22%</td>
+										<td class="num"><span class="amt">477,40 €</span></td>
+									</tr>
+									<tr>
+										<td colspan="3">Totale</td>
+										<td class="num"><span class="amt">2.647,40 €</span></td>
+									</tr>
+								</tfoot>
+							</table>
+						</div>
+						<div class="stack">
+							<div class="card">
+								<div class="card-head">
+									<h2 class="h3">Pagamento</h2>
+								</div>
+								<div class="card-body">
+									<dl class="pairs">
+										<dt>Termini</dt>
+										<dd>Il 10 del mese successivo alla data di emissione</dd>
+										<dt>Scadenza</dt>
+										<dd>10 lug 2026</dd>
+										<dt>Modalità</dt>
+										<dd>Bonifico bancario</dd>
+										<dt>IBAN</dt>
+										<dd class="mono">IT28W0300203280123456789012</dd>
+									</dl>
+								</div>
+							</div>
+							<div class="card">
+								<div class="card-head">
+									<h2 class="h3">Documento</h2>
+								</div>
+								<div class="card-body stack">
+									<p class="subtitle">Originale importato il 30 giu 2026.</p>
+									<a class="btn btn--sm" href="#">Apri il PDF archiviato</a>
+								</div>
+							</div>
+							<div class="card">
+								<div class="card-head">
+									<h2 class="h3">Cronologia</h2>
+								</div>
+								<div class="card-body">
+									<dl class="pairs">
+										<dt>Emessa</dt>
+										<dd>30 giu 2026</dd>
+										<dt>Inviata</dt>
+										<dd>30 giu 2026, via email</dd>
+										<dt>Scaduta</dt>
+										<dd>10 lug 2026 — 34 giorni fa</dd>
+									</dl>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="g-col">
+		<div class="g-label">Mobile — dettaglio fattura, 390px</div>
+		<p class="g-note">
+			A 390px la pagina attuale sfora a 410px (difetto 17): la causa nominata è una
+			<code>&lt;dl class="grid grid-cols-2 …"&gt;</code> a due colonne fisse senza
+			<code>min-w-0</code>, sfondata dall'IBAN — 27 caratteri senza spazi. Qui gli stessi dati
+			passano per <code>.pairs</code>, la cui <code>dd</code> ha <code>min-width: 0</code> e
+			<code>overflow-wrap: anywhere</code>: l'IBAN e l'ID trasmissione vanno a capo dentro la
+			propria colonna e nessun elemento della pagina è più largo del telefono che lo contiene.
+		</p>
+		<div class="phone">
+			<div class="phone-status">
+				<span>9:41</span>
+				<span>Wi-Fi · 100%</span>
+			</div>
+			<div class="phone-body">
+				<a href="#">‹ Torna a Fatture</a>
+				<div class="stack">
+					<h1 class="mono">2026/011</h1>
+					<span class="badge badge--critical">Scaduta da 34 giorni</span>
+					<p class="subtitle">Bellani &amp; Partners — Assistenza continuativa data platform</p>
+					<span class="amt amt--fig">2.647,40 €</span>
+				</div>
+				<a class="btn btn--primary btn--block" href="#">Prepara un sollecito</a>
+				<div class="card">
+					<div class="card-head">
+						<h2 class="h3">Pagamento</h2>
+					</div>
+					<div class="card-body">
+						<dl class="pairs">
+							<dt>Termini</dt>
+							<dd>Il 10 del mese successivo all'emissione</dd>
+							<dt>Scadenza</dt>
+							<dd>10 lug 2026</dd>
+							<dt>Modalità</dt>
+							<dd>Bonifico bancario</dd>
+							<dt>IBAN</dt>
+							<dd class="mono">IT28W0300203280123456789012</dd>
+							<dt>ID trasmissione</dt>
+							<dd class="mono">MASTRO-2026-000000123456789-BELLANI-IT</dd>
+						</dl>
+					</div>
+				</div>
+				<div class="card">
+					<div class="card-head">
+						<h2 class="h3">Documento</h2>
+					</div>
+					<div class="card-body stack">
+						<p class="subtitle">Originale importato il 30 giu 2026.</p>
+						<a class="btn btn--sm" href="#">Apri il PDF archiviato</a>
+					</div>
+				</div>
+				<div class="card">
+					<div class="card-head">
+						<h2 class="h3">Cronologia</h2>
+					</div>
+					<div class="card-body">
+						<dl class="pairs">
+							<dt>Emessa</dt>
+							<dd>30 giu 2026</dd>
+							<dt>Inviata</dt>
+							<dd>30 giu 2026, via email</dd>
+							<dt>Scaduta</dt>
+							<dd>10 lug 2026 — 34 giorni fa</dd>
+						</dl>
+					</div>
+				</div>
+			</div>
+			<div class="phone-bar">
+				<a class="phone-tab" href="#"><span class="ico">◎</span>Oggi</a>
+				<a class="phone-tab" href="#"><span class="ico">▦</span>Calendario</a>
+				<a class="phone-tab" href="#"><span class="ico">◫</span>Clienti</a>
+				<a class="phone-tab" href="#" aria-current="page"><span class="ico">€</span>Fatture</a>
+				<a class="phone-tab" href="#"><span class="ico">⋯</span>Altro</a>
+			</div>
+		</div>
+	</div>
+</section>

@@ -1,0 +1,372 @@
+<section class="g-screen" id="dashboard">
+	<p class="g-note">
+		Oggi l'home era il nome del prodotto, una tagline e due grafici, senza una sola giornata sopra
+		(difetto 4) — e la voce «Oggi» in barra non portava a oggi (difetto 15). Qui la home diventa una
+		coda di attenzione: cosa ha bisogno di me adesso, e sono al sicuro. Ogni avviso porta un'azione
+		reale e un link al proprio soggetto — è il difetto 2, il più netto del prodotto («gli avvisi non
+		si possono agire»). Le due card di soglia duplicate diventano una sola.
+	</p>
+
+	<div class="g-pair">
+		<div class="app">
+			<aside class="sidebar">
+				<div class="brand">mastro</div>
+				<nav class="nav">
+					<div class="nav-group">
+						<a class="nav-item" href="#" aria-current="page"><span class="nav-ico">◎</span> Oggi</a>
+						<a class="nav-item" href="#"
+							><span class="nav-ico">▤</span> Da rivedere
+							<span class="badge badge--count badge--critical" style="margin-left: auto">3</span></a
+						>
+						<a class="nav-item" href="#"><span class="nav-ico">▦</span> Calendario</a>
+					</div>
+					<div class="nav-group">
+						<div class="nav-title">Registro</div>
+						<a class="nav-item" href="#"><span class="nav-ico">◫</span> Clienti</a>
+						<a class="nav-item" href="#"
+							><span class="nav-ico">€</span> Fatture
+							<span class="badge badge--count badge--warning" style="margin-left: auto">1</span></a
+						>
+					</div>
+					<div class="nav-group">
+						<div class="nav-title">Ingresso</div>
+						<a class="nav-item" href="#"><span class="nav-ico">✉</span> Posta</a>
+						<a class="nav-item" href="#"><span class="nav-ico">↥</span> Import</a>
+					</div>
+					<div class="nav-spacer"></div>
+					<div class="nav-group">
+						<a class="nav-item" href="#"><span class="nav-ico">⚙</span> Impostazioni</a>
+					</div>
+					<div class="nav-foot">
+						<span>lorenzo@example.com</span>
+						<span class="inline"><a href="#">English</a> <span class="faint">italiano</span></span>
+					</div>
+				</nav>
+			</aside>
+
+			<div class="main">
+				<div class="page">
+					<header class="page-header">
+						<div class="title-row">
+							<div>
+								<h1>Oggi</h1>
+								<p class="subtitle">giovedì 13 agosto 2026</p>
+							</div>
+							<div class="inline">
+								<button type="button" class="btn btn--primary">
+									Registra una giornata <span class="kbd">N</span>
+								</button>
+								<a class="btn" href="#proposte">Rivedi 2 proposte</a>
+							</div>
+						</div>
+					</header>
+
+					<section class="section">
+						<div class="section-head">
+							<h2>Da sistemare</h2>
+							<span class="badge badge--critical badge--count">3</span>
+						</div>
+						<div class="card card--flush">
+							<div class="att att--critical">
+								<div class="att-body">
+									<div class="att-title">
+										<span class="badge badge--critical">Critico</span> 21 luglio — giornata lavorata
+										senza approvazione
+									</div>
+									<div class="att-detail">
+										Nordwind Logistics — «Intervento urgente su richiesta telefonica», nessuna
+										conferma scritta è mai arrivata. Vale
+										<span class="amt">700,00 €</span>.
+									</div>
+									<div class="att-actions">
+										<a class="btn btn--sm btn--primary" href="#giorno-2026-07-21"
+											>Collega un'approvazione</a
+										>
+										<a class="btn btn--sm" href="#giorno-2026-07-21">Segna non fatturabile</a>
+										<a class="btn btn--sm btn--ghost" href="#giorno-2026-07-21">Apri la giornata</a>
+									</div>
+								</div>
+							</div>
+							<div class="att att--critical">
+								<div class="att-body">
+									<div class="att-title">
+										<span class="badge badge--critical">Critico</span> Fattura 2026/011 — scaduta da
+										34 giorni
+									</div>
+									<div class="att-detail">
+										Bellani &amp; Partners — emessa il 30 giu, scadenza 10 lug, totale
+										<span class="amt">2.647,40 €</span>.
+									</div>
+									<div class="att-actions">
+										<a class="btn btn--sm btn--primary" href="#fattura-2026-011"
+											>Prepara un sollecito</a
+										>
+										<a class="btn btn--sm" href="#fattura-2026-011">Registra il pagamento</a>
+										<a class="btn btn--sm btn--ghost" href="#fattura-2026-011">Apri la fattura</a>
+									</div>
+								</div>
+							</div>
+							<div class="att att--info">
+								<div class="att-body">
+									<div class="att-title">
+										<span class="badge badge--info">Da rivedere</span> 2 proposte in attesa di
+										conferma
+									</div>
+									<div class="att-detail">
+										17 agosto (1 g) e 18 agosto (0,5 g) — da «conferma-agosto.eml», Paola Ricci, 11
+										ago 2026.
+									</div>
+									<div class="att-actions">
+										<a class="btn btn--sm btn--primary" href="#proposte">Rivedi</a>
+									</div>
+								</div>
+							</div>
+						</div>
+					</section>
+
+					<section class="section">
+						<div class="section-head">
+							<h2>Questa settimana</h2>
+							<span class="subtitle">10 – 16 agosto</span>
+						</div>
+						<div class="card">
+							<div class="card-body stack">
+								<div class="grid" style="grid-template-columns: repeat(4, minmax(0, 1fr))">
+									<div class="stat">
+										<span class="stat-label">Approvate da lavorare</span>
+										<span class="stat-value">2</span>
+										<span class="stat-sub">3 e 4 agosto — Nordwind</span>
+									</div>
+									<div class="stat">
+										<span class="stat-label">Proposte</span>
+										<span class="stat-value">1,5</span>
+										<span class="stat-sub">17 e 18 agosto</span>
+									</div>
+									<div class="stat">
+										<span class="stat-label">Lavorate ad agosto</span>
+										<span class="stat-value">0</span>
+										<span class="stat-sub">nessuna finora</span>
+									</div>
+									<div class="stat">
+										<span class="stat-label">Valore lavorato ad agosto</span>
+										<span class="stat-value">0,00 €</span>
+										<span class="stat-sub">1.400,00 € se confermi le approvate</span>
+									</div>
+								</div>
+								<div>
+									<span class="sr"
+										>Settimana dal 10 al 16 agosto 2026: nessuna giornata lavorata, approvata o
+										proposta cade in questa settimana.</span
+									>
+									<div class="cal" aria-hidden="true">
+										<div class="cal-head">Lun</div>
+										<div class="cal-head">Mar</div>
+										<div class="cal-head">Mer</div>
+										<div class="cal-head">Gio</div>
+										<div class="cal-head">Ven</div>
+										<div class="cal-head">Sab</div>
+										<div class="cal-head">Dom</div>
+										<div class="cal-cell"><span class="cal-date">10</span></div>
+										<div class="cal-cell"><span class="cal-date">11</span></div>
+										<div class="cal-cell"><span class="cal-date">12</span></div>
+										<div class="cal-cell cal-cell--today"><span class="cal-date">13</span></div>
+										<div class="cal-cell"><span class="cal-date">14</span></div>
+										<div class="cal-cell"><span class="cal-date">15</span></div>
+										<div class="cal-cell"><span class="cal-date">16</span></div>
+									</div>
+								</div>
+								<p class="muted">
+									Nessuna giornata questa settimana — non è un vuoto della pagina, è la settimana
+									reale: le prossime proposte (17–18 agosto) sono nella settimana successiva.
+								</p>
+							</div>
+						</div>
+					</section>
+
+					<section class="section">
+						<div class="section-head">
+							<h2>Soldi</h2>
+						</div>
+						<div class="cols-2 grid">
+							<div class="card">
+								<div class="card-head">
+									<h3>Da incassare</h3>
+									<span class="badge badge--critical">1 scaduta</span>
+								</div>
+								<div class="card-body stack">
+									<span class="amt amt--fig">4.843,40 €</span>
+									<ul class="rows" style="margin: 0 calc(var(--pad-card) * -1)">
+										<li class="row">
+											<div class="row-main">
+												<span class="row-title"
+													><a class="mono" href="#fattura-2026-011">2026/011</a> · Bellani &amp;
+													Partners</span
+												>
+												<span class="row-meta"
+													>Scaduta il 10 lug ·
+													<span class="badge badge--critical">34 giorni</span></span
+												>
+											</div>
+											<span class="amt amt--md">2.647,40 €</span>
+										</li>
+										<li class="row">
+											<div class="row-main">
+												<span class="row-title"
+													><a class="mono" href="#fattura-2026-015">2026/015</a> · Fermata
+													Digitale</span
+												>
+												<span class="row-meta"
+													>Scade il 16 ago ·
+													<span class="badge badge--warning">fra 3 giorni</span></span
+												>
+											</div>
+											<span class="amt amt--md">2.196,00 €</span>
+										</li>
+									</ul>
+								</div>
+							</div>
+
+							<div class="card">
+								<div class="card-head">
+									<h3>Soglia forfettario</h3>
+									<span class="badge badge--good">Entro la soglia</span>
+								</div>
+								<div class="card-body stack">
+									<span class="amt amt--fig">3.150,00 €</span>
+									<p class="subtitle">incassato quest'anno, di 85.000,00 €</p>
+									<div class="meter">
+										<div class="meter-track">
+											<div class="meter-fill" style="width: 3.7%"></div>
+											<div
+												class="meter-fill meter-fill--projected"
+												style="left: 3.7%; width: 4.3%"
+											></div>
+											<div class="meter-mark meter-mark--warn" style="left: 80%"></div>
+										</div>
+										<div class="meter-scale">
+											<span>0</span>
+											<span>85.000,00 €</span>
+										</div>
+									</div>
+									<p class="muted">
+										Proiezione a fine anno: <span class="amt">6.750,00 €</span> — l'8% della soglia,
+										calcolata sull'incassato nell'anno solare.
+									</p>
+								</div>
+							</div>
+						</div>
+					</section>
+
+					<section class="section">
+						<p class="faint">
+							<a href="#concentrazione-clienti">Concentrazione clienti</a>
+							<span aria-hidden="true"> · </span>
+							<a href="#cassa-per-mese">Cassa per mese</a>
+						</p>
+					</section>
+				</div>
+			</div>
+		</div>
+
+		<div class="phone">
+			<div class="phone-status">
+				<span>09:41</span>
+				<span>mastro</span>
+			</div>
+			<div class="phone-body">
+				<div>
+					<h1 class="h1">Oggi</h1>
+					<p class="subtitle">giovedì 13 agosto 2026</p>
+				</div>
+
+				<div class="card card--flush">
+					<div class="att att--critical">
+						<div class="att-body">
+							<div class="att-title">
+								<span class="badge badge--critical">Critico</span> 21 luglio senza approvazione
+							</div>
+							<div class="att-actions">
+								<a class="btn btn--sm btn--primary" href="#giorno-2026-07-21"
+									>Collega un'approvazione</a
+								>
+							</div>
+						</div>
+					</div>
+					<div class="att att--critical">
+						<div class="att-body">
+							<div class="att-title">
+								<span class="badge badge--critical">Critico</span> Fattura 2026/011 — 34 gg di
+								ritardo
+							</div>
+							<div class="att-actions">
+								<a class="btn btn--sm btn--primary" href="#fattura-2026-011"
+									>Prepara un sollecito</a
+								>
+							</div>
+						</div>
+					</div>
+					<div class="att att--info">
+						<div class="att-body">
+							<div class="att-title">
+								<span class="badge badge--info">Da rivedere</span> 2 proposte in attesa
+							</div>
+							<div class="att-actions">
+								<a class="btn btn--sm btn--primary" href="#proposte">Rivedi</a>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="cols-2 grid">
+					<div class="stat">
+						<span class="stat-label">Da lavorare</span>
+						<span class="stat-value">2</span>
+						<span class="stat-sub">giornate approvate</span>
+					</div>
+					<div class="stat">
+						<span class="stat-label">Lavorato ad agosto</span>
+						<span class="stat-value">0,00 €</span>
+						<span class="stat-sub">nessuna finora</span>
+					</div>
+				</div>
+
+				<div class="card">
+					<div class="card-head">
+						<h3>Da incassare</h3>
+						<span class="badge badge--critical">1 scaduta</span>
+					</div>
+					<div class="card-body stack">
+						<span class="amt amt--fig">4.843,40 €</span>
+						<ul class="rows">
+							<li class="row">
+								<div class="row-main">
+									<a class="row-title" href="#fattura-2026-011">2026/011 — Bellani</a>
+									<span class="row-meta">in ritardo di 34 giorni</span>
+								</div>
+								<span class="num amt">2.647,40 €</span>
+							</li>
+							<li class="row">
+								<div class="row-main">
+									<a class="row-title" href="#fattura-2026-015">2026/015 — Fermata</a>
+									<span class="row-meta">scade fra 3 giorni</span>
+								</div>
+								<span class="num amt">2.196,00 €</span>
+							</li>
+						</ul>
+					</div>
+				</div>
+			</div>
+			<button type="button" class="phone-fab" aria-label="Registra una giornata">+</button>
+			<div class="phone-bar">
+				<a class="phone-tab" href="#" aria-current="page"><span class="ico">◎</span> Oggi</a>
+				<a class="phone-tab" href="#proposte"
+					><span class="ico">▤</span> Rivedi
+					<span class="badge badge--count badge--critical">2</span></a
+				>
+				<a class="phone-tab" href="#"><span class="ico">▦</span> Calendario</a>
+				<a class="phone-tab" href="#"><span class="ico">€</span> Fatture</a>
+				<a class="phone-tab" href="#"><span class="ico">⋯</span> Altro</a>
+			</div>
+		</div>
+	</div>
+</section>

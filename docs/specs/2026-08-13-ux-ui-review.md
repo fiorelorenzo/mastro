@@ -13,6 +13,14 @@ the part you actually have to read and decide on.
 
 The verdict is not "it needs a coat of paint".
 
+**The mockup is the other half of this document.**
+[`ux-review/mockups/mastro-mockup.html`](ux-review/mockups/mastro-mockup.html)
+is one self-contained file: seven screens as real markup, with the three
+visual directions of section 5 and both colour schemes swapping live from the
+switcher at the top (or keys `1` `2` `3` and `d`). Same markup in all three —
+only the tokens change, which is exactly how it would be built. Read section 5,
+then go and look at it before answering the two questions in section 9.
+
 ---
 
 ## 1. Why it looks like this
