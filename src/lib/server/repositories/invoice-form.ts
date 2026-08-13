@@ -1,6 +1,7 @@
 import * as m from '$lib/paraglide/messages';
 import { legalText } from '$lib/legal/legal-text';
 import { decimalStringToMinorUnits } from '$lib/server/import/decimal';
+import { getLocale } from '$lib/paraglide/runtime';
 import { invoiceDocumentType } from '$lib/server/db/schema';
 import type { MinorUnits } from '$lib/money';
 import type { InvoiceDocumentType } from '$lib/server/import/invoice';
@@ -54,6 +55,7 @@ export type InvoiceFormResult =
 export function parseInvoiceForm(formData: FormData): InvoiceFormResult {
 	const errors: Record<string, string> = {};
 	const string = (key: string) => String(formData.get(key) ?? '').trim();
+	const locale = getLocale();
 
 	const contractId = string('contractId');
 	if (!contractId) errors.contractId = m.invoice_validation_contract_required();
@@ -84,7 +86,7 @@ export function parseInvoiceForm(formData: FormData): InvoiceFormResult {
 	let stampDuty: MinorUnits | null = null;
 	if (stampDutyRaw) {
 		try {
-			stampDuty = decimalStringToMinorUnits(stampDutyRaw, currency);
+			stampDuty = decimalStringToMinorUnits(stampDutyRaw, currency, locale);
 		} catch {
 			errors.stampDuty = m.invoice_validation_amount_invalid();
 		}
@@ -94,7 +96,7 @@ export function parseInvoiceForm(formData: FormData): InvoiceFormResult {
 	let socialCharge: MinorUnits | null = null;
 	if (socialChargeRaw) {
 		try {
-			socialCharge = decimalStringToMinorUnits(socialChargeRaw, currency);
+			socialCharge = decimalStringToMinorUnits(socialChargeRaw, currency, locale);
 		} catch {
 			errors.socialCharge = m.invoice_validation_amount_invalid();
 		}
@@ -138,8 +140,8 @@ export function parseInvoiceForm(formData: FormData): InvoiceFormResult {
 		let unitPrice: MinorUnits;
 		let amount: MinorUnits;
 		try {
-			unitPrice = decimalStringToMinorUnits(unitPriceRaw, currency);
-			amount = decimalStringToMinorUnits(amountRaw, currency);
+			unitPrice = decimalStringToMinorUnits(unitPriceRaw, currency, locale);
+			amount = decimalStringToMinorUnits(amountRaw, currency, locale);
 		} catch {
 			errors[`lineAmount_${i}`] = m.invoice_validation_amount_invalid();
 			continue;

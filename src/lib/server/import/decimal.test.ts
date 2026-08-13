@@ -66,3 +66,48 @@ test.each([
 	const rendered = minorUnitsToDecimalString(minorUnits(parsed), currency);
 	expect(decimalStringToMinorUnits(rendered, currency)).toBe(parsed);
 });
+
+test('the Italian locale accepts its own comma decimal, in addition to the bare dot', () => {
+	// #203: the parser used to accept only "700.00" while the interface
+	// renders "700,00 €" in Italian — typing back what the screen shows
+	// was a validation error.
+	expect(decimalStringToMinorUnits('700,00', 'EUR', 'it')).toBe(70000);
+	expect(decimalStringToMinorUnits('700.00', 'EUR', 'it')).toBe(70000);
+});
+
+test('the Italian locale accepts its own thousands grouping', () => {
+	expect(decimalStringToMinorUnits('1.234,56', 'EUR', 'it')).toBe(123456);
+});
+
+test('a partial thousands grouping is rejected, in every locale', () => {
+	expect(() => decimalStringToMinorUnits('1,2,3', 'EUR')).toThrow(/not a decimal amount/);
+	expect(() => decimalStringToMinorUnits('1,2,3', 'EUR', 'en')).toThrow(/not a decimal amount/);
+	expect(() => decimalStringToMinorUnits('1,2,3', 'EUR', 'it')).toThrow(/not a decimal amount/);
+});
+
+test('a complete locale-grouped integer is never re-read as a bare decimal', () => {
+	// "1.234" is a complete Italian thousands group (one thousand two
+	// hundred thirty-four) — not "one point two three four". Resolving
+	// this by locale, rather than falling back to the bare-dot reading,
+	// is the whole point of trying the locale's own grouping first.
+	expect(decimalStringToMinorUnits('1.234', 'EUR', 'it')).toBe(123400);
+});
+
+test('the English locale accepts its own comma grouping', () => {
+	expect(decimalStringToMinorUnits('1,234.56', 'EUR', 'en')).toBe(123456);
+	// Without a locale, only the wire shape matches: a bare comma is not
+	// a valid grouping separator for a structured import document.
+	expect(() => decimalStringToMinorUnits('1,234.56', 'EUR')).toThrow(/not a decimal amount/);
+});
+
+test.each(['en', 'it'] as const)(
+	"every amount field's parser call shape (raw, currency, locale) parses that locale's own format",
+	(locale) => {
+		// The four call sites that read a manual submission
+		// (invoice-form.ts, expense-form.ts, contract-form.ts's expense
+		// policy cap, mail-send-form.ts) all funnel through this exact
+		// call shape: raw text, a currency, the active locale.
+		const native = locale === 'it' ? '700,00' : '700.00';
+		expect(decimalStringToMinorUnits(native, 'EUR', locale)).toBe(70000);
+	}
+);

@@ -1,5 +1,6 @@
 import * as m from '$lib/paraglide/messages';
 import { decimalStringToMinorUnits } from '$lib/server/import/decimal';
+import { getLocale } from '$lib/paraglide/runtime';
 import { NO_MINOR_UNITS, type MinorUnits } from '$lib/money';
 import type { EmailTemplateContext } from '$lib/server/mail/render';
 
@@ -51,7 +52,7 @@ export function parseMailSendForm(formData: FormData, currency: string): MailSen
 	let amountMinorUnits: MinorUnits = NO_MINOR_UNITS;
 	try {
 		if (!amountRaw) throw new Error('blank');
-		amountMinorUnits = decimalStringToMinorUnits(amountRaw, currency);
+		amountMinorUnits = decimalStringToMinorUnits(amountRaw, currency, getLocale());
 	} catch {
 		errors.amount = m.mail_send_validation_amount_invalid();
 	}

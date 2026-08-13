@@ -39,3 +39,40 @@ export type {
 	TableColumn,
 	TooltipRow
 } from './charts/types';
+
+// ── form controls — Field owns label/hint/error/aria wiring; the others
+// are thin wrappers around their native element (see field-context.ts) ──
+export { default as Field } from './Field.svelte';
+export { default as Input } from './Input.svelte';
+export { default as Textarea } from './Textarea.svelte';
+export { default as Select } from './Select.svelte';
+export { default as Checkbox } from './Checkbox.svelte';
+export { default as Radio } from './Radio.svelte';
+export { default as SegmentedControl } from './SegmentedControl.svelte';
+export { parseAriaInvalid, resolveControlState, useField, type FieldState } from './field-context';
+export { computeFieldIds, type FieldIds } from './field-ids';
+export { keyToDirection, nextEnabledIndex, type SegmentedOption } from './segmented-control';
+
+// ── status & badges — glyph-plus-colour, colour never alone ─────────────
+export { default as Badge } from './Badge.svelte';
+export {
+	BADGE_GLYPH,
+	BADGE_SIZES,
+	BADGE_VARIANTS,
+	type BadgeSize,
+	type BadgeVariant
+} from './badge-variants';
+export {
+	queuedDayStatusBadge,
+	workUnitStateBadge,
+	workUnitStates,
+	type StateBadge,
+	type WorkUnitStateValue
+} from './day-state-badge';
+
+// ── money — the only place a `MinorUnits`/major-unit amount gets printed
+// or typed; see amount-format.ts and $lib/decimal for why the two units
+// never share one prop ──
+export { default as Amount } from './Amount.svelte';
+export { default as AmountInput } from './AmountInput.svelte';
+export { formatAmountValue, type AmountSize, type AmountValue } from './amount-format';
