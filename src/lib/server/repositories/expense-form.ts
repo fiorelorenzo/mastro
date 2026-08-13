@@ -1,5 +1,6 @@
 import * as m from '$lib/paraglide/messages';
 import { decimalStringToMinorUnits } from '$lib/server/import/decimal';
+import { getLocale } from '$lib/paraglide/runtime';
 import { NO_MINOR_UNITS, type MinorUnits } from '$lib/money';
 import type { ExpenseInput } from './expense';
 
@@ -39,7 +40,7 @@ export function parseExpenseForm(formData: FormData, currency: string): ExpenseF
 	const amountRaw = string('amount');
 	let amount: MinorUnits = NO_MINOR_UNITS;
 	try {
-		amount = decimalStringToMinorUnits(amountRaw, currency);
+		amount = decimalStringToMinorUnits(amountRaw, currency, getLocale());
 		if (amount <= 0) throw new Error('non-positive');
 	} catch {
 		errors.amount = m.expense_validation_amount_invalid();

@@ -1,5 +1,6 @@
 import * as m from '$lib/paraglide/messages';
 import { decimalStringToMinorUnits } from '$lib/server/import/decimal';
+import { getLocale } from '$lib/paraglide/runtime';
 import {
 	contractRenewalType,
 	contractStatus,
@@ -140,7 +141,7 @@ export function parseContractForm(formData: FormData): ContractFormResult {
 		expensePolicy = { kind: expensePolicyKind };
 	} else if (expensePolicyKind === 'reimbursed_with_cap') {
 		try {
-			const capAmount = decimalStringToMinorUnits(expensePolicyCapAmountRaw, currency);
+			const capAmount = decimalStringToMinorUnits(expensePolicyCapAmountRaw, currency, getLocale());
 			if (capAmount <= 0) throw new Error('non-positive');
 			expensePolicy = { kind: 'reimbursed_with_cap', capAmount };
 		} catch {
