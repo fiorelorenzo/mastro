@@ -72,16 +72,27 @@ function listScannedFiles(root: string, dir: string = root, out: string[] = []):
 interface Rule {
 	readonly what: string;
 	readonly pattern: RegExp;
+	/** Literals of this shape that are provably not what the rule is hunting. */
+	readonly allow?: ReadonlySet<string>;
 }
 
 // Each pattern targets a specific literal shape checked (see this file's
 // own tests, and the grep run recorded in the PR description) to have zero
 // occurrences in today's tree outside packs/ and tests — not "any short
 // string" or "any round number", which would misfire constantly.
+/**
+ * A handful of literals share the pack-id shape and are demonstrably not
+ * pack ids: IANA charset names in a MIME header parser, for one. They are
+ * listed rather than pattern-excused, so adding one is a decision somebody
+ * reads, and so a real pack id can never hide behind a loosened regex.
+ */
+const NOT_PACK_IDS = new Set(["'us-ascii'", '"us-ascii"']);
+
 const RULES: readonly Rule[] = [
 	{
 		what: "a pack-id-shaped literal ('<country>-<regime>', e.g. 'it-flat-rate')",
-		pattern: /['"][a-z]{2}-[a-z][a-z-]*['"]/
+		pattern: /['"][a-z]{2}-[a-z][a-z-]*['"]/g,
+		allow: NOT_PACK_IDS
 	},
 	{
 		what: "a quoted ISO 3166-1 alpha-2 country code (e.g. 'IT')",
@@ -110,8 +121,16 @@ interface Violation {
 function findViolations(source: string, file: string): Violation[] {
 	const violations: Violation[] = [];
 	for (const rule of RULES) {
-		const match = source.match(rule.pattern);
-		if (match) violations.push({ file, what: rule.what, match: match[0] });
+		// A global pattern is matched exhaustively so one allowed literal
+		// cannot mask a real violation later in the same file.
+		const matches = rule.pattern.global
+			? [...source.matchAll(rule.pattern)].map((m) => m[0])
+			: [source.match(rule.pattern)?.[0]].filter((m): m is string => m !== undefined);
+		for (const match of matches) {
+			if (rule.allow?.has(match)) continue;
+			violations.push({ file, what: rule.what, match });
+			break;
+		}
 	}
 	return violations;
 }
@@ -125,6 +144,20 @@ describe('the detector itself', () => {
 	test('catches a pack id smuggled into a branch', () => {
 		const violations = findViolations("if (pack.id === 'it-flat-rate') { ... }", 'x.ts');
 		expect(violations.map((v) => v.match)).toContain("'it-flat-rate'");
+	});
+
+	test('lets an IANA charset through, and still catches a pack id in the same file', () => {
+		// The charset map in the MIME header parser holds 'us-ascii', which
+		// has the pack-id shape and is not one. Allowing it must not blind
+		// the rule to a real pack id sitting a few lines below.
+		const charsetOnly = findViolations("const charsets = { 'us-ascii': 'ascii' };", 'x.ts');
+		expect(charsetOnly).toEqual([]);
+
+		const both = findViolations(
+			"const charsets = { 'us-ascii': 'ascii' };\nif (pack.id === 'it-flat-rate') { ... }",
+			'x.ts'
+		);
+		expect(both.map((v) => v.match)).toContain("'it-flat-rate'");
 	});
 
 	test('catches the national scheme name written out in prose', () => {

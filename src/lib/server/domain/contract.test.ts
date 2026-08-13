@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { computeDueDate, renewalWindowOpensOn } from './contract';
+import { computeDueDate, isRenewalWindowOpen, renewalWindowOpensOn } from './contract';
 
 test('net terms: due date is N calendar days after the invoice date', () => {
 	const due = computeDueDate({ kind: 'net', days: 30 }, new Date('2024-03-01T00:00:00Z'));
@@ -60,4 +60,25 @@ test('counterparty_option refusal window opens renewalNoticeDays before endsOn',
 
 test('refusal window is undefined for a contract with no renewal (no endsOn/notice pair)', () => {
 	expect(renewalWindowOpensOn({ endsOn: null, renewalNoticeDays: null })).toBeNull();
+});
+
+test('the renewal window is not open before it opens', () => {
+	const contract = { endsOn: '2026-12-31', renewalNoticeDays: 60 };
+	expect(isRenewalWindowOpen(contract, new Date('2026-08-13T00:00:00Z'))).toBe(false);
+});
+
+test('the renewal window is open from the day it opens through the end date, inclusive', () => {
+	const contract = { endsOn: '2026-12-31', renewalNoticeDays: 60 };
+	expect(isRenewalWindowOpen(contract, new Date('2026-11-01T00:00:00Z'))).toBe(true);
+	expect(isRenewalWindowOpen(contract, new Date('2026-12-15T00:00:00Z'))).toBe(true);
+	expect(isRenewalWindowOpen(contract, new Date('2026-12-31T00:00:00Z'))).toBe(true);
+});
+
+test('the renewal window closes the day after the contract ends', () => {
+	const contract = { endsOn: '2026-12-31', renewalNoticeDays: 60 };
+	expect(isRenewalWindowOpen(contract, new Date('2027-01-01T00:00:00Z'))).toBe(false);
+});
+
+test('a contract with no renewal window (no endsOn/notice pair) is never open', () => {
+	expect(isRenewalWindowOpen({ endsOn: null, renewalNoticeDays: null })).toBe(false);
 });

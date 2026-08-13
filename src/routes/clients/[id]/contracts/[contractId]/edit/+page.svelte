@@ -44,5 +44,10 @@
 >
 
 <Page crumbs={data.crumbs} title={m.contract_edit_heading({ title: data.contract.title })}>
-	<ContractForm {values} errors={form?.errors ?? {}} submitLabel={m.contract_form_submit_save()} />
+	<ContractForm
+		{values}
+		client={data.contract.client}
+		errors={form?.errors ?? {}}
+		submitLabel={m.contract_form_submit_save()}
+	/>
 </Page>

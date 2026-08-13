@@ -7,6 +7,7 @@
 // screen positions.
 
 import * as m from '$lib/paraglide/messages';
+import { niceTicks } from '$lib/design/charts/ticks';
 import type { CertaintyLevel } from '$lib/server/fiscal/certainty';
 import { minorUnits, type MinorUnits } from '$lib/money';
 
@@ -69,7 +70,7 @@ export const CASH_CALENDAR_TIER = {
 
 /**
  * The y-axis tick values for a cash calendar, in minor units, ascending and
- * **distinct**.
+ * **distinct** and, per #235, *round*.
  *
  * Distinct is the whole point. The chart used to take `[0, yMax / 2, yMax]`
  * literally, and on an instance with no ledger yet `yMax` collapses to 1
@@ -79,13 +80,21 @@ export const CASH_CALENDAR_TIER = {
  * instance on its first login (#143). Half of a one-unit range is also not
  * a tick anybody wants to read.
  *
- * Fractions of a minor unit are rounded away here rather than in the
- * formatter: a tick at half a cent is meaningless, and two ticks that
- * differ only below the smallest unit of the currency would print
- * identically anyway.
+ * Round is #235's own fix: the same `[0, yMax / 2, yMax]` produced ticks
+ * like `5985,00 €` and `3492,50 €` on real data — three numbers nobody
+ * can hold in their head on a chart whose entire job is reading a shape
+ * at a glance. `niceTicks` (the design system's generic nice-number
+ * helper) runs in *major* currency units — nice steps mean nice euros
+ * (`100`, `500`, `1 000`, …), not nice cents — then converts back to
+ * `MinorUnits`. This assumes 100 minor units per major unit, the same
+ * EUR-only simplification every dashboard widget already makes (see
+ * `+page.server.ts`'s header comment).
  */
+const MINOR_UNITS_PER_MAJOR = 100;
+
 export function cashCalendarYTicks(yMax: number): readonly MinorUnits[] {
-	const top = Math.max(0, Math.round(yMax));
-	const ticks = [0, Math.round(top / 2), top];
+	if (yMax <= 0) return [minorUnits(0)];
+	const majorTicks = niceTicks(yMax / MINOR_UNITS_PER_MAJOR, 3);
+	const ticks = majorTicks.map((tick) => Math.round(tick * MINOR_UNITS_PER_MAJOR));
 	return [...new Set(ticks)].sort((a, b) => a - b).map((tick) => minorUnits(tick));
 }

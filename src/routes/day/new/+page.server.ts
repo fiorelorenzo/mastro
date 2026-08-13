@@ -4,9 +4,11 @@ import { calendarCrumbs } from '$lib/nav/crumbs';
 import { listApprovalsForContract } from '$lib/server/repositories/approval';
 import { listClients } from '$lib/server/repositories/client';
 import { listContracts } from '$lib/server/repositories/contract';
+import { listRateCards } from '$lib/server/repositories/rate-card';
 import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
 import { createWorkUnit, getMostRecentContractId } from '$lib/server/repositories/work-unit';
 import { parseDayEntryForm } from '$lib/server/repositories/work-unit-form';
+import type { RateCardPreview } from './day-value';
 import type { Actions, PageServerLoad } from './$types';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -17,14 +19,36 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 async function loadActiveContracts() {
 	const [contracts, clients] = await Promise.all([listContracts(), listClients()]);
 	const clientNameById = new Map(clients.map((client) => [client.id, client.legalName]));
-	return contracts
-		.filter((contract) => contract.status === 'active')
-		.map((contract) => ({
-			id: contract.id,
-			clientName: clientNameById.get(contract.clientId) ?? contract.clientId,
-			title: contract.title,
-			requiresPriorApproval: contract.requiresPriorApproval
-		}));
+	const active = contracts.filter((contract) => contract.status === 'active');
+
+	// Every active contract's rate cards, fetched once here rather than a
+	// server round trip per keystroke: the form prices the selected
+	// contract/date/quantity itself, client-side, through `day-value.ts`'s
+	// duplicate of `priceRateCard`/`resolveRateCard` — see that file's own
+	// header comment for why it is a duplicate and not an import.
+	const rateCardsByContract = new Map(
+		await Promise.all(
+			active.map(async (contract) => [contract.id, await listRateCards(contract.id)] as const)
+		)
+	);
+
+	return active.map((contract) => ({
+		id: contract.id,
+		clientName: clientNameById.get(contract.clientId) ?? contract.clientId,
+		title: contract.title,
+		currency: contract.currency,
+		requiresPriorApproval: contract.requiresPriorApproval,
+		rateCards: (rateCardsByContract.get(contract.id) ?? []).map((card): RateCardPreview => ({
+			id: card.id,
+			kind: card.kind,
+			amount: card.amount,
+			unit: card.unit,
+			allowedFractions: card.allowedFractions,
+			disbursementPeriod: card.disbursementPeriod,
+			validFrom: card.validFrom,
+			validTo: card.validTo
+		}))
+	}));
 }
 
 async function loadApprovalsByContract(contractIds: string[]) {
@@ -86,7 +110,6 @@ export const load: PageServerLoad = async ({ url }) => {
 
 	return {
 		contracts,
-		approvalsByContract,
 		defaultContractId,
 		defaultApprovalId,
 		defaultDate,

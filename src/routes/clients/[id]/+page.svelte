@@ -1,19 +1,63 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import { formatDate } from '$lib/i18n/format';
+	import {
+		formatAmount,
+		formatDate,
+		formatDays,
+		formatMinorUnits,
+		formatPercent
+	} from '$lib/i18n/format';
 	import { factLine } from '$lib/nav/crumbs';
 	import Page from '$lib/layout/Page.svelte';
 	import Section from '$lib/layout/Section.svelte';
 	import RecordList from '$lib/layout/RecordList.svelte';
 	import type { RecordColumn } from '$lib/layout/types';
+	import { Badge, EmptyState, StatTile } from '$lib/design';
 	import { noticeChannelLabel } from '../notice-channel';
+	import { concentrationBadge } from '../concentration-badge';
 	import { renewalTypeLabel, statusLabel } from './contracts/contract-enums';
+	import {
+		disbursementPeriodLabel,
+		rateUnitLabel
+	} from './contracts/[contractId]/rate-cards/rate-card-enums';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
+	// The fiscal engine carries no currency of its own (`fiscal/ledger.ts`'s
+	// `LedgerRow`); every contract in this codebase is EUR, the same
+	// assumption the client list and the dashboard already make.
+	const CURRENCY = 'EUR';
+
+	const cap = $derived(data.exposure.concentrationCap);
+	const capBadge = $derived(concentrationBadge(cap));
+	// `cap.ceiling` is a `Ceiling`, a discriminated union over `measure` —
+	// narrowed here rather than assumed, even though `client-exposure.ts`
+	// only ever attaches a `percentage_share` ceiling to `concentrationCap`.
+	const capRatio = $derived(
+		cap && cap.ceiling.measure === 'percentage_share' ? cap.ceiling.value : null
+	);
+	const capSub = $derived(
+		capRatio === null ? undefined : m.clients_share_cap_sub({ ratio: formatPercent(capRatio) })
+	);
+
 	type ContractRow = PageData['contracts'][number];
+
+	// One rate-card figure per contract — its own currently active card,
+	// resolved server-side (`resolveRateCard`, `+page.server.ts`) — the
+	// same "amount / unit (disbursement)" string the contract detail
+	// page's own rate-card table already prints (`rate-cards/rate-card-
+	// enums.ts`'s `rateUnitLabel`/`disbursementPeriodLabel`), reused
+	// rather than reinvented for a second column that would drift.
+	function valueLabel(contractRow: ContractRow): string {
+		const card = contractRow.activeRateCard;
+		if (!card) return m.contract_no_active_rate_card();
+		const perUnit = `${formatAmount(card.amount, contractRow.currency)} / ${rateUnitLabel(card.unit)}`;
+		return card.disbursementPeriod
+			? `${perUnit} (${disbursementPeriodLabel(card.disbursementPeriod)})`
+			: perUnit;
+	}
 
 	// The "view" column the old hand-rolled table carried is gone: the title
 	// is the link now, the same convention `/clients` itself already set.
@@ -23,6 +67,12 @@
 			key: 'status',
 			label: m.contract_form_status_label(),
 			format: (contract: ContractRow) => statusLabel(contract.status)
+		},
+		{
+			key: 'value',
+			label: m.contract_column_value(),
+			align: 'end',
+			format: valueLabel
 		},
 		{
 			key: 'startsOn',
@@ -51,6 +101,50 @@
 			>{m.clients_edit_link()}</a
 		>
 	{/snippet}
+
+	<!--
+		Leads the page now (#242): the same figures the client list shows,
+		for this one client, before identity or contracts — "who owes me"
+		is why this record was opened, not its address.
+	-->
+	<Section title={m.client_financial_summary_heading()}>
+		{#if !data.hasContract}
+			<EmptyState
+				icon="€"
+				title={m.client_financial_summary_empty_title()}
+				body={m.client_financial_summary_empty_body()}
+			>
+				{#snippet actions()}
+					<a href={resolve('/clients/[id]/contracts/new', { id: data.client.id })} class="underline"
+						>{m.contract_new_link()}</a
+					>
+				{/snippet}
+			</EmptyState>
+		{:else}
+			<div class="stats-grid">
+				<StatTile
+					label={m.clients_column_outstanding()}
+					value={formatMinorUnits(data.exposure.outstanding, CURRENCY)}
+				/>
+				<StatTile
+					label={m.clients_column_collected()}
+					value={formatMinorUnits(data.exposure.collectedThisYear, CURRENCY)}
+				/>
+				<StatTile label={m.clients_column_days()} value={formatDays(data.exposure.daysThisYear)} />
+				<div class="share-tile">
+					<StatTile
+						label={m.clients_column_share()}
+						value={formatPercent(data.exposure.revenueShareThisYear)}
+						sub={capSub}
+					/>
+					{#if capBadge}
+						<Badge variant={capBadge.variant} label={capBadge.label} size="sm" />
+					{/if}
+				</div>
+			</div>
+			<p class="basis-note">{m.clients_exposure_basis_note()}</p>
+		{/if}
+	</Section>
 
 	<Section title={m.client_form_legal_identity_legend()}>
 		<dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
@@ -111,3 +205,28 @@
 		{/if}
 	</Section>
 </Page>
+
+<style>
+	.stats-grid {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: var(--space-4);
+	}
+	@media (max-width: 639px) {
+		.stats-grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+	.share-tile {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: var(--space-2);
+	}
+	.basis-note {
+		margin: var(--space-4) 0 0;
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
+		max-width: 60ch;
+	}
+</style>

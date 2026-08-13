@@ -2,6 +2,7 @@
 	import * as m from '$lib/paraglide/messages';
 	import Page from '$lib/layout/Page.svelte';
 	import ContractForm from '../ContractForm.svelte';
+	import { defaultTemplateLanguageForCountry } from '../contract-enums';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -27,7 +28,7 @@
 			expensePolicyKind: 'not_reimbursed',
 			expensePolicyCapAmount: '',
 			requiresExpensePreAuthorisation: false,
-			templateLanguage: 'en',
+			templateLanguage: defaultTemplateLanguageForCountry(data.client.country),
 			// #211: a contract created here is usable immediately. `day/new`'s
 			// own loader (loadActiveContracts) only ever offers `active`
 			// contracts, so a `draft` default made every new contract invisible
@@ -49,6 +50,7 @@
 <Page crumbs={data.crumbs} title={m.contract_new_heading({ client: data.client.legalName })}>
 	<ContractForm
 		{values}
+		client={data.client}
 		errors={form?.errors ?? {}}
 		submitLabel={m.contract_form_submit_create()}
 	/>

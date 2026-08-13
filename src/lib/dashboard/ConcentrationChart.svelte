@@ -99,9 +99,9 @@
 		{#snippet chart()}
 			<div class="plot-wrap">
 				<svg
-					viewBox="-170 -8 {plotWidth + 220} {plotHeight + 24}"
+					viewBox="-170 -16 {plotWidth + 220} {plotHeight + 32}"
 					width={plotWidth + 220}
-					height={plotHeight + 24}
+					height={plotHeight + 32}
 					role="img"
 					aria-label={m.dashboard_concentration_title()}
 				>
@@ -114,6 +114,15 @@
 							class="reference-line"
 							class:crossed={ceiling.crossed}
 						/>
+						<text
+							x={ceiling.ratio * plotWidth}
+							y={-8}
+							class="reference-label"
+							class:crossed={ceiling.crossed}
+							text-anchor="middle"
+						>
+							{formatPercent(ceiling.ratio)}
+						</text>
 					{/each}
 					{#each sortedByShare as share, index (share.clientId)}
 						{@const active = activeClientIds === undefined || activeClientIds.has(share.clientId)}
@@ -189,6 +198,15 @@
 	.reference-line.crossed {
 		stroke: var(--status-critical);
 		stroke-width: 2;
+	}
+	.reference-label {
+		fill: var(--text-primary);
+		font-size: 11px;
+		font-weight: 600;
+		font-variant-numeric: tabular-nums;
+	}
+	.reference-label.crossed {
+		fill: var(--status-critical);
 	}
 	.reference-note {
 		margin: 0.625rem 0 0;

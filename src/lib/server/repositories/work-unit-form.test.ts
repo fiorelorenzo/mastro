@@ -56,3 +56,45 @@ test('#62: values echoes the raw workUnitId back for a validation failure, so a 
 	expect(result.ok).toBe(false);
 	expect(result.values.workUnitId).toBe(WORK_UNIT_ID);
 });
+
+test("#236: no intent field at all builds a 'worked' day, preserving submissions from before the field existed", () => {
+	const result = parseDayEntryForm(validForm(), validContractIds, approvalIdsByContract);
+	expect(result.ok).toBe(true);
+	if (result.ok) {
+		expect(result.input.state).toBe('worked');
+		expect(result.values.intent).toBe('worked');
+	}
+});
+
+test("#236: intent=proposed builds a 'proposed' day — the warning banner's safe alternative", () => {
+	const result = parseDayEntryForm(
+		validForm({ intent: 'proposed' }),
+		validContractIds,
+		approvalIdsByContract
+	);
+	expect(result.ok).toBe(true);
+	if (result.ok) {
+		expect(result.input.state).toBe('proposed');
+		expect(result.values.intent).toBe('proposed');
+	}
+});
+
+test("#236: an unrecognised intent value falls back to 'worked' rather than being trusted verbatim", () => {
+	const result = parseDayEntryForm(
+		validForm({ intent: 'invoiced' }),
+		validContractIds,
+		approvalIdsByContract
+	);
+	expect(result.ok).toBe(true);
+	if (result.ok) expect(result.input.state).toBe('worked');
+});
+
+test('#236: intent survives a validation failure so the chosen alternative is not lost on retry', () => {
+	const result = parseDayEntryForm(
+		validForm({ intent: 'proposed', scope: '' }),
+		validContractIds,
+		approvalIdsByContract
+	);
+	expect(result.ok).toBe(false);
+	expect(result.values.intent).toBe('proposed');
+});

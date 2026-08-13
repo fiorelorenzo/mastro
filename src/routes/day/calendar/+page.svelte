@@ -130,11 +130,11 @@
 									</a>
 								{:else}
 									{@const primaryState = cell.primaryState!}
+									{@const primaryEntry =
+										cell.entries.find((entry) => entry.state === primaryState) ?? cell.entries[0]}
 									<div class="cell-occupied">
 										<a
-											href={cell.entries.length === 1
-												? resolve('/day/[id]', { id: cell.entries[0].id })
-												: resolve('/day/date/[date]', { date: cell.date })}
+											href={resolve('/day/[id]', { id: primaryEntry.id })}
 											class="cell-link"
 											aria-label={m.day_calendar_open_date({
 												date: formatDate(cell.date),

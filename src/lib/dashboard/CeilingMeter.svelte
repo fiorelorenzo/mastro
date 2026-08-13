@@ -3,8 +3,14 @@
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { formatMinorUnits, formatPercent } from '$lib/i18n/format';
 	import { STATUS, StatusIndicator } from '$lib/design';
-	import { ceilingBasisWords, ceilingStatus, type CeilingView } from './ceiling';
+	import {
+		ceilingBasisWords,
+		ceilingProjectionStatus,
+		ceilingStatus,
+		type CeilingView
+	} from './ceiling';
 	import { renewalAssumptionLine } from './renewal-assumption';
+	import { minorUnits } from '$lib/money';
 
 	let { view }: { view: CeilingView } = $props();
 
@@ -17,6 +23,11 @@
 
 	const locale = $derived(getLocale());
 	const status = $derived(ceilingStatus(view));
+	// #235: the projection note's own status — the headline reads
+	// `status` (today's position); this reads `view.projectedEnd`
+	// instead, so a calm today with an alarming year-end does not read
+	// as calm all the way down.
+	const projectionStatus = $derived(ceilingProjectionStatus(view));
 
 	// Headroom above the limit: the fill, the threshold ticks and the
 	// dashed projection must all fit inside the track even when the
@@ -35,10 +46,12 @@
 	const thresholds = $derived(view.alertLevels.filter((level) => level.ratio < 1));
 </script>
 
-<section class="meter" aria-label={view.label[locale]}>
+<section class="meter" class:crossed={view.crossed} aria-label={view.label[locale]}>
 	<p class="label">{view.label[locale]}</p>
 	<div class="headline">
-		<span class="figure">{formatMinorUnits(view.currentValue, CURRENCY)}</span>
+		<span class="figure" style:color={STATUS[status.level]}
+			>{formatMinorUnits(view.currentValue, CURRENCY)}</span
+		>
 		<span class="of"
 			>{m.dashboard_ceiling_of({ limit: formatMinorUnits(view.limitValue, CURRENCY) })}</span
 		>
@@ -54,7 +67,17 @@
 	>
 		<div class="fill" style:width="{currentPct}%" style:background={STATUS[status.level]}></div>
 		{#each thresholds as level (level.ratio)}
-			<div class="threshold" style:left="{level.ratio * limitPct}%" title={level.label[locale]}>
+			{@const active = view.activeAlertLevels.includes(level)}
+			<div
+				class="threshold"
+				class:threshold--active={active}
+				style:left="{level.ratio * limitPct}%"
+				title={level.label[locale]}
+			>
+				<!-- #235: a permanent, visible label — the tick used to carry
+				     its meaning only in a hover `title` and a visually-hidden
+				     span, unreadable on the phone this product runs from. -->
+				<span class="tick-label" aria-hidden="true">{formatPercent(level.ratio)}</span>
 				<span class="sr-only">{level.label[locale]}</span>
 			</div>
 		{/each}
@@ -71,6 +94,10 @@
 			})}
 		></div>
 	</div>
+	<div class="track-scale" aria-hidden="true">
+		<span>{formatMinorUnits(minorUnits(0), CURRENCY)}</span>
+		<span>{formatMinorUnits(view.limitValue, CURRENCY)}</span>
+	</div>
 
 	<div class="status-row">
 		<StatusIndicator level={status.level} label={status.label} />
@@ -83,11 +110,15 @@
 		<p class="consequence">{view.consequence[locale]}</p>
 	{/if}
 
-	<p class="projection-note">
-		{m.dashboard_ceiling_projection_note({
-			amount: formatMinorUnits(view.projectedEnd, CURRENCY),
-			percent: formatPercent(view.projectedEnd / view.limitValue)
-		})}
+	<!-- #235: colour and wording now come from `projectionStatus`, not a
+	     flat muted footnote — a projection that would cross the ceiling
+	     reads as urgent here, not as calm as the good case. -->
+	<p
+		class="projection-note"
+		class:projection-note--emphasized={projectionStatus.level !== 'good'}
+		style:color={STATUS[projectionStatus.level]}
+	>
+		{projectionStatus.label}
 	</p>
 
 	{#if view.assumptions.length > 0}
@@ -108,6 +139,13 @@
 		border: 1px solid var(--border-hairline);
 		border-radius: 10px;
 		padding: 1.25rem 1.25rem 1.5rem;
+	}
+	/* #235: a crossed ceiling gets the same status-coloured rail the
+	   attention queue and alert list already use for "critical" — the
+	   card itself reads urgent on a quick scroll-past, not only its
+	   headline number. */
+	.meter.crossed {
+		box-shadow: inset 3px 0 0 var(--status-critical);
 	}
 	.label {
 		margin: 0 0 0.375rem;
@@ -155,6 +193,26 @@
 		background: var(--text-muted);
 		transform: translateX(-1px);
 	}
+	.threshold--active {
+		background: var(--status-warning);
+	}
+	/* #235: a permanent label, not a hover-only title — the smallest
+	   legible size on the scale (`--text-2xs`'s own 11px, kept as a raw
+	   value here since this SVG-adjacent track already sizes by hand). */
+	.tick-label {
+		position: absolute;
+		top: -1.05rem;
+		left: 50%;
+		transform: translateX(-50%);
+		font-size: 0.625rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-muted);
+		white-space: nowrap;
+	}
+	.threshold--active .tick-label {
+		color: var(--status-warning);
+		font-weight: 600;
+	}
 	.limit-mark {
 		position: absolute;
 		top: -0.3125rem;
@@ -170,6 +228,14 @@
 		width: 0;
 		border-left: 2px dashed var(--text-primary);
 		transform: translateX(-1px);
+	}
+	.track-scale {
+		margin-top: 0.375rem;
+		display: flex;
+		justify-content: space-between;
+		font-size: 0.6875rem;
+		font-variant-numeric: tabular-nums;
+		color: var(--text-muted);
 	}
 	.status-row {
 		margin-top: 0.875rem;
@@ -192,8 +258,14 @@
 	}
 	.projection-note {
 		margin: 0.625rem 0 0;
-		color: var(--text-muted);
 		font-size: 0.75rem;
+	}
+	/* #235: a projected breach reads larger and bolder, not just a
+	   different colour — "does not read as calm" needs a second cue
+	   beyond hue, same rule as everywhere else in this system. */
+	.projection-note--emphasized {
+		font-size: 0.8125rem;
+		font-weight: 600;
 	}
 	.assumptions {
 		margin-top: 0.5rem;
