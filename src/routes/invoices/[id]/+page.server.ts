@@ -11,14 +11,16 @@ import {
 	recordPayment
 } from '$lib/server/repositories/invoice';
 import { listRateCards } from '$lib/server/repositories/rate-card';
+import { listSentEmailsForInvoice } from '$lib/server/repositories/sent-email';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
 	const invoiceRow = await getInvoiceWithLines(params.id);
 	if (!invoiceRow) error(404, m.invoice_not_found());
-	const [documents, rateCards] = await Promise.all([
+	const [documents, rateCards, chaseHistory] = await Promise.all([
 		getInvoiceDocuments(invoiceRow.id),
-		listRateCards(invoiceRow.contractId)
+		listRateCards(invoiceRow.contractId),
+		listSentEmailsForInvoice(invoiceRow.id)
 	]);
 
 	// Each day's own contribution (#239: "the days behind each line are
@@ -57,6 +59,14 @@ export const load: PageServerLoad = async ({ params }) => {
 		// hand-entered invoice none — #215's "the archived original of an
 		// imported invoice".
 		documents: documents.map(toSourceDocumentValue),
+		// Every email this invoice has been the subject of, most recent
+		// first (#230) — the History card's own chase list, so "when was
+		// this last chased and with which template" reads straight off its
+		// top row rather than a second, separate figure.
+		chaseHistory: chaseHistory.map((row) => ({
+			...row,
+			sentAt: row.sentAt.toISOString()
+		})),
 		// Today, at UTC midnight as an ISO date — what the "paid on" field
 		// defaults to (#27's "defaults to today"), computed once here so the
 		// form and any later reasoning about it agree on the same instant.

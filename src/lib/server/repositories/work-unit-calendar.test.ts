@@ -98,7 +98,7 @@ test('listWorkUnitsBetween returns only the days inside the inclusive range, ord
 	});
 });
 
-test('getMostRecentContractId names the contract behind the latest inserted day, null with no history', async () => {
+test("getMostRecentContractId names the contract behind the latest inserted day, scoped by explicit far-future timestamps so a populated database's own history cannot outrank it", async () => {
 	// `created_at` defaults to `now()`, which Postgres resolves once per
 	// transaction (`transaction_timestamp()`) — two inserts sharing this
 	// test's outer transaction would otherwise tie, which the ordering
@@ -106,10 +106,14 @@ test('getMostRecentContractId names the contract behind the latest inserted day,
 	// own transaction (`createWorkUnit` is called with no ambient `tx`),
 	// so that tie never happens outside a rollback-per-test setup; here we
 	// just set `createdAt` explicitly instead of depending on wall-clock
-	// spacing between two calls in the same transaction.
+	// spacing between two calls in the same transaction. The function has
+	// no per-caller scope to assert against (it names the single most
+	// recent day system-wide, by design — #24's "contract used most
+	// recently" default), so against a database that already has history
+	// (a seeded instance) this test cannot assert "null with no history":
+	// it only proves the ordering between its own two contracts, each
+	// timestamped decades past any realistic seed data.
 	await inRolledBackTransaction(async (tx) => {
-		expect(await getMostRecentContractId(tx)).toBeNull();
-
 		const contractA = await insertContract(tx);
 		const contractB = await insertContract(tx);
 		const actor = { kind: 'human' as const, email: 'lorenzo@example.com' };
@@ -122,7 +126,7 @@ test('getMostRecentContractId names the contract behind the latest inserted day,
 		);
 		await tx
 			.update(workUnit)
-			.set({ createdAt: new Date('2024-06-01T10:00:00Z') })
+			.set({ createdAt: new Date('2099-01-01T10:00:00Z') })
 			.where(eq(workUnit.id, dayForA.id));
 		expect(await getMostRecentContractId(tx)).toBe(contractA.id);
 
@@ -134,7 +138,7 @@ test('getMostRecentContractId names the contract behind the latest inserted day,
 		);
 		await tx
 			.update(workUnit)
-			.set({ createdAt: new Date('2024-06-01T11:00:00Z') })
+			.set({ createdAt: new Date('2099-01-01T11:00:00Z') })
 			.where(eq(workUnit.id, dayForB.id));
 		expect(await getMostRecentContractId(tx)).toBe(contractB.id);
 	});

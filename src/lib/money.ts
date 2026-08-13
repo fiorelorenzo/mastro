@@ -72,6 +72,20 @@ export function addMinorUnits(...values: MinorUnits[]): MinorUnits {
 	return sumMinorUnits(values);
 }
 
+/** The additive inverse, brand preserved — a credit note's line amount
+ * (always stored non-negative, like every other invoice line) flipped to
+ * the negative ledger contribution it actually is (#213's
+ * `fetchLedgerRows`), without a caller reaching for a bare unary `-` on a
+ * branded value. */
+export function negateMinorUnits(value: MinorUnits): MinorUnits {
+	// `-0 as MinorUnits` would be a real, distinct value here (`0 - 0 ===
+	// -0` never applies, but unary negation on the literal zero does): a
+	// row worth nothing, correctly negated, must stay exactly `0`, not a
+	// value `Object.is`-distinct from every other zero this module hands
+	// out.
+	return (value === 0 ? 0 : -value) as MinorUnits;
+}
+
 /**
  * Money times a plain ratio — a tax rate, a share, a fraction of a day —
  * rounded to a whole minor unit, since a fraction of a cent is not a value

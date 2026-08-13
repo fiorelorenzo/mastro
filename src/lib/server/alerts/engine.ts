@@ -1,15 +1,17 @@
 // The alert engine's one entry point (#74): a plain function, `detectAlerts`,
-// that anything can call — a route, a script, a test, the future worker
-// process AGENTS.md describes and this repo does not build yet. Nothing
-// here is a job, a queue or a scheduled task; see `dispatch.ts` for the
-// two functions ("push", "digest") that actually deliver something, and
-// `src/routes/api/alerts/run/[job]/+server.ts` for the one thing in this
-// PR that lets a cron entry drive them in production.
+// that anything can call — a route, a script, a test, the `scheduler`
+// compose service (#222, `scripts/scheduler.ts`) that now actually calls
+// it in production. Nothing here is a job, a queue or a scheduled task
+// itself; see `dispatch.ts` for the two functions ("push", "digest")
+// that actually deliver something, and
+// `src/routes/api/alerts/run/[job]/+server.ts` for the entry point a
+// scheduled caller drives them through.
 
 import { db, type DbExecutor } from '$lib/server/db';
 import { mirrorConfigFromEnv } from '$lib/server/drive/config';
 import { imapConfiguredInEnv } from '$lib/server/mail/config';
 import {
+	detectAgentRunFailure,
 	detectApprovalUnactioned,
 	detectBackupFailure,
 	detectBillablePeriodClosed,
@@ -28,6 +30,7 @@ import {
 	fetchContractsForDeadlineAlerts,
 	fetchEvaluatedCeilings,
 	fetchInvoiceOverdueRows,
+	fetchLatestAgentRun,
 	fetchLatestBackupRun,
 	fetchLatestMailboxPollRun,
 	fetchMirrorFailureRows,
@@ -57,7 +60,8 @@ export async function detectAlerts(asOfDate: string, executor: DbExecutor = db):
 		evaluatedCeilings,
 		latestBackupRun,
 		mirrorRows,
-		mailboxPollStatus
+		mailboxPollStatus,
+		latestAgentRun
 	] = await Promise.all([
 		fetchContractsForDeadlineAlerts(executor),
 		fetchContractsForBillablePeriod(executor),
@@ -67,7 +71,8 @@ export async function detectAlerts(asOfDate: string, executor: DbExecutor = db):
 		fetchEvaluatedCeilings(asOfDate, executor),
 		fetchLatestBackupRun(executor),
 		fetchMirrorFailureRows(mirrorConfigFromEnv() !== null, executor),
-		fetchLatestMailboxPollRun(imapConfiguredInEnv(), executor)
+		fetchLatestMailboxPollRun(imapConfiguredInEnv(), executor),
+		fetchLatestAgentRun(executor)
 	]);
 
 	const yearEndInputs = await fetchYearEndOverrunInputs(evaluatedCeilings, asOfDate, executor);
@@ -87,7 +92,8 @@ export async function detectAlerts(asOfDate: string, executor: DbExecutor = db):
 			mailboxPollStatus.pollingConfigured,
 			mailboxPollStatus.latestRun,
 			asOfInstant
-		)
+		),
+		...detectAgentRunFailure(latestAgentRun, asOfInstant)
 	];
 }
 

@@ -11,6 +11,7 @@ import { daysLate, isOverdue } from '$lib/server/domain/invoice';
 import type { EvaluatedCeiling } from '$lib/server/fiscal/ceiling';
 import type { InvoicingCadence } from '$lib/server/db/schema/contract';
 import {
+	AGENT_RUN_STALE_HOURS,
 	APPROVAL_UNACTIONED_CRITICAL_DAYS,
 	APPROVAL_UNACTIONED_SERIOUS_DAYS,
 	APPROVAL_UNACTIONED_WARNING_DAYS,
@@ -591,6 +592,52 @@ export function detectMailboxPollFailure(
 		return [
 			makeAlert('global', 'serious', {
 				type: 'mailbox_poll_failure',
+				reason: 'stale',
+				detail: null,
+				lastRunAt: latestRun.createdAt.toISOString()
+			})
+		];
+	}
+	return [];
+}
+
+export interface AgentRunRow {
+	readonly status: 'success' | 'failure';
+	readonly detail: string | null;
+	readonly createdAt: Date;
+}
+
+/** The same two-part check as `detectBackupFailure` — unconditional, no
+ * "configured" gate: unlike mail polling, draining completed jobs and
+ * enqueueing new extractions (#85) needs no per-instance setup, so an
+ * instance where the scheduler (#222) has simply never called
+ * `/api/agent/run` yet is exactly the `never_run` case, not a false
+ * positive to suppress. */
+export function detectAgentRunFailure(latestRun: AgentRunRow | null, asOfDate: Date): Alert[] {
+	if (latestRun === null) {
+		return [
+			makeAlert('global', 'critical', {
+				type: 'agent_run_failure',
+				reason: 'never_run',
+				detail: null,
+				lastRunAt: null
+			})
+		];
+	}
+	if (latestRun.status === 'failure') {
+		return [
+			makeAlert('global', 'critical', {
+				type: 'agent_run_failure',
+				reason: 'failure',
+				detail: latestRun.detail,
+				lastRunAt: latestRun.createdAt.toISOString()
+			})
+		];
+	}
+	if (hoursSince(latestRun.createdAt, asOfDate) > AGENT_RUN_STALE_HOURS) {
+		return [
+			makeAlert('global', 'serious', {
+				type: 'agent_run_failure',
 				reason: 'stale',
 				detail: null,
 				lastRunAt: latestRun.createdAt.toISOString()

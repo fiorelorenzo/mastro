@@ -25,6 +25,7 @@
 		"db:generate": "drizzle-kit generate",
 		"db:generate:custom": "drizzle-kit generate --custom",
 		"db:migrate": "node --env-file-if-exists=.env scripts/migrate.ts",
+		"seed:demo": "node --env-file-if-exists=.env scripts/seed-demo.ts",
 		"db:studio": "drizzle-kit studio",
 		"runner:watch": "node --env-file-if-exists=.env scripts/runner.ts watch",
 		"runner:once": "node --env-file-if-exists=.env scripts/runner.ts once",

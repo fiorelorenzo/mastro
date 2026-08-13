@@ -102,11 +102,16 @@ built_image="$(docker image inspect -f '{{.Id}}' mastro-prod-web)"
 # processes cannot both hold 443. A host that has no edge proxy of its own
 # starts the bundled one instead (docs/deploy.md covers both shapes).
 #
+# `scheduler` (#222) starts unconditionally, alongside `db`/`web`, unlike
+# `runner` below: an unconfigured cron token makes it skip that one job
+# and log why (`scripts/scheduler.ts`'s own comment), never crash-loop,
+# so there is no "nothing to do" case worth leaving it stopped for.
+#
 # `runner` only starts when a model agent command is configured. With none,
 # it has nothing to do, and a container restarting forever is worse than an
 # absent one: #82's own acceptance is that the product degrades to manual
 # entry when the runner is not there.
-services=(db web)
+services=(db web scheduler)
 if grep -qE '^RUNNER_AGENT_COMMAND=.+' "$ENV_FILE"; then
   services+=(runner)
   echo "==> runner: an agent command is configured, starting it"

@@ -1,64 +1,39 @@
+// Parses the general compose screen's submission (#218): which of the
+// contract's own invoices this cover note is about, and who to send it
+// to. The invoice itself is never typed in — it is a real, persisted row
+// the human picks from a list (`listInvoicesForContract`), the same "read
+// the real row, validate the choice against it" shape `dunning-form.ts`
+// already uses for its own template picker. Before #218 this module also
+// parsed a hand-typed invoice number, amount, due date and period: a
+// stand-in for #26's `invoice` table while it did not exist. It exists
+// now, so those three inputs are gone — see `src/lib/server/mail/
+// compose.ts` for how a picked invoice becomes the figures a template
+// renders against.
 import * as m from '$lib/paraglide/messages';
-import { decimalStringToMinorUnits } from '$lib/server/import/decimal';
-import { getLocale } from '$lib/paraglide/runtime';
-import { NO_MINOR_UNITS, type MinorUnits } from '$lib/money';
-import type { EmailTemplateContext } from '$lib/server/mail/render';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export type MailSendFormValues = {
-	periodFrom: string;
-	periodTo: string;
-	invoiceNumber: string;
-	amount: string;
-	dueDate: string;
-	to: string;
-};
+export type MailSendFormValues = { invoiceId: string; to: string };
 
 export type MailSendFormResult =
-	| {
-			ok: true;
-			period: { from: string; to: string };
-			invoice: EmailTemplateContext['invoice'] & { currency: string };
-			to: string[];
-			values: MailSendFormValues;
-	  }
+	| { ok: true; invoiceId: string; to: string[]; values: MailSendFormValues }
 	| { ok: false; errors: Record<string, string>; values: MailSendFormValues };
 
 /**
- * Parses the send screen's period, manually-entered invoice figures and
- * recipient list. The invoice fields are a stand-in for #26's `invoice`
- * table, which does not exist this wave (see the epic and #70's PR
- * description): once it does, this form's three invoice inputs go away
- * and this function reads the same figures off a persisted invoice row
- * instead.
+ * Validates `invoiceId` against `invoices` — the contract's own invoices,
+ * so a submission cannot name one belonging to another contract — and
+ * `to` the same way every compose screen does.
  */
-export function parseMailSendForm(formData: FormData, currency: string): MailSendFormResult {
+export function parseMailSendForm(
+	formData: FormData,
+	invoices: readonly { id: string }[]
+): MailSendFormResult {
 	const errors: Record<string, string> = {};
 	const string = (key: string) => String(formData.get(key) ?? '').trim();
 
-	const periodFrom = string('periodFrom');
-	const periodTo = string('periodTo');
-	if (!periodFrom || !periodTo) {
-		errors.period = m.mail_send_validation_period_required();
-	} else if (periodTo < periodFrom) {
-		errors.period = m.mail_send_validation_period_invalid();
-	}
-
-	const invoiceNumber = string('invoiceNumber');
-	if (!invoiceNumber) errors.invoiceNumber = m.mail_send_validation_invoice_number_required();
-
-	const amountRaw = string('amount');
-	let amountMinorUnits: MinorUnits = NO_MINOR_UNITS;
-	try {
-		if (!amountRaw) throw new Error('blank');
-		amountMinorUnits = decimalStringToMinorUnits(amountRaw, currency, getLocale());
-	} catch {
-		errors.amount = m.mail_send_validation_amount_invalid();
-	}
-
-	const dueDate = string('dueDate');
-	if (!dueDate) errors.dueDate = m.mail_send_validation_due_date_required();
+	const invoiceId = string('invoiceId');
+	const invoice = invoices.find((candidate) => candidate.id === invoiceId);
+	if (!invoice) errors.invoiceId = m.mail_send_validation_invoice_required();
 
 	const toRaw = string('to');
 	const to = toRaw
@@ -72,22 +47,9 @@ export function parseMailSendForm(formData: FormData, currency: string): MailSen
 		if (invalid) errors.to = m.mail_send_validation_to_invalid({ email: invalid });
 	}
 
-	const values: MailSendFormValues = {
-		periodFrom,
-		periodTo,
-		invoiceNumber,
-		amount: amountRaw,
-		dueDate,
-		to: toRaw
-	};
+	const values: MailSendFormValues = { invoiceId, to: toRaw };
 
-	if (Object.keys(errors).length > 0) return { ok: false, errors, values };
+	if (Object.keys(errors).length > 0 || !invoice) return { ok: false, errors, values };
 
-	return {
-		ok: true,
-		period: { from: periodFrom, to: periodTo },
-		invoice: { number: invoiceNumber, total: amountMinorUnits, currency, dueDate },
-		to,
-		values
-	};
+	return { ok: true, invoiceId: invoice.id, to, values };
 }

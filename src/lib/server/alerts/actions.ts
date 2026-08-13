@@ -25,11 +25,11 @@
 //     only as a dashboard widget (`routes/CeilingMeter.svelte`, `#57`),
 //     with no id on the DOM and no per-ceiling route — both go to `/`, the
 //     one screen a ceiling is ever visible on.
-//   - `backup_failure` / `mailbox_poll_failure`: global, subject-less
-//     conditions (`alertKey`'s `'global'`) whose only actionable surface
-//     is `/settings` — the review's #246 gives that screen an actual
-//     mail/backup health section; until then it is still the right place
-//     to send someone.
+//   - `backup_failure` / `mailbox_poll_failure` / `agent_run_failure`:
+//     global, subject-less conditions (`alertKey`'s `'global'`) whose only
+//     actionable surface is `/settings` — the review's #246 gives that
+//     screen an actual mail/backup/scheduler health section; until then
+//     it is still the right place to send someone.
 // Both are reported in the #220 PR description rather than solved with an
 // invented route this issue was never asked to build.
 
@@ -124,7 +124,8 @@ export function alertResolution(detail: AlertDetail, locale: Locale): AlertResol
 		}
 
 		case 'backup_failure':
-		case 'mailbox_poll_failure': {
+		case 'mailbox_poll_failure':
+		case 'agent_run_failure': {
 			const label = m.alerts_action_open_settings(undefined, { locale });
 			return {
 				subjectHref: '/settings',

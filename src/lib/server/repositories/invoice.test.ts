@@ -1,5 +1,6 @@
 import { afterAll, expect, test } from 'vitest';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
+import { rejection } from '$lib/server/db/pg-error';
 import { minorUnits } from '$lib/money';
 import { sql } from 'drizzle-orm';
 import { client as pool, db } from '$lib/server/db';
@@ -10,7 +11,8 @@ import {
 	getInvoiceDocuments,
 	getInvoiceWithLines,
 	listUnpaidInvoices,
-	recordPayment
+	recordPayment,
+	type InvoiceInput
 } from './invoice';
 import { createExpense } from './expense';
 import { createWorkUnit, getWorkUnit } from './work-unit';
@@ -590,5 +592,207 @@ test("#215: an imported invoice's archived original is reachable, a hand-entered
 		const documents = await getInvoiceDocuments(invoiceRow.id, tx);
 		expect(documents.map((d) => d.id)).toEqual([documentRow.id]);
 		expect(documents[0].originalName).toBe('invoice-0001.xml');
+	});
+});
+
+// #213: a credit note references the invoice it corrects via
+// `corrects_invoice_id` (0042_invoice_correction.sql), enforced two ways —
+// a plain CHECK for "only for credit_note/debit_note"
+// (`invoice_corrects_invoice_id_only_for_corrections`) and a deferred
+// constraint trigger for the cross-row half
+// (`invoice_check_correction`, 0043_invoice_correction_constraints.sql).
+// The deferred half only ever fires at commit or when forced — never on
+// `inRolledBackTransaction`'s own rollback — so every rejection test below
+// forces it with `set constraints all immediate` inside the same
+// `rejection` call that is meant to observe it, the same reasoning
+// `invoice_check_totals`'s own tests give above for the identical need.
+function correctionFields(contractId: string, overrides: Partial<InvoiceInput> = {}): InvoiceInput {
+	return {
+		contractId,
+		number: `INV-${crypto.randomUUID()}`,
+		issueDate: '2024-06-30',
+		documentType: 'invoice',
+		currency: 'EUR',
+		taxTreatmentCode: null,
+		statutoryReference: null,
+		stampDuty: null,
+		socialCharge: null,
+		dueDate: null,
+		paymentMethod: null,
+		iban: null,
+		transmissionId: null,
+		lines: [
+			{
+				description: 'Consulting',
+				quantity: 1,
+				unitPrice: minorUnits(100000),
+				amount: minorUnits(100000),
+				taxRate: 0,
+				taxTreatmentCode: null,
+				workUnitIds: []
+			}
+		],
+		...overrides
+	};
+}
+
+test('a credit note stores which invoice it corrects, and crediting exactly the original\u2019s own total succeeds', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const original = await createInvoice(
+			correctionFields(contractRow.id),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+
+		const creditNote = await createInvoice(
+			correctionFields(contractRow.id, {
+				documentType: 'credit_note',
+				correctsInvoiceId: original.id
+				// Lines default to the same 100000 as `original` — matching it
+				// exactly is allowed; "more than" is the line the database
+				// actually draws (see the rejection test below).
+			}),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+
+		expect(creditNote.correctsInvoiceId).toBe(original.id);
+		expect(creditNote.total).toBe(original.total);
+	});
+});
+
+test('the database rejects a credit note that would credit more than the original invoice\u2019s own total, by constraint name', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const original = await createInvoice(
+			correctionFields(contractRow.id),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+
+		const error = await rejection(async () => {
+			await createInvoice(
+				correctionFields(contractRow.id, {
+					documentType: 'credit_note',
+					correctsInvoiceId: original.id,
+					lines: [
+						{
+							description: 'Over-credit',
+							quantity: 1,
+							unitPrice: minorUnits(150000),
+							amount: minorUnits(150000),
+							taxRate: 0,
+							taxTreatmentCode: null,
+							workUnitIds: []
+						}
+					]
+				}),
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'test fixture',
+				tx
+			);
+			await tx.execute(sql`set constraints all immediate`);
+		}, tx);
+
+		expect(error).toMatchObject({
+			code: '23514',
+			constraint_name: 'invoice_credit_note_not_exceeding_original'
+		});
+	});
+});
+
+test('the database rejects a credit note whose corrects_invoice_id targets another correction, not an ordinary invoice', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const original = await createInvoice(
+			correctionFields(contractRow.id),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+		const firstCreditNote = await createInvoice(
+			correctionFields(contractRow.id, {
+				documentType: 'credit_note',
+				correctsInvoiceId: original.id,
+				lines: [
+					{
+						description: 'First credit',
+						quantity: 1,
+						unitPrice: minorUnits(10000),
+						amount: minorUnits(10000),
+						taxRate: 0,
+						taxTreatmentCode: null,
+						workUnitIds: []
+					}
+				]
+			}),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+
+		const error = await rejection(async () => {
+			await createInvoice(
+				correctionFields(contractRow.id, {
+					documentType: 'credit_note',
+					correctsInvoiceId: firstCreditNote.id,
+					lines: [
+						{
+							description: 'Correcting a correction',
+							quantity: 1,
+							unitPrice: minorUnits(1000),
+							amount: minorUnits(1000),
+							taxRate: 0,
+							taxTreatmentCode: null,
+							workUnitIds: []
+						}
+					]
+				}),
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'test fixture',
+				tx
+			);
+			await tx.execute(sql`set constraints all immediate`);
+		}, tx);
+
+		expect(error).toMatchObject({
+			code: '23514',
+			constraint_name: 'invoice_corrects_invoice_id_targets_ordinary_invoice'
+		});
+	});
+});
+
+test('the CHECK rejects corrects_invoice_id set on an invoice that is neither a credit nor a debit note', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const original = await createInvoice(
+			correctionFields(contractRow.id),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+
+		const error = await rejection(
+			() =>
+				createInvoice(
+					correctionFields(contractRow.id, {
+						documentType: 'invoice',
+						correctsInvoiceId: original.id
+					}),
+					{ kind: 'human', email: 'lorenzo@example.com' },
+					'test fixture',
+					tx
+				),
+			tx
+		);
+
+		expect(error).toMatchObject({
+			code: '23514',
+			constraint_name: 'invoice_corrects_invoice_id_only_for_corrections'
+		});
 	});
 });

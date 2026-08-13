@@ -3,7 +3,9 @@
 // `forecast.test.ts`. Years are chosen far apart per test (and far from
 // other fiscal test files' own eras — see `profile.test.ts`'s comment on
 // the same concern) since `fiscal_profile` carries a database-wide
-// exclusion constraint on its validity period.
+// exclusion constraint on its validity period — and always in the past,
+// since a real instance's *current* regime is open-ended and therefore
+// unsafe to collide with at any future date, however distant.
 
 import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
@@ -62,7 +64,7 @@ function invoiceInput(contractId: string, overrides: Partial<InvoiceInput> = {})
 	return {
 		contractId,
 		number: `INV-${crypto.randomUUID()}`,
-		issueDate: '2091-06-01',
+		issueDate: '1940-06-01',
 		documentType: 'invoice',
 		currency: 'EUR',
 		taxTreatmentCode: null,
@@ -97,7 +99,7 @@ test('a pack ceiling and a persisted contract ceiling both appear, evaluated by 
 			'test fixture',
 			tx
 		);
-		await tx.update(invoice).set({ paidOn: '2091-06-10' }).where(eq(invoice.id, invoiceRow.id));
+		await tx.update(invoice).set({ paidOn: '1940-06-10' }).where(eq(invoice.id, invoiceRow.id));
 
 		await createCeiling(
 			{
@@ -140,14 +142,15 @@ test('a pack ceiling and a persisted contract ceiling both appear, evaluated by 
 			unresolvedRevenue: 'carries_forward'
 		};
 		const registry: PackRegistry = buildRegistry([pack]);
+		await tx.delete(fiscalProfile);
 		await tx.insert(fiscalProfile).values({
 			packId: 'test-ceiling-status-pack',
 			packVersion: '1',
-			validFrom: '2091-01-01',
+			validFrom: '1940-01-01',
 			validTo: null
 		});
 
-		const evaluated = await evaluateActiveCeilings('2091-06-15', tx, registry);
+		const evaluated = await evaluateActiveCeilings('1940-06-15', tx, registry);
 
 		const packResult = evaluated.find((e) => e.ceiling.id === 'test-pack-cap');
 		const contractResult = evaluated.find((e) => e.ceiling.id === 'client-share-cap');
@@ -196,17 +199,23 @@ test('a contract ceiling survives a fiscal profile switch with no pack ceilings,
 			unresolvedRevenue: 'carries_forward'
 		};
 		const registry: PackRegistry = buildRegistry([packWithoutCeilings]);
+		await tx.delete(fiscalProfile);
 		await tx.insert(fiscalProfile).values({
 			packId: 'test-ceiling-status-empty',
 			packVersion: '1',
-			validFrom: '2092-01-01',
+			validFrom: '1941-01-01',
 			validTo: null
 		});
 
-		const evaluated = await evaluateActiveCeilings('2092-03-01', tx, registry);
+		const evaluated = await evaluateActiveCeilings('1941-03-01', tx, registry);
 
-		expect(evaluated).toHaveLength(1); // the contract ceiling alone
-		expect(evaluated[0].ceiling.id).toBe('survives-regime-change');
-		expect(evaluated[0].ceiling.origin).toBe('contract');
+		// Scoped to this test's own contract ceiling by its own unique code:
+		// with no pack ceilings, every evaluated entry is a contract
+		// ceiling, and a populated database (a seeded instance) may carry
+		// other contracts' own.
+		const ownEvaluated = evaluated.filter((e) => e.ceiling.id === 'survives-regime-change');
+		expect(ownEvaluated).toHaveLength(1);
+		expect(ownEvaluated[0].ceiling.id).toBe('survives-regime-change');
+		expect(ownEvaluated[0].ceiling.origin).toBe('contract');
 	});
 });

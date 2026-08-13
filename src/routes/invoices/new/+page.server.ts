@@ -10,6 +10,7 @@ import { listContractsWithClient } from '$lib/server/repositories/contract';
 import { listEligibleExpensesForRebilling } from '$lib/server/repositories/expense';
 import {
 	createInvoice,
+	listCorrectableInvoicesForContract,
 	type InvoiceInput,
 	type InvoiceLineInput
 } from '$lib/server/repositories/invoice';
@@ -37,14 +38,16 @@ export const load: PageServerLoad = async ({ url }) => {
 	const contractId = url.searchParams.get('contractId') ?? '';
 	const selectedContract = contracts.find((c) => c.id === contractId) ?? null;
 
-	const [rateCards, eligibleDaysRaw, eligibleExpensesRaw, activePack] = contractId
-		? await Promise.all([
-				listRateCards(contractId),
-				listEligibleWorkUnitsForInvoicing(contractId),
-				listEligibleExpensesForRebilling(contractId),
-				resolveActiveFiscalPack(db, new Date().toISOString().slice(0, 10))
-			])
-		: [[], [], [], null];
+	const [rateCards, eligibleDaysRaw, eligibleExpensesRaw, activePack, correctableInvoicesRaw] =
+		contractId
+			? await Promise.all([
+					listRateCards(contractId),
+					listEligibleWorkUnitsForInvoicing(contractId),
+					listEligibleExpensesForRebilling(contractId),
+					resolveActiveFiscalPack(db, new Date().toISOString().slice(0, 10)),
+					listCorrectableInvoicesForContract(contractId)
+				])
+			: [[], [], [], null, []];
 
 	const currency = selectedContract?.currency ?? '';
 
@@ -76,6 +79,19 @@ export const load: PageServerLoad = async ({ url }) => {
 		amount: expense.amount
 	}));
 
+	// The credit-note picker's own list (#213) — every ordinary invoice on
+	// this contract, so choosing one and defaulting the correction's line
+	// from it is a client-side lookup over data already on the page, the
+	// same "no round trip" choice `eligibleDays`/`eligibleExpenses` make.
+	const correctableInvoices = correctableInvoicesRaw.map((row) => ({
+		id: row.id,
+		number: row.number,
+		issueDate: row.issueDate,
+		taxableAmount: row.taxableAmount,
+		total: row.total,
+		currency: row.currency
+	}));
+
 	// A preview only — resolved against today, since the issue date is not
 	// typed yet on a fresh form. The actual invoice always re-resolves
 	// against whatever issue date is actually submitted (see the action
@@ -89,6 +105,7 @@ export const load: PageServerLoad = async ({ url }) => {
 		selectedContractId: contractId,
 		eligibleDays,
 		eligibleExpenses,
+		correctableInvoices,
 		taxPreview,
 		crumbs
 	};
@@ -101,10 +118,11 @@ export const actions: Actions = {
 		if (!parsed.ok) return fail(400, { errors: parsed.errors, values: parsed.values });
 		const { core, values } = parsed;
 
-		const [rateCards, eligibleDays, eligibleExpenses] = await Promise.all([
+		const [rateCards, eligibleDays, eligibleExpenses, correctableInvoices] = await Promise.all([
 			listRateCards(core.contractId),
 			listEligibleWorkUnitsForInvoicing(core.contractId),
-			listEligibleExpensesForRebilling(core.contractId)
+			listEligibleExpensesForRebilling(core.contractId),
+			listCorrectableInvoicesForContract(core.contractId)
 		]);
 
 		const eligibleDaysById = new Map(eligibleDays.map((day) => [day.id, day]));
@@ -119,6 +137,15 @@ export const actions: Actions = {
 		if (core.expenseIds.some((id) => !eligibleExpensesById.has(id))) {
 			return fail(400, {
 				errors: { expenseIds: m.invoice_validation_expense_ineligible() },
+				values
+			});
+		}
+		if (
+			core.correctsInvoiceId &&
+			!correctableInvoices.some((invoiceRow) => invoiceRow.id === core.correctsInvoiceId)
+		) {
+			return fail(400, {
+				errors: { correctsInvoiceId: m.invoice_validation_corrects_invoice_ineligible() },
 				values
 			});
 		}
@@ -194,6 +221,7 @@ export const actions: Actions = {
 					paymentMethod: core.paymentMethod,
 					iban: core.iban,
 					transmissionId: core.transmissionId,
+					correctsInvoiceId: core.correctsInvoiceId,
 					lines
 				},
 				{ kind: 'human', email: locals.user!.email },
@@ -203,6 +231,26 @@ export const actions: Actions = {
 			if (isPostgresConstraintViolation(error, '23505', 'invoice_contract_number_unique')) {
 				return fail(400, {
 					errors: { number: m.invoice_validation_number_duplicate() },
+					values
+				});
+			}
+			if (
+				isPostgresConstraintViolation(error, '23514', 'invoice_credit_note_not_exceeding_original')
+			) {
+				return fail(400, {
+					errors: { manualLineAmount: m.invoice_validation_credit_note_exceeds_original() },
+					values
+				});
+			}
+			if (
+				isPostgresConstraintViolation(
+					error,
+					'23514',
+					'invoice_corrects_invoice_id_targets_ordinary_invoice'
+				)
+			) {
+				return fail(400, {
+					errors: { correctsInvoiceId: m.invoice_validation_corrects_invoice_ineligible() },
 					values
 				});
 			}

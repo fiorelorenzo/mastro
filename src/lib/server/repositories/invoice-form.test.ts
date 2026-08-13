@@ -123,15 +123,22 @@ describe('buildExpenseLines and buildManualLine', () => {
 });
 
 describe('resolveInvoiceTax against both real shipped packs (#216)', () => {
+	// 1930/1931: past every real regime's start. Each test clears the table
+	// first, inside its own rolled-back transaction — a real seeded
+	// "current regime" row cannot be dodged with an earlier start date,
+	// since two open-ended ranges always overlap regardless of where
+	// either starts (see `profile.test.ts`'s `makeRoomForOwnProfiles`
+	// comment for the full reasoning).
 	test('a forfettario invoice resolves VAT-exempt, with the exact statutory citation, nobody typing it', async () => {
 		await inRolledBackTransaction(async (tx) => {
+			await tx.delete(fiscalProfile);
 			await tx.insert(fiscalProfile).values({
 				packId: 'it-flat-rate',
 				packVersion: '1',
-				validFrom: '2024-01-01',
+				validFrom: '1930-01-01',
 				validTo: null
 			});
-			const resolved = await resolveActiveFiscalPack(tx, '2024-06-01');
+			const resolved = await resolveActiveFiscalPack(tx, '1930-06-01');
 			const tax = resolveInvoiceTax(resolved?.pack ?? null, minorUnits(100_000));
 
 			expect(tax.source).toBe('pack');
@@ -147,13 +154,14 @@ describe('resolveInvoiceTax against both real shipped packs (#216)', () => {
 
 	test('the same invoice under the standard pack resolves ordinary, standard-rate VAT, no code, no citation', async () => {
 		await inRolledBackTransaction(async (tx) => {
+			await tx.delete(fiscalProfile);
 			await tx.insert(fiscalProfile).values({
 				packId: 'it-standard',
 				packVersion: '1',
-				validFrom: '2024-01-01',
+				validFrom: '1930-01-01',
 				validTo: null
 			});
-			const resolved = await resolveActiveFiscalPack(tx, '2024-06-01');
+			const resolved = await resolveActiveFiscalPack(tx, '1930-06-01');
 			const tax = resolveInvoiceTax(resolved?.pack ?? null, minorUnits(100_000));
 
 			expect(tax.source).toBe('pack');
@@ -166,21 +174,22 @@ describe('resolveInvoiceTax against both real shipped packs (#216)', () => {
 
 	test('switching the fiscal profile changes the resolved treatment with no code change', async () => {
 		await inRolledBackTransaction(async (tx) => {
+			await tx.delete(fiscalProfile);
 			await tx.insert(fiscalProfile).values({
 				packId: 'it-flat-rate',
 				packVersion: '1',
-				validFrom: '2024-01-01',
-				validTo: '2025-01-01'
+				validFrom: '1930-01-01',
+				validTo: '1931-01-01'
 			});
 			await tx.insert(fiscalProfile).values({
 				packId: 'it-standard',
 				packVersion: '1',
-				validFrom: '2025-01-01',
+				validFrom: '1931-01-01',
 				validTo: null
 			});
 
-			const before = await resolveActiveFiscalPack(tx, '2024-06-01');
-			const after = await resolveActiveFiscalPack(tx, '2025-06-01');
+			const before = await resolveActiveFiscalPack(tx, '1930-06-01');
+			const after = await resolveActiveFiscalPack(tx, '1931-06-01');
 
 			const beforeTax = resolveInvoiceTax(before?.pack ?? null, minorUnits(100_000));
 			const afterTax = resolveInvoiceTax(after?.pack ?? null, minorUnits(100_000));
@@ -255,6 +264,32 @@ describe('parseInvoiceForm', () => {
 		if (!result.ok) return;
 		expect(result.core.workUnitIds.sort()).toEqual(['d1', 'd2']);
 	});
+
+	test('a credit note requires which invoice it corrects; an ordinary invoice does not', () => {
+		const withoutTarget = parseInvoiceForm(
+			formData({ ...baseFields, documentType: 'credit_note', workUnitIds: ['d1'] })
+		);
+		expect(withoutTarget.ok).toBe(false);
+		if (withoutTarget.ok) return;
+		expect(withoutTarget.errors.correctsInvoiceId).toBeTruthy();
+
+		const withTarget = parseInvoiceForm(
+			formData({
+				...baseFields,
+				documentType: 'credit_note',
+				correctsInvoiceId: 'invoice-1',
+				workUnitIds: ['d1']
+			})
+		);
+		expect(withTarget.ok).toBe(true);
+		if (!withTarget.ok) return;
+		expect(withTarget.core.correctsInvoiceId).toBe('invoice-1');
+
+		const ordinaryInvoice = parseInvoiceForm(formData({ ...baseFields, workUnitIds: ['d1'] }));
+		expect(ordinaryInvoice.ok).toBe(true);
+		if (!ordinaryInvoice.ok) return;
+		expect(ordinaryInvoice.core.correctsInvoiceId).toBeNull();
+	});
 });
 
 describe('parseManualInvoiceTax (the fallback for an unmodelled pack)', () => {
@@ -268,6 +303,7 @@ describe('parseManualInvoiceTax (the fallback for an unmodelled pack)', () => {
 		paymentMethod: '',
 		iban: '',
 		transmissionId: '',
+		correctsInvoiceId: '',
 		workUnitIds: [],
 		expenseIds: [],
 		manualLineDescription: '',

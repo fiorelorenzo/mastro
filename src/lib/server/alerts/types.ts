@@ -144,6 +144,12 @@ export type AlertDetail =
 			readonly reason: 'failure' | 'stale' | 'never_run';
 			readonly detail: string | null;
 			readonly lastRunAt: string | null;
+	  }
+	| {
+			readonly type: 'agent_run_failure';
+			readonly reason: 'failure' | 'stale' | 'never_run';
+			readonly detail: string | null;
+			readonly lastRunAt: string | null;
 	  };
 
 export interface Alert {

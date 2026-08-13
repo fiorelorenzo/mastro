@@ -10,6 +10,7 @@ import type { EvaluatedCeiling } from '$lib/server/fiscal/ceiling';
 import type { Ceiling } from '$lib/server/fiscal/pack';
 import {
 	currentPeriodStart,
+	detectAgentRunFailure,
 	detectApprovalUnactioned,
 	detectBackupFailure,
 	detectBillablePeriodClosed,
@@ -615,6 +616,56 @@ test('mailbox_poll_failure fires serious once a successful run is more than 3 ho
 test('mailbox_poll_failure is silent once a recent success is on file', () => {
 	const alerts = detectMailboxPollFailure(
 		true,
+		{ status: 'success', detail: null, createdAt: new Date('2026-08-07T11:00:00.000Z') },
+		asOf
+	);
+	expect(alerts).toEqual([]);
+});
+
+// ── agent_run_failure ────────────────────────────────────────────────────
+
+test('agent_run_failure fires critical when no run has ever been recorded', () => {
+	const alerts = detectAgentRunFailure(null, asOf);
+	expect(alerts).toEqual([
+		expect.objectContaining({
+			key: 'agent_run_failure:global',
+			severity: 'critical',
+			detail: expect.objectContaining({ reason: 'never_run' })
+		})
+	]);
+});
+
+test('agent_run_failure fires critical, with the recorded detail, on an explicit failure — even a recent one', () => {
+	const alerts = detectAgentRunFailure(
+		{ status: 'failure', detail: 'ENOTFOUND db', createdAt: new Date('2026-08-07T11:00:00.000Z') },
+		asOf
+	);
+	expect(alerts[0]).toMatchObject({
+		severity: 'critical',
+		detail: { reason: 'failure', detail: 'ENOTFOUND db' }
+	});
+});
+
+// The property #222's acceptance bullet asks for directly: a job that
+// stops running — no exception, nothing to record a failure row, just
+// silence — still surfaces as an alert once it has been quiet longer
+// than a healthy schedule ever would be.
+test('agent_run_failure fires serious once a successful run is more than 3 hours stale, not before — stopping the scheduler raises an alert', () => {
+	const stillFresh = detectAgentRunFailure(
+		{ status: 'success', detail: null, createdAt: new Date('2026-08-07T09:00:00.000Z') }, // 3h ago
+		asOf
+	);
+	expect(stillFresh).toEqual([]);
+
+	const stale = detectAgentRunFailure(
+		{ status: 'success', detail: null, createdAt: new Date('2026-08-07T08:30:00.000Z') }, // 3.5h ago
+		asOf
+	);
+	expect(stale[0]).toMatchObject({ severity: 'serious', detail: { reason: 'stale' } });
+});
+
+test('agent_run_failure is silent once a recent success is on file', () => {
+	const alerts = detectAgentRunFailure(
 		{ status: 'success', detail: null, createdAt: new Date('2026-08-07T11:00:00.000Z') },
 		asOf
 	);

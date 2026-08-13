@@ -16,8 +16,13 @@
 -->
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
-	import { formatDate, formatPercent } from '$lib/i18n/format';
-	import { addMinorUnits, sumMinorUnits, type MinorUnits } from '$lib/money';
+	import { formatDate, formatMinorUnits, formatPercent } from '$lib/i18n/format';
+	import {
+		addMinorUnits,
+		minorUnitsToDecimalString,
+		sumMinorUnits,
+		type MinorUnits
+	} from '$lib/money';
 	import Page from '$lib/layout/Page.svelte';
 	import Amount from '$lib/design/Amount.svelte';
 	import AmountInput from '$lib/design/AmountInput.svelte';
@@ -72,6 +77,7 @@
 			paymentMethod: '',
 			iban: '',
 			transmissionId: '',
+			correctsInvoiceId: '',
 			workUnitIds: [],
 			expenseIds: [],
 			manualLineDescription: '',
@@ -92,6 +98,26 @@
 	// keep these in sync with a `form` that changes under a live instance.
 	let checkedDayIds = $state<string[]>(values.workUnitIds);
 	let checkedExpenseIds = $state<string[]>(values.expenseIds);
+
+	// `documentType` and the credit-note fields below are `$state`, not
+	// read straight off `values`, because picking a different original
+	// invoice needs to *write* new defaults into `manualLineDescription`/
+	// `manualLineAmount` (#213) — the same reason `checkedDayIds` above is
+	// state and not a derived read of `values.workUnitIds`.
+	let documentType = $state(values.documentType);
+	let correctsInvoiceId = $state(values.correctsInvoiceId);
+	let manualLineDescription = $state(values.manualLineDescription);
+	let manualLineAmount = $state(values.manualLineAmount);
+
+	function selectCorrectsInvoice(id: string) {
+		correctsInvoiceId = id;
+		const original = data.correctableInvoices.find((invoiceRow) => invoiceRow.id === id);
+		if (!original) return;
+		manualLineDescription = m.invoice_form_credit_note_default_description({
+			number: original.number
+		});
+		manualLineAmount = minorUnitsToDecimalString(original.taxableAmount, original.currency);
+	}
 
 	function toggleDay(id: string, checked: boolean) {
 		checkedDayIds = checked ? [...checkedDayIds, id] : checkedDayIds.filter((x) => x !== id);
@@ -165,14 +191,49 @@
 				</label>
 				<label class="flex flex-col gap-1 text-sm">
 					{m.invoice_form_document_type_label()}
-					<select name="documentType" class="border px-2 py-1" required>
+					<select
+						name="documentType"
+						class="border px-2 py-1"
+						required
+						onchange={(event) => (documentType = (event.currentTarget as HTMLSelectElement).value)}
+					>
 						{#each documentTypes as type (type)}
-							<option value={type} selected={values.documentType === type}
+							<option value={type} selected={documentType === type}
 								>{documentTypeLabel(type)}</option
 							>
 						{/each}
 					</select>
 				</label>
+				{#if documentType === 'credit_note'}
+					<label class="flex flex-col gap-1 text-sm">
+						{m.invoice_form_corrects_invoice_label()}
+						<select
+							name="correctsInvoiceId"
+							class="border px-2 py-1"
+							required
+							onchange={(event) =>
+								selectCorrectsInvoice((event.currentTarget as HTMLSelectElement).value)}
+						>
+							<option value="" disabled selected={correctsInvoiceId === ''}
+								>{m.invoice_form_corrects_invoice_placeholder()}</option
+							>
+							{#each data.correctableInvoices as original (original.id)}
+								<option value={original.id} selected={original.id === correctsInvoiceId}
+									>{original.number} — {formatDate(original.issueDate)} — {formatMinorUnits(
+										original.total,
+										original.currency
+									)}</option
+								>
+							{/each}
+						</select>
+						{#if errors.correctsInvoiceId}
+							<span class="text-xs font-semibold">{errors.correctsInvoiceId}</span>
+						{/if}
+						{#if data.correctableInvoices.length === 0}
+							<span class="text-xs opacity-70">{m.invoice_form_no_correctable_invoices()}</span>
+						{/if}
+					</label>
+				{/if}
 				<label class="flex flex-col gap-1 text-sm">
 					{m.invoice_form_currency_label()}
 					<input
@@ -291,12 +352,12 @@
 					error={errors.manualLineDescription}
 					id="manualLineDescription"
 				>
-					<Input name="manualLineDescription" value={values.manualLineDescription} />
+					<Input name="manualLineDescription" value={manualLineDescription} />
 				</Field>
 				<AmountInput
 					label={m.invoice_form_manual_line_amount_label()}
 					name="manualLineAmount"
-					value={values.manualLineAmount}
+					value={manualLineAmount}
 					currency={selectedContract.currency}
 					error={errors.manualLineAmount}
 				/>

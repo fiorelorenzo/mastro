@@ -16,6 +16,8 @@ import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract
 import { createInvoice, type InvoiceInput } from '$lib/server/repositories/invoice';
 import { createWorkUnit } from '$lib/server/repositories/work-unit';
 import { createCeiling } from '$lib/server/repositories/ceiling';
+import { fetchLedgerRows } from './revenue';
+import { sumLedger } from './ledger';
 import { emptyClientExposure, listClientExposures } from './client-exposure';
 
 afterAll(async () => {
@@ -272,5 +274,119 @@ test('the concentration cap surfaces only for the client it names, evaluated the
 		expect(cappedExposure?.revenueShareThisYear).toBeCloseTo(0.9);
 
 		expect(exposures.get(uncapped.clientRow.id)?.concentrationCap).toBeNull();
+	});
+});
+
+test('issuing a credit note lowers the year\u2019s revenue, the ceiling usage and the client\u2019s own concentration share by its amount (#213)', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const capped = await insertContract(tx);
+		const other = await insertContract(tx);
+
+		// A percentage_share ceiling anchored to `capped`'s own client —
+		// the same "ceiling usage" figure the dashboard and #242's client
+		// list both read via `concentrationCap`.
+		await createCeiling(
+			{
+				contractId: capped.contractRow.id,
+				code: 'concentration-cap',
+				label: { en: 'Concentration cap', it: 'Tetto di concentrazione' },
+				legalBasis: null,
+				basis: 'invoiced_calendar_year',
+				measure: 'percentage_share',
+				value: 0.5,
+				alertLevels: [],
+				consequence: { en: 'Renegotiate.', it: 'Rinegoziare.' }
+			},
+			tx
+		);
+
+		const original = await createInvoice(
+			invoiceInput(capped.contractRow.id, {
+				lines: [
+					{
+						description: 'Consulting',
+						quantity: 1,
+						unitPrice: minorUnits(100_000),
+						amount: minorUnits(100_000),
+						taxRate: 0,
+						taxTreatmentCode: null,
+						workUnitIds: []
+					}
+				]
+			}),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+		await createInvoice(
+			invoiceInput(other.contractRow.id, {
+				lines: [
+					{
+						description: 'Consulting',
+						quantity: 1,
+						unitPrice: minorUnits(50_000),
+						amount: minorUnits(50_000),
+						taxRate: 0,
+						taxTreatmentCode: null,
+						workUnitIds: []
+					}
+				]
+			}),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+
+		// The year's revenue read straight off the ledger primitive every
+		// other figure in the product is built from (`fiscal/ledger.ts`'s
+		// own header comment) — not `fetchRevenueOverRange`, which needs a
+		// `fiscal_profile` row this file deliberately never inserts (see
+		// the header comment above).
+		const yearRevenue = async () =>
+			sumLedger(await fetchLedgerRows(tx), 'accrual', '2087-01-01', '2088-01-01').amount;
+
+		const revenueBefore = await yearRevenue();
+		const exposuresBefore = await listClientExposures('2087-08-13', tx);
+		const capBefore = exposuresBefore.get(capped.clientRow.id)?.concentrationCap;
+		const shareBefore = exposuresBefore.get(capped.clientRow.id)?.revenueShareThisYear;
+
+		expect(revenueBefore).toBe(150_000);
+		expect(capBefore?.currentValue).toBe(100_000);
+		expect(shareBefore).toBeCloseTo(100_000 / 150_000);
+
+		await createInvoice(
+			invoiceInput(capped.contractRow.id, {
+				documentType: 'credit_note',
+				correctsInvoiceId: original.id,
+				lines: [
+					{
+						description: 'Correction',
+						quantity: 1,
+						unitPrice: minorUnits(20_000),
+						amount: minorUnits(20_000),
+						taxRate: 0,
+						taxTreatmentCode: null,
+						workUnitIds: []
+					}
+				]
+			}),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+
+		const revenueAfter = await yearRevenue();
+		const exposuresAfter = await listClientExposures('2087-08-13', tx);
+		const capAfter = exposuresAfter.get(capped.clientRow.id)?.concentrationCap;
+		const shareAfter = exposuresAfter.get(capped.clientRow.id)?.revenueShareThisYear;
+
+		// All three figures move by exactly the credited amount — never
+		// just the invoice row itself.
+		expect(revenueAfter).toBe(130_000);
+		expect(revenueBefore - revenueAfter).toBe(20_000);
+		expect(capAfter?.currentValue).toBe(80_000);
+		expect((capBefore?.currentValue ?? 0) - (capAfter?.currentValue ?? 0)).toBe(20_000);
+		expect(shareAfter).toBeCloseTo(80_000 / 130_000);
+		expect(shareAfter ?? 0).toBeLessThan(shareBefore ?? 0);
 	});
 });

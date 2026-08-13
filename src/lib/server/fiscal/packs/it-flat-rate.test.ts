@@ -104,16 +104,23 @@ test('resolution finds the pack by id and version, independent of the default re
 	expect(resolvePackAt(registry, profiles, '2024-06-01')?.pack).toBe(itFlatRatePack);
 });
 
+// 1910: past every real regime's start. An open-ended row cannot simply
+// pick an earlier start date to dodge a real seeded "current regime" row
+// — two open-ended ranges always overlap regardless of where either one
+// starts — so this clears the table first instead, inside its own
+// rolled-back transaction (see `profile.test.ts`'s `makeRoomForOwnProfiles`
+// comment for the full reasoning).
 test('a taxpayer on the flat-rate pack resolves end to end, both ceilings included', async () => {
 	await inRolledBackTransaction(async (tx) => {
+		await tx.delete(fiscalProfile);
 		await tx.insert(fiscalProfile).values({
 			packId: 'it-flat-rate',
 			packVersion: '1',
-			validFrom: '2023-01-01',
+			validFrom: '1910-01-01',
 			validTo: null
 		});
 
-		const resolved = await resolveActiveFiscalPack(tx, '2024-06-01');
+		const resolved = await resolveActiveFiscalPack(tx, '1910-06-01');
 		expect(resolved?.pack.id).toBe('it-flat-rate');
 		expect(resolved?.pack.ceilings).toHaveLength(2);
 	});

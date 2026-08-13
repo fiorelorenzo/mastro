@@ -37,11 +37,11 @@ services:
       dockerfile: Dockerfile
       # Explicit, and not optional: `Dockerfile` has more than one final
       # stage, and docker builds the LAST one when no target is given.
-      # `runner` happens to be last today, so leaving this out silently
-      # built the runner image here and this service spent its whole life
-      # crash-looping on the runner's own missing configuration instead of
-      # ever serving the app. Both services name their stage for that
-      # reason; neither relies on the order stages appear in.
+      # `scheduler` happens to be last today, so leaving this out silently
+      # built the scheduler image here and this service spent its whole
+      # life crash-looping on the scheduler's own missing configuration
+      # instead of ever serving the app. Every service below names its
+      # stage for that reason; none relies on the order stages appear in.
       target: runtime
     restart: unless-stopped
     depends_on:
@@ -62,6 +62,36 @@ services:
       - '127.0.0.1:${WEB_PORT:-3001}:3000'
     volumes:
       - ${DOCUMENTS_DIR:-./data/documents}:/app/data/documents
+      # `/api/agent/run` (#85, #222) runs inside this container and reads/
+      # writes the same durable job queue `runner` below does — a
+      # directory both processes can see is the only seam that survives
+      # either being restarted at the wrong moment (`agent/drain.ts`'s own
+      # comment). Without this mount every call 500s (`EACCES`,
+      # `RUNNER_QUEUE_DIR` defaults to `./data/runner-queue`, unwritable
+      # under this image's non-root user with no volume backing it) —
+      # found by actually running the scheduler against a fresh stack,
+      # not by inspection.
+      - runner_queue:/app/data/runner-queue
+    # `/health` (`src/routes/health/+server.ts`) is the same liveness
+    # probe scripts/deploy-prod.sh and ci.yml already poll over HTTP; this
+    # is the same check, from inside the container, so `scheduler` below
+    # can `depends_on: web: condition: service_healthy` and genuinely wait
+    # for the app rather than racing its first tick against boot/migrate.
+    # No `curl` in `node:24-alpine`, so this shells out to Node's own
+    # `fetch` instead of adding a package the runtime image otherwise has
+    # no use for.
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
 
   # The ACP runner (#82): its own credentials, its own database role
   # (mastro_runner, drizzle/0035_acp_runner_role.sql), no published port
@@ -90,6 +120,42 @@ services:
       RUNNER_DATABASE_URL: postgres://mastro_runner:${RUNNER_DB_PASSWORD}@db:5432/${POSTGRES_DB:-mastro}
     volumes:
       - runner_queue:/app/data/runner-queue
+
+  # The scheduler (#222): the one thing in this stack that turns mail
+  # polling (#84), the agent drain/enqueue loop (#85) and the alert
+  # engine's push/digest runs (#74/#75) into an actual schedule — every
+  # one of those is a plain HTTP endpoint on `web` that expects a caller,
+  # and without this service none of them ever run. A tiny long-running
+  # Node loop rather than a second image or a cron daemon:
+  # `scripts/scheduler.ts` has no dependency beyond the `scheduler` build
+  # stage already gives it (global `fetch`, no schema import — see that
+  # file's own comment), so it reuses the same source tree as `web` and
+  # `runner`, just a different final stage. Cadence is per-job env vars
+  # (`MAIL_POLL_INTERVAL_MINUTES` and friends, `.env.prod.example`), not a
+  # cron string, because this process *is* the timer.
+  #
+  # `restart: unless-stopped`, the same as every other service here, is
+  # this timer's own supervision — the equivalent of a systemd timer
+  # unit's own restart policy. There is one gap this cannot close: if this
+  # container itself stops, nothing calls the alert engine either, so the
+  # very thing that would otherwise notice a stale `agent_run`/`mailbox_
+  # poll_run`/`backup_run` stops noticing at the same moment. See
+  # docs/deploy.md, "Scheduling", for that gap stated plainly, the same
+  # way docs/backup.md is honest about the equivalent "the database
+  # itself is unreachable" gap for backups.
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: scheduler
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    env_file:
+      - .env.prod
+    environment:
+      SCHEDULER_BASE_URL: http://web:3000
 
   # The reverse proxy: the only thing in this stack facing the network,
   # terminating TLS. Caddy always listens on the standard 80 (redirect)

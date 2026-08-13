@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import { formatDate, formatDays, formatMinorUnits } from '$lib/i18n/format';
+	import { formatDate, formatDateTime, formatDays, formatMinorUnits } from '$lib/i18n/format';
 	import Page from '$lib/layout/Page.svelte';
 	import type { DunningSendFormValues } from '$lib/server/repositories/dunning-form';
 	import type { ActionData, PageData } from './$types';
@@ -88,7 +88,30 @@
 					<pre class="font-sans whitespace-pre-wrap">{form.preview.body}</pre>
 				</div>
 
-				<form method="POST" action="?/send">
+				{#if form.duplicate}
+					<div class="border border-current p-3 text-sm">
+						<p>
+							{m.mail_dunning_duplicate_warning({
+								template: form.duplicate.templateName,
+								date: formatDateTime(form.duplicate.sentAt)
+							})}
+						</p>
+						<label class="mt-2 flex items-center gap-2">
+							<input
+								type="checkbox"
+								name="confirmDuplicate"
+								value="true"
+								form="dunning-send-form"
+							/>
+							{m.mail_dunning_duplicate_confirm_label()}
+						</label>
+					</div>
+				{/if}
+				{#if errors.confirmDuplicate}
+					<span class="text-xs font-semibold">{errors.confirmDuplicate}</span>
+				{/if}
+
+				<form id="dunning-send-form" method="POST" action="?/send">
 					<input type="hidden" name="templateId" value={values.templateId} />
 					<input type="hidden" name="to" value={values.to} />
 					<button type="submit" class="w-fit border px-4 py-2 text-sm font-semibold">

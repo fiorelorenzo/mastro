@@ -18,6 +18,7 @@ import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, type DbExecutor } from '$lib/server/db';
 import { minorUnits, NO_MINOR_UNITS } from '$lib/money';
 import {
+	agentRun,
 	backupRun,
 	client,
 	contract,
@@ -39,6 +40,7 @@ import {
 	fetchApprovalUnactionedRows,
 	fetchContractsForBillablePeriod,
 	fetchContractsForDeadlineAlerts,
+	fetchLatestAgentRun,
 	fetchLatestBackupRun,
 	fetchLatestMailboxPollRun,
 	fetchMirrorFailureRows,
@@ -266,14 +268,23 @@ test('fetchContractsForBillablePeriod only returns a periodic contract that actu
 			tx
 		);
 
-		await insertContract(tx, { invoicingCadence: 'monthly' }); // nothing recorded at all
-		await insertContract(tx, { invoicingCadence: 'on_completion' }); // wrong cadence entirely
+		const { contractRow: nothingRecorded } = await insertContract(tx, {
+			invoicingCadence: 'monthly'
+		}); // nothing recorded at all
+		const { contractRow: wrongCadence } = await insertContract(tx, {
+			invoicingCadence: 'on_completion'
+		}); // wrong cadence entirely
+		const ownContractIds = [withEligible.id, nothingRecorded.id, wrongCadence.id];
 
 		const rows = await fetchContractsForBillablePeriod(tx);
-		const ids = rows.map((r) => r.contractId);
-		expect(ids).toEqual([withEligible.id]);
-		expect(rows[0].eligibleDates).toEqual(['2026-01-05']);
-		expect(rows[0].clientId).toBe(clientRow.id);
+		// Scoped to this test's own contracts: a database that already has
+		// other billable periodic contracts on file (a seeded instance, a
+		// sibling test's leftover-if-any) must not make this assertion see
+		// more than the three rows this test itself created.
+		const ownRows = rows.filter((r) => ownContractIds.includes(r.contractId));
+		expect(ownRows.map((r) => r.contractId)).toEqual([withEligible.id]);
+		expect(ownRows[0].eligibleDates).toEqual(['2026-01-05']);
+		expect(ownRows[0].clientId).toBe(clientRow.id);
 	});
 });
 
@@ -295,6 +306,30 @@ test('fetchLatestBackupRun returns the most recent row, null when none exist', a
 			.returning();
 
 		const latest = await fetchLatestBackupRun(tx);
+		expect(latest?.status).toBe('success');
+		expect(latest?.detail).toBeNull();
+		void second;
+	});
+});
+
+// ── fetchLatestAgentRun ──────────────────────────────────────────────────
+
+test('fetchLatestAgentRun returns the most recent row, null when none exist', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		expect(await fetchLatestAgentRun(tx)).toBeNull();
+
+		// Explicit timestamps: `now()` is the transaction's start time, so two
+		// rows inserted here would tie and `ORDER BY created_at DESC` would
+		// pick either one.
+		await tx
+			.insert(agentRun)
+			.values({ status: 'failure', detail: 'first', createdAt: new Date('2026-02-01T03:17:00Z') });
+		const [second] = await tx
+			.insert(agentRun)
+			.values({ status: 'success', detail: null, createdAt: new Date('2026-02-02T03:17:00Z') })
+			.returning();
+
+		const latest = await fetchLatestAgentRun(tx);
 		expect(latest?.status).toBe('success');
 		expect(latest?.detail).toBeNull();
 		void second;

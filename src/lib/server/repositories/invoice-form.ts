@@ -34,6 +34,10 @@ export type InvoiceFormValues = {
 	paymentMethod: string;
 	iban: string;
 	transmissionId: string;
+	/** Which invoice this one corrects (#213) — only meaningful, and only
+	 * shown/required by the form, when `documentType` is `credit_note`;
+	 * echoed back verbatim like every other field on a failed submission. */
+	correctsInvoiceId: string;
 	workUnitIds: string[];
 	expenseIds: string[];
 	manualLineDescription: string;
@@ -66,6 +70,7 @@ export type InvoiceCoreInput = {
 	paymentMethod: string | null;
 	iban: string | null;
 	transmissionId: string | null;
+	correctsInvoiceId: string | null;
 	workUnitIds: string[];
 	expenseIds: string[];
 	manualLine: ManualInvoiceLine | null;
@@ -104,6 +109,11 @@ export function parseInvoiceForm(formData: FormData): InvoiceFormResult {
 	const documentType = string('documentType');
 	if (!invoiceDocumentType.enumValues.includes(documentType as InvoiceDocumentType)) {
 		errors.documentType = m.invoice_validation_document_type_invalid();
+	}
+
+	const correctsInvoiceId = string('correctsInvoiceId');
+	if (documentType === 'credit_note' && !correctsInvoiceId) {
+		errors.correctsInvoiceId = m.invoice_validation_corrects_invoice_required();
 	}
 
 	const currency = string('currency').toUpperCase();
@@ -163,6 +173,7 @@ export function parseInvoiceForm(formData: FormData): InvoiceFormResult {
 		paymentMethod,
 		iban,
 		transmissionId,
+		correctsInvoiceId,
 		workUnitIds,
 		expenseIds,
 		manualLineDescription,
@@ -190,6 +201,7 @@ export function parseInvoiceForm(formData: FormData): InvoiceFormResult {
 			paymentMethod: paymentMethod || null,
 			iban: iban || null,
 			transmissionId: transmissionId || null,
+			correctsInvoiceId: correctsInvoiceId || null,
 			workUnitIds,
 			expenseIds,
 			manualLine

@@ -10,7 +10,8 @@ import {
 	pgTable,
 	text,
 	unique,
-	uuid
+	uuid,
+	type AnyPgColumn
 } from 'drizzle-orm/pg-core';
 import type { LegalText } from '$lib/legal/legal-text';
 import type { InvoiceDocumentType } from '$lib/server/import/invoice';
@@ -98,6 +99,19 @@ export const invoice = pgTable(
 		// Human input, never present on any imported document (epic #3) —
 		// the one field the product exists to make effortless to keep current.
 		paidOn: date('paid_on'),
+		// The invoice this one corrects (#213) — set only on a `credit_note`
+		// or `debit_note`, enforced by the CHECK below; which of those two
+		// values `document_type` actually is on the referencing row still
+		// decides the *sign* the amount takes in the ledger
+		// (`fiscal/revenue.ts`'s `fetchLedgerRows`), not this column. The
+		// referenced row must itself be an ordinary invoice, never another
+		// correction — a cross-row read a CHECK cannot express, so that half
+		// lives in `invoice_check_correction`
+		// (`0042_invoice_correction_constraints.sql`) alongside the sibling
+		// rule that a credit note may never exceed what it corrects.
+		correctsInvoiceId: uuid('corrects_invoice_id').references((): AnyPgColumn => invoice.id, {
+			onDelete: 'restrict'
+		}),
 		...timestamps()
 	},
 	(table) => [
@@ -113,6 +127,10 @@ export const invoice = pgTable(
 		check(
 			'invoice_social_charge_non_negative',
 			sql`${table.socialCharge} is null or ${table.socialCharge} >= 0`
+		),
+		check(
+			'invoice_corrects_invoice_id_only_for_corrections',
+			sql`${table.correctsInvoiceId} is null or ${table.documentType} in ('credit_note', 'debit_note')`
 		)
 	]
 );
