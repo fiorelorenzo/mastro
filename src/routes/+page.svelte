@@ -1,19 +1,50 @@
+<!--
+	The home screen (#234): an attention queue, not the product's name and
+	a tagline. Three sections, in the order the mockup (10-dashboard.html,
+	direction B2) draws them: "Da sistemare" (what needs a decision today
+	— days at risk, invoices overdue, ceilings approaching, proposals
+	pending, each with its resolving action), "Questa settimana" (the
+	current backlog, glanceable), "Soldi" (what is owed, and the one
+	ceiling that matters right now). The cash calendar and client
+	concentration charts moved to `/reports` — see that route's own header
+	comment for why a separate page rather than a lower section on this
+	one.
+-->
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { getLocale } from '$lib/paraglide/runtime';
 	import * as m from '$lib/paraglide/messages';
-	import Page from '$lib/layout/Page.svelte';
+	import {
+		formatDate,
+		formatFullDate,
+		formatMinorUnits,
+		formatMonth,
+		formatWeekday,
+		formatWeekRange
+	} from '$lib/i18n/format';
+	import Badge from '$lib/design/Badge.svelte';
+	import Button from '$lib/design/Button.svelte';
+	import KeyboardHint from '$lib/design/KeyboardHint.svelte';
+	import StatTile from '$lib/design/StatTile.svelte';
+	import { dashboardInvoiceStatus } from '$lib/dashboard/invoice-status';
+	import { pendingProposalsSummary } from '$lib/dashboard/proposals-summary';
+	import AttentionQueue from '$lib/dashboard/AttentionQueue.svelte';
 	import CeilingMeter from '$lib/dashboard/CeilingMeter.svelte';
-	import CashCalendarChart from '$lib/dashboard/CashCalendarChart.svelte';
-	import ConcentrationChart from '$lib/dashboard/ConcentrationChart.svelte';
+	import Page from '$lib/layout/Page.svelte';
+	import Section from '$lib/layout/Section.svelte';
 	import type { PageProps } from './$types';
+	import { appHref } from '$lib/nav/href';
 
 	let { data }: PageProps = $props();
 
-	// The keyboard shortcut #24 asks for on desktop: "n" jumps straight
-	// into the entry form from the home screen, skipping even the one tap.
-	// Ignored while typing anywhere else on the page, so it never steals a
-	// literal "n" from a text field.
+	const locale = $derived(getLocale());
+	const todayLabel = $derived(formatFullDate(data.today));
+	const monthLabel = $derived(formatMonth(data.today));
+
+	// #24: "n" jumps straight into the entry form from the home screen,
+	// skipping even the one tap. Ignored while typing anywhere else on
+	// the page, so it never steals a literal "n" from a text field.
 	function onKeydown(event: KeyboardEvent) {
 		const target = event.target as HTMLElement | null;
 		const typing =
@@ -23,126 +54,365 @@
 			goto(resolve('/day/new'));
 		}
 	}
+
+	const weekRangeLabel = $derived(formatWeekRange(data.week.dates[0], data.week.dates[6]));
+	const weekdayLabels = $derived(data.week.dates.map((date) => formatWeekday(date)));
+	const weekHasEntries = $derived(data.week.entryDates.length > 0);
+
+	function joinDates(dates: readonly string[]): string {
+		return new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }).format(
+			dates.map((date) => formatDate(date))
+		);
+	}
+
+	const proposedStatDays = $derived(
+		data.week.pendingProposalDays.reduce((sum, day) => sum + day.quantity, 0)
+	);
+
+	// The section badge takes the queue's own worst row, never a flat
+	// "critical" that would mislead when the queue is entirely warnings
+	// or only the info-level proposals row.
+	function worstAttentionSeverity(
+		rows: readonly { severity: 'critical' | 'serious' | 'warning' | 'info' }[]
+	): 'critical' | 'serious' | 'warning' | 'info' {
+		if (rows.some((row) => row.severity === 'critical')) return 'critical';
+		if (rows.some((row) => row.severity === 'serious')) return 'serious';
+		if (rows.some((row) => row.severity === 'warning')) return 'warning';
+		return 'info';
+	}
+	const attentionBadgeVariant = $derived(worstAttentionSeverity(data.attentionRows));
+
+	// The reports page carries both charts; each link lands on its own
+	// section. Built here rather than inline so the href is a single
+	// resolved value, which is what the navigation lint rule asks for.
+	const concentrationHref = appHref('/reports') + '#concentrazione-clienti';
+	const cashCalendarHref = appHref('/reports') + '#cassa-per-mese';
 </script>
 
 <svelte:window onkeydown={onKeydown} />
 
-<svelte:head><title>mastro</title></svelte:head>
+<svelte:head><title>{m.dashboard_today_heading()} — mastro</title></svelte:head>
 
-<Page title="mastro" subtitle={m.landing_tagline()} width="wide">
-	<div class="mt-4 flex flex-wrap gap-3">
-		<a href={resolve('/day/new')} class="record-day-cta">{m.home_record_day_cta()}</a>
-		<a href={resolve('/proposals')} class="proposals-cta">
-			{m.home_proposals_cta()}
-			{#if data.pendingProposalsCount > 0}
-				<span class="proposals-badge"
-					>{m.home_proposals_pending_badge({ count: data.pendingProposalsCount })}</span
-				>
+<Page title={m.dashboard_today_heading()} subtitle={todayLabel} width="wide">
+	{#snippet actions()}
+		<Button href={resolve('/day/new')} variant="primary">
+			{m.home_record_day_cta()}
+			<KeyboardHint>N</KeyboardHint>
+		</Button>
+		{#if data.pendingProposalsCount > 0}
+			<Button href={resolve('/proposals')} variant="secondary">
+				{m.dashboard_review_proposals_cta({ count: data.pendingProposalsCount })}
+			</Button>
+		{/if}
+	{/snippet}
+
+	<Section title={m.dashboard_attention_heading()}>
+		{#snippet actions()}
+			{#if data.attentionRows.length > 0}
+				<Badge
+					variant={attentionBadgeVariant}
+					size="sm"
+					label={m.dashboard_attention_count({ count: data.attentionRows.length })}
+				/>
 			{/if}
-		</a>
-	</div>
-	<p class="mt-2 text-xs opacity-60">{m.home_record_day_shortcut_hint()}</p>
-	<p class="mt-3 mb-8 text-sm">
-		<a href={resolve('/day/calendar')} class="underline">{m.home_calendar_link()}</a>
-	</p>
+		{/snippet}
+		<AttentionQueue rows={data.attentionRows} />
+	</Section>
 
-	<!-- #57 — the ceiling meter disappears entirely, not as an empty
-	     widget, the moment there is no active whole-practice ceiling to
-	     show (the generic pack, or a jurisdiction pack with none). -->
-	{#if data.ceilings.length > 0}
-		<section class="widget">
-			<h2>{m.dashboard_ceiling_heading()}</h2>
-			<div class="ceiling-grid">
-				{#each data.ceilings as view (view.id)}
-					<CeilingMeter {view} />
-				{/each}
+	<Section title={m.dashboard_week_heading()}>
+		{#snippet actions()}
+			<span class="week-range">{weekRangeLabel}</span>
+		{/snippet}
+		<div class="week-card">
+			<div class="stat-grid">
+				<StatTile
+					label={m.dashboard_week_stat_approved_label()}
+					value={String(data.week.approvedAwaitingWork.count)}
+					sub={data.week.approvedAwaitingWork.count > 0
+						? joinDates(data.week.approvedAwaitingWork.sampleDates)
+						: m.dashboard_week_stat_none_yet()}
+				/>
+				<StatTile
+					label={m.dashboard_week_stat_proposed_label()}
+					value={new Intl.NumberFormat(locale).format(proposedStatDays)}
+					sub={data.week.pendingProposalDays.length > 0
+						? pendingProposalsSummary(data.week.pendingProposalDays, locale)
+						: m.dashboard_week_stat_none_yet()}
+				/>
+				<StatTile
+					label={m.dashboard_week_stat_worked_label({ month: monthLabel })}
+					value={String(data.week.workedThisMonth.count)}
+					sub={data.week.workedThisMonth.count === 0 ? m.dashboard_week_stat_none_yet() : undefined}
+				/>
+				<StatTile
+					label={m.dashboard_week_stat_value_label({ month: monthLabel })}
+					value={formatMinorUnits(data.week.workedThisMonth.valueMinorUnits, 'EUR')}
+					sub={data.week.approvedAwaitingWork.valueMinorUnits > 0
+						? m.dashboard_week_stat_value_if_confirmed({
+								amount: formatMinorUnits(data.week.approvedAwaitingWork.valueMinorUnits, 'EUR')
+							})
+						: undefined}
+				/>
 			</div>
-		</section>
-	{/if}
+			<div class="week-cal-wrap">
+				<span class="sr-only">
+					{weekHasEntries
+						? m.dashboard_week_calendar_summary({ range: weekRangeLabel })
+						: m.dashboard_week_calendar_summary_empty({ range: weekRangeLabel })}
+				</span>
+				<div class="week-cal" aria-hidden="true">
+					{#each weekdayLabels as label, index (index)}
+						<div class="cal-head">{label}</div>
+					{/each}
+					{#each data.week.dates as date (date)}
+						<div class="cal-cell" class:today={date === data.today}>
+							<span class="cal-date">{Number(date.slice(8, 10))}</span>
+							{#if data.week.entryDates.includes(date)}
+								<span class="cal-dot"></span>
+							{/if}
+						</div>
+					{/each}
+				</div>
+			</div>
+			{#if !weekHasEntries}
+				<p class="week-empty-note">{m.dashboard_week_empty_note()}</p>
+			{/if}
+		</div>
+	</Section>
 
-	<section class="widget">
-		<h2>{m.dashboard_cash_calendar_heading()}</h2>
-		<CashCalendarChart
-			months={data.cashCalendar.months}
-			to={data.cashCalendar.to}
-			markers={data.cashCalendar.markers}
-			assumptions={data.cashCalendar.assumptions}
-		/>
-	</section>
+	<Section title={m.dashboard_money_heading()}>
+		<div class="money-grid">
+			<div class="card">
+				<div class="card-head">
+					<h3>{m.dashboard_money_receivable_heading()}</h3>
+					{#if data.money.overdueCount > 0}
+						<Badge
+							variant="critical"
+							size="sm"
+							label={m.dashboard_money_overdue_badge({ count: data.money.overdueCount })}
+						/>
+					{/if}
+				</div>
+				<div class="card-body">
+					<span class="fig">{formatMinorUnits(data.money.totalOutstanding, 'EUR')}</span>
+					{#if data.money.invoices.length === 0}
+						<p class="money-empty">{m.dashboard_money_receivable_empty()}</p>
+					{:else}
+						<ul class="invoice-rows">
+							{#each data.money.invoices as invoice (invoice.id)}
+								{@const status = dashboardInvoiceStatus(invoice.daysLate)}
+								<li class="invoice-row">
+									<div class="invoice-main">
+										<a class="invoice-number" href={appHref(`/invoices/${invoice.id}`)}>
+											{invoice.number}
+										</a>
+										<span class="invoice-client">{invoice.clientLegalName}</span>
+										<Badge variant={status.level} size="sm" label={status.label} />
+									</div>
+									<span class="invoice-amount">
+										{formatMinorUnits(invoice.total, invoice.currency)}
+									</span>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+			</div>
 
-	<section class="widget">
-		<h2>{m.dashboard_concentration_heading()}</h2>
-		<ConcentrationChart
-			byClient={data.concentration.byClient}
-			total={data.concentration.total}
-			shareCeilings={data.concentration.shareCeilings}
-		/>
-	</section>
+			{#if data.money.ceiling}
+				<CeilingMeter view={data.money.ceiling} />
+			{/if}
+		</div>
+	</Section>
 
-	<footer class="account">
-		<p class="text-sm">{m.signed_in_as({ email: data.user.email })}</p>
-		<form method="POST" action="/sign-out">
-			<button type="submit" class="text-sm underline">{m.sign_out()}</button>
-		</form>
-	</footer>
+	<Section title={m.dashboard_reports_heading()}>
+		<p class="reports-links">
+			<!-- Both hrefs are `resolve('/reports')` with a fragment appended, built
+			     in the script above. The rule only recognises a literal `resolve()`
+			     call in the attribute and cannot express "a resolved path plus an
+			     anchor", which is what a link to a section of another page is. -->
+			<!-- eslint-disable svelte/no-navigation-without-resolve -->
+			<a href={concentrationHref}>
+				{m.dashboard_concentration_heading()}
+			</a>
+			<span aria-hidden="true"> · </span>
+			<a href={cashCalendarHref}>{m.dashboard_cash_calendar_heading()}</a>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
+		</p>
+	</Section>
 </Page>
 
 <style>
-	.record-day-cta {
-		display: inline-flex;
-		align-items: center;
-		border: 1px solid var(--text-primary);
-		background: var(--text-primary);
-		color: var(--surface-1);
-		padding: 0.875rem 1.5rem;
-		font-size: 1rem;
-		font-weight: 600;
-		text-decoration: none;
-		min-height: 3rem;
+	.week-range {
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
 	}
-	.proposals-cta {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.5rem;
-		border: 1px solid var(--text-primary);
+	.week-card {
 		background: var(--surface-1);
-		color: var(--text-primary);
-		padding: 0.875rem 1.5rem;
-		font-size: 1rem;
-		font-weight: 600;
-		text-decoration: none;
-		min-height: 3rem;
-	}
-	.proposals-badge {
-		display: inline-flex;
-		align-items: center;
-		border-radius: 999px;
-		background: var(--status-warning);
-		color: var(--text-primary);
-		padding: 0.125rem 0.5rem;
-		font-size: 0.75rem;
-		font-weight: 600;
-	}
-	.widget {
-		margin-bottom: 2.5rem;
-	}
-	.widget h2 {
-		margin: 0 0 0.875rem;
-		font-size: 1.0625rem;
-		font-weight: 600;
-		color: var(--text-primary);
-	}
-	.ceiling-grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-		gap: 1rem;
-	}
-	.account {
-		margin-top: 3rem;
-		padding-top: 1.5rem;
-		border-top: 1px solid var(--border-hairline);
+		border: 1px solid var(--border-hairline);
+		border-radius: var(--radius-md);
+		padding: var(--space-4);
 		display: flex;
 		flex-direction: column;
-		gap: 0.5rem;
+		gap: var(--space-4);
+	}
+	.stat-grid {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: var(--space-4);
+	}
+	.week-cal-wrap {
+		overflow-x: auto;
+	}
+	.week-cal {
+		display: grid;
+		grid-template-columns: repeat(7, minmax(2.25rem, 1fr));
+		gap: 2px;
+	}
+	.cal-head {
+		text-align: center;
+		font-size: var(--text-2xs);
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		padding-bottom: var(--space-1);
+	}
+	.cal-cell {
+		position: relative;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		height: 2.5rem;
+		border-radius: var(--radius-sm);
+		background: var(--surface-2);
+		font-size: var(--text-sm);
+		font-variant-numeric: tabular-nums;
+		color: var(--text-secondary);
+	}
+	.cal-cell.today {
+		background: var(--color-primary);
+		color: var(--color-primary-ink);
+		font-weight: var(--weight-bold);
+	}
+	.cal-dot {
+		position: absolute;
+		bottom: 4px;
+		width: 4px;
+		height: 4px;
+		border-radius: 50%;
+		background: currentColor;
+	}
+	.week-empty-note {
+		margin: 0;
+		font-size: var(--text-sm);
+		color: var(--text-muted);
+	}
+	.money-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+		gap: var(--space-4);
+	}
+	.card {
+		background: var(--surface-1);
+		border: 1px solid var(--border-hairline);
+		border-radius: var(--radius-md);
+		padding: var(--space-4);
+	}
+	.card-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-2);
+		margin-bottom: var(--space-3);
+	}
+	.card-head h3 {
+		margin: 0;
+		font-size: var(--text-lg);
+		font-weight: var(--weight-bold);
+		color: var(--text-primary);
+	}
+	.card-body {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+	}
+	.fig {
+		font-family: var(--font-mono);
+		font-variant-numeric: tabular-nums;
+		font-size: var(--text-3xl);
+		font-weight: var(--weight-bold);
+		color: var(--text-primary);
+		line-height: 1.1;
+	}
+	.money-empty {
+		margin: 0;
+		font-size: var(--text-sm);
+		color: var(--text-muted);
+	}
+	.invoice-rows {
+		margin: 0 calc(var(--space-4) * -1) calc(var(--space-4) * -1);
+		padding: 0;
+		list-style: none;
+		border-top: 1px solid var(--border-hairline);
+	}
+	.invoice-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-3);
+		padding: var(--space-3) var(--space-4);
+		border-bottom: 1px solid var(--border-hairline);
+	}
+	.invoice-row:last-child {
+		border-bottom: none;
+	}
+	.invoice-main {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-2);
+		min-width: 0;
+	}
+	.invoice-number {
+		font-family: var(--font-mono);
+		color: var(--text-primary);
+		text-decoration: underline;
+	}
+	.invoice-client {
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
+	}
+	.invoice-amount {
+		flex: none;
+		font-family: var(--font-mono);
+		font-variant-numeric: tabular-nums;
+		font-size: var(--text-md);
+		font-weight: var(--weight-medium);
+		color: var(--text-primary);
+	}
+	.reports-links {
+		margin: 0;
+		font-size: var(--text-sm);
+		color: var(--text-muted);
+	}
+	.reports-links a {
+		color: var(--text-secondary);
+	}
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+
+	@media (max-width: 639px) {
+		.stat-grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
 	}
 </style>

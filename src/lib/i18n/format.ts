@@ -68,6 +68,19 @@ export function formatDays(count: number, locale: Locale = getLocale()): string 
 }
 
 /**
+ * An hours quantity, e.g. `1 hour` / `1 ora`, `3.5 hours` / `3,5 ore` — the
+ * hourly-rate-card sibling of `formatDays`, same reasoning: Intl's unit
+ * formatter pluralizes correctly per locale, a hand-rolled suffix does not.
+ */
+export function formatHours(count: number, locale: Locale = getLocale()): string {
+	return new Intl.NumberFormat(locale, {
+		style: 'unit',
+		unit: 'hour',
+		unitDisplay: 'long'
+	}).format(count);
+}
+
+/**
  * A ratio as a percentage, e.g. `0.04` reads `4%` in both locales mastro
  * ships today — the point is not that the digits differ here, it is that
  * neither call site multiplies by 100 and appends a `%` by hand.
@@ -86,6 +99,24 @@ export function formatPercent(value: number, locale: Locale = getLocale()): stri
 export function formatDate(date: string | Date, locale: Locale = getLocale()): string {
 	const value = typeof date === 'string' ? new Date(`${date}T00:00:00Z`) : date;
 	return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(value);
+}
+
+/**
+ * A full date with its weekday spelled out, e.g. `Thursday, August 13,
+ * 2026` in English and `giovedì 13 agosto 2026` in Italian — the
+ * dashboard's own "today" subtitle (#234), where `formatDate`'s
+ * abbreviated `dateStyle: 'medium'` and `formatWeekday`'s short weekday
+ * are each too terse on their own.
+ */
+export function formatFullDate(date: string, locale: Locale = getLocale()): string {
+	const value = new Date(`${date}T00:00:00Z`);
+	return new Intl.DateTimeFormat(locale, {
+		weekday: 'long',
+		day: 'numeric',
+		month: 'long',
+		year: 'numeric',
+		timeZone: 'UTC'
+	}).format(value);
 }
 
 /**

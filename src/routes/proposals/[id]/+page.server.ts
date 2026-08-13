@@ -1,14 +1,29 @@
+// The proposal review screen (#243): the evidence — the archived message
+// in full, the matched sentence marked — is the heavier half, the
+// proposed fields the lighter one, exactly the shape #243's brief asks
+// for. Pending proposals from the same document are siblings a reviewer
+// steps through in order; accepted/rejected ones render the same layout
+// read-only, with the day it created linked once it exists.
 import { error, fail } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
 import { proposalsCrumbs } from '$lib/nav/crumbs';
-import { getContract } from '$lib/server/repositories/contract';
-import { getDocument, toSourceDocumentValue } from '$lib/server/repositories/document';
+import { decodeMessageBody, parseMessage } from '$lib/server/mail/headers';
+import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
+import { getContractWithClient } from '$lib/server/repositories/contract';
+import {
+	getDocument,
+	readDocumentBytes,
+	toSourceDocumentValue
+} from '$lib/server/repositories/document';
+import { getInboundThreadForDocument } from '$lib/server/repositories/inbound-thread';
 import {
 	acceptProposal,
 	diffProposalFields,
 	getProposal,
+	listProposalsForDocument,
 	rejectProposal
 } from '$lib/server/repositories/proposal';
+import { listRateCards } from '$lib/server/repositories/rate-card';
 import type { Actions, PageServerLoad } from './$types';
 
 /** Every proposed field, re-typed from the reviewer's own edit to the JSON
@@ -45,14 +60,53 @@ function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
+/** `workUnitFields`'s counterpart in `../+page.server.ts` — kept file-local
+ *  rather than shared, since the two loaders read it into differently
+ *  shaped view models (this one keeps `notes`, the queue never shows it). */
+function workUnitFields(
+	fields: Record<string, unknown>
+): { date: string; quantity: number; scope: string; notes: string | null } | null {
+	const { date, quantity, scope, notes } = fields;
+	if (typeof date !== 'string' || typeof quantity !== 'number' || typeof scope !== 'string') {
+		return null;
+	}
+	return { date, quantity, scope, notes: typeof notes === 'string' ? notes : null };
+}
+
 export const load: PageServerLoad = async ({ params }) => {
 	const row = await getProposal(params.id);
 	if (!row) error(404, m.proposal_detail_not_found());
 
-	const [contract, document] = await Promise.all([
-		getContract(row.contractId),
-		getDocument(row.documentId)
+	const [contract, document, thread, siblingRows] = await Promise.all([
+		getContractWithClient(row.contractId),
+		getDocument(row.documentId),
+		getInboundThreadForDocument(row.documentId),
+		listProposalsForDocument(row.documentId)
 	]);
+
+	const bytes = document ? await readDocumentBytes(document) : null;
+	const parsedMessage = bytes ? parseMessage(bytes) : null;
+	const messageBody = parsedMessage ? decodeMessageBody(parsedMessage) : '';
+
+	const effectiveFields = workUnitFields(row.acceptedFields ?? row.proposedFields);
+	const amount = effectiveFields
+		? priceWorkUnitOnDate(effectiveFields, await listRateCards(row.contractId))
+		: null;
+
+	// Siblings from the same document, in the order a reviewer would step
+	// through them — the day each proposes, not creation order, since a
+	// producer's own fan-out order ("Thursday and Friday" -> two rows) has
+	// no particular reason to already be chronological.
+	const siblings = [...siblingRows].sort((a, b) => {
+		const dateA = workUnitFields(a.proposedFields)?.date ?? '';
+		const dateB = workUnitFields(b.proposedFields)?.date ?? '';
+		return dateA.localeCompare(dateB);
+	});
+	const siblingIndex = siblings.findIndex((sibling) => sibling.id === row.id);
+	const previousSibling = siblingIndex > 0 ? siblings[siblingIndex - 1] : null;
+	const nextSibling =
+		siblingIndex >= 0 && siblingIndex < siblings.length - 1 ? siblings[siblingIndex + 1] : null;
+
 	const crumbs = proposalsCrumbs();
 
 	return {
@@ -61,6 +115,8 @@ export const load: PageServerLoad = async ({ params }) => {
 			targetType: row.targetType,
 			excerpt: row.excerpt,
 			confidence: row.confidence,
+			confidenceReason: row.confidenceReason,
+			validationError: row.validationError,
 			status: row.status,
 			proposedFields: row.proposedFields,
 			acceptedFields: row.acceptedFields,
@@ -70,8 +126,32 @@ export const load: PageServerLoad = async ({ params }) => {
 			createdAt: row.createdAt.toISOString(),
 			changes: diffProposalFields(row)
 		},
-		contract: contract ? { id: contract.id, title: contract.title } : null,
+		contract: contract
+			? { id: contract.id, title: contract.title, clientLegalName: contract.client.legalName }
+			: null,
+		currency: contract?.currency ?? 'EUR',
+		amount,
 		sourceDocument: document ? toSourceDocumentValue(document) : null,
+		message: {
+			from: parsedMessage?.headers.get('from') ?? null,
+			to: parsedMessage?.headers.get('to') ?? null,
+			subject: thread?.subject ?? null,
+			receivedAt: thread?.receivedAt.toISOString() ?? null,
+			body: messageBody
+		},
+		siblings: {
+			position: siblingIndex >= 0 ? siblingIndex + 1 : 1,
+			count: siblings.length,
+			previous: previousSibling
+				? {
+						id: previousSibling.id,
+						date: workUnitFields(previousSibling.proposedFields)?.date ?? null
+					}
+				: null,
+			next: nextSibling
+				? { id: nextSibling.id, date: workUnitFields(nextSibling.proposedFields)?.date ?? null }
+				: null
+		},
 		crumbs
 	};
 };

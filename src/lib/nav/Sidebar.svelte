@@ -1,17 +1,24 @@
 <script lang="ts">
+	// The desktop nav rail (#148, #233). Groups follow the daily loop —
+	// Today/Review/Calendar, then the Ledger, then the Inbox, then Settings
+	// — reading `NAV_GROUPS` so this and `BottomBar` can never disagree
+	// about what exists or which item is active.
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { appHref } from './href';
 	import LanguageSwitch from '$lib/components/LanguageSwitch.svelte';
+	import Badge from '$lib/design/Badge.svelte';
 	import { NAV_GROUPS, isNavItemActive } from './items';
 
 	let {
 		pathname,
-		unreadAlerts,
+		counts,
 		user
 	}: {
 		pathname: string;
-		unreadAlerts: number;
+		/** The two nav counts that mean something: proposals waiting on a
+		 *  human, invoices actually overdue — not a generic unread tally. */
+		counts: { proposals: number; overdueInvoices: number };
 		user: { email: string } | null;
 	} = $props();
 </script>
@@ -20,26 +27,36 @@
 	<a class="brand" href={resolve('/')}>mastro</a>
 
 	{#each NAV_GROUPS as group, groupIndex (groupIndex)}
-		<ul class="group">
-			{#each group.items as item (item.href)}
-				{@const active = isNavItemActive(item.href, pathname)}
-				<li>
-					<a
-						href={appHref(item.href)}
-						class="item"
-						class:active
-						aria-current={active ? 'page' : undefined}
-					>
-						<span>{item.label()}</span>
-						{#if item.badge === 'alerts' && unreadAlerts > 0}
-							<span class="badge" aria-label={m.nav_alert_count({ count: unreadAlerts })}>
-								{unreadAlerts}
-							</span>
-						{/if}
-					</a>
-				</li>
-			{/each}
-		</ul>
+		<div class="group">
+			{#if group.title}<p class="title">{group.title()}</p>{/if}
+			<ul class="items">
+				{#each group.items as item (item.href)}
+					{@const active = isNavItemActive(item.href, pathname)}
+					{@const count = item.badge ? counts[item.badge] : 0}
+					<li>
+						<a
+							href={appHref(item.href)}
+							class="item"
+							class:active
+							aria-current={active ? 'page' : undefined}
+						>
+							<span class="ico" aria-hidden="true">{item.icon}</span>
+							<span class="label">{item.label()}</span>
+							{#if count > 0}
+								<span
+									class="count"
+									aria-label={item.badge === 'proposals'
+										? m.nav_proposals_count({ count })
+										: m.nav_overdue_invoices_count({ count })}
+								>
+									<Badge variant="count" size="sm" label={count > 99 ? '99+' : String(count)} />
+								</span>
+							{/if}
+						</a>
+					</li>
+				{/each}
+			</ul>
+		</div>
 	{/each}
 
 	{#if user}
@@ -71,19 +88,33 @@
 	.group {
 		display: flex;
 		flex-direction: column;
-		gap: 0.125rem;
-		list-style: none;
-		padding: 0;
+		gap: 0.25rem;
 	}
 	.group + .group {
 		padding-top: 1rem;
 		border-top: 1px solid var(--border-hairline);
 	}
+	.title {
+		margin: 0;
+		padding: 0 0.75rem;
+		font-size: 0.6875rem;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		color: var(--text-muted);
+	}
+	.items {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+		list-style: none;
+		padding: 0;
+		margin: 0;
+	}
 	.item {
 		display: flex;
 		align-items: center;
-		justify-content: space-between;
-		gap: 0.5rem;
+		gap: 0.625rem;
 		min-height: 44px;
 		padding: 0 0.75rem;
 		/* The active mark is a border and a weight, never colour alone. */
@@ -95,13 +126,21 @@
 		color: var(--text-primary);
 		font-weight: 600;
 	}
-	.badge {
-		min-width: 1.5rem;
-		padding: 0 0.375rem;
-		border: 1px solid var(--border-hairline);
-		border-radius: 999px;
-		font-size: 0.75rem;
+	.ico {
+		flex: none;
+		width: 1rem;
 		text-align: center;
+		color: var(--text-muted);
+	}
+	.item.active .ico {
+		color: var(--text-primary);
+	}
+	.label {
+		flex: 1;
+		min-width: 0;
+	}
+	.count {
+		flex: none;
 	}
 	.foot {
 		margin-top: auto;

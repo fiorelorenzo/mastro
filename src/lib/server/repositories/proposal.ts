@@ -30,6 +30,7 @@
 import { desc, eq } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import { proposal, type ProposalStatus, type ProposalTargetType } from '$lib/server/db/schema';
+import { parseMessage } from '$lib/server/mail/headers';
 import { createApprovalForDocument } from './approval';
 import { getDocument, readDocumentBytes } from './document';
 import { getInboundThreadForDocument } from './inbound-thread';
@@ -181,20 +182,10 @@ function proposalValidationError(
  * the address is what actually identifies who wrote it.
  */
 function extractSender(raw: Buffer): string {
-	const headerBlock = raw.toString('utf8').split(/\r?\n\r?\n/)[0] ?? '';
-	const unfolded: string[] = [];
-	for (const line of headerBlock.split(/\r?\n/)) {
-		if (/^[ \t]/.test(line) && unfolded.length > 0) {
-			unfolded[unfolded.length - 1] += ' ' + line.trim();
-		} else {
-			unfolded.push(line);
-		}
-	}
-	const fromLine = unfolded.find((line) => /^from\s*:/i.test(line));
-	if (!fromLine) {
+	const value = parseMessage(raw).headers.get('from');
+	if (!value) {
 		throw new Error('source message has no From header to record as the approval sender');
 	}
-	const value = fromLine.replace(/^from\s*:/i, '').trim();
 	const sender = (value.match(/<([^>]+)>/)?.[1] ?? value).trim();
 	if (!sender) {
 		throw new Error('source message has a blank From header');

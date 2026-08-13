@@ -8,17 +8,16 @@
 
 	const emptyContact = { name: '', email: '', phone: '', role: '', canApprove: false };
 	const contactSlots = $derived(
-		form?.values.contacts ?? [
-			...data.client.contacts.map((contact) => ({
-				name: contact.name,
-				email: contact.email,
-				phone: contact.phone ?? '',
-				role: contact.role ?? '',
-				canApprove: contact.canApprove
-			})),
-			emptyContact,
-			emptyContact
-		]
+		form?.values.contacts ??
+			(data.client.contacts.length > 0
+				? data.client.contacts.map((contact) => ({
+						name: contact.name,
+						email: contact.email,
+						phone: contact.phone ?? '',
+						role: contact.role ?? '',
+						canApprove: contact.canApprove
+					}))
+				: [emptyContact])
 	);
 	const values = $derived(
 		form?.values ?? {

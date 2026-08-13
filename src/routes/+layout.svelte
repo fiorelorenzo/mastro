@@ -34,12 +34,12 @@
 {#if chrome}
 	<div class="shell">
 		<div class="rail">
-			<Sidebar pathname={page.url.pathname} unreadAlerts={data.unreadAlerts} user={data.user} />
+			<Sidebar pathname={page.url.pathname} counts={data.counts} user={data.user} />
 		</div>
 		<div class="content">{@render children()}</div>
 	</div>
 	<div class="tabs">
-		<BottomBar pathname={page.url.pathname} unreadAlerts={data.unreadAlerts} />
+		<BottomBar pathname={page.url.pathname} counts={data.counts} />
 	</div>
 {:else}
 	{@render children()}

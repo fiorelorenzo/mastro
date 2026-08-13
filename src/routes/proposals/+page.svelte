@@ -1,90 +1,198 @@
+<!--
+	The review queue (#243): pending proposals grouped by the archived
+	message that produced them — two days from one "ok for Thursday and
+	Friday" email read as siblings, each with its own accept/reject, plus
+	one accept-all for the message. Decided history (`?status=accepted` /
+	`?status=rejected`) is a flatter list, one row each, nothing left to
+	group by message once the decision is made.
+-->
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import { formatDateTime, formatPercent } from '$lib/i18n/format';
+	import { formatDate, formatDateTime } from '$lib/i18n/format';
+	import { factLine } from '$lib/nav/crumbs';
+	import { Amount, Badge, Button, EmptyState, Tabs } from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
-	import { proposalTargetTypeLabel, type ProposalStatusValue } from './proposal-status';
-	import type { PageData } from './$types';
-	let { data }: { data: PageData } = $props();
+	import Section from '$lib/layout/Section.svelte';
+	import ProposalStatusBadge from './ProposalStatusBadge.svelte';
+	import { proposalConfidenceBadge, proposalQuantityLabel } from './proposal-status';
+	import type { ActionData, PageProps } from './$types';
 
-	const tabs: readonly ProposalStatusValue[] = ['pending', 'accepted', 'rejected'];
+	let { data, form }: PageProps & { form: ActionData } = $props();
 
-	function tabLabel(status: ProposalStatusValue): string {
-		switch (status) {
-			case 'pending':
-				return m.proposal_list_tab_pending();
-			case 'accepted':
-				return m.proposal_list_tab_accepted();
-			case 'rejected':
-				return m.proposal_list_tab_rejected();
+	const tabs = $derived([
+		{
+			href: `${resolve('/proposals')}?status=pending`,
+			label: m.proposal_list_tab_pending(),
+			selected: data.status === 'pending',
+			badge:
+				data.pendingCount !== null
+					? { variant: 'info' as const, count: data.pendingCount }
+					: undefined
+		},
+		{
+			href: `${resolve('/proposals')}?status=accepted`,
+			label: m.proposal_list_tab_accepted(),
+			selected: data.status === 'accepted'
+		},
+		{
+			href: `${resolve('/proposals')}?status=rejected`,
+			label: m.proposal_list_tab_rejected(),
+			selected: data.status === 'rejected'
 		}
-	}
+	]);
 
-	function emptyLabel(status: ProposalStatusValue): string {
-		switch (status) {
-			case 'pending':
-				return m.proposal_list_empty_pending();
-			case 'accepted':
-				return m.proposal_list_empty_accepted();
-			case 'rejected':
-				return m.proposal_list_empty_rejected();
-		}
+	function rowTitle(date: string | null, quantity: number | null): string {
+		const datePart = date ? formatDate(date) : '—';
+		const quantityPart = quantity !== null ? proposalQuantityLabel(quantity) : '—';
+		return `${datePart} — ${quantityPart}`;
 	}
 </script>
 
 <svelte:head><title>{m.proposal_list_page_title()}</title></svelte:head>
 
-<Page title={m.proposal_list_heading()}>
-	<nav class="mt-4 flex flex-wrap gap-1 border-b text-sm" aria-label={m.proposal_list_heading()}>
-		{#each tabs as tab (tab)}
-			<a
-				href="{resolve('/proposals')}?status={tab}"
-				class="tab border-b-2 px-3"
-				class:border-transparent={data.status !== tab}
-				aria-current={data.status === tab ? 'page' : undefined}
-			>
-				{tabLabel(tab)}
-			</a>
-		{/each}
-	</nav>
+<Page title={m.proposal_list_heading()} subtitle={m.proposal_list_subtitle()}>
+	<Tabs label={m.proposal_list_heading()} {tabs} />
 
-	{#if data.rows.length === 0}
-		<p class="mt-4 text-sm opacity-70">{emptyLabel(data.status)}</p>
+	{#if form?.actionError}
+		<p class="action-error" role="alert">
+			{m.proposal_detail_decision_error_heading()}
+			{form.actionError}
+		</p>
+	{/if}
+
+	{#if data.status === 'pending'}
+		{#if data.groups.length === 0}
+			<EmptyState
+				icon="✓"
+				title={m.proposal_list_empty_pending_title()}
+				body={m.proposal_list_empty_pending_body()}
+			/>
+		{:else}
+			{#each data.groups as group (group.documentId)}
+				{@const blocked = group.rows.some((row) => row.validationError)}
+				<Section title={group.subject ?? m.proposal_queue_no_subject()}>
+					{#snippet actions()}
+						<a href={resolve('/proposals/[id]', { id: group.rows[0].id })} class="open-message">
+							{m.proposal_queue_open_message()}
+						</a>
+					{/snippet}
+
+					<ul class="rows">
+						{#each group.rows as row (row.id)}
+							{@const confidence = proposalConfidenceBadge(row.confidence)}
+							<li class="row">
+								<span class="row-ico" aria-hidden="true">◇</span>
+								<div class="row-main">
+									<span class="row-title">{rowTitle(row.date, row.quantity)}</span>
+									<span class="row-meta">
+										<Badge variant={confidence.variant} label={confidence.label} size="sm" />
+										{#if row.amount !== null}
+											<Amount major={row.amount} currency={group.currency} size="inline" />
+										{/if}
+										{#if row.validationError}
+											<span class="row-flag">{m.proposal_queue_needs_correction()}</span>
+										{/if}
+									</span>
+								</div>
+								<div class="row-actions">
+									<Button
+										href={resolve('/proposals/[id]', { id: row.id })}
+										variant="tertiary"
+										size="sm"
+									>
+										{m.proposal_queue_review()}
+									</Button>
+									<form method="POST" action="?/accept">
+										<input type="hidden" name="id" value={row.id} />
+										<Button
+											type="submit"
+											variant="primary"
+											size="sm"
+											disabled={Boolean(row.validationError)}
+										>
+											{m.proposal_detail_accept_submit()}
+										</Button>
+									</form>
+									<form method="POST" action="?/reject">
+										<input type="hidden" name="id" value={row.id} />
+										<Button type="submit" variant="danger" size="sm">
+											{m.proposal_detail_reject_submit()}
+										</Button>
+									</form>
+								</div>
+							</li>
+						{/each}
+					</ul>
+
+					<div class="group-footer">
+						<span class="fact-line">
+							{factLine([group.sender, group.contractTitle, group.clientLegalName])}
+						</span>
+						{#if group.rows.length > 1}
+							<form method="POST" action="?/acceptAll">
+								<input type="hidden" name="documentId" value={group.documentId} />
+								<Button type="submit" variant="secondary" size="sm" disabled={blocked}>
+									{m.proposal_queue_accept_all({ count: group.rows.length })}
+								</Button>
+							</form>
+						{/if}
+					</div>
+				</Section>
+			{/each}
+		{/if}
+	{:else if data.rows.length === 0}
+		<EmptyState
+			icon={data.status === 'accepted' ? '✓' : '○'}
+			title={data.status === 'accepted'
+				? m.proposal_list_empty_accepted_title()
+				: m.proposal_list_empty_rejected_title()}
+			body={data.status === 'accepted'
+				? m.proposal_list_empty_accepted_body()
+				: m.proposal_list_empty_rejected_body()}
+		/>
 	{:else}
-		<!-- #64: a five-column table is exactly the shape that forces
-		     horizontal scrolling once the excerpt column has real text in
-		     it — the review queue is one of the three phone-critical flows,
-		     so this is a card per proposal instead, one full-width tap
-		     target per row with nothing that cannot wrap. -->
-		<ul class="mt-4 flex flex-col gap-3">
+		<ul class="rows history">
 			{#each data.rows as row (row.id)}
-				<li>
-					<a href={resolve('/proposals/[id]', { id: row.id })} class="proposal-card">
-						<div class="proposal-card-head">
-							<span class="proposal-card-contract">
-								<span class="sr-only"
-									>{m.proposal_list_column_contract()}:
-								</span>{row.contractTitle}
-							</span>
-							<span class="proposal-card-confidence">
-								<span class="sr-only">{m.proposal_list_column_confidence()}: </span>{formatPercent(
-									row.confidence
-								)}
-							</span>
-						</div>
-						<p class="proposal-card-meta">
-							<span class="sr-only"
-								>{m.proposal_list_column_target()}:
-							</span>{proposalTargetTypeLabel(row.targetType)}
-							<span aria-hidden="true"> · </span>
-							<span class="sr-only">{m.proposal_list_column_created()}: </span>{formatDateTime(
-								row.createdAt
-							)}
-						</p>
-						<p class="proposal-card-excerpt">
-							<span class="sr-only">{m.proposal_list_column_excerpt()}: </span>{row.excerpt}
-						</p>
-					</a>
+				<li class="row">
+					<span class="row-ico" aria-hidden="true">{row.status === 'accepted' ? '✓' : '✕'}</span>
+					<div class="row-main">
+						<a class="row-title" href={resolve('/proposals/[id]', { id: row.id })}>
+							{rowTitle(row.date, row.quantity)}
+						</a>
+						<span class="row-meta">
+							<ProposalStatusBadge status={row.status} />
+							{#if row.status === 'accepted'}
+								{row.sender
+									? m.proposal_history_created_note({
+											sender: row.sender,
+											when: row.receivedAt ? formatDateTime(row.receivedAt) : ''
+										})
+									: m.proposal_history_created_note_no_sender({
+											when: row.receivedAt ? formatDateTime(row.receivedAt) : ''
+										})}
+								{#if row.amount !== null}
+									·
+									<Amount major={row.amount} currency={row.currency} size="inline" />
+								{/if}
+							{:else}
+								{m.proposal_history_rejected_note({
+									when: row.receivedAt ? formatDateTime(row.receivedAt) : ''
+								})}
+							{/if}
+						</span>
+					</div>
+					<div class="row-actions">
+						{#if row.status === 'accepted' && row.resultId}
+							<Button
+								href={resolve('/day/[id]', { id: row.resultId })}
+								variant="tertiary"
+								size="sm"
+							>
+								{m.proposal_history_view_day()}
+							</Button>
+						{/if}
+					</div>
 				</li>
 			{/each}
 		</ul>
@@ -92,66 +200,96 @@
 </Page>
 
 <style>
-	.tab {
-		display: inline-flex;
-		align-items: center;
-		min-height: 2.75rem;
+	.action-error {
+		margin: var(--space-4) 0 0;
+		padding: var(--space-3) var(--space-4);
+		border: 1px solid var(--color-danger);
+		border-radius: var(--radius-md);
+		color: var(--color-danger);
+		font-size: var(--text-sm);
 	}
-	.proposal-card {
-		display: block;
+	.open-message {
+		font-size: var(--text-sm);
+		color: var(--color-primary);
+	}
+	.rows {
+		display: flex;
+		flex-direction: column;
+		margin: 0;
+		padding: 0;
+		list-style: none;
 		border: 1px solid var(--border-hairline);
-		border-radius: 8px;
-		padding: 0.875rem 1rem;
-		color: inherit;
+		border-radius: var(--radius-md);
+	}
+	.rows.history {
+		margin-top: var(--space-4);
+	}
+	.row {
+		display: flex;
+		align-items: flex-start;
+		gap: var(--space-3);
+		padding: var(--space-3) var(--space-4);
+	}
+	.row + .row {
+		border-top: 1px solid var(--border-hairline);
+	}
+	.row-ico {
+		flex: none;
+		margin-top: 0.2em;
+		color: var(--text-muted);
+	}
+	.row-main {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+		min-width: 0;
+		flex: 1;
+	}
+	.row-title {
+		font-size: var(--text-md);
+		font-weight: var(--weight-medium);
+		color: var(--text-primary);
 		text-decoration: none;
 	}
-	.proposal-card:hover,
-	.proposal-card:focus-visible {
-		background: var(--surface-1);
-		outline: 2px solid var(--certainty-projected);
-		outline-offset: -2px;
+	a.row-title:hover {
+		text-decoration: underline;
 	}
-	.proposal-card-head {
+	.row-meta {
 		display: flex;
 		flex-wrap: wrap;
-		align-items: baseline;
-		justify-content: space-between;
-		gap: 0.5rem;
+		align-items: center;
+		gap: var(--space-2);
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
 	}
-	.proposal-card-contract {
-		color: var(--text-primary);
-		font-weight: 600;
-		font-size: 0.9375rem;
-		overflow-wrap: anywhere;
+	.row-flag {
+		color: var(--color-danger);
+		font-weight: var(--weight-medium);
 	}
-	.proposal-card-confidence {
+	.row-actions {
 		flex: none;
-		color: var(--text-secondary);
-		font-size: 0.8125rem;
-		font-variant-numeric: tabular-nums;
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
 	}
-	.proposal-card-meta {
-		margin: 0.25rem 0 0;
-		color: var(--text-secondary);
-		font-size: 0.8125rem;
+	.group-footer {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-2);
+		margin-top: var(--space-3);
 	}
-	.proposal-card-excerpt {
-		margin: 0.5rem 0 0;
-		color: var(--text-secondary);
-		font-size: 0.8125rem;
-		font-style: italic;
-		opacity: 0.85;
-		overflow-wrap: anywhere;
+	.fact-line {
+		font-size: var(--text-sm);
+		color: var(--text-muted);
 	}
-	.sr-only {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		padding: 0;
-		margin: -1px;
-		overflow: hidden;
-		clip: rect(0, 0, 0, 0);
-		white-space: nowrap;
-		border: 0;
+	@media (max-width: 639px) {
+		.row {
+			flex-wrap: wrap;
+		}
+		.row-actions {
+			width: 100%;
+		}
 	}
 </style>

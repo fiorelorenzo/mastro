@@ -7,9 +7,7 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	const emptyContact = { name: '', email: '', phone: '', role: '', canApprove: false };
-	const contactSlots = $derived(
-		form?.values.contacts ?? [emptyContact, emptyContact, emptyContact, emptyContact]
-	);
+	const contactSlots = $derived(form?.values.contacts ?? [emptyContact]);
 	const values = $derived(
 		form?.values ?? {
 			legalName: '',

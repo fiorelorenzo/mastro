@@ -50,6 +50,7 @@ export { default as Select } from './Select.svelte';
 export { default as Checkbox } from './Checkbox.svelte';
 export { default as Radio } from './Radio.svelte';
 export { default as SegmentedControl } from './SegmentedControl.svelte';
+export { countryOptions, type CountryOption } from './country-picker';
 export { parseAriaInvalid, resolveControlState, useField, type FieldState } from './field-context';
 export { computeFieldIds, type FieldIds } from './field-ids';
 export { keyToDirection, nextEnabledIndex, type SegmentedOption } from './segmented-control';
@@ -87,3 +88,32 @@ export {
 	documentProvenanceLabel,
 	type DocumentProvenanceValue
 } from './source-document';
+
+// ── empty & error states — one shell for "nothing here" and one for
+// "something's wrong," a glyph/status chip plus title, body and a way
+// forward, replacing the review's twelve near-duplicate dead-end lines ──
+export { default as EmptyState } from './EmptyState.svelte';
+export { default as ErrorState } from './ErrorState.svelte';
+export {
+	errorKind,
+	errorSeverity,
+	hasExplanation,
+	type ErrorKind,
+	type ErrorSeverity
+} from './error-status';
+
+// ── keyboard hints — a styled <kbd> for shortcut hints, never bare text ──
+export { default as KeyboardHint } from './KeyboardHint.svelte';
+
+// ── metrics — a compact stat tile, no chart chrome ───────────────────────
+export { default as StatTile } from './StatTile.svelte';
+
+// ── notices — an in-context warning/critical/info banner, icon plus prose
+// plus an optional way forward; see banner.ts for why tone never carries
+// the meaning alone ──
+export { default as Banner } from './Banner.svelte';
+export { BANNER_TONES, bannerGlyph, bannerRole, type BannerTone } from './banner';
+
+// ── navigation — a row of links that switch which slice of one list is
+// showing; real URLs, not a same-page panel swap (see Tabs.svelte) ───────
+export { default as Tabs } from './Tabs.svelte';

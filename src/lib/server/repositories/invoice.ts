@@ -1,4 +1,4 @@
-import { asc, eq, isNull, sql } from 'drizzle-orm';
+import { asc, desc, eq, sql } from 'drizzle-orm';
 import type { LegalText } from '$lib/legal/legal-text';
 import { resolveDueDate } from '$lib/server/domain/invoice';
 import { db, type DbExecutor } from '$lib/server/db';
@@ -234,16 +234,30 @@ export async function recordPayment(invoiceId: string, paidOn: string, executor:
 	return row;
 }
 
+/** One row of {@link listInvoices}/{@link listUnpaidInvoices} — named here,
+ *  the module that owns the query, rather than left for callers to derive
+ *  with `ReturnType`, so the ageing list's loader (`routes/invoices/
+ *  +page.server.ts`) has a real type to extend with its own `daysLate`/
+ *  `overdue`. */
+export interface InvoiceListRow {
+	invoice: typeof invoice.$inferSelect;
+	contractTitle: string;
+	clientLegalName: string;
+	dayCount: number;
+}
+
 /**
- * The ageing list (#29): every unpaid invoice, with its contract's title
- * and client for display, and the count of days it bills for the "days it
- * bills" link. Ordering by lateness is the caller's job
- * (`routes/invoices/+page.server.ts`), not this query's: `daysLate` is a
- * plain function over `dueDate`, not a column this query could `ORDER BY`
- * without duplicating that arithmetic in SQL.
+ * Every invoice on record, paid or not, with its contract's title and
+ * client for display, and the count of days it bills for the "days it
+ * bills" link (#238's "every invoice in the instance is reachable from the
+ * interface" — `listUnpaidInvoices` used to be the only query this page
+ * ran, so a paid invoice was reachable only by typing its URL). Ordering
+ * is the caller's job (`routes/invoices/+page.server.ts`), not this
+ * query's: `daysLate` is a plain function over `dueDate`, not a column
+ * this query could `ORDER BY` without duplicating that arithmetic in SQL.
  */
-export async function listUnpaidInvoices(executor: DbExecutor = db) {
-	const rows = await executor
+export async function listInvoices(executor: DbExecutor = db): Promise<InvoiceListRow[]> {
+	return executor
 		.select({
 			invoice,
 			contractTitle: contract.title,
@@ -255,10 +269,42 @@ export async function listUnpaidInvoices(executor: DbExecutor = db) {
 		.innerJoin(client, eq(client.id, contract.clientId))
 		.leftJoin(invoiceLine, eq(invoiceLine.invoiceId, invoice.id))
 		.leftJoin(workUnit, eq(workUnit.invoiceLineId, invoiceLine.id))
-		.where(isNull(invoice.paidOn))
 		.groupBy(invoice.id, contract.id, client.id);
+}
 
-	return rows;
+/**
+ * The ageing list's original query (#29), now `listInvoices` with the one
+ * filter reapplied in JS rather than a second, near-identical `SELECT`:
+ * the two cannot drift apart on the join or the grouping, only on which
+ * rows they keep.
+ */
+export async function listUnpaidInvoices(executor: DbExecutor = db) {
+	const rows = await listInvoices(executor);
+	return rows.filter((row) => row.invoice.paidOn === null);
+}
+
+/**
+ * Every invoice's own client and gross total (#242): the client list's
+ * "outstanding" and "collected this year" both read off `total` — the
+ * same gross, VAT-and-stamp-inclusive figure `listUnpaidInvoices` already
+ * sums for the ageing list, the amount a client actually owes or paid,
+ * not the fiscal ledger's own net revenue figure (`fiscal/ledger.ts`'s
+ * `LedgerRow.amount`, which excludes VAT on purpose — see its header
+ * comment). One query; the caller classifies each row as outstanding
+ * (`paidOn` null) or collected-this-year (`paidOn` within the year) in
+ * application code, the same "no stored flag" convention
+ * `routes/invoices/+page.server.ts` already sets for `daysLate`.
+ */
+export async function listInvoiceTotalsByClient(executor: DbExecutor = db) {
+	return executor
+		.select({
+			clientId: contract.clientId,
+			total: invoice.total,
+			currency: invoice.currency,
+			paidOn: invoice.paidOn
+		})
+		.from(invoice)
+		.innerJoin(contract, eq(contract.id, invoice.contractId));
 }
 
 /**
@@ -297,4 +343,16 @@ export async function listInvoicesForDedup(
 	}
 
 	return invoiceRows.map((row) => ({ ...row, hashes: hashesByInvoiceId.get(row.id) ?? [] }));
+}
+
+/** Every invoice raised against a contract, most recent first — the
+ * contract detail page's own "what has this contract produced" feed
+ * (#240), the sibling of `listInvoiceLinesForContract` (expenses'
+ * rebill picker) at the invoice-row grain instead of the line grain. */
+export async function listInvoicesForContract(contractId: string, executor: DbExecutor = db) {
+	return executor
+		.select()
+		.from(invoice)
+		.where(eq(invoice.contractId, contractId))
+		.orderBy(desc(invoice.issueDate), desc(invoice.createdAt));
 }

@@ -1,50 +1,82 @@
-// The navigation model (#146). Data, not markup: the sidebar and the bottom
-// bar both render this, so they cannot disagree about what exists or what
-// is active, and the rule for "which section am I in" is testable without a
-// browser.
+// The navigation model (#146, #233). Data, not markup: the sidebar and the
+// bottom bar both render this, so they cannot disagree about what exists or
+// what is active, and the rule for "which section am I in" is testable
+// without a browser.
 import * as m from '$lib/paraglide/messages';
 
 export interface NavItem {
 	readonly href: string;
 	readonly label: () => string;
-	/** Renders the unread alert count next to the item. */
-	readonly badge?: 'alerts';
+	/** A single glyph, decorative (`aria-hidden`) — the label is what a
+	 *  screen reader announces, the icon is a scan aid on top of it. */
+	readonly icon: string;
+	/** Renders a count pill next to the item when the count is above zero.
+	 *  Each key names a real queue, not a generic "alerts" bucket: a nav
+	 *  count that cannot be explained in one noun does not belong here. */
+	readonly badge?: 'proposals' | 'overdueInvoices';
 }
 
 export interface NavGroup {
+	/** Unlabelled for the daily loop (three items read as one cluster
+	 *  without a caption) and for the trailing Settings row; every group in
+	 *  between gets a small-caps heading so the clustering the mockup draws
+	 *  is legible, not merely inferable from a gap. */
+	readonly title?: () => string;
 	readonly items: readonly NavItem[];
 }
 
-/** Daily, then the objects, then what is opened rarely. */
+/**
+ * The daily loop first, then the ledger, then the inbox, then what is
+ * opened rarely — the IA `docs/specs/ux-review/mockups/_shell.html` draws.
+ *
+ * `/proposals` ("Da rivedere") is a first-class item on purpose: it is the
+ * human half of "agents propose, humans confirm," and before this it had no
+ * navigation entry at all, reachable only from a conditional dashboard card
+ * (ux-review finding 1, the BLOCKER). `/alerts` drops out of the primary
+ * nav in this pass — it stays reachable from Settings, whose own
+ * `settings_alerts_link` already points at `/alerts/settings`, and from
+ * there `alertsCrumbs()`'s trail — without a second "things needing
+ * attention" destination competing with "Da rivedere" for the same job.
+ */
 export const NAV_GROUPS: readonly NavGroup[] = [
 	{
 		items: [
-			{ href: '/', label: m.nav_today },
-			{ href: '/day/calendar', label: m.nav_calendar }
+			{ href: '/', label: m.nav_today, icon: '◎' },
+			{ href: '/proposals', label: m.nav_review, icon: '▤', badge: 'proposals' },
+			{ href: '/day/calendar', label: m.nav_calendar, icon: '▦' }
 		]
 	},
 	{
+		title: m.nav_group_ledger,
 		items: [
-			{ href: '/clients', label: m.nav_clients },
-			{ href: '/invoices', label: m.nav_invoices }
+			{ href: '/clients', label: m.nav_clients, icon: '◫' },
+			{ href: '/invoices', label: m.nav_invoices, icon: '€', badge: 'overdueInvoices' }
 		]
 	},
 	{
+		title: m.nav_group_inbox,
 		items: [
-			{ href: '/import', label: m.nav_import },
-			{ href: '/mail', label: m.nav_communications },
-			{ href: '/alerts', label: m.nav_alerts, badge: 'alerts' },
-			{ href: '/settings', label: m.nav_settings }
+			{ href: '/mail', label: m.nav_mail, icon: '✉' },
+			{ href: '/import', label: m.nav_import, icon: '↥' }
 		]
+	},
+	{
+		items: [{ href: '/settings', label: m.nav_settings, icon: '⚙' }]
 	}
 ];
 
 /**
- * What the bottom bar shows below 900px. Four, and these four: they are the
- * only ones opened with a phone in hand, and v0's promise is a day recorded
- * in under thirty seconds one-handed. Everything else lives behind "More".
+ * What the bottom bar shows below 900px: the daily loop plus the ledger,
+ * five destinations mirroring the sidebar's first two groups exactly.
+ * Everything else — Inbox and Settings — lives behind "More".
  */
-export const BOTTOM_BAR_HREFS: readonly string[] = ['/', '/day/calendar', '/clients', '/invoices'];
+export const BOTTOM_BAR_HREFS: readonly string[] = [
+	'/',
+	'/proposals',
+	'/day/calendar',
+	'/clients',
+	'/invoices'
+];
 
 /**
  * Whether `itemHref`'s section contains `pathname`.

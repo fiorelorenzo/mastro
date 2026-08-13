@@ -1,16 +1,31 @@
 <script lang="ts">
+	// The one route for reading a day (#237). Replaces both the old
+	// `/day/[id]` (a bare dl with no evidence, no money-in-context, no way
+	// out of the risk state) and `/day/date/[date]` (folded away — see
+	// `+page.server.ts`'s header comment and `day/calendar/+page.svelte`).
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import { formatAmount, formatDate, formatDateTime, formatNumber } from '$lib/i18n/format';
+	import { formatDate, formatDateTime, formatDays, formatHours } from '$lib/i18n/format';
 	import DataTable from '$lib/design/charts/DataTable.svelte';
-	import SourceDocument from '$lib/design/SourceDocument.svelte';
+	import {
+		Amount,
+		Badge,
+		Banner,
+		Button,
+		Field,
+		Select,
+		SourceDocument,
+		workUnitStateBadge,
+		type WorkUnitStateValue
+	} from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
+	import Section from '$lib/layout/Section.svelte';
 	import type { TableColumn } from '$lib/design/charts/types';
-	import DayStateBadge from '../DayStateBadge.svelte';
-	import { workUnitStateLabel, type WorkUnitStateValue } from '../work-unit-state';
 	import type { ActionData, PageProps } from './$types';
-	import Button from '$lib/design/Button.svelte';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
+
+	let linkApprovalId = $state('');
 
 	function actorLabel(actor: { kind: string; email?: string; proposalReference?: string }): string {
 		if (actor.kind === 'human') return actor.email ?? '';
@@ -26,10 +41,10 @@
 	}): string {
 		return transition.fromState
 			? m.day_detail_history_change({
-					from: workUnitStateLabel(transition.fromState),
-					to: workUnitStateLabel(transition.toState)
+					from: workUnitStateBadge(transition.fromState).label,
+					to: workUnitStateBadge(transition.toState).label
 				})
-			: m.day_detail_history_change_initial({ to: workUnitStateLabel(transition.toState) });
+			: m.day_detail_history_change_initial({ to: workUnitStateBadge(transition.toState).label });
 	}
 
 	type HistoryRow = { when: string; change: string; reason: string; actor: string };
@@ -49,6 +64,22 @@
 			actor: actorLabel(transition.actor)
 		}))
 	);
+
+	// "1 giornata intera", "0,5 giornata" for a day-priced contract; "3,5
+	// ore" for an hourly one — `quantityKind` is resolved server-side
+	// against the rate card actually in force the day this was recorded
+	// (see +page.server.ts), never guessed at from the number alone.
+	const quantityPhrase = $derived(
+		data.workUnit.quantityKind === 'hour'
+			? formatHours(data.workUnit.quantity)
+			: data.workUnit.quantity === 1
+				? m.day_form_quantity_full()
+				: data.workUnit.quantity === 0.5
+					? m.day_form_quantity_half()
+					: formatDays(data.workUnit.quantity)
+	);
+
+	const stateBadge = $derived(workUnitStateBadge(data.workUnit.state));
 </script>
 
 <svelte:head
@@ -56,75 +87,175 @@
 >
 
 <Page crumbs={data.crumbs} title={m.day_detail_heading({ date: formatDate(data.workUnit.date) })}>
-	<div class="mt-2"><DayStateBadge state={data.workUnit.state} /></div>
+	<div class="state-row">
+		<Badge variant={stateBadge.variant} label={stateBadge.label} />
+	</div>
 
-	<dl
-		class="mt-6 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm [&_dd]:min-w-0 [&_dd]:break-words"
-	>
-		<dt class="opacity-70">{m.day_detail_contract_label()}</dt>
+	<dl class="pairs">
+		<dt>{m.day_detail_contract_label()}</dt>
 		<dd>{data.contract.title}</dd>
-		<dt class="opacity-70">{m.day_detail_quantity_label()}</dt>
-		<dd>{formatNumber(data.workUnit.quantity)}</dd>
-		<dt class="opacity-70">{m.day_detail_scope_label()}</dt>
-		<dd>{data.workUnit.scope}</dd>
-		<dt class="opacity-70">{m.day_detail_amount_label()}</dt>
+		<dt>{m.day_detail_client_label()}</dt>
+		<dd>{data.contract.clientName}</dd>
+		<dt>{m.day_detail_quantity_label()}</dt>
+		<dd>{quantityPhrase}</dd>
+		<dt>{m.day_detail_amount_label()}</dt>
 		<dd>
-			{data.amount !== null
-				? formatAmount(data.amount, data.contract.currency)
-				: m.day_detail_amount_unpriced()}
-		</dd>
-		<dt class="opacity-70">{m.day_detail_approval_label()}</dt>
-		<dd>
-			{#if data.approval}
-				{data.approval.sender} — {formatDateTime(data.approval.receivedAt)}
+			{#if data.amount !== null}
+				<Amount major={data.amount} currency={data.contract.currency} size="inline" />
 			{:else}
-				{m.day_detail_approval_none()}
+				{m.day_detail_amount_unpriced()}
 			{/if}
 		</dd>
-		<dt class="opacity-70">{m.day_detail_document_label()}</dt>
-		<dd><SourceDocument document={data.sourceDocument} /></dd>
+		<dt>{m.day_detail_scope_label()}</dt>
+		<dd>{data.workUnit.scope}</dd>
 	</dl>
 
 	{#if data.workUnit.state === 'worked_without_approval'}
-		<div class="mt-6 flex flex-col gap-4">
-			<Button
-				href="/approvals/new?contractId={data.contract.id}&workUnitId={data.workUnit.id}"
-				variant="primary"
-				size="lg"
-			>
-				{m.day_detail_approval_record_link()}
-			</Button>
-			{#if data.linkableApprovals.length > 0}
-				<form method="POST" action="?/link" class="flex flex-col gap-3 border p-4">
-					<h2 class="text-base font-medium">{m.day_detail_approval_link_heading()}</h2>
-					<label class="flex flex-col gap-1 text-sm">
-						<span>{m.day_detail_approval_select_label()}</span>
-						<select name="approvalId" required class="border px-3 py-3 text-base">
-							<option value="" disabled selected
-								>{m.day_detail_approval_select_placeholder()}</option
+		<Banner tone="critical">
+			{m.day_state_worked_without_approval_description()}
+			{#each data.clauseNotes as note (note.id)}
+				<p class="clause">
+					<strong>{note.clauseReference}</strong>: "{note.verbatimText}" — {note.interpretationAdopted}
+				</p>
+			{/each}
+			{#snippet actions()}
+				<Button
+					href="/approvals/new?contractId={data.contract.id}&workUnitId={data.workUnit.id}"
+					variant="primary"
+				>
+					{m.day_detail_approval_record_link()}
+				</Button>
+				<Button variant="secondary" disabled title={m.day_detail_mark_unbillable_unavailable()}>
+					{m.day_detail_mark_unbillable()}
+				</Button>
+			{/snippet}
+		</Banner>
+
+		{#if data.linkableApprovals.length > 0}
+			<form method="POST" action="?/link" class="link-form">
+				<Field label={m.day_detail_approval_select_label()} error={form?.linkError}>
+					<Select name="approvalId" bind:value={linkApprovalId} required>
+						<option value="" disabled>{m.day_detail_approval_select_placeholder()}</option>
+						{#each data.linkableApprovals as approval (approval.id)}
+							<option value={approval.id}
+								>{approval.sender} — {formatDateTime(approval.receivedAt)}</option
 							>
-							{#each data.linkableApprovals as approval (approval.id)}
-								<option value={approval.id}
-									>{approval.sender} — {formatDateTime(approval.receivedAt)}</option
-								>
-							{/each}
-						</select>
-					</label>
-					{#if form?.linkError}<span class="text-sm text-red-700">{form.linkError}</span>{/if}
-					<button type="submit" class="w-fit border px-4 py-3 text-base">
-						{m.day_detail_approval_link_submit()}
-					</button>
-				</form>
-			{/if}
-		</div>
+						{/each}
+					</Select>
+				</Field>
+				<Button type="submit" variant="secondary">{m.day_detail_approval_link_submit()}</Button>
+			</form>
+		{/if}
 	{/if}
 
-	{#if data.transitions.length > 0}
-		<section class="mt-8">
-			<h2 class="text-base font-medium">{m.day_detail_history_heading()}</h2>
-			<div class="mt-2">
-				<DataTable columns={historyColumns} rows={historyRows} />
+	<Section title={m.day_detail_approval_label()}>
+		{#if data.approval}
+			<blockquote class="excerpt">
+				<span class="excerpt-label">{m.day_detail_approval_excerpt_label()}</span>
+				<p>"{data.approval.excerpt}"</p>
+			</blockquote>
+			<p class="meta">{data.approval.sender} — {formatDateTime(data.approval.receivedAt)}</p>
+		{:else}
+			<p class="muted">{m.day_detail_approval_none()}</p>
+		{/if}
+	</Section>
+
+	<Section title={m.day_detail_document_label()}>
+		<SourceDocument document={data.sourceDocument} />
+	</Section>
+
+	{#if data.invoiceLine}
+		<Section title={m.day_detail_invoice_label()}>
+			<div class="invoice-row">
+				<Button
+					href={resolve('/invoices/[id]', { id: data.invoiceLine.invoiceId })}
+					variant="tertiary"
+				>
+					{m.day_detail_invoice_open({ number: data.invoiceLine.invoiceNumber })}
+				</Button>
+				<Amount
+					minorUnits={data.invoiceLine.amount}
+					currency={data.invoiceLine.currency}
+					size="inline"
+				/>
 			</div>
-		</section>
+		</Section>
 	{/if}
+
+	<Section title={m.day_detail_history_heading()}>
+		<DataTable
+			columns={historyColumns}
+			rows={historyRows}
+			caption={m.day_detail_history_heading()}
+		/>
+	</Section>
 </Page>
+
+<style>
+	.state-row {
+		margin-top: var(--space-2);
+	}
+	.pairs {
+		margin-top: var(--space-6);
+		display: grid;
+		grid-template-columns: max-content 1fr;
+		column-gap: var(--space-4);
+		row-gap: var(--space-2);
+		font-size: var(--text-sm);
+	}
+	.pairs dt {
+		color: var(--text-secondary);
+	}
+	.pairs dd {
+		margin: 0;
+		min-width: 0;
+		overflow-wrap: anywhere;
+	}
+	.clause {
+		margin: 0;
+	}
+	.link-form {
+		margin-top: var(--space-4);
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: var(--space-3);
+		border: 1px solid var(--line-strong);
+		border-radius: var(--radius-md);
+		padding: var(--space-4);
+	}
+	.excerpt {
+		margin: 0;
+		padding-left: var(--space-4);
+		border-left: 2px solid var(--line-strong);
+	}
+	.excerpt-label {
+		display: block;
+		font-size: var(--text-xs);
+		color: var(--text-muted);
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		margin-bottom: var(--space-1);
+	}
+	.excerpt p {
+		margin: 0;
+		font-style: italic;
+		color: var(--text-primary);
+	}
+	.meta {
+		margin: var(--space-2) 0 0;
+		font-size: var(--text-xs);
+		color: var(--text-muted);
+	}
+	.muted {
+		margin: 0;
+		font-size: var(--text-sm);
+		color: var(--text-muted);
+	}
+	.invoice-row {
+		display: flex;
+		align-items: center;
+		gap: var(--space-3);
+		flex-wrap: wrap;
+	}
+</style>

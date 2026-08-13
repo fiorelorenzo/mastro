@@ -5,6 +5,7 @@ import {
 	formatDate,
 	formatDateTime,
 	formatDays,
+	formatHours,
 	formatMinorUnits,
 	formatNumber,
 	formatPercent,
@@ -43,6 +44,13 @@ test('a day quantity pluralizes per locale instead of appending a hand-rolled "s
 	expect(formatDays(3, 'en')).toBe('3 days');
 	expect(formatDays(1, 'it')).toBe('1 giorno');
 	expect(formatDays(3, 'it')).toBe('3 giorni');
+});
+
+test('an hours quantity pluralizes per locale, the hourly-rate-card sibling of formatDays', () => {
+	expect(formatHours(1, 'en')).toBe('1 hour');
+	expect(formatHours(3.5, 'en')).toBe('3.5 hours');
+	expect(formatHours(1, 'it')).toBe('1 ora');
+	expect(formatHours(3.5, 'it')).toBe('3,5 ore');
 });
 
 test('a percentage renders through Intl, not a hand-rolled multiply-by-100-and-suffix', () => {

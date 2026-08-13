@@ -47,3 +47,23 @@ export function renewalWindowOpensOn(contract: {
 	opensOn.setUTCDate(opensOn.getUTCDate() - contract.renewalNoticeDays);
 	return opensOn;
 }
+
+/**
+ * Whether the renewal/refusal decision is due right now: from
+ * `renewalWindowOpensOn` up to and including `endsOn` itself. Mirrors
+ * `detectRenewalWindowOpen`'s own firing condition
+ * (`$lib/server/alerts/detectors.ts`) so the contract page's own banner
+ * and the alert feed never disagree about what "the window is open"
+ * means for the same contract — this is not a second, looser notion of
+ * "coming up soon", it is the same actionable-now boundary.
+ */
+export function isRenewalWindowOpen(
+	contract: { endsOn: string | null; renewalNoticeDays: number | null },
+	today: Date = new Date()
+): boolean {
+	const opensOn = renewalWindowOpensOn(contract);
+	if (opensOn === null || contract.endsOn === null) return false;
+	const todayIso = today.toISOString().slice(0, 10);
+	const opensOnIso = opensOn.toISOString().slice(0, 10);
+	return todayIso >= opensOnIso && todayIso <= contract.endsOn;
+}

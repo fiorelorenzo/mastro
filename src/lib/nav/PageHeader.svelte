@@ -40,7 +40,11 @@
 		</a>
 	{/if}
 	<div class="row">
-		<h1>{title}</h1>
+		<!-- The `title` attribute is the escape hatch for the two-line clamp
+		     below: a record name long enough to clip still has its full text
+		     one hover/long-press away, and the trail above already carries
+		     whatever ancestor a caller might otherwise have concatenated in. -->
+		<h1 {title}>{title}</h1>
 		{#if actions}<div class="actions">{@render actions()}</div>{/if}
 	</div>
 	{#if subtitle}<p class="subtitle">{subtitle}</p>{/if}
@@ -85,6 +89,10 @@
 	h1 {
 		font-size: 1.5rem;
 		font-weight: 600;
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		overflow: hidden;
 	}
 	.actions {
 		display: flex;

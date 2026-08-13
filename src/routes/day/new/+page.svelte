@@ -1,22 +1,64 @@
 <script lang="ts">
+	// The day-entry form (#24, redesigned for #236): the product's most
+	// frequent gesture. Two fields carry real judgment — which contract,
+	// what the day was for — everything else defaults to the fast case.
+	// Removed entirely: the freeform "Quantità" field that duplicated the
+	// full/half segmented control below it, and the permanent 9px keyboard
+	// hint (now a `KeyboardHint` badge inside the Save button itself, which
+	// hides itself below `pointer: coarse` — see that component).
+	//
+	// What's new: the selected contract's rate and the day's computed value
+	// are visible before saving (`day-value.ts`'s client-safe pricing
+	// preview — the server's own `priceRateCard`/`resolveRateCard` cannot be
+	// bundled here, see that file), and choosing a contract that requires
+	// prior approval with none attached raises a warning at the moment of
+	// entry, offering "record as proposed" as the safe alternative — never
+	// blocking the primary Save, which still knowingly proceeds into
+	// `worked_without_approval` exactly as the state machine already does.
+	//
+	// The manual "link an existing approval" dropdown the old form had is
+	// gone: attaching evidence at entry time now happens invisibly via the
+	// `?approvalId=` deep link an alert action already sends (still
+	// honoured, just no longer surfaced as a control to fiddle with for the
+	// common case) — attaching it after the fact is `/day/[id]`'s job.
 	import { onMount } from 'svelte';
 	import { enhance } from '$app/forms';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import * as m from '$lib/paraglide/messages';
-	import { formatDateTime } from '$lib/i18n/format';
-	import { StatusIndicator } from '$lib/design';
+	import { formatAmount, formatDate, formatDays, formatHours } from '$lib/i18n/format';
+	import {
+		Banner,
+		Button,
+		Field,
+		Input,
+		KeyboardHint,
+		SegmentedControl,
+		Select,
+		StatTile,
+		StatusIndicator
+	} from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
 	import { offlineQueue } from '$lib/pwa/offline-queue.svelte';
 	import OfflineQueuePanel from './OfflineQueuePanel.svelte';
+	import {
+		previewDayValue,
+		previewRatePerUnit,
+		quantityModeForCard,
+		ratePeriodFor,
+		resolveActiveRateCard,
+		type RateCardPreview,
+		type RatePeriod
+	} from './day-value';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
 	let formEl: HTMLFormElement | undefined = $state();
 
-	// `date` has no JS-driven interactivity (unlike quantity/contractId/
-	// approvalId below), so it stays a plain uncontrolled field, the same
-	// pattern `ClientForm.svelte` uses — no $state needed.
+	// Every field below is bound, unlike the pre-#236 form: `date` and
+	// `contractId` now drive the live "Vale" preview (which rate card
+	// applies depends on both), not only `quantity`/`approvalId` as before.
+	let date = $state(form?.values.date ?? data.defaultDate);
 	let quantity = $state(form?.values.quantity ?? '1');
 	let contractId = $state(form?.values.contractId ?? data.defaultContractId);
 	let approvalId = $state(form?.values.approvalId ?? data.defaultApprovalId ?? '');
@@ -36,33 +78,60 @@
 	let justQueued = $state(false);
 
 	const selectedContract = $derived(data.contracts.find((c) => c.id === contractId));
-	const approvalsForContract = $derived(data.approvalsByContract[contractId] ?? []);
 
-	onMount(() => offlineQueue.init());
+	// The live "Vale" figure (#236): resolves the rate card active on
+	// `date` and prices `quantity` against it — see day-value.ts for why
+	// this is a duplicate of the server's own pricing rather than a round
+	// trip per keystroke.
+	const preview = $derived(
+		selectedContract
+			? previewDayValue(selectedContract.rateCards, date, Number(quantity) || 0)
+			: null
+	);
+	const mode = $derived(quantityModeForCard(preview?.card ?? null));
+
+	// The moment the warning speaks: a contract that requires written
+	// approval, with none attached to this attempt. Never blocks Save —
+	// the state machine already knows how to record that honestly
+	// (`worked_without_approval`); this only says so first.
+	const showApprovalWarning = $derived(
+		Boolean(selectedContract?.requiresPriorApproval) && !approvalId
+	);
+
+	// `Input` wraps the native element now (component, not a plain
+	// `<input>`), so a `use:` action can't target it directly — focusing
+	// through the already-bound form ref instead. Avoids the `autofocus`
+	// attribute (flagged by the a11y linter) the same way the action this
+	// replaced did: same effect, the one field that actually needs typing
+	// for the common case gets it, once, on mount.
+	onMount(() => {
+		offlineQueue.init();
+		formEl?.querySelector<HTMLInputElement>('input[name="scope"]')?.focus();
+	});
 
 	// Switching contract invalidates whichever approval was picked for the
 	// previous one — an approval belongs to exactly one contract, so
 	// carrying the selection across a contract change would silently point
-	// at the wrong evidence.
+	// at the wrong evidence. Quantity resets too: a different contract can
+	// switch the quantity control's whole meaning (day-fraction vs hours,
+	// see day-value.ts's `quantityModeForCard`), so a value typed for one
+	// meaning is never carried into the other.
 	function onContractChange() {
 		approvalId = '';
+		quantity = '1';
 	}
 
 	// Ctrl/Cmd+Enter saves from anywhere in the form, not just the last
 	// field — the desktop keyboard shortcut #24 asks for, alongside plain
-	// Enter already submitting from the (single-line) scope field natively.
+	// Enter already submitting from the (single-line) scope field
+	// natively. No `submitter`, so the request carries no `intent` field
+	// at all — falling back to 'worked' (parseDayEntryForm's own default),
+	// exactly the shortcut's intent: save it, don't propose it.
 	function onKeydown(event: KeyboardEvent) {
 		if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
 			event.preventDefault();
 			formEl?.requestSubmit();
 		}
-	}
-
-	// Avoids the `autofocus` attribute (flagged by the a11y linter): same
-	// effect, focuses the one field that actually needs typing for the
-	// common case, via an action instead of a static HTML attribute.
-	function autofocusOnMount(node: HTMLInputElement) {
-		node.focus();
 	}
 
 	// #62: `use:enhance`'s own fetch throws when the request never reaches
@@ -79,6 +148,7 @@
 				await offlineQueue.enqueue(formData);
 				justQueued = true;
 				formEl?.reset();
+				date = data.defaultDate;
 				quantity = '1';
 				contractId = data.defaultContractId;
 				approvalId = '';
@@ -89,6 +159,56 @@
 			await update();
 		};
 	};
+
+	const RATE_PERIOD_LABEL: Record<RatePeriod, () => string> = {
+		hour: () => m.day_form_rate_period_hour(),
+		day: () => m.day_form_rate_period_day(),
+		month: () => m.day_form_rate_period_month(),
+		quarter: () => m.day_form_rate_period_quarter(),
+		year: () => m.day_form_rate_period_year()
+	};
+
+	/** "700,00 €/giorno" — one canonical unit of `card`, priced through the
+	 *  same `previewRatePerUnit` the contract picker's own hint uses, never
+	 *  a second read of `card.amount`. `null` when `card` cannot honestly
+	 *  price one (see day-value.ts). */
+	function rateText(contract: { currency: string }, card: RateCardPreview): string | null {
+		const perUnit = previewRatePerUnit(card);
+		if (perUnit === null) return null;
+		const amountText = formatAmount(perUnit, contract.currency);
+		const period = ratePeriodFor(card);
+		return period ? `${amountText}/${RATE_PERIOD_LABEL[period]()}` : amountText;
+	}
+
+	/** The contract picker's own per-option hint — resolved against the
+	 *  form's current `date` so it never claims a rate that would not
+	 *  actually apply once saved. */
+	function contractRateText(
+		contract: (typeof data.contracts)[number],
+		forDate: string
+	): string | null {
+		const card = resolveActiveRateCard(contract.rateCards, forDate);
+		return card ? rateText(contract, card) : null;
+	}
+
+	const quantityPhrase = $derived.by(() => {
+		if (mode === 'hours') return formatHours(Number(quantity) || 0);
+		if (quantity === '1') return m.day_form_quantity_full();
+		if (quantity === '0.5') return m.day_form_quantity_half();
+		return formatDays(Number(quantity) || 0);
+	});
+
+	const valueText = $derived(
+		selectedContract && preview?.amount != null
+			? formatAmount(preview.amount, selectedContract.currency)
+			: m.day_detail_amount_unpriced()
+	);
+
+	const valueSub = $derived.by(() => {
+		if (!selectedContract || !preview) return quantityPhrase;
+		const rate = rateText(selectedContract, preview.card);
+		return rate ? `${rate} · ${quantityPhrase}` : quantityPhrase;
+	});
 </script>
 
 <svelte:head><title>{m.day_new_page_title()}</title></svelte:head>
@@ -96,115 +216,89 @@
 
 <Page crumbs={data.crumbs} title={m.day_new_heading()}>
 	{#if data.contracts.length === 0}
-		<p class="mt-4 text-sm opacity-70">{m.day_new_no_contracts()}</p>
+		<p class="empty-hint">{m.day_new_no_contracts()}</p>
 	{:else}
-		<form bind:this={formEl} method="POST" class="mt-6 flex flex-col gap-6" use:enhance={onSubmit}>
+		<form bind:this={formEl} method="POST" class="day-form" use:enhance={onSubmit}>
 			<input type="hidden" name="workUnitId" value={workUnitId} />
-			<label class="flex flex-col gap-1 text-sm">
-				<span>{m.day_form_date_label()}</span>
-				<input
-					type="date"
-					name="date"
-					value={form?.values.date ?? data.defaultDate}
-					required
-					class="w-fit border px-3 py-3 text-base"
-				/>
-				{#if form?.errors.date}<span class="text-sm text-red-700">{form.errors.date}</span>{/if}
-			</label>
+			<input type="hidden" name="approvalId" value={approvalId} />
 
-			<label class="flex flex-col gap-1 text-sm">
-				<span>{m.day_form_contract_label()}</span>
-				<select
+			<Field label={m.day_form_date_label()} error={form?.errors.date}>
+				<Input type="date" name="date" bind:value={date} required size="lg" />
+			</Field>
+
+			<Field label={m.day_form_contract_label()} error={form?.errors.contractId}>
+				<Select
 					name="contractId"
 					bind:value={contractId}
 					onchange={onContractChange}
 					required
-					class="border px-3 py-3 text-base"
+					size="lg"
 				>
 					<option value="" disabled>{m.day_form_contract_placeholder()}</option>
 					{#each data.contracts as contract (contract.id)}
-						<option value={contract.id}>{contract.clientName} — {contract.title}</option>
+						{@const rate = contractRateText(contract, date)}
+						<option value={contract.id}
+							>{contract.clientName} — {contract.title}{rate ? ` · ${rate}` : ''}</option
+						>
 					{/each}
-				</select>
-				{#if form?.errors.contractId}<span class="text-sm text-red-700"
-						>{form.errors.contractId}</span
-					>{/if}
-			</label>
+				</Select>
+			</Field>
 
-			{#if selectedContract?.requiresPriorApproval}
-				<label class="flex flex-col gap-1 text-sm">
-					<span>{m.day_form_approval_label()}</span>
-					<select name="approvalId" bind:value={approvalId} class="border px-3 py-3 text-base">
-						<option value="">{m.day_form_approval_none_option()}</option>
-						{#each approvalsForContract as approval (approval.id)}
-							<option value={approval.id}
-								>{approval.sender} — {formatDateTime(approval.receivedAt)}</option
-							>
-						{/each}
-					</select>
-					<span class="opacity-70">{m.day_form_approval_hint()}</span>
-					{#if form?.errors.approvalId}<span class="text-sm text-red-700"
-							>{form.errors.approvalId}</span
-						>{/if}
-				</label>
+			{#if showApprovalWarning}
+				<Banner tone="warning">
+					<strong>{m.day_form_approval_warning_heading({ date: formatDate(date) })}</strong>
+					{m.day_form_approval_warning_body()}
+					{#snippet actions()}
+						<Button type="submit" name="intent" value="proposed" variant="secondary" size="sm">
+							{m.day_form_record_as_proposed()}
+						</Button>
+					{/snippet}
+				</Banner>
 			{/if}
 
-			<fieldset class="flex flex-col gap-2">
-				<legend class="text-sm">{m.day_form_quantity_legend()}</legend>
-				<div class="flex flex-wrap gap-2" role="group" aria-label={m.day_form_quantity_legend()}>
-					<button
-						type="button"
-						class="quantity-preset"
-						class:selected={quantity === '1'}
-						onclick={() => (quantity = '1')}
-					>
-						{m.day_form_quantity_full()}
-					</button>
-					<button
-						type="button"
-						class="quantity-preset"
-						class:selected={quantity === '0.5'}
-						onclick={() => (quantity = '0.5')}
-					>
-						{m.day_form_quantity_half()}
-					</button>
-				</div>
-				<label class="flex flex-col gap-1 text-sm opacity-80">
-					<span>{m.day_form_quantity_custom_label()}</span>
-					<input
+			<Field label={m.day_form_quantity_legend()} error={form?.errors.quantity}>
+				{#if mode === 'hours'}
+					<Input
 						type="number"
 						name="quantity"
 						bind:value={quantity}
+						inputmode="decimal"
 						step="0.25"
 						min="0.25"
 						required
-						class="w-32 border px-3 py-3 text-base"
+						size="lg"
 					/>
-				</label>
-				{#if form?.errors.quantity}<span class="text-sm text-red-700">{form.errors.quantity}</span
-					>{/if}
-			</fieldset>
+				{:else}
+					<SegmentedControl
+						bind:value={quantity}
+						label={m.day_form_quantity_legend()}
+						size="lg"
+						options={[
+							{ value: '1', label: m.day_form_quantity_full() },
+							{ value: '0.5', label: m.day_form_quantity_half() }
+						]}
+					/>
+					<input type="hidden" name="quantity" value={quantity} />
+				{/if}
+			</Field>
 
-			<label class="flex flex-col gap-1 text-sm">
-				<span>{m.day_form_scope_label()}</span>
-				<input
+			<Field label={m.day_form_scope_label()} error={form?.errors.scope}>
+				<Input
 					type="text"
 					name="scope"
 					value={form?.values.scope ?? ''}
 					placeholder={m.day_form_scope_placeholder()}
 					required
-					use:autofocusOnMount
-					class="border px-3 py-3 text-base"
+					size="lg"
 				/>
-				{#if form?.errors.scope}<span class="text-sm text-red-700">{form.errors.scope}</span>{/if}
-			</label>
+			</Field>
 
-			<div class="flex flex-col gap-1">
-				<button type="submit" class="w-fit border px-4 py-3 text-base font-medium">
-					{m.day_form_submit()}
-				</button>
-				<span class="text-xs opacity-60">{m.day_form_keyboard_hint()}</span>
-			</div>
+			<StatTile label={m.day_form_value_label()} value={valueText} sub={valueSub} />
+
+			<Button type="submit" name="intent" value="worked" variant="primary" size="lg">
+				{m.day_form_submit()}
+				<KeyboardHint>{m.day_form_save_shortcut()}</KeyboardHint>
+			</Button>
 		</form>
 		{#if justQueued}
 			<div class="queued-notice" role="status">
@@ -217,22 +311,22 @@
 </Page>
 
 <style>
-	.quantity-preset {
-		flex: 1 1 8rem;
-		border: 1px solid var(--border-hairline, currentColor);
-		padding: 0.875rem 1.25rem;
-		font-size: 1rem;
-		background: var(--surface-1, transparent);
-		min-height: 3rem;
+	.day-form {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-5);
+		margin-top: var(--space-6);
+		max-width: 28rem;
 	}
-	.quantity-preset.selected {
-		background: var(--text-primary, #0b0b0b);
-		color: var(--surface-1, #fcfcfb);
-		border-color: var(--text-primary, #0b0b0b);
+	.empty-hint {
+		margin-top: var(--space-4);
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
 	}
 	.queued-notice {
-		margin-top: 1rem;
-		border: 1px solid var(--border-hairline);
-		padding: 0.625rem 1rem;
+		margin-top: var(--space-4);
+		border: 1px solid var(--line-strong);
+		border-radius: var(--radius-md);
+		padding: var(--space-3) var(--space-4);
 	}
 </style>

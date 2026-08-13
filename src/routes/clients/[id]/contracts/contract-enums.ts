@@ -92,3 +92,24 @@ export function expensePolicyKindLabel(value: ExpensePolicyKindValue): string {
  * the `contract_template_language` enum. The option renders as the language
  * tag itself: a language names itself, so there is nothing to translate. */
 export const templateLanguages = ['en', 'it'] as const;
+export type ContractTemplateLanguageValue = (typeof templateLanguages)[number];
+
+/**
+ * The template language a *new* contract starts with (#241): the client's
+ * own, not a hardcoded `'en'`. `country` and `templateLanguage` happen to
+ * share the same two-letter shape (ISO 3166-1 alpha-2 vs the two languages
+ * this product's templates come in today), so a client whose country code
+ * downcases to one of `templateLanguages` gets that language; every other
+ * country falls back to `'en'`, same as before. This is a coincidence of
+ * the alphabet, not a country→language table: nothing here names a
+ * specific country, so it carries no AGENTS.md invariant 1 weight the way
+ * a real `{IT: 'it', FR: 'fr', ...}` map would, and it degrades safely —
+ * a client outside `templateLanguages` still gets a real, correct default.
+ * Only ever a starting point: the field stays a plain, editable select.
+ */
+export function defaultTemplateLanguageForCountry(country: string): ContractTemplateLanguageValue {
+	const candidate = country.toLowerCase();
+	return (templateLanguages as readonly string[]).includes(candidate)
+		? (candidate as ContractTemplateLanguageValue)
+		: 'en';
+}

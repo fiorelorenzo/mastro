@@ -21,10 +21,10 @@
 <!--
 	Every entry here is a day the server has not recorded yet (#62) — this
 	list is never allowed to look like the ledger. There is no link to
-	/day/[id], no state badge from DayStateBadge.svelte, nothing an
-	inattentive glance could mistake for a saved day: only a StatusIndicator
-	(warning while it waits or syncs, critical once the server has refused
-	it), so the distinction survives even a skim.
+	/day/[id], no state badge from Badge.svelte/day-state-badge.ts, nothing
+	an inattentive glance could mistake for a saved day: only a
+	StatusIndicator (warning while it waits or syncs, critical once the
+	server has refused it), so the distinction survives even a skim.
 -->
 {#if offlineQueue.entries.length > 0}
 	<section class="offline-queue" aria-label={m.day_offline_pending_heading()}>

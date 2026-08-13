@@ -33,11 +33,7 @@
 	><title>{m.mail_dunning_page_title({ number: data.invoice.number })}</title></svelte:head
 >
 
-<Page
-	crumbs={data.crumbs}
-	title={m.mail_dunning_heading({ number: data.invoice.number })}
-	{subtitle}
->
+<Page crumbs={data.crumbs} title={m.mail_dunning_heading()} {subtitle}>
 	{#if form?.sent}
 		<p class="mt-4 border border-current p-3 text-sm">{m.mail_send_success()}</p>
 	{/if}

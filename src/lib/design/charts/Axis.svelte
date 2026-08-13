@@ -14,6 +14,39 @@
 		length: number;
 		tickLength?: number;
 	} = $props();
+
+	// #235: the month axis used to draw every label at a fixed pitch with
+	// no collision handling, producing a single unreadable run
+	// ("feb 2026mar 2026…") the instant the pitch was tighter than the
+	// labels — true at every width this chart shipped at. Rather than a
+	// per-chart workaround, the fix lives here, generically: estimate
+	// each label's rendered width from its character count (this axis
+	// always draws `.label` at the fixed 11px below), and when the
+	// tightest gap between two adjacent ticks can't fit the widest label,
+	// keep only every Nth one — always including the last tick, so the
+	// most recent/current entry never silently drops. Tick *lines* still
+	// draw for every entry; only the text can be skipped, so the axis
+	// never implies fewer data points than it has. Y-axis labels stack
+	// vertically with far more headroom (a handful of ticks over a whole
+	// plot height) and are left alone.
+	const AVG_CHAR_WIDTH = 6.2;
+	const LABEL_PADDING = 6;
+	function estimatedLabelWidth(label: string): number {
+		return label.length * AVG_CHAR_WIDTH + LABEL_PADDING;
+	}
+
+	const labelStep = $derived.by(() => {
+		if (orientation !== 'x' || ticks.length < 2) return 1;
+		const widest = Math.max(...ticks.map((tick) => estimatedLabelWidth(tick.label)));
+		const tightestPitch = Math.min(
+			...ticks.slice(1).map((tick, i) => tick.position - ticks[i].position)
+		);
+		if (tightestPitch <= 0) return ticks.length; // degenerate: keep only the first
+		return Math.max(1, Math.ceil(widest / tightestPitch));
+	});
+	function labelVisible(index: number): boolean {
+		return index % labelStep === 0 || index === ticks.length - 1;
+	}
 </script>
 
 <!--
@@ -34,9 +67,11 @@
 		<line class="baseline" x1="0" y1="0" x2={length} y2="0" />
 		{#each ticks as tick, i (i)}
 			<line class="tick" x1={tick.position} y1="0" x2={tick.position} y2={tickLength} />
-			<text class="label" x={tick.position} y={tickLength + 12} text-anchor="middle"
-				>{tick.label}</text
-			>
+			{#if labelVisible(i)}
+				<text class="label" x={tick.position} y={tickLength + 12} text-anchor="middle"
+					>{tick.label}</text
+				>
+			{/if}
 		{/each}
 	{:else}
 		<line class="baseline" x1="0" y1="0" x2="0" y2={length} />

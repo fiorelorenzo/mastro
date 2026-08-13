@@ -1,12 +1,16 @@
-import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, lte, sql } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
 	approval,
+	contract,
 	document,
+	invoice,
+	invoiceLine,
 	workUnit,
 	workUnitTransition,
 	type TransitionActor
 } from '$lib/server/db/schema';
+import type { WorkUnitState } from '$lib/server/db/schema/work-unit';
 
 export type WorkUnitInput = {
 	// A client-generated uuid (#62's offline queue), or omitted to take the
@@ -191,6 +195,20 @@ export async function getWorkUnitDocument(workUnitId: string, executor: DbExecut
 	return row?.document ?? null;
 }
 
+/** The invoice line a day landed on, with its parent invoice, reachable in
+ * one query (#237's "the invoice line it landed on"). `null` for a day
+ * with no `invoiceLineId` yet — every state before `invoiced`, and the
+ * risk state, which never bills until it resolves. */
+export async function getWorkUnitInvoiceLine(workUnitId: string, executor: DbExecutor = db) {
+	const [row] = await executor
+		.select({ invoiceLine, invoice })
+		.from(workUnit)
+		.innerJoin(invoiceLine, eq(workUnit.invoiceLineId, invoiceLine.id))
+		.innerJoin(invoice, eq(invoiceLine.invoiceId, invoice.id))
+		.where(eq(workUnit.id, workUnitId));
+	return row ?? null;
+}
+
 /**
  * #23's alert-engine feed: every transition into the risk state, each with
  * the timestamp it happened. This is the row #74's alert engine is meant
@@ -268,4 +286,69 @@ export async function listWorkUnitsBetween(
 		.from(workUnit)
 		.where(and(gte(workUnit.date, startInclusive), lte(workUnit.date, endInclusive)))
 		.orderBy(asc(workUnit.date));
+}
+
+/**
+ * Every state a day passes through once it has actually happened: `worked`
+ * itself, its at-risk cousin `worked_without_approval`, every state
+ * downstream of billing (`invoiced`, `paid`, `disputed`), and `unbillable`
+ * (worked, just never recovered an approval — see the state diagram atop
+ * this schema). `proposed`/`approved` have not happened yet; `rejected`/
+ * `revoked` never did — excluded on purpose, the same distinction
+ * `repositories/register.ts`'s own `BILLED_STATES` draws for "ever
+ * billed", one step narrower than what this needs.
+ */
+const WORKED_STATES: readonly WorkUnitState[] = [
+	'worked',
+	'worked_without_approval',
+	'invoiced',
+	'paid',
+	'disputed',
+	'unbillable'
+];
+
+/**
+ * How many days actually happened for each client over `[from, to)`
+ * (#242's "days this year") — grouped by client through the day's own
+ * contract, counting rows the same way `listUnpaidInvoices`'s own
+ * `dayCount` does rather than summing `quantity`, so a half day and a
+ * full day both read as "a day" here, consistently with that existing
+ * column.
+ */
+export async function countWorkedDaysByClientForYear(
+	from: string,
+	toExclusive: string,
+	executor: DbExecutor = db
+) {
+	return executor
+		.select({
+			clientId: contract.clientId,
+			days: sql<number>`count(${workUnit.id})`.mapWith(Number)
+		})
+		.from(workUnit)
+		.innerJoin(contract, eq(contract.id, workUnit.contractId))
+		.where(
+			and(
+				gte(workUnit.date, from),
+				lt(workUnit.date, toExclusive),
+				inArray(workUnit.state, WORKED_STATES)
+			)
+		)
+		.groupBy(contract.clientId);
+}
+
+/** Every day ever recorded against a contract, most recent first — the
+ * contract detail page's own "what has this contract produced" feed
+ * (#240). Unlike `listEligibleWorkUnitsForInvoicing`'s narrow slice this
+ * keeps every state, including the ones a day never bills from
+ * (`proposed`, `rejected`, `revoked`) — the page shows what happened,
+ * not just what is still actionable. `createdAt` breaks a same-date tie
+ * deterministically rather than leaving it to the database's own
+ * incidental order. */
+export async function listWorkUnitsForContract(contractId: string, executor: DbExecutor = db) {
+	return executor
+		.select()
+		.from(workUnit)
+		.where(eq(workUnit.contractId, contractId))
+		.orderBy(desc(workUnit.date), desc(workUnit.createdAt));
 }

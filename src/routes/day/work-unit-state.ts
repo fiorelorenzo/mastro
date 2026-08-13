@@ -1,12 +1,13 @@
-import * as m from '$lib/paraglide/messages';
-
 /**
  * Mirrors the `work_unit_state` Postgres enum
  * (`$lib/server/db/schema/work-unit.ts`), duplicated here as a plain
  * literal list rather than imported: this file is used from client
- * components (`DayStateBadge.svelte`, the month calendar), and
+ * components (`day/calendar/calendar-cells.ts`, the month calendar), and
  * `$lib/server/db/schema` cannot be bundled into client code — the same
  * reason `routes/clients/notice-channel.ts` duplicates `notice_channel`.
+ * The label/badge mapping for a state lives in `$lib/design/day-state-badge.ts`
+ * (`workUnitStateBadge`) — this file stays pure enum-and-ordering logic,
+ * no `m.*()` calls, no glyph/colour vocabulary of its own.
  */
 export const workUnitStates = [
 	'proposed',
@@ -22,31 +23,6 @@ export const workUnitStates = [
 ] as const;
 
 export type WorkUnitStateValue = (typeof workUnitStates)[number];
-
-export function workUnitStateLabel(state: WorkUnitStateValue): string {
-	switch (state) {
-		case 'proposed':
-			return m.day_state_proposed();
-		case 'approved':
-			return m.day_state_approved();
-		case 'worked':
-			return m.day_state_worked();
-		case 'worked_without_approval':
-			return m.day_state_worked_without_approval();
-		case 'invoiced':
-			return m.day_state_invoiced();
-		case 'paid':
-			return m.day_state_paid();
-		case 'disputed':
-			return m.day_state_disputed();
-		case 'revoked':
-			return m.day_state_revoked();
-		case 'rejected':
-			return m.day_state_rejected();
-		case 'unbillable':
-			return m.day_state_unbillable();
-	}
-}
 
 /**
  * Whether a day in `state` counts toward the month calendar's "days

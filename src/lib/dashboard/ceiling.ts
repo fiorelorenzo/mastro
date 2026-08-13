@@ -7,6 +7,7 @@
 
 import * as m from '$lib/paraglide/messages';
 import { getLocale } from '$lib/paraglide/runtime';
+import { formatMinorUnits, formatPercent } from '$lib/i18n/format';
 import type { StatusLevel } from '$lib/design';
 import type { CeilingAlertLevel, CeilingBasis } from '$lib/server/fiscal/pack';
 import type { LabelBundle } from '$lib/server/fiscal/label';
@@ -69,4 +70,83 @@ export function ceilingStatus(view: CeilingView): { level: StatusLevel; label: s
 		return { level: 'warning', label: view.activeAlertLevels.at(-1)!.label[locale] };
 	}
 	return { level: 'good', label: m.dashboard_ceiling_status_ok() };
+}
+
+/** Minimal shape `selectGoverningCeilingIds` needs — deliberately
+ * narrower than `fiscal/ceiling.ts`'s `EvaluatedCeiling`, so this stays a
+ * pure, universal function testable with no fiscal engine in the loop;
+ * `+page.server.ts` maps `EvaluatedCeiling[]` onto it. */
+export interface GroupableCeiling {
+	readonly id: string;
+	readonly basis: CeilingBasis;
+	readonly limitValue: MinorUnits;
+	readonly crossed: boolean;
+}
+
+/**
+ * #234: "one ceiling card, not two duplicates." `it-flat-rate.ts`'s
+ * soft/hard pair (and any future pack that repeats the shape) share a
+ * `basis` — the same cash figure, two different limits, two different
+ * consequences — and used to render as two visually identical sibling
+ * cards (`ceilingBasisWords`'s own doc comment, `+page.server.ts`
+ * before this fix). Grouped by basis, the *governing* limit in each
+ * group is the tightest one not yet crossed — the next consequence
+ * actually in play — falling back to the loosest (worst-case) one once
+ * every limit in a group is already crossed, since a crossed soft
+ * ceiling says nothing about whether the hard one has also gone. Every
+ * other origin (a contract's own client-share cap, `perimeter.kind ===
+ * 'client'`) is unaffected: each keeps its own distinct basis+client
+ * pairing and never groups with another.
+ */
+export function selectGoverningCeilingIds(
+	ceilings: readonly GroupableCeiling[]
+): ReadonlySet<string> {
+	const byBasis = new Map<CeilingBasis, GroupableCeiling[]>();
+	for (const ceiling of ceilings) {
+		const group = byBasis.get(ceiling.basis);
+		if (group) group.push(ceiling);
+		else byBasis.set(ceiling.basis, [ceiling]);
+	}
+	const governing = new Set<string>();
+	for (const group of byBasis.values()) {
+		const sorted = [...group].sort((a, b) => a.limitValue - b.limitValue);
+		const chosen = sorted.find((ceiling) => !ceiling.crossed) ?? sorted[sorted.length - 1];
+		governing.add(chosen.id);
+	}
+	return governing;
+}
+
+// The fiscal engine carries no currency of its own — see `+page.server.ts`'s
+// header comment; every dashboard widget reads EUR.
+const CURRENCY = 'EUR';
+
+/**
+ * The projection note's own status, never a flat footnote (#235): before
+ * this, `.projection-note` was always the same muted, small text whether
+ * the projected year-end figure was 8% of the ceiling or 190% of it —
+ * the one sentence that says "here is where this is headed" read like a
+ * footnote in every case, including a projected breach. Evaluated
+ * against `projectedEnd` rather than `currentValue` (that is
+ * `ceilingStatus`'s job): `'critical'` once the *projection* would cross
+ * the limit, `'warning'` once it would cross any lesser alert level
+ * (e.g. the 80% "approaching" threshold), `'good'` otherwise.
+ */
+export function ceilingProjectionStatus(view: CeilingView): { level: StatusLevel; label: string } {
+	const locale = getLocale();
+	const ratio = view.limitValue > 0 ? view.projectedEnd / view.limitValue : 0;
+	const amount = formatMinorUnits(view.projectedEnd, CURRENCY, locale);
+	const percent = formatPercent(ratio, locale);
+	if (ratio >= 1) {
+		return {
+			level: 'critical',
+			label: m.dashboard_ceiling_projection_crossed({ amount, percent })
+		};
+	}
+	if (view.alertLevels.some((level) => ratio >= level.ratio)) {
+		return {
+			level: 'warning',
+			label: m.dashboard_ceiling_projection_approaching({ amount, percent })
+		};
+	}
+	return { level: 'good', label: m.dashboard_ceiling_projection_on_track({ amount, percent }) };
 }

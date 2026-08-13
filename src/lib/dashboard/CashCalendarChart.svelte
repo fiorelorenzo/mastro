@@ -96,6 +96,35 @@
 		irrevocability_edge: '1 3'
 	};
 
+	// #235: a marker's kind used to be told apart only by its dash
+	// pattern — dashed vs. dotted at this stroke width is close to
+	// indistinguishable, and the only place the kind was actually named
+	// was a paragraph of prose below the whole chart, useless on the
+	// phone list where there is no hover for the per-line tooltip either.
+	// Each kind now also gets its own permanent glyph (shape, not just
+	// colour) at the top of the line and in a compact legend — the dash
+	// pattern stays as a redundant secondary cue, never the only one.
+	const MARKER_KINDS = [
+		'contract_expiry',
+		'renewal_window',
+		'irrevocability_edge'
+	] as const satisfies readonly CashCalendarMarker['kind'][];
+	const MARKER_GLYPH: Record<CashCalendarMarker['kind'], 'circle' | 'triangle' | 'diamond'> = {
+		contract_expiry: 'circle',
+		renewal_window: 'triangle',
+		irrevocability_edge: 'diamond'
+	};
+	function markerKindLabel(kind: CashCalendarMarker['kind']): string {
+		switch (kind) {
+			case 'contract_expiry':
+				return m.dashboard_cash_calendar_marker_kind_expiry();
+			case 'renewal_window':
+				return m.dashboard_cash_calendar_marker_kind_renewal_window();
+			case 'irrevocability_edge':
+				return m.dashboard_cash_calendar_marker_kind_irrevocability_edge();
+		}
+	}
+
 	interface MonthRow {
 		month: string;
 		collected: MinorUnits;
@@ -103,7 +132,8 @@
 		projected: MinorUnits;
 		total: MinorUnits;
 		assumptionsText: string;
-		markers: string;
+		markersText: string;
+		markerItems: readonly CashCalendarMarker[];
 	}
 	const rows = $derived<MonthRow[]>(
 		months.map((month, index) => {
@@ -129,10 +159,15 @@
 					month.projected.amount > 0 && assumptions.length > 0
 						? assumptions.map(renewalAssumptionLine).join(' ')
 						: '',
-				markers: monthMarkers.map(markerLabel).join('; ')
+				// The table view still wants one cell's worth of text; the
+				// phone list (#235's own fix) renders `markerItems` as its
+				// own `<li>` per marker instead of this joined run-on.
+				markersText: monthMarkers.map(markerLabel).join('; '),
+				markerItems: monthMarkers
 			};
 		})
 	);
+
 	const columns: TableColumn<MonthRow>[] = [
 		{
 			key: 'month',
@@ -164,7 +199,7 @@
 			align: 'end',
 			format: (r) => formatMinorUnits(r.total, CURRENCY)
 		},
-		{ key: 'markers', label: m.dashboard_cash_calendar_column_markers() }
+		{ key: 'markersText', label: m.dashboard_cash_calendar_column_markers() }
 	];
 
 	const tierEntries: SeriesEntry[] = [
@@ -247,6 +282,18 @@
 	and a media query picks one, so there is no client-only branch to
 	flash or desync from the server-rendered markup.
 -->
+{#snippet markerGlyphIcon(kind: CashCalendarMarker['kind'])}
+	<svg class="marker-glyph-icon" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+		{#if MARKER_GLYPH[kind] === 'circle'}
+			<circle cx="5" cy="5" r="4" />
+		{:else if MARKER_GLYPH[kind] === 'triangle'}
+			<path d="M5 1 9 8.5 1 8.5Z" />
+		{:else}
+			<path d="M5 0.5 9.5 5 5 9.5 0.5 5Z" />
+		{/if}
+	</svg>
+{/snippet}
+
 <div class="calendar-desktop">
 	<ChartFrame
 		title={m.dashboard_cash_calendar_title()}
@@ -257,9 +304,9 @@
 		{#snippet chart()}
 			<div class="plot-wrap">
 				<svg
-					viewBox="-56 -8 {plotWidth + 64} {plotHeight + 40}"
+					viewBox="-56 -20 {plotWidth + 64} {plotHeight + 52}"
 					width={plotWidth + 64}
-					height={plotHeight + 40}
+					height={plotHeight + 52}
 					role="img"
 					aria-label={m.dashboard_cash_calendar_title()}
 				>
@@ -324,6 +371,21 @@
 								onpointerleave={hideTooltip}
 								onblur={hideTooltip}
 							/>
+							{#if MARKER_GLYPH[marker.kind] === 'circle'}
+								<circle class="marker-glyph" cx={x} cy={-10} r="3" aria-hidden="true" />
+							{:else if MARKER_GLYPH[marker.kind] === 'triangle'}
+								<polygon
+									class="marker-glyph"
+									points="{x - 3.5},{-6.5} {x + 3.5},{-6.5} {x},{-13}"
+									aria-hidden="true"
+								/>
+							{:else}
+								<polygon
+									class="marker-glyph"
+									points="{x},{-13} {x + 3.5},{-9.75} {x},{-6.5} {x - 3.5},{-9.75}"
+									aria-hidden="true"
+								/>
+							{/if}
 						{/if}
 					{/each}
 					<Axis
@@ -350,7 +412,11 @@
 				{/if}
 			</div>
 			<Legend entries={tierEntries} />
-			<p class="marker-key">{m.dashboard_cash_calendar_marker_key()}</p>
+			<ul class="marker-legend">
+				{#each MARKER_KINDS as kind (kind)}
+					<li>{@render markerGlyphIcon(kind)}<span>{markerKindLabel(kind)}</span></li>
+				{/each}
+			</ul>
 		{/snippet}
 	</ChartFrame>
 </div>
@@ -392,13 +458,23 @@
 							style:background="var(--certainty-{CASH_CALENDAR_TIER.projected})"
 						></span>
 					</div>
-					{#if row.markers}<p class="phone-month-note">{row.markers}</p>{/if}
+					{#if row.markerItems.length > 0}
+						<ul class="phone-month-markers">
+							{#each row.markerItems as marker (marker.contractId + marker.kind + marker.date)}
+								<li>{@render markerGlyphIcon(marker.kind)}<span>{markerLabel(marker)}</span></li>
+							{/each}
+						</ul>
+					{/if}
 					{#if row.assumptionsText}<p class="phone-month-note">{row.assumptionsText}</p>{/if}
 				</li>
 			{/each}
 		</ul>
 		<Legend entries={tierEntries} />
-		<p class="marker-key">{m.dashboard_cash_calendar_marker_key()}</p>
+		<ul class="marker-legend">
+			{#each MARKER_KINDS as kind (kind)}
+				<li>{@render markerGlyphIcon(kind)}<span>{markerKindLabel(kind)}</span></li>
+			{/each}
+		</ul>
 	</div>
 </div>
 
@@ -432,10 +508,29 @@
 		stroke: var(--text-primary);
 		outline: none;
 	}
-	.marker-key {
+	.marker-glyph {
+		fill: var(--text-secondary);
+		stroke: var(--surface-1);
+		stroke-width: 1;
+	}
+	.marker-legend {
 		margin: 0.625rem 0 0;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem 0.875rem;
+	}
+	.marker-legend li {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
 		color: var(--text-muted);
 		font-size: 0.75rem;
+	}
+	.marker-legend :global(.marker-glyph-icon) {
+		flex: none;
+		fill: var(--text-secondary);
 	}
 
 	.calendar-phone {
@@ -506,6 +601,27 @@
 		color: var(--text-muted);
 		font-size: 0.75rem;
 		overflow-wrap: anywhere;
+	}
+	.phone-month-markers {
+		margin: 0.375rem 0 0;
+		padding: 0;
+		list-style: none;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+	}
+	.phone-month-markers li {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.375rem;
+		color: var(--text-muted);
+		font-size: 0.75rem;
+		overflow-wrap: anywhere;
+	}
+	.phone-month-markers :global(.marker-glyph-icon) {
+		flex: none;
+		margin-top: 0.125rem;
+		fill: var(--text-secondary);
 	}
 
 	.assumptions-summary {
