@@ -10,6 +10,7 @@
 import { and, desc, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
+	agentRun,
 	approval,
 	backupRun,
 	client,
@@ -28,6 +29,7 @@ import {
 	listWorkedWithoutApprovalEvents
 } from '$lib/server/repositories/work-unit';
 import type {
+	AgentRunRow,
 	ApprovalUnactionedRow,
 	BackupRunRow,
 	BillablePeriodRow,
@@ -230,6 +232,18 @@ export async function fetchLatestBackupRun(
 		.select({ status: backupRun.status, detail: backupRun.detail, createdAt: backupRun.createdAt })
 		.from(backupRun)
 		.orderBy(desc(backupRun.createdAt))
+		.limit(1);
+	return row ?? null;
+}
+
+/** The most recent turn of the agentic ingestion loop, or `null` if none
+ * has ever been recorded — `detectAgentRunFailure`'s only input,
+ * mirroring `fetchLatestBackupRun`. */
+export async function fetchLatestAgentRun(executor: DbExecutor = db): Promise<AgentRunRow | null> {
+	const [row] = await executor
+		.select({ status: agentRun.status, detail: agentRun.detail, createdAt: agentRun.createdAt })
+		.from(agentRun)
+		.orderBy(desc(agentRun.createdAt))
 		.limit(1);
 	return row ?? null;
 }

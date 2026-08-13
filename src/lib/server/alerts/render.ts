@@ -221,5 +221,19 @@ export function alertMessage(alert: Alert, locale: Locale): AlertMessage {
 									{ locale }
 								)
 			};
+
+		case 'agent_run_failure':
+			return {
+				title: m.alerts_agent_run_failure_title(undefined, { locale }),
+				body:
+					detail.reason === 'never_run'
+						? m.alerts_agent_run_failure_body_never_run(undefined, { locale })
+						: detail.reason === 'failure'
+							? m.alerts_agent_run_failure_body_failure({ detail: detail.detail ?? '' }, { locale })
+							: m.alerts_agent_run_failure_body_stale(
+									{ lastRunAt: detail.lastRunAt ? formatDate(detail.lastRunAt, locale) : '' },
+									{ locale }
+								)
+			};
 	}
 }

@@ -52,16 +52,22 @@ test('resolution finds the generic pack by id and version', () => {
 	expect(resolvePackAt(registry, profiles, '2024-06-01')?.pack).toBe(genericPack);
 });
 
+// 1915: past every real regime's start. Clears the table first, inside
+// its own rolled-back transaction — a real seeded "current regime" row
+// cannot be dodged with an earlier start date, since two open-ended
+// ranges always overlap regardless of where either starts (see
+// `profile.test.ts`'s `makeRoomForOwnProfiles` comment).
 test('a taxpayer on the generic pack resolves end to end, ceilings included as empty', async () => {
 	await inRolledBackTransaction(async (tx) => {
+		await tx.delete(fiscalProfile);
 		await tx.insert(fiscalProfile).values({
 			packId: 'generic',
 			packVersion: '1',
-			validFrom: '2024-01-01',
+			validFrom: '1915-01-01',
 			validTo: null
 		});
 
-		const resolved = await resolveActiveFiscalPack(tx, '2024-06-01');
+		const resolved = await resolveActiveFiscalPack(tx, '1915-06-01');
 		expect(resolved?.pack.id).toBe('generic');
 		expect(resolved?.pack.ceilings).toEqual([]);
 	});

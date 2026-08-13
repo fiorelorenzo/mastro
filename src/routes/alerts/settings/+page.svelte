@@ -37,6 +37,8 @@
 				return m.alerts_type_mirror_failure();
 			case 'mailbox_poll_failure':
 				return m.alerts_type_mailbox_poll_failure();
+			case 'agent_run_failure':
+				return m.alerts_type_agent_run_failure();
 		}
 	}
 

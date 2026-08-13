@@ -16,6 +16,11 @@ import { sendOverSmtp } from './smtp';
 export type PreparedSend = {
 	contractId: string;
 	emailTemplateId: string;
+	/** The invoice this send was about (#230), or `null` for a template
+	 * whose context genuinely has none — every caller today always has
+	 * one, but this stays optional rather than widening every context
+	 * builder to fabricate an id nothing backs. */
+	invoiceId: string | null;
 	to: readonly string[];
 	subject: string;
 	body: string;
@@ -24,7 +29,9 @@ export type PreparedSend = {
 
 /** Renders the template and assembles its attachments against `context` —
  * the same preview shown to the human before anything leaves (#72's
- * acceptance). Never sends anything itself. */
+ * acceptance). Never sends anything itself. `invoiceId` is carried
+ * through to `dispatchEmail`'s log, not read here — nothing in this
+ * function's own job (rendering, assembling attachments) needs it. */
 export async function prepareEmail(
 	template: {
 		id: string;
@@ -35,6 +42,7 @@ export async function prepareEmail(
 	},
 	context: EmailTemplateContext,
 	to: readonly string[],
+	invoiceId: string | null,
 	executor: DbExecutor = db
 ): Promise<PreparedSend> {
 	const rendered = renderTemplate(template, context);
@@ -48,6 +56,7 @@ export async function prepareEmail(
 	return {
 		contractId: template.contractId,
 		emailTemplateId: template.id,
+		invoiceId,
 		to,
 		subject: rendered.subject,
 		body: rendered.body,
@@ -84,6 +93,7 @@ export async function dispatchEmail(
 		.values({
 			contractId: prepared.contractId,
 			emailTemplateId: prepared.emailTemplateId,
+			invoiceId: prepared.invoiceId,
 			recipients: [...prepared.to],
 			subject: prepared.subject,
 			messageId: message.messageId,

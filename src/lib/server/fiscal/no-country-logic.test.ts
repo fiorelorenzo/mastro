@@ -38,7 +38,16 @@ const EXEMPT_DIR_NAMES: Record<string, true> = {
 	// adapter", so adding a country is adding an adapter rather than
 	// editing the importer), exactly as a pack is. The importer itself is
 	// scanned, and naming a format there would still fail.
-	formats: true
+	formats: true,
+	// `demo-seed.ts` (#226): a client's own country/region and a free-text
+	// `contract.taxTreatment` label a real client typed in are data about
+	// that client, not logic about mastro's own jurisdiction — the exact
+	// distinction this file's own header comment draws for `.test.ts`
+	// fixtures (`contract.test.ts`'s `country: 'IT'`), just outside a test
+	// file this time. Nothing under `fiscal/` is exempt: a seed choosing
+	// the active pack still does that by id (`itFlatRatePack.id`), never a
+	// literal, so this exemption never hides a real jurisdiction branch.
+	seed: true
 };
 
 // .ts only, not .svelte: template markup is full of hyphenated

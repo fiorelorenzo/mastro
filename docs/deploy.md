@@ -16,6 +16,7 @@ flowchart LR
     proxy -->|"internal network\nweb:3000"| web[web\nSvelteKit / adapter-node]
     web -->|"internal network\ndb:5432"| db[(Postgres\nnamed volume)]
     web -->|"bind mount"| docs[(documents dir)]
+    scheduler[scheduler] -->|"internal network\nweb:3000, on a schedule"| web
 ```
 
 - **`web`** is built from the repository's `Dockerfile` — a multi-stage build so the
@@ -26,6 +27,9 @@ flowchart LR
 - **`db`** is `postgres:16-alpine` on the named volume `pgdata`, publishing no port
   at all: nothing but `web` and the backup scripts need to reach it, and both do so
   over the compose network by service name (`db`), never through the host.
+- **`scheduler`** (#222) calls `web`'s own cron-shaped endpoints — mail polling,
+  the agent drain/enqueue loop, the alert push/digest runs — on an interval, from
+  inside the compose network, no published port at all. See "Scheduling" below.
 - **`proxy`** is Caddy, the only service with `ports:` bound to every interface. It
   terminates TLS and reverse-proxies to `web:3000` over the same internal network.
   It also mounts `deploy/Caddyfile` as `/etc/caddy/Caddyfile`.
@@ -74,6 +78,85 @@ Migrations run on boot: the `web` container's entrypoint is
 `node scripts/migrate.ts && exec node build` — the exact same migration runner and
 the exact same committed SQL under `drizzle/` that `pnpm db:migrate` runs in local
 development, so there is no second migration path that could drift from the first.
+
+## Scheduling (#222)
+
+Three of `web`'s own routes are plain HTTP endpoints that expect a caller: mail
+polling (`/api/mail/poll`, #84), the agent drain/enqueue loop (`/api/agent/run`,
+#85) and the alert engine's push and digest runs (`/api/alerts/run/push` and
+`/api/alerts/run/digest`, #74/#75). Nothing about `docker compose up` calls an
+HTTP endpoint on its own, so the `scheduler` service exists to be the caller:
+`scripts/scheduler.ts`, a small long-running Node process, built from the same
+image as `web` on its own `scheduler` Dockerfile stage. It calls each of the
+four routes once immediately on startup, then again on its own interval —
+5 minutes for mail polling and the agent loop, 15 minutes for the push job, a
+week for the digest (`runAlertDigest` is idempotent, so this only needs to land
+roughly weekly, not on a calendar-aligned day). Override any of them in
+`.env.prod`: `MAIL_POLL_INTERVAL_MINUTES`, `AGENT_RUN_INTERVAL_MINUTES`,
+`ALERT_PUSH_INTERVAL_MINUTES`, `ALERT_DIGEST_INTERVAL_MINUTES`.
+
+`docker compose -f compose.prod.yaml up` starts `scheduler` the same as every
+other service in the file — there is no cron entry, systemd timer or extra step
+to write by hand. Each of the four routes checks its own bearer token first
+(`IMAP_POLL_CRON_TOKEN` for mail polling, `ALERT_CRON_TOKEN` for the other
+three — the agent-run route reuses the alert token, see that route's own
+comment for why), so a token left unset in `.env.prod` makes `scheduler` skip
+that one job and log why, rather than hammer the route with requests it will
+only ever refuse.
+
+**Each run is recorded, so a job that stops running is visible.** Mail polling
+writes to `mailbox_poll_run` (already existed); the agent loop now writes to
+`agent_run`, #222's own addition — the same shape `backup_run` (#77)
+established: one row per attempt, `success` or `failure`, and the alert engine
+reads the latest row for exactly two conditions, an explicit failure or
+staleness (nothing recorded recently enough — the case a failure row can
+never cover, because nothing ran to write one).
+`detectMailboxPollFailure`/`detectAgentRunFailure`
+(`src/lib/server/alerts/detectors.ts`) are what turn either condition into an
+alert; stopping either job and waiting past its staleness window (3 hours for
+both) raises one, proven directly in `detectors.test.ts`. The alert engine
+already had the equivalent check for backups; #222 only added the one table
+that was missing.
+
+**The data these tables expose has no settings-page reader yet** — that screen
+is #246's, not this one's. Until it lands, `/settings` is still where the
+`mailbox_poll_failure`/`agent_run_failure`/`backup_failure` alerts on `/alerts`
+link to (`alerts/actions.ts`), the same placeholder the backup alert already
+used. The shape #246 has to read is `{ status: 'success' | 'failure', detail:
+string | null, acknowledgedAt: Date | null, createdAt: Date }` per job, via
+`getLatestMailboxPollRun`/`getLatestAgentRun`
+(`src/lib/server/repositories/{mailbox-poll-run,agent-run}.ts`) — the same
+shape `getLatestBackupRun`'s caller already reads today, if a backup-health
+section exists there already; if not, that gap belongs to #246 too.
+
+**The one gap this cannot close.** If the `scheduler` container itself stops,
+nothing calls the alert engine either — the same job that would otherwise
+notice `agent_run`/`mailbox_poll_run`/`backup_run` going stale stops noticing
+at the same moment, because it is the thing that stopped. This is the same
+shape docs/backup.md's "Failure is observable" section already documents for
+"the database itself is unreachable": some failure modes are outside what a
+database-driven alert engine can ever see about itself. The mitigation is the
+same kind, not an alert-engine one: `scheduler`, like every service in
+`compose.prod.yaml`, is `restart: unless-stopped`, so the same reboot/restart
+guarantee "What was proved locally" describes for `web`/`db`/`proxy` applies to
+it too, and `docker compose -f compose.prod.yaml logs scheduler` is where a
+self-hoster looks if they suspect it stopped.
+
+**Why a compose service rather than systemd timers.** Both were considered.
+Timers would need to be written and installed on the host outside of
+`docker compose up` — exactly the extra step #222's acceptance rules out
+("no extra step... without anyone writing a cron line by hand"), and would
+differ from box to box (systemd unit paths, `systemctl enable --now` for each
+of four timers) in a way a single `services:` entry in a file already checked
+into this repository does not. A compose service also gets the same
+supervision every other service here already has for free (`restart:
+unless-stopped`, `docker compose logs`, `docker compose ps`) instead of a
+second supervision mechanism (`systemctl status`, `journalctl`) a self-hoster
+has to know exists. The tradeoff, stated plainly: `scheduler`'s own crash is
+one Docker restart away from recovering, but a fully wedged Docker daemon
+takes every scheduled job down with it — the same failure mode the daemon
+itself already represents for `web` and `db`, not a new one this design
+introduces.
 
 ## What was proved locally
 
@@ -136,6 +219,41 @@ excluded from the Docker build context by `.dockerignore` and from git by
 `.gitignore` (`.env.*`, with `.env.example`/`.env.prod.example` explicitly
 un-ignored as the templates).
 
+**Scheduling, rehearsed:** brought up `db`, `web` and `scheduler` fresh (a scratch
+compose project, volumes included) with every cron token set and dummy
+SMTP/IMAP credentials, no manual step beyond `up`. `docker logs scheduler`
+within seconds of startup:
+
+```
+scheduler: starting, base url http://web:3000, jobs: mail poll every 1m, agent run every 1m, alert push every 1m, alert digest every 1m
+scheduler: mail poll ok: {"status":"skipped","reason":"no folders configured","folders":[]}
+scheduler: agent run ok: {"drained":{"applied":0,"skipped":0,"failed":[],"rejectedDays":[]},"queued":{"enqueued":0,"alreadyProposed":0}}
+scheduler: alert push ok: {"attempted":1,"delivered":0,"prunedSubscriptions":0}
+scheduler: alert digest responded 500: {"message":"Internal Error"}
+```
+
+Mail polling skips cleanly (no contract has a folder mapped on a fresh
+database — correct, not a bug). The digest 500 is `getaddrinfo ENOTFOUND
+smtp.rehearsal.invalid`, the deliberately-fake SMTP host this rehearsal used —
+expected, and exactly what a self-hoster with real credentials would not see.
+`select * from agent_run` afterward showed one `success` row with detail
+`drained 0 applied, 0 skipped; queued 0, 0 already proposed`, confirming the
+run-record path this section documents actually writes.
+
+**What the first attempt at this rehearsal caught:** `/api/agent/run` 500'd
+with `EACCES: permission denied, mkdir 'data/runner-queue'` — `web` had no
+volume mounted at `RUNNER_QUEUE_DIR`'s default path at all, a bug nothing
+caught before because nothing had ever called that route in production. After
+mounting the `runner_queue` volume into `web` too, the _next_ layer of the
+same bug showed up (`mkdir 'data/runner-queue/pending'`, same error): a fresh
+named volume's mount point is created `root:root`, and both `web` and
+`runner` run as non-root `mastro`. Fixed at the image level — `Dockerfile`'s
+`runtime` and `runner` stages now `mkdir`+`chown` that path before `USER
+mastro`, so Docker's own "a named volume inherits the ownership already
+sitting at that path in the image" behavior gives `mastro` write access from
+the first mount. Re-ran the same rehearsal against a fresh volume afterward
+(the log above) to confirm the fix, not just the reasoning behind it.
+
 ## Bringing the stack down
 
 ```bash
@@ -157,10 +275,13 @@ git tag v0.2.0 && git push origin v0.2.0
 `ci.yml` is a completed success **for that exact commit**, and then runs
 `scripts/deploy-prod.sh` on a self-hosted runner living on the box. The script
 rsyncs the tag's source into `/opt/apps/mastro`, builds the image there, brings
-`db` and `web` up, and gates the result on two separate facts: `/health` answers
-`{"status":"ok","database":"ok"}`, and the container that answered is running the
-image this run just built. A green `/health` alone would pass just as happily
-against yesterday's container, which is the whole reason the second check exists.
+`db`, `web` and `scheduler` up (see "Two host shapes" below for why not
+`proxy`, and "The scheduler service"/"The runner service" for `scheduler`/
+`runner`'s own conditions), and gates the result on two separate facts:
+`/health` answers `{"status":"ok","database":"ok"}`, and the container that
+answered is running the image this run just built. A green `/health` alone
+would pass just as happily against yesterday's container, which is the whole
+reason the second check exists.
 
 If either check fails after the containers were recreated, the script puts the
 previous image back, brings the stack up on it and exits non-zero. Nothing before
@@ -198,14 +319,23 @@ handled.
 
 `prodbox` is the other shape. It already runs Caddy on the host as the single edge
 for every application on it, and two processes cannot both hold 443, so the deploy
-script starts `db` and `web` only. The host Caddy has a vhost for
-`mastro.lorenzofiore.io` that reverse-proxies to `127.0.0.1:5192`, which is the
-loopback port `WEB_PORT` publishes there. Nothing about the app changes between the
-two shapes; only who terminates TLS does.
+script starts `db`, `web` and `scheduler` (`proxy` excluded, `runner` conditional
+— see "The scheduler service" and "The runner service" below). The host Caddy has
+a vhost for `mastro.lorenzofiore.io` that reverse-proxies to `127.0.0.1:5192`,
+which is the loopback port `WEB_PORT` publishes there. Nothing about the app
+changes between the two shapes; only who terminates TLS does.
 
 The port is 5192 rather than this project's own 5187 because that box already gives
 5187 to another application's preview environment. On a box of your own, keep 5187
 and the two match.
+
+### The scheduler service
+
+Unlike `runner` below, `scripts/deploy-prod.sh` starts `scheduler` unconditionally,
+the same as `db` and `web`: an unset cron token makes it skip that one job and log
+why (`scripts/scheduler.ts`'s own comment), never crash-loop, so there is no
+"nothing to do" case worth leaving it stopped for. See "Scheduling" above for what
+it calls and on what interval.
 
 ### The runner service
 

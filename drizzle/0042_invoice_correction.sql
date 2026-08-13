@@ -1,0 +1,3 @@
+ALTER TABLE "invoice" ADD COLUMN "corrects_invoice_id" uuid;--> statement-breakpoint
+ALTER TABLE "invoice" ADD CONSTRAINT "invoice_corrects_invoice_id_invoice_id_fk" FOREIGN KEY ("corrects_invoice_id") REFERENCES "public"."invoice"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "invoice" ADD CONSTRAINT "invoice_corrects_invoice_id_only_for_corrections" CHECK ("invoice"."corrects_invoice_id" is null or "invoice"."document_type" in ('credit_note', 'debit_note'));

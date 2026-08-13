@@ -111,6 +111,12 @@ const FIXTURES: Record<AlertType, AlertDetail> = {
 		reason: 'failure',
 		detail: 'auth expired',
 		lastRunAt: '2026-08-01T03:00:00.000Z'
+	},
+	agent_run_failure: {
+		type: 'agent_run_failure',
+		reason: 'failure',
+		detail: 'ENOTFOUND db',
+		lastRunAt: '2026-08-01T03:00:00.000Z'
 	}
 };
 
@@ -163,9 +169,10 @@ test('contract_expiring and renewal_window_open both view the contract and act o
 	}
 });
 
-test('the two system-health alerts and the two ceiling alerts collapse subject and action onto the one real screen each has', () => {
+test('the three system-health alerts and the two ceiling alerts collapse subject and action onto the one real screen each has', () => {
 	expect(alertResolution(FIXTURES.backup_failure, 'en').actionHref).toBe('/settings');
 	expect(alertResolution(FIXTURES.mailbox_poll_failure, 'en').actionHref).toBe('/settings');
+	expect(alertResolution(FIXTURES.agent_run_failure, 'en').actionHref).toBe('/settings');
 	expect(alertResolution(FIXTURES.ceiling_approaching, 'en').actionHref).toBe('/');
 	expect(alertResolution(FIXTURES.year_end_overrun_risk, 'en').actionHref).toBe('/');
 });

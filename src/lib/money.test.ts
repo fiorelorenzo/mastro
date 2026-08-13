@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { minorUnits, minorUnitsToDecimalString } from './money';
+import { minorUnits, minorUnitsToDecimalString, negateMinorUnits } from './money';
 
 test('converts whole and fractional cent amounts to a plain decimal string', () => {
 	expect(minorUnitsToDecimalString(minorUnits(122000), 'EUR')).toBe('1220.00');
@@ -21,4 +21,10 @@ test('a zero-decimal currency renders with no decimal point at all', () => {
 test('a three-decimal currency renders past the second digit', () => {
 	// BHD has three fraction digits, one more than EUR's cent.
 	expect(minorUnitsToDecimalString(minorUnits(1234), 'BHD')).toBe('1.234');
+});
+
+test('negateMinorUnits flips the sign and round-trips back through itself', () => {
+	expect(negateMinorUnits(minorUnits(20_000))).toBe(-20_000);
+	expect(negateMinorUnits(minorUnits(-20_000))).toBe(20_000);
+	expect(negateMinorUnits(minorUnits(0))).toBe(0);
 });

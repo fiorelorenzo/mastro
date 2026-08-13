@@ -8,7 +8,7 @@ import { db, type DbExecutor } from '$lib/server/db';
 import { contract, invoice } from '$lib/server/db/schema';
 import { defaultRegistry, type PackRegistry } from './registry';
 import { resolveFiscalPackOverRange } from './profile';
-import { NO_MINOR_UNITS, addMinorUnits, type MinorUnits } from '$lib/money';
+import { NO_MINOR_UNITS, addMinorUnits, negateMinorUnits, type MinorUnits } from '$lib/money';
 import {
 	sumLedgerAcrossPeriods,
 	type LedgerPeriod,
@@ -23,9 +23,13 @@ import {
  * counts towards it despite not being taxable income (see
  * `it-flat-rate.ts`'s header comment on why, and `invoice.ts`'s totals
  * trigger for why `total = taxable_amount + tax_amount + stamp_duty +
- * social_charge` always holds). This is the one query that assembles a
- * `LedgerRow`; every ceiling, certainty and forecast figure reads through
- * it, never the raw table again.
+ * social_charge` always holds) — negated for a `credit_note` (#213), the
+ * one `documentType` that reduces revenue instead of adding to it; a
+ * `debit_note` still adds, exactly like an ordinary invoice, since it
+ * corrects an *under*-billed amount. This is the one query that
+ * assembles a `LedgerRow`; every ledger, ceiling, certainty and forecast
+ * figure reads through it, never the raw table again — so the sign flip
+ * lives here once, not once per caller.
  */
 export async function fetchLedgerRows(executor: DbExecutor = db): Promise<LedgerRow[]> {
 	const rows = await executor
@@ -35,20 +39,24 @@ export async function fetchLedgerRows(executor: DbExecutor = db): Promise<Ledger
 			clientId: contract.clientId,
 			issueDate: invoice.issueDate,
 			paidOn: invoice.paidOn,
+			documentType: invoice.documentType,
 			taxableAmount: invoice.taxableAmount,
 			socialCharge: invoice.socialCharge
 		})
 		.from(invoice)
 		.innerJoin(contract, eq(invoice.contractId, contract.id));
 
-	return rows.map((row) => ({
-		invoiceId: row.invoiceId,
-		contractId: row.contractId,
-		clientId: row.clientId,
-		issueDate: row.issueDate,
-		paidOn: row.paidOn,
-		amount: addMinorUnits(row.taxableAmount, row.socialCharge ?? NO_MINOR_UNITS)
-	}));
+	return rows.map((row) => {
+		const amount = addMinorUnits(row.taxableAmount, row.socialCharge ?? NO_MINOR_UNITS);
+		return {
+			invoiceId: row.invoiceId,
+			contractId: row.contractId,
+			clientId: row.clientId,
+			issueDate: row.issueDate,
+			paidOn: row.paidOn,
+			amount: row.documentType === 'credit_note' ? negateMinorUnits(amount) : amount
+		};
+	});
 }
 
 /** The regime-aware sub-periods `[from, to)` resolves to — the one piece

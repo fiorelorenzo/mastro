@@ -7,6 +7,7 @@
 // `pnpm db:generate`, then hand-write the constraints the generator cannot
 // express in a `pnpm db:generate:custom` migration.
 
+export * from './agent-run';
 export * from './alert';
 export * from './approval';
 export * from './auth';

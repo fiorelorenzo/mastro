@@ -64,3 +64,12 @@ export const MIRROR_STALE_HOURS = 26;
  * means the cron entry itself stopped firing, not merely that no new
  * mail arrived in that window. */
 export const MAILBOX_POLL_STALE_HOURS = 3;
+
+/** `agent_run_failure`: how long is too long since the last recorded
+ * drain/enqueue turn (#85, #222's scheduler default cadence is every
+ * few minutes, the same recommended cadence as the mail poller) before
+ * silence itself is the alert. Same figure as `MAILBOX_POLL_STALE_HOURS`
+ * for the same reason: a gap measured in hours already means the
+ * scheduler stopped calling `/api/agent/run`, not that there was simply
+ * nothing to drain or enqueue. */
+export const AGENT_RUN_STALE_HOURS = 3;

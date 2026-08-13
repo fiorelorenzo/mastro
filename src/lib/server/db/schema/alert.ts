@@ -8,10 +8,11 @@ import { id, timestamps } from '../columns';
  * a metadata-only addition (widen the CHECK), never an `ALTER TYPE ... ADD
  * VALUE` whose new label cannot be used inside the transaction that adds
  * it. The eight are epic #13's own list; `backup_failure`, `mirror_
- * failure` and `mailbox_poll_failure` are not on that table but exist
- * because `backup_run` (#77), `document_mirror_run` (#50) and `mailbox_
- * poll_run` (#84) were each built with exactly this engine as their
- * stated reader — see those tables' own doc comments.
+ * failure`, `mailbox_poll_failure` and `agent_run_failure` are not on
+ * that table but exist because `backup_run` (#77), `document_mirror_run`
+ * (#50), `mailbox_poll_run` (#84) and `agent_run` (#222) were each built
+ * with exactly this engine as their stated reader — see those tables'
+ * own doc comments.
  */
 export const ALERT_TYPES = [
 	'contract_expiring',
@@ -24,7 +25,8 @@ export const ALERT_TYPES = [
 	'year_end_overrun_risk',
 	'backup_failure',
 	'mirror_failure',
-	'mailbox_poll_failure'
+	'mailbox_poll_failure',
+	'agent_run_failure'
 ] as const;
 export type AlertType = (typeof ALERT_TYPES)[number];
 

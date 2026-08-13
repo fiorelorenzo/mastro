@@ -221,7 +221,7 @@ async function seed(tx: Tx) {
 		})
 		.returning();
 
-	return { contractRow, templateRow };
+	return { contractRow, templateRow, invoiceRow };
 }
 
 /**
@@ -248,7 +248,7 @@ const context = {
 
 test('auto-send off: prepares nothing sent, touches neither SMTP nor IMAP', async () => {
 	await inRolledBackTransaction(async (tx) => {
-		const { contractRow, templateRow } = await seed(tx);
+		const { contractRow, templateRow, invoiceRow } = await seed(tx);
 		const prepared = await prepareEmail(
 			{ ...template, id: templateRow.id, contractId: contractRow.id },
 			{
@@ -256,6 +256,7 @@ test('auto-send off: prepares nothing sent, touches neither SMTP nor IMAP', asyn
 				register: { contractId: contractRow.id, ...context.period, entries: [], totalQuantity: 0 }
 			},
 			['client@example.com'],
+			invoiceRow.id,
 			tx
 		);
 
@@ -274,7 +275,7 @@ test.skipIf(!mailboxAvailable)(
 	'auto-send on: sends for real, appends to Sent, and logs the send',
 	async () => {
 		await inRolledBackTransaction(async (tx) => {
-			const { contractRow, templateRow } = await seed(tx);
+			const { contractRow, templateRow, invoiceRow } = await seed(tx);
 			const prepared = await prepareEmail(
 				{
 					...template,
@@ -292,6 +293,7 @@ test.skipIf(!mailboxAvailable)(
 					}
 				},
 				[realConfig.smtp.user],
+				invoiceRow.id,
 				tx
 			);
 
@@ -315,7 +317,7 @@ test.skipIf(!mailboxAvailable)(
 	'a manual send always requires dispatchEmail explicitly, regardless of the auto-send flag',
 	async () => {
 		await inRolledBackTransaction(async (tx) => {
-			const { contractRow, templateRow } = await seed(tx);
+			const { contractRow, templateRow, invoiceRow } = await seed(tx);
 			const prepared = await prepareEmail(
 				{
 					...template,
@@ -333,6 +335,7 @@ test.skipIf(!mailboxAvailable)(
 					}
 				},
 				[realConfig.smtp.user],
+				invoiceRow.id,
 				tx
 			);
 
@@ -351,6 +354,10 @@ test.skipIf(!mailboxAvailable)(
 				.from(sentEmail)
 				.where(eq(sentEmail.contractId, contractRow.id));
 			expect(logged.autoSent).toBe(false);
+			// #230: the send is linked back to the real invoice it was about,
+			// not left null — this is what the invoice detail page's chase
+			// history and the dunning duplicate check both read.
+			expect(logged.invoiceId).toBe(invoiceRow.id);
 		});
 	}
 );

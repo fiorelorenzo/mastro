@@ -1,7 +1,8 @@
 import { relations } from 'drizzle-orm';
-import { boolean, jsonb, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, jsonb, pgTable, text, uuid } from 'drizzle-orm/pg-core';
 import { id, timestamps } from '../columns';
 import { contract } from './contract';
+import { invoice } from './invoice';
 
 /**
  * The placeholders `renderTemplate` (`src/lib/server/mail/render.ts`)
@@ -90,26 +91,42 @@ export const emailTemplateRelations = relations(emailTemplate, ({ one }) => ({
  * `Message-ID` header of the sent message, the same value the IMAP append
  * writes to the Sent folder, so a support question ("did this go out?")
  * has one answer to check against two systems.
+ *
+ * `invoiceId` links a send back to the real invoice it was about (#230):
+ * nullable, because not every template renders against one persisted
+ * invoice row forever (a future non-invoice notice would have none), but
+ * both callers that exist today — the manual compose screen (#218) and
+ * the dunning screen (#73) — always supply it, straight off the same
+ * `invoice` row the send's own placeholders read. This is what makes the
+ * invoice detail page's chase history, and the dunning screen's "already
+ * sent this reminder" check, possible at all: before this column neither
+ * could ask `sent_email` anything about a specific invoice.
  */
-export const sentEmail = pgTable('sent_email', {
-	id: id(),
-	contractId: uuid('contract_id')
-		.notNull()
-		.references(() => contract.id, { onDelete: 'restrict' }),
-	emailTemplateId: uuid('email_template_id')
-		.notNull()
-		.references(() => emailTemplate.id, { onDelete: 'restrict' }),
-	recipients: jsonb('recipients').$type<string[]>().notNull(),
-	subject: text('subject').notNull(),
-	messageId: text('message_id').notNull(),
-	autoSent: boolean('auto_sent').notNull(),
-	...timestamps()
-});
+export const sentEmail = pgTable(
+	'sent_email',
+	{
+		id: id(),
+		contractId: uuid('contract_id')
+			.notNull()
+			.references(() => contract.id, { onDelete: 'restrict' }),
+		emailTemplateId: uuid('email_template_id')
+			.notNull()
+			.references(() => emailTemplate.id, { onDelete: 'restrict' }),
+		invoiceId: uuid('invoice_id').references(() => invoice.id, { onDelete: 'restrict' }),
+		recipients: jsonb('recipients').$type<string[]>().notNull(),
+		subject: text('subject').notNull(),
+		messageId: text('message_id').notNull(),
+		autoSent: boolean('auto_sent').notNull(),
+		...timestamps()
+	},
+	(table) => [index('sent_email_invoice_id_idx').on(table.invoiceId)]
+);
 
 export const sentEmailRelations = relations(sentEmail, ({ one }) => ({
 	contract: one(contract, { fields: [sentEmail.contractId], references: [contract.id] }),
 	emailTemplate: one(emailTemplate, {
 		fields: [sentEmail.emailTemplateId],
 		references: [emailTemplate.id]
-	})
+	}),
+	invoice: one(invoice, { fields: [sentEmail.invoiceId], references: [invoice.id] })
 }));

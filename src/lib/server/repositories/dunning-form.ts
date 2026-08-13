@@ -1,9 +1,9 @@
 // Parses a dunning send screen's submission (#73): which of the contract's
 // `days_after_due`-triggered templates to use, and who to send it to. The
 // invoice itself is never typed in — it is the real, persisted row the
-// screen loaded (`routes/invoices/[id]/remind`), unlike the general
-// compose screen's manual invoice-figure entry
-// (`mail-send-form.ts`, a stopgap from before #26 landed).
+// screen loaded (`routes/invoices/[id]/remind`), the same "pick the real
+// row, never retype its figures" rule the general compose screen's own
+// invoice picker follows since #218 (`mail-send-form.ts`).
 import * as m from '$lib/paraglide/messages';
 import type { EmailAttachmentKind, EmailTemplateTrigger } from '$lib/server/db/schema';
 

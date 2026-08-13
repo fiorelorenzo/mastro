@@ -16,6 +16,7 @@
 	import type { TableColumn } from '$lib/design/table';
 	import Page from '$lib/layout/Page.svelte';
 	import Section from '$lib/layout/Section.svelte';
+	import ChaseHistory from './ChaseHistory.svelte';
 	import { invoiceStatus } from '../status';
 	import type { ActionData, PageData } from './$types';
 
@@ -234,6 +235,7 @@
 						</dd>
 					{/if}
 				</dl>
+				<ChaseHistory rows={data.chaseHistory} />
 			</Section>
 		</div>
 	</div>

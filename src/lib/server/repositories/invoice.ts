@@ -1,4 +1,4 @@
-import { asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, notInArray, sql } from 'drizzle-orm';
 import type { LegalText } from '$lib/legal/legal-text';
 import { resolveDueDate } from '$lib/server/domain/invoice';
 import { db, type DbExecutor } from '$lib/server/db';
@@ -63,6 +63,15 @@ export type InvoiceInput = {
 	paymentMethod: string | null;
 	iban: string | null;
 	transmissionId: string | null;
+	/** The invoice this one corrects (#213) — set only for `credit_note`/
+	 * `debit_note`, enforced by `invoice_corrects_invoice_id_only_for_corrections`
+	 * and (for the cross-row half) `invoice_check_correction`
+	 * (`0042`/`0043_invoice_correction_constraints.sql`). Optional,
+	 * defaulting to `null`: every pre-existing caller that never issues a
+	 * correction (the importer, every ledger/ceiling/revenue fixture that
+	 * only needs an ordinary invoice) is unaffected — the same choice
+	 * `InvoiceLineInput.expenseIds` already makes. */
+	correctsInvoiceId?: string | null;
 	lines: InvoiceLineInput[];
 };
 
@@ -124,7 +133,8 @@ export async function createInvoice(
 				dueDateSource,
 				paymentMethod: input.paymentMethod,
 				iban: input.iban,
-				transmissionId: input.transmissionId
+				transmissionId: input.transmissionId,
+				correctsInvoiceId: input.correctsInvoiceId ?? null
 			})
 			.returning();
 
@@ -354,5 +364,36 @@ export async function listInvoicesForContract(contractId: string, executor: DbEx
 		.select()
 		.from(invoice)
 		.where(eq(invoice.contractId, contractId))
+		.orderBy(desc(invoice.issueDate), desc(invoice.createdAt));
+}
+
+/** Every ordinary invoice on this contract — never itself a `credit_note`
+ *  or `debit_note` — for the "which invoice does this correct" picker
+ *  `/invoices/new` shows once `documentType` is `credit_note` (#213). The
+ *  same exclusion `invoice_corrects_invoice_id_only_for_corrections` (the
+ *  CHECK, `0042_invoice_correction.sql`) and `invoice_check_correction`
+ *  (the cross-row trigger, `0043_invoice_correction_constraints.sql`)
+ *  enforce at the database level — this query exists so the picker never
+ *  offers a choice the write would reject anyway. */
+export async function listCorrectableInvoicesForContract(
+	contractId: string,
+	executor: DbExecutor = db
+) {
+	return executor
+		.select({
+			id: invoice.id,
+			number: invoice.number,
+			issueDate: invoice.issueDate,
+			taxableAmount: invoice.taxableAmount,
+			total: invoice.total,
+			currency: invoice.currency
+		})
+		.from(invoice)
+		.where(
+			and(
+				eq(invoice.contractId, contractId),
+				notInArray(invoice.documentType, ['credit_note', 'debit_note'])
+			)
+		)
 		.orderBy(desc(invoice.issueDate), desc(invoice.createdAt));
 }

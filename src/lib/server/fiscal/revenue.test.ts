@@ -122,6 +122,69 @@ test('fetchLedgerRows carries taxable_amount plus social_charge as revenue, neve
 	});
 });
 
+test('fetchLedgerRows negates a credit note\u2019s amount (#213), and leaves a debit note untouched', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow } = await insertContract(tx);
+		const original = await createInvoice(
+			invoiceInput(contractRow.id),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+
+		const creditNote = await createInvoice(
+			invoiceInput(contractRow.id, {
+				documentType: 'credit_note',
+				correctsInvoiceId: original.id,
+				lines: [
+					{
+						description: 'Correction',
+						quantity: 1,
+						unitPrice: minorUnits(30_000),
+						amount: minorUnits(30_000),
+						taxRate: 0,
+						taxTreatmentCode: null,
+						workUnitIds: []
+					}
+				]
+			}),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+
+		const debitNote = await createInvoice(
+			invoiceInput(contractRow.id, {
+				documentType: 'debit_note',
+				correctsInvoiceId: original.id,
+				lines: [
+					{
+						description: 'Under-billed correction',
+						quantity: 1,
+						unitPrice: minorUnits(5_000),
+						amount: minorUnits(5_000),
+						taxRate: 0,
+						taxTreatmentCode: null,
+						workUnitIds: []
+					}
+				]
+			}),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+
+		const rows = await fetchLedgerRows(tx);
+		expect(rows.find((r) => r.invoiceId === original.id)?.amount).toBe(100_000);
+		// The one figure #213 is about: a credit note subtracts from
+		// revenue instead of adding to it.
+		expect(rows.find((r) => r.invoiceId === creditNote.id)?.amount).toBe(-30_000);
+		// A debit note corrects an *under*-billed amount — it still adds,
+		// same as an ordinary invoice.
+		expect(rows.find((r) => r.invoiceId === debitNote.id)?.amount).toBe(5_000);
+	});
+});
+
 test('fetchLedgerRows carries both dates, paidOn null until collected', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const { contractRow } = await insertContract(tx);
@@ -144,16 +207,21 @@ test('fetchLedgerRows carries both dates, paidOn null until collected', async ()
 	});
 });
 
+// Each test below owns its own safely-past era (1950, 1951, 1954): past
+// every real regime's start, so none can ever collide with an instance's
+// own current, open-ended `fiscal_profile` row — see `profile.test.ts`'s
+// header comment on why a future era, however distant, does not have
+// this property.
 test('fetchRevenueOverRange sums under the sole pack in force for a range with no regime change', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const { contractRow } = await insertContract(tx);
 		const invoiceRow = await createInvoice(
-			invoiceInput(contractRow.id, { issueDate: '2087-03-01' }),
+			invoiceInput(contractRow.id, { issueDate: '1950-03-01' }),
 			{ kind: 'human', email: 'lorenzo@example.com' },
 			'test fixture',
 			tx
 		);
-		await tx.update(invoice).set({ paidOn: '2087-03-10' }).where(eq(invoice.id, invoiceRow.id));
+		await tx.update(invoice).set({ paidOn: '1950-03-10' }).where(eq(invoice.id, invoiceRow.id));
 
 		const cashPack: FiscalPack = {
 			id: 'test-revenue-cash',
@@ -169,25 +237,22 @@ test('fetchRevenueOverRange sums under the sole pack in force for a range with n
 			unresolvedRevenue: 'carries_forward'
 		};
 		const registry: PackRegistry = buildRegistry([cashPack]);
-		// Years far in the future so this profile cannot collide with
-		// another test file's own era under the database-wide exclusion
-		// constraint on `fiscal_profile` (see `profile.test.ts`'s own
-		// comment on the same concern).
+		await tx.delete(fiscalProfile);
 		await tx.insert(fiscalProfile).values({
 			packId: 'test-revenue-cash',
 			packVersion: '1',
-			validFrom: '2087-01-01',
+			validFrom: '1950-01-01',
 			validTo: null
 		});
 
-		const figure = await fetchRevenueOverRange('2087-01-01', '2088-01-01', tx, registry);
+		const figure = await fetchRevenueOverRange('1950-01-01', '1951-01-01', tx, registry);
 
 		expect(figure.amount).toBe(100_000);
 		expect(figure.subFigures).toEqual([
 			{
 				basis: 'cash',
-				from: '2087-01-01',
-				to: '2088-01-01',
+				from: '1950-01-01',
+				to: '1951-01-01',
 				amount: 100_000,
 				packId: 'test-revenue-cash'
 			}
@@ -202,18 +267,18 @@ test('fetchRevenueOverRange sums each sub-period under its own basis across a re
 		// Issued and paid before the switch: counted under the cash
 		// sub-period's basis regardless of which reading would agree.
 		const beforeSwitch = await createInvoice(
-			invoiceInput(contractRow.id, { issueDate: '2088-02-01' }),
+			invoiceInput(contractRow.id, { issueDate: '1951-02-01' }),
 			{ kind: 'human', email: 'lorenzo@example.com' },
 			'test fixture',
 			tx
 		);
-		await tx.update(invoice).set({ paidOn: '2088-02-10' }).where(eq(invoice.id, beforeSwitch.id));
+		await tx.update(invoice).set({ paidOn: '1951-02-10' }).where(eq(invoice.id, beforeSwitch.id));
 
 		// Issued after the switch to accrual, never paid: still counted,
 		// because the sub-period it falls in reads by issue date.
 		await createInvoice(
 			invoiceInput(contractRow.id, {
-				issueDate: '2088-08-01',
+				issueDate: '1951-08-01',
 				lines: [
 					{
 						description: 'Consulting',
@@ -250,30 +315,30 @@ test('fetchRevenueOverRange sums each sub-period under its own basis across a re
 		await tx.insert(fiscalProfile).values({
 			packId: 'test-regime-cash',
 			packVersion: '1',
-			validFrom: '2088-01-01',
-			validTo: '2088-07-01'
+			validFrom: '1951-01-01',
+			validTo: '1951-07-01'
 		});
 		await tx.insert(fiscalProfile).values({
 			packId: 'test-regime-accrual',
 			packVersion: '1',
-			validFrom: '2088-07-01',
-			validTo: '2089-01-01'
+			validFrom: '1951-07-01',
+			validTo: '1952-01-01'
 		});
 
-		const figure = await fetchRevenueOverRange('2088-01-01', '2089-01-01', tx, registry);
+		const figure = await fetchRevenueOverRange('1951-01-01', '1952-01-01', tx, registry);
 
 		expect(figure.subFigures).toEqual([
 			{
 				basis: 'cash',
-				from: '2088-01-01',
-				to: '2088-07-01',
+				from: '1951-01-01',
+				to: '1951-07-01',
 				amount: 100_000,
 				packId: 'test-regime-cash'
 			},
 			{
 				basis: 'accrual',
-				from: '2088-07-01',
-				to: '2089-01-01',
+				from: '1951-07-01',
+				to: '1952-01-01',
 				amount: 60_000,
 				packId: 'test-regime-accrual'
 			}
@@ -282,6 +347,8 @@ test('fetchRevenueOverRange sums each sub-period under its own basis across a re
 	});
 });
 
+// 1954 (and 1953 for the out-of-range client): its own safely-past era —
+// see the earlier tests' own comment on this file.
 test('fetchClientRevenueBreakdown splits revenue by client under the pack in force, leaving an out-of-range client out', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const { clientRow: clientA, contractRow: contractA } = await insertContract(tx);
@@ -289,18 +356,18 @@ test('fetchClientRevenueBreakdown splits revenue by client under the pack in for
 
 		// In range and paid: counted for client A.
 		const invoiceA = await createInvoice(
-			invoiceInput(contractA.id, { issueDate: '2094-03-01' }),
+			invoiceInput(contractA.id, { issueDate: '1954-03-01' }),
 			{ kind: 'human', email: 'lorenzo@example.com' },
 			'test fixture',
 			tx
 		);
-		await tx.update(invoice).set({ paidOn: '2094-03-10' }).where(eq(invoice.id, invoiceA.id));
+		await tx.update(invoice).set({ paidOn: '1954-03-10' }).where(eq(invoice.id, invoiceA.id));
 
 		// Client B only has revenue before the queried range: left out of
 		// `byClient` entirely rather than listed at zero.
 		const invoiceB = await createInvoice(
 			invoiceInput(contractB.id, {
-				issueDate: '2093-11-01',
+				issueDate: '1953-11-01',
 				lines: [
 					{
 						description: 'Consulting',
@@ -317,7 +384,7 @@ test('fetchClientRevenueBreakdown splits revenue by client under the pack in for
 			'test fixture',
 			tx
 		);
-		await tx.update(invoice).set({ paidOn: '2093-11-05' }).where(eq(invoice.id, invoiceB.id));
+		await tx.update(invoice).set({ paidOn: '1953-11-05' }).where(eq(invoice.id, invoiceB.id));
 
 		const cashPack: FiscalPack = {
 			id: 'test-client-breakdown-cash',
@@ -333,17 +400,20 @@ test('fetchClientRevenueBreakdown splits revenue by client under the pack in for
 			unresolvedRevenue: 'carries_forward'
 		};
 		const registry: PackRegistry = buildRegistry([cashPack]);
-		// Its own distant era, so it cannot collide with another test
-		// file's fiscal_profile rows under the database-wide exclusion
-		// constraint (see `profile.test.ts`'s comment on the same concern).
+		// Its own distant, safely-past era. Clears the table first, inside
+		// its own rolled-back transaction — a real seeded "current regime"
+		// row cannot be dodged with an earlier start date, since two
+		// open-ended ranges always overlap regardless of where either starts
+		// (see `profile.test.ts`'s `makeRoomForOwnProfiles` comment).
+		await tx.delete(fiscalProfile);
 		await tx.insert(fiscalProfile).values({
 			packId: 'test-client-breakdown-cash',
 			packVersion: '1',
-			validFrom: '2094-01-01',
+			validFrom: '1954-01-01',
 			validTo: null
 		});
 
-		const breakdown = await fetchClientRevenueBreakdown('2094-01-01', '2095-01-01', tx, registry);
+		const breakdown = await fetchClientRevenueBreakdown('1954-01-01', '1955-01-01', tx, registry);
 
 		expect(breakdown.byClient).toEqual([{ clientId: clientA.id, amount: 100_000 }]);
 		expect(breakdown.total).toBe(100_000);
