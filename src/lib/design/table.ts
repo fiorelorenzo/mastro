@@ -62,7 +62,10 @@ export function toggleTableSort(current: TableSort | null, key: string): TableSo
 }
 
 /** The `aria-sort` value for a header cell — `'none'` covers both "sortable, not sorted" and "not the active column". */
-export function tableAriaSort(sort: TableSort | null, key: string): 'ascending' | 'descending' | 'none' {
+export function tableAriaSort(
+	sort: TableSort | null,
+	key: string
+): 'ascending' | 'descending' | 'none' {
 	if (sort?.key !== key) return 'none';
 	return sort.direction === 'asc' ? 'ascending' : 'descending';
 }

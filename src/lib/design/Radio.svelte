@@ -37,7 +37,10 @@
 		/** `md` matches `--row-comfortable`; `lg` is the mobile-critical size. */
 		size?: 'md' | 'lg';
 		id?: string;
-	} & Omit<HTMLInputAttributes, 'type' | 'checked' | 'id' | 'disabled' | 'name' | 'value' | 'size'> = $props();
+	} & Omit<
+		HTMLInputAttributes,
+		'type' | 'checked' | 'id' | 'disabled' | 'name' | 'value' | 'size'
+	> = $props();
 
 	const autoId = $props.id();
 	const ids = $derived(
@@ -46,7 +49,11 @@
 </script>
 
 <div class="wrap">
-	<label class="radio radio--{size}" class:radio--disabled={disabled} class:radio--invalid={Boolean(error)}>
+	<label
+		class="radio radio--{size}"
+		class:radio--disabled={disabled}
+		class:radio--invalid={Boolean(error)}
+	>
 		<input
 			{...rest}
 			bind:group

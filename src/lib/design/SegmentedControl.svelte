@@ -76,11 +76,11 @@
 	}
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -- the group
-     itself is not a focus target (role="group" is deliberately
-     non-interactive); the keydown handler is a roving-tabindex delegation
-     point that only reacts to events bubbling up from the focused, properly
-     tabbable <button> children. -->
+<!-- The group is not a focus target (role="group" is deliberately
+     non-interactive); this keydown handler is the roving-tabindex
+     delegation point, and it only ever reacts to events bubbling up from
+     the focused, properly tabbable <button> children. -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
 	class="seg seg--{size}"
 	class:seg--invalid={resolved.invalid}

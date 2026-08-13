@@ -35,8 +35,7 @@
 	class="control"
 	aria-invalid={resolved.invalid || undefined}
 	aria-describedby={resolved.describedBy}
-	required={resolved.required || undefined}
-></textarea>
+	required={resolved.required || undefined}></textarea>
 
 <style>
 	.control {

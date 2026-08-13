@@ -44,7 +44,12 @@ export function resolveControlState(
 		readonly describedBy?: string;
 		readonly required?: boolean;
 	}
-): { id: string | undefined; invalid: boolean; describedBy: string | undefined; required: boolean } {
+): {
+	id: string | undefined;
+	invalid: boolean;
+	describedBy: string | undefined;
+	required: boolean;
+} {
 	return {
 		id: explicit.id ?? field?.id,
 		invalid: explicit.invalid ?? field?.invalid ?? false,

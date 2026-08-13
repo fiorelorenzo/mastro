@@ -19,7 +19,12 @@ describe('resolveControlState', () => {
 	});
 
 	test('inside a valid Field, a control inherits its id but stays valid', () => {
-		const field: FieldState = { id: 'scope', invalid: false, describedBy: 'scope-hint', required: true };
+		const field: FieldState = {
+			id: 'scope',
+			invalid: false,
+			describedBy: 'scope-hint',
+			required: true
+		};
 		expect(resolveControlState(field, {})).toEqual({
 			id: 'scope',
 			invalid: false,
@@ -29,7 +34,12 @@ describe('resolveControlState', () => {
 	});
 
 	test('inside an invalid Field, a control inherits aria-invalid=true and the error id — with nothing spread by hand', () => {
-		const field: FieldState = { id: 'email', invalid: true, describedBy: 'email-error', required: false };
+		const field: FieldState = {
+			id: 'email',
+			invalid: true,
+			describedBy: 'email-error',
+			required: false
+		};
 		expect(resolveControlState(field, {})).toEqual({
 			id: 'email',
 			invalid: true,
@@ -39,14 +49,29 @@ describe('resolveControlState', () => {
 	});
 
 	test('an explicit prop always wins over the ancestor Field, field by field', () => {
-		const field: FieldState = { id: 'email', invalid: true, describedBy: 'email-error', required: false };
+		const field: FieldState = {
+			id: 'email',
+			invalid: true,
+			describedBy: 'email-error',
+			required: false
+		};
 		expect(
-			resolveControlState(field, { id: 'custom-id', invalid: false, describedBy: 'custom-hint', required: true })
+			resolveControlState(field, {
+				id: 'custom-id',
+				invalid: false,
+				describedBy: 'custom-hint',
+				required: true
+			})
 		).toEqual({ id: 'custom-id', invalid: false, describedBy: 'custom-hint', required: true });
 	});
 
 	test('a partial override only replaces the fields given, inheriting the rest', () => {
-		const field: FieldState = { id: 'email', invalid: true, describedBy: 'email-error', required: false };
+		const field: FieldState = {
+			id: 'email',
+			invalid: true,
+			describedBy: 'email-error',
+			required: false
+		};
 		expect(resolveControlState(field, { invalid: false })).toEqual({
 			id: 'email',
 			invalid: false,
@@ -74,7 +99,12 @@ describe('parseAriaInvalid', () => {
 	});
 
 	test('this is what makes an Input inside an invalid Field with no aria-invalid prop still announce it', () => {
-		const field: FieldState = { id: 'email', invalid: true, describedBy: 'email-error', required: false };
+		const field: FieldState = {
+			id: 'email',
+			invalid: true,
+			describedBy: 'email-error',
+			required: false
+		};
 		const explicitInvalid = parseAriaInvalid(undefined);
 		expect(resolveControlState(field, { invalid: explicitInvalid }).invalid).toBe(true);
 	});

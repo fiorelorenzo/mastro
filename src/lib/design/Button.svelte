@@ -19,6 +19,7 @@
 	 */
 	import type { Snippet } from 'svelte';
 	import * as m from '$lib/paraglide/messages';
+	import { appHref } from '$lib/nav/href';
 	import {
 		buttonAriaBusy,
 		buttonClasses,
@@ -72,7 +73,7 @@
 {#if href}
 	<a
 		{...rest}
-		{href}
+		href={appHref(href)}
 		class={classes}
 		aria-disabled={blocked ? 'true' : undefined}
 		aria-busy={buttonAriaBusy(loading)}
@@ -86,7 +87,14 @@
 		{/if}
 	</a>
 {:else}
-	<button {...rest} {type} class={classes} disabled={blocked} aria-busy={buttonAriaBusy(loading)} {onclick}>
+	<button
+		{...rest}
+		{type}
+		class={classes}
+		disabled={blocked}
+		aria-busy={buttonAriaBusy(loading)}
+		{onclick}
+	>
 		<span class="label">{@render children()}</span>
 		{#if loading}
 			<span class="spinner" aria-hidden="true"></span>

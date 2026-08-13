@@ -1,6 +1,12 @@
 import { expect, test } from 'vitest';
 import { assertUniqueColumnKeys } from '$lib/layout/types';
-import { sortRows, tableAriaSort, toggleTableSort, type TableColumn, type TableSort } from './table';
+import {
+	sortRows,
+	tableAriaSort,
+	toggleTableSort,
+	type TableColumn,
+	type TableSort
+} from './table';
 
 interface Row {
 	readonly id: string;

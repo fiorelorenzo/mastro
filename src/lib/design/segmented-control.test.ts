@@ -29,7 +29,11 @@ describe('nextEnabledIndex', () => {
 	});
 
 	test('skips a disabled option in either direction', () => {
-		const withDisabled: SegmentedOption[] = [{ value: 'a' }, { value: 'b', disabled: true }, { value: 'c' }];
+		const withDisabled: SegmentedOption[] = [
+			{ value: 'a' },
+			{ value: 'b', disabled: true },
+			{ value: 'c' }
+		];
 		expect(nextEnabledIndex(withDisabled, 0, 1)).toBe(2);
 		expect(nextEnabledIndex(withDisabled, 2, -1)).toBe(0);
 	});

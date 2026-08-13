@@ -1,6 +1,11 @@
 import { expect, test } from 'vitest';
 import { formatDecimalString, majorUnitsToDecimalString, parseDecimalString } from './decimal';
-import { minorUnits, minorUnitsToDecimalString, type MinorUnits, type NotMinorUnits } from './money';
+import {
+	minorUnits,
+	minorUnitsToDecimalString,
+	type MinorUnits,
+	type NotMinorUnits
+} from './money';
 
 test('without a locale, only the bare-dot wire shape parses', () => {
 	expect(parseDecimalString('700.00')).toEqual({ sign: '', intPart: '700', fracPart: '00' });

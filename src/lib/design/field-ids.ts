@@ -24,6 +24,7 @@ export function computeFieldIds(options: {
 	const { id, hasHint, hasError } = options;
 	const hintId = hasHint ? `${id}-hint` : undefined;
 	const errorId = hasError ? `${id}-error` : undefined;
-	const describedBy = [hintId, errorId].filter((part): part is string => part !== undefined).join(' ') || undefined;
+	const describedBy =
+		[hintId, errorId].filter((part): part is string => part !== undefined).join(' ') || undefined;
 	return { controlId: id, hintId, errorId, describedBy };
 }

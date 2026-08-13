@@ -51,11 +51,7 @@ export { default as Radio } from './Radio.svelte';
 export { default as SegmentedControl } from './SegmentedControl.svelte';
 export { parseAriaInvalid, resolveControlState, useField, type FieldState } from './field-context';
 export { computeFieldIds, type FieldIds } from './field-ids';
-export {
-	keyToDirection,
-	nextEnabledIndex,
-	type SegmentedOption
-} from './segmented-control';
+export { keyToDirection, nextEnabledIndex, type SegmentedOption } from './segmented-control';
 
 // ── status & badges — glyph-plus-colour, colour never alone ─────────────
 export { default as Badge } from './Badge.svelte';
