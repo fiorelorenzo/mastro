@@ -15,7 +15,9 @@ import type { Invoice, InvoiceParty } from './invoice';
 
 export interface ClientMatchCandidate {
 	readonly id: string;
-	readonly taxId: string;
+	/** Null since a client needs only a legal name and a country. A client
+	 * without one is never matched by this function — see below. */
+	readonly taxId: string | null;
 	readonly legalName: string;
 	/** The one contract an imported invoice for this client can be filed
 	 * against without asking, computed by the caller (#44): the client's
@@ -29,13 +31,24 @@ export interface ClientMatchCandidate {
 }
 
 /** Exact match on tax id, the only signal #46 asks for — case and
- * surrounding whitespace insensitive, same as direction detection. */
+ * surrounding whitespace insensitive, same as direction detection.
+ *
+ * An absent tax id matches nothing, including another absent one. Since a
+ * client can now be recorded with only a legal name and a country, a naive
+ * comparison would find every tax-id-less client equal to every other and
+ * file an incoming invoice against whichever came first. "I know nothing
+ * about this one" is not evidence of identity. */
 export function matchClientByTaxId(
 	customer: Pick<InvoiceParty, 'taxId'>,
 	clients: readonly ClientMatchCandidate[]
 ): ClientMatchCandidate | null {
 	const target = normalizedTaxId(customer.taxId);
-	return clients.find((candidate) => normalizedTaxId(candidate.taxId) === target) ?? null;
+	if (!target) return null;
+	return (
+		clients.find(
+			(candidate) => candidate.taxId !== null && normalizedTaxId(candidate.taxId) === target
+		) ?? null
+	);
 }
 
 export interface ClientProposal {
@@ -49,11 +62,12 @@ export interface ClientProposal {
 	readonly addressPostalCode: string;
 	readonly addressRegion: string | null;
 	/** An invoice reveals nothing about how this client prefers to receive
-	 * a legal notice (renewal refusal, termination) — `'email'` is the
-	 * least-friction default among the options `noticeChannel` allows and
-	 * requires no address/detail beyond one already on the invoice; the
-	 * user corrects it on the client's own edit screen if it is wrong. */
-	readonly noticeChannel: NoticeChannel;
+	 * a legal notice (renewal refusal, termination), so this is `null` and
+	 * not a guess. It used to default to `'email'`, which is the same
+	 * shape of mistake as inventing an address: cheap to type, invisible
+	 * afterwards, and asserting something nobody agreed. Nullable since
+	 * migration 0056. */
+	readonly noticeChannel: NoticeChannel | null;
 }
 
 export interface ContractProposal {
@@ -168,7 +182,7 @@ export function buildClientContractProposal(invoices: readonly Invoice[]): Clien
 			addressCity: customer.addressCity,
 			addressPostalCode: customer.addressPostalCode,
 			addressRegion: customer.addressRegion ?? null,
-			noticeChannel: 'email'
+			noticeChannel: null
 		},
 		contract: {
 			title: customer.legalName,

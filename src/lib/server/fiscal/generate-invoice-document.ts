@@ -15,6 +15,7 @@ import { storeDocument } from '$lib/server/repositories/document';
 import type { MinorUnits } from '$lib/money';
 import type { InvoiceDocumentType } from '$lib/server/import/invoice';
 import type { FiscalPack } from './pack';
+import { clientInvoicingGaps } from './client-invoicing-gaps';
 import { generateInvoiceDocument } from './generate/generate';
 import { defaultGeneratorRegistry } from './generate/registry';
 import type {
@@ -68,7 +69,18 @@ export interface GeneratableInvoiceRow {
 		readonly amount: MinorUnits;
 	}[];
 	readonly contract: {
-		readonly client: PartyIdentityRow & {
+		/** Nullable where `client` is nullable since migration 0056: a client
+		 * needs only a legal name and a country. `assertInvoiceableClient`
+		 * below is what turns that back into the complete party a document
+		 * needs, refusing by name rather than emitting a blank field. */
+		readonly client: Omit<
+			PartyIdentityRow,
+			'taxId' | 'addressLine1' | 'addressCity' | 'addressPostalCode'
+		> & {
+			readonly taxId: string | null;
+			readonly addressLine1: string | null;
+			readonly addressCity: string | null;
+			readonly addressPostalCode: string | null;
 			readonly sdiCode: string | null;
 			readonly pecAddress: string | null;
 		};
@@ -91,13 +103,42 @@ function toGeneratableParty(row: PartyIdentityRow): GeneratableParty {
 	};
 }
 
-function toGeneratableCustomer(
-	client: GeneratableInvoiceRow['contract']['client']
+/**
+ * The last net, and deliberately not the first: `clientInvoicingGaps` is
+ * what the screens read so a reviewer is told before clicking, and this is
+ * what stops an incomplete client reaching the XML builder anyway. Throws
+ * naming every missing field at once, because fixing them one refusal at a
+ * time is four round trips through the client edit screen.
+ */
+export function toGeneratableCustomer(
+	client: GeneratableInvoiceRow['contract']['client'],
+	pack: Pick<FiscalPack, 'formats'>
 ): GeneratableCustomer {
-	return { ...toGeneratableParty(client), sdiCode: client.sdiCode, pecAddress: client.pecAddress };
+	const gaps = clientInvoicingGaps(client, pack);
+	if (gaps.length > 0) {
+		throw new Error(
+			`client ${JSON.stringify(client.legalName)} cannot be invoiced under this pack until ` +
+				`${gaps.join(', ')} ${gaps.length === 1 ? 'is' : 'are'} filled in`
+		);
+	}
+	return {
+		...toGeneratableParty({
+			...client,
+			// Non-null by the check above, which named every one of them.
+			taxId: client.taxId!,
+			addressLine1: client.addressLine1!,
+			addressCity: client.addressCity!,
+			addressPostalCode: client.addressPostalCode!
+		}),
+		sdiCode: client.sdiCode,
+		pecAddress: client.pecAddress
+	};
 }
 
-export function toGeneratableInvoice(invoiceRow: GeneratableInvoiceRow): GeneratableInvoice {
+export function toGeneratableInvoice(
+	invoiceRow: GeneratableInvoiceRow,
+	customer: GeneratableCustomer
+): GeneratableInvoice {
 	return {
 		number: invoiceRow.number,
 		issueDate: invoiceRow.issueDate,
@@ -117,7 +158,7 @@ export function toGeneratableInvoice(invoiceRow: GeneratableInvoiceRow): Generat
 			unitPrice: line.unitPrice,
 			amount: line.amount
 		})),
-		customer: toGeneratableCustomer(invoiceRow.contract.client)
+		customer
 	};
 }
 
@@ -139,8 +180,13 @@ export async function generateAndStoreInvoiceDocument(
 	pack: FiscalPack,
 	executor: DbExecutor = db
 ): Promise<GenerateAndStoreOutcome> {
+	// Before the conversion, and before `generateInvoiceDocument` decides
+	// whether this pack has a format at all: an instance on a pack with no
+	// format reports no gaps, so it still returns `unsupported` rather than
+	// throwing about fields its jurisdiction never asked for.
+	const customer = toGeneratableCustomer(invoiceRow.contract.client, pack);
 	const generated = generateInvoiceDocument(
-		toGeneratableInvoice(invoiceRow),
+		toGeneratableInvoice(invoiceRow, customer),
 		toGeneratableParty(practiceProfile),
 		pack,
 		defaultGeneratorRegistry

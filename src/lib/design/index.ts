@@ -45,12 +45,22 @@ export type {
 export { default as Button } from './Button.svelte';
 export { default as Field } from './Field.svelte';
 export { default as Input } from './Input.svelte';
-export { default as FileInput } from './FileInput.svelte';
+export { default as DropZone } from './DropZone.svelte';
 export { default as Textarea } from './Textarea.svelte';
 export { default as Select } from './Select.svelte';
 export { default as Checkbox } from './Checkbox.svelte';
 export { default as Radio } from './Radio.svelte';
 export { default as SegmentedControl } from './SegmentedControl.svelte';
+export {
+	acceptSummary,
+	fileMatchesAccept,
+	mergeSelection,
+	parseAccept,
+	partitionByAccept,
+	removeFileAt,
+	type AcceptPartition,
+	type AcceptRule
+} from './drop-zone';
 export { countryOptions, type CountryOption } from './country-picker';
 export { parseAriaInvalid, resolveControlState, useField, type FieldState } from './field-context';
 export { computeFieldIds, type FieldIds } from './field-ids';

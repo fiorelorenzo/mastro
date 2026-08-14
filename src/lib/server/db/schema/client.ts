@@ -33,17 +33,39 @@ export const client = pgTable(
 	{
 		id: id(),
 		legalName: text('legal_name').notNull(),
-		// Unique: import matching keys on it to find the client an incoming
-		// invoice document belongs to.
-		taxId: text('tax_id').notNull().unique(),
+		/**
+		 * Unique, and optional. Import matching keys on it to find the client
+		 * an incoming invoice document belongs to, so a client that has one
+		 * is still matched exactly — but requiring it made the row
+		 * unrecordable before anyone knew it, and the way around that was to
+		 * invent a value, which then travels onto an invoice.
+		 *
+		 * `UNIQUE` survives the nullability for free: Postgres does not treat
+		 * two `NULL`s as equal, so any number of clients without a tax id
+		 * coexist while two sharing a real one are still refused by the
+		 * database rather than by an application check. `matchClientByTaxId`
+		 * carries the other half of that rule — an absent tax id matches
+		 * nothing, including another absent one.
+		 */
+		taxId: text('tax_id').unique(),
 		vatId: text('vat_id'),
 		country: text('country').notNull(),
-		addressLine1: text('address_line1').notNull(),
+		addressLine1: text('address_line1'),
 		addressLine2: text('address_line2'),
-		addressCity: text('address_city').notNull(),
-		addressPostalCode: text('address_postal_code').notNull(),
+		addressCity: text('address_city'),
+		addressPostalCode: text('address_postal_code'),
 		addressRegion: text('address_region'),
-		noticeChannel: noticeChannel('notice_channel').notNull(),
+		/**
+		 * Empty until somebody knows the answer. Nothing reads this column to
+		 * decide anything today, and two places used to *write* it without
+		 * being told — `applyProposal` and `buildClientContractProposal` both
+		 * defaulted it to `'email'`, the latter with a comment admitting that
+		 * an invoice reveals nothing about how a client prefers to receive a
+		 * legal notice. A notice-sending surface does not exist yet; when it
+		 * does it must require this field, which is a better place for the
+		 * question than a form nobody can get past.
+		 */
+		noticeChannel: noticeChannel('notice_channel'),
 		/**
 		 * FatturaPA's `CodiceDestinatario` (#259): the 7-character code SdI
 		 * routes this client's e-invoices to. Optional — most clients

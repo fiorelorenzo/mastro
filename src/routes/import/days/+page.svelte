@@ -16,9 +16,9 @@
 		Badge,
 		Banner,
 		Button,
+		DropZone,
 		ErrorState,
 		Field,
-		FileInput,
 		Select,
 		StatTile,
 		Tabs,
@@ -281,7 +281,7 @@
 
 	{#if stage === 'idle'}
 		<Field label={m.import_days_file_label()}>
-			<FileInput
+			<DropZone
 				label={m.import_days_file_button()}
 				accept=".csv,text/csv"
 				onchange={onFileChange}

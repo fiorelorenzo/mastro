@@ -34,7 +34,9 @@ import type {
 } from '$lib/server/db/schema';
 import { decodeMessageBody, parseMessage } from '$lib/server/mail/headers';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
+import { matchClientByTaxId, type ClientMatchCandidate } from '$lib/server/import/client-match';
 import { decimalStringToMinorUnits } from '$lib/server/import/decimal';
+import { listClients, type ClientInput } from '$lib/server/repositories/client';
 import { getContractWithClient } from '$lib/server/repositories/contract';
 import {
 	getDocument,
@@ -47,7 +49,8 @@ import {
 	diffProposalFields,
 	getProposal,
 	listProposalsForDocument,
-	rejectProposal
+	rejectProposal,
+	type ClientChoice
 } from '$lib/server/repositories/proposal';
 import { listRateCards } from '$lib/server/repositories/rate-card';
 import type { Actions, PageServerLoad } from './$types';
@@ -205,6 +208,73 @@ function optionalStringField(formData: FormData, name: string): string | null {
 	return value.length > 0 ? value : null;
 }
 
+/** The "create a new client" fields off the review screen's own
+ * submission, falling back to `candidate`'s extracted value for any field
+ * the form did not carry — shared by `contractEditsFromForm`'s own
+ * `edits.client` and `clientChoiceFromForm`'s `'new'` branch, so the two
+ * never drift into reading the form differently. */
+function extractedClientFromForm(candidate: ExtractedClient, formData: FormData): ExtractedClient {
+	return {
+		legalName: stringField(formData, 'client.legalName') || candidate.legalName,
+		taxId: stringField(formData, 'client.taxId') || candidate.taxId,
+		vatId: optionalStringField(formData, 'client.vatId'),
+		country: (stringField(formData, 'client.country') || candidate.country).toUpperCase(),
+		addressLine1: stringField(formData, 'client.addressLine1') || candidate.addressLine1,
+		addressLine2: optionalStringField(formData, 'client.addressLine2'),
+		addressCity: stringField(formData, 'client.addressCity') || candidate.addressCity,
+		addressPostalCode:
+			stringField(formData, 'client.addressPostalCode') || candidate.addressPostalCode,
+		addressRegion: optionalStringField(formData, 'client.addressRegion')
+	};
+}
+
+/**
+ * The `ClientChoice` `acceptProposal` requires for a `'contract'` accept
+ * (design: "the client behind an extracted contract is always an explicit
+ * choice") — read straight off the client section's own submission,
+ * never guessed. `'existing'.updates` carries only the fields the
+ * reviewer ticked to adopt from the document (`clientFieldAdopt.<field>`,
+ * one checkbox per field the template offers a diff for): an unticked
+ * box stays unticked, so a changed registered address never reaches the
+ * client row merely because a PDF asserted it. `noticeChannel`/`sdiCode`/
+ * `pecAddress` are never among them — no contract PDF states any of
+ * them, so there is never a document value to offer adopting.
+ */
+function clientChoiceFromForm(
+	candidate: ExtractedContractCandidate,
+	formData: FormData
+): ClientChoice {
+	if (stringField(formData, 'clientMode') === 'existing') {
+		const c = candidate.client;
+		const updates: Partial<ClientInput> = {};
+		if (formData.has('clientFieldAdopt.legalName')) updates.legalName = c.legalName;
+		if (formData.has('clientFieldAdopt.taxId')) updates.taxId = c.taxId;
+		if (formData.has('clientFieldAdopt.vatId')) updates.vatId = c.vatId;
+		if (formData.has('clientFieldAdopt.country')) updates.country = c.country.toUpperCase();
+		if (formData.has('clientFieldAdopt.addressLine1')) updates.addressLine1 = c.addressLine1;
+		if (formData.has('clientFieldAdopt.addressLine2')) updates.addressLine2 = c.addressLine2;
+		if (formData.has('clientFieldAdopt.addressCity')) updates.addressCity = c.addressCity;
+		if (formData.has('clientFieldAdopt.addressPostalCode')) {
+			updates.addressPostalCode = c.addressPostalCode;
+		}
+		if (formData.has('clientFieldAdopt.addressRegion')) updates.addressRegion = c.addressRegion;
+		return { kind: 'existing', clientId: stringField(formData, 'clientId'), updates };
+	}
+	return {
+		kind: 'new',
+		fields: {
+			...extractedClientFromForm(candidate.client, formData),
+			// A contract's own letterhead never carries a notice channel or
+			// an SdI routing code — the same reason `applyProposal`'s
+			// create-client write leaves both null.
+			noticeChannel: null,
+			sdiCode: null,
+			pecAddress: null,
+			contacts: []
+		}
+	};
+}
+
 /**
  * Rebuilds `client`, `contract` and `clauseFlags` from the review screen's
  * own submission — the `'contract'` counterpart of `editedFieldsFromForm`
@@ -228,18 +298,7 @@ function contractEditsFromForm(
 	contract: ExtractedContractFields;
 	clauseFlags: ExtractedClauseFlag[];
 } {
-	const client: ExtractedClient = {
-		legalName: stringField(formData, 'client.legalName') || candidate.client.legalName,
-		taxId: stringField(formData, 'client.taxId') || candidate.client.taxId,
-		vatId: optionalStringField(formData, 'client.vatId'),
-		country: (stringField(formData, 'client.country') || candidate.client.country).toUpperCase(),
-		addressLine1: stringField(formData, 'client.addressLine1') || candidate.client.addressLine1,
-		addressLine2: optionalStringField(formData, 'client.addressLine2'),
-		addressCity: stringField(formData, 'client.addressCity') || candidate.client.addressCity,
-		addressPostalCode:
-			stringField(formData, 'client.addressPostalCode') || candidate.client.addressPostalCode,
-		addressRegion: optionalStringField(formData, 'client.addressRegion')
-	};
+	const client = extractedClientFromForm(candidate.client, formData);
 
 	const currency = (stringField(formData, 'currency') || candidate.contract.currency).toUpperCase();
 
@@ -345,6 +404,43 @@ export const load: PageServerLoad = async ({ params }) => {
 	const invoiceFields =
 		row.targetType === 'invoice' ? invoiceFieldsFromProposal(effectiveTargetFields) : null;
 
+	// The client picker's own candidates and the tax-id preselection —
+	// only meaningful while there is still a choice to make: a decided
+	// proposal's client section renders read-only (the extracted/accepted
+	// fields, same as before this change), so it needs neither. The list
+	// is trimmed to the fields a document's client can be compared
+	// against — `client_form_*`'s own labels, not the row's timestamps or
+	// contacts. `matchClientByTaxId` (`import/client-match.ts`) is the
+	// invoice-import lane's own matcher, reused rather than a second
+	// implementation of "does this tax id already belong to a client" —
+	// its null-safety included: an absent tax id, on either side, never
+	// matches, so a client with none is never wrongly preselected.
+	const existingClients =
+		row.status === 'pending' && row.targetType === 'contract' && contractCandidate
+			? (await listClients()).map((c) => ({
+					id: c.id,
+					legalName: c.legalName,
+					taxId: c.taxId,
+					vatId: c.vatId,
+					country: c.country,
+					addressLine1: c.addressLine1,
+					addressLine2: c.addressLine2,
+					addressCity: c.addressCity,
+					addressPostalCode: c.addressPostalCode,
+					addressRegion: c.addressRegion
+				}))
+			: [];
+	const clientMatchCandidates: ClientMatchCandidate[] = existingClients.map((c) => ({
+		id: c.id,
+		taxId: c.taxId,
+		legalName: c.legalName,
+		activeContractId: null
+	}));
+	const clientMatchId = contractCandidate
+		? (matchClientByTaxId({ taxId: contractCandidate.client.taxId }, clientMatchCandidates)?.id ??
+			null)
+		: null;
+
 	// An accepted 'contract' proposal creates a client and a contract, but
 	// `proposal.contractId` stays null forever for a first-intake row
 	// (`db/schema/proposal.ts`'s own doc comment) — `resultId` is the new
@@ -398,6 +494,8 @@ export const load: PageServerLoad = async ({ params }) => {
 		currency: contract?.currency ?? 'EUR',
 		amount,
 		contractCandidate,
+		existingClients,
+		clientMatchId,
 		invoiceFields,
 		acceptedContractClientId: acceptedContract?.client.id ?? null,
 		sourceDocument: document ? toSourceDocumentValue(document) : null,
@@ -435,6 +533,7 @@ export const actions: Actions = {
 
 		const formData = await request.formData();
 		let edits: Record<string, unknown>;
+		let clientChoice: ClientChoice | undefined;
 		if (row.targetType === 'contract') {
 			const candidate = contractCandidateFromProposal(row.proposedFields);
 			if (!candidate) {
@@ -447,6 +546,10 @@ export const actions: Actions = {
 			} catch (err) {
 				return fail(400, { decisionError: errorMessage(err) });
 			}
+			clientChoice = clientChoiceFromForm(candidate, formData);
+			if (clientChoice.kind === 'existing' && clientChoice.clientId === '') {
+				return fail(400, { decisionError: m.proposal_contract_client_choice_required_error() });
+			}
 		} else if (row.targetType === 'invoice') {
 			// Never edited on this screen (#86's brief: render number, date,
 			// client, lines and totals) — accepted exactly as proposed.
@@ -456,7 +559,7 @@ export const actions: Actions = {
 		}
 
 		try {
-			await acceptProposal(params.id, { edits, decidedBy: locals.user!.email });
+			await acceptProposal(params.id, { edits, decidedBy: locals.user!.email, clientChoice });
 		} catch (err) {
 			return fail(400, { decisionError: errorMessage(err) });
 		}

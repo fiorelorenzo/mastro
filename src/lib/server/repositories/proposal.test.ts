@@ -24,7 +24,8 @@ import {
 	createProposal,
 	diffProposalFields,
 	getProposal,
-	rejectProposal
+	rejectProposal,
+	type ClientChoice
 } from './proposal';
 import { createWorkUnit, getWorkUnit } from './work-unit';
 
@@ -93,6 +94,31 @@ async function insertContract(tx: Parameters<Parameters<typeof db.transaction>[0
 		})
 		.returning();
 	return contractRow;
+}
+
+/** A client already on file, independent of any proposal — the shape a
+ * `'existing'` `ClientChoice` links against. Fields default to something
+ * deliberately different from `validContractFields()`'s own extracted
+ * client, so a test can prove a field the reviewer did not tick to adopt
+ * really did stay what was on file, not what the document said. */
+async function insertClient(
+	tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+	overrides: Partial<typeof client.$inferInsert> = {}
+) {
+	counter += 1;
+	const [row] = await tx
+		.insert(client)
+		.values({
+			legalName: `Existing Client ${counter}`,
+			taxId: `EXISTING-TAX-${counter}`,
+			country: 'IT',
+			addressLine1: 'Via Vecchia 1',
+			addressCity: 'Brescia',
+			addressPostalCode: '25100',
+			...overrides
+		})
+		.returning();
+	return row;
 }
 
 /**
@@ -213,6 +239,31 @@ function validContractFields(
 			}
 		],
 		clauseFlags: overrides.clauseFlags ?? []
+	};
+}
+
+/** The `'new'` `ClientChoice` a `validContractFields()` proposal's own
+ * extracted client maps onto — the same construction `applyProposal`'s
+ * old create-client write did inline, now the reviewer's explicit
+ * decision instead of the accept dispatcher's own guess. */
+function newClientChoice(extractedClient: Record<string, unknown>): ClientChoice {
+	return {
+		kind: 'new',
+		fields: {
+			legalName: extractedClient.legalName as string,
+			taxId: extractedClient.taxId as string,
+			vatId: extractedClient.vatId as string | null,
+			country: extractedClient.country as string,
+			addressLine1: extractedClient.addressLine1 as string,
+			addressLine2: extractedClient.addressLine2 as string | null,
+			addressCity: extractedClient.addressCity as string,
+			addressPostalCode: extractedClient.addressPostalCode as string,
+			addressRegion: extractedClient.addressRegion as string | null,
+			noticeChannel: null,
+			sdiCode: null,
+			pecAddress: null,
+			contacts: []
+		}
 	};
 }
 
@@ -782,7 +833,8 @@ test('#86: resolving the ambiguous clause with an edit creates the contract and 
 					},
 					clauseFlags: [{ ...flag, interpretationAdopted: chosenReading }]
 				},
-				decidedBy: 'lorenzo@example.com'
+				decidedBy: 'lorenzo@example.com',
+				clientChoice: newClientChoice(proposedFields.client as Record<string, unknown>)
 			},
 			tx
 		);
@@ -827,13 +879,20 @@ test('#86: resolving the ambiguous clause with an edit creates the contract and 
 	});
 });
 
-test('#86: a second first-intake proposal for a client with the same tax id reuses the existing client', async () => {
+test('#86 (client choice): linking an existing client leaves it untouched when no field is ticked to adopt', async () => {
 	await inRolledBackTransaction(async (tx) => {
-		const firstDocument = await insertUnclaimedDocument(tx);
+		const existingClient = await insertClient(tx, {
+			legalName: 'Vetraria Storica S.r.l.',
+			taxId: 'PRE-EXISTING-TAX-1',
+			addressLine1: 'Via Vecchia 1',
+			addressCity: 'Brescia',
+			addressPostalCode: '25100'
+		});
+		const documentRow = await insertUnclaimedDocument(tx);
 		const fields = validContractFields();
-		const firstProposal = await createProposal(
+		const created = await createProposal(
 			{
-				documentId: firstDocument.id,
+				documentId: documentRow.id,
 				contractId: null,
 				targetType: 'contract',
 				proposedFields: fields,
@@ -842,51 +901,133 @@ test('#86: a second first-intake proposal for a client with the same tax id reus
 			},
 			tx
 		);
-		const firstAccepted = await acceptProposal(
-			firstProposal.id,
-			{ decidedBy: 'lorenzo@example.com' },
+
+		const accepted = await acceptProposal(
+			created.id,
+			{
+				decidedBy: 'lorenzo@example.com',
+				clientChoice: { kind: 'existing', clientId: existingClient.id, updates: {} }
+			},
 			tx
 		);
-		const [firstContract] = await tx
+
+		const [contractRow] = await tx
 			.select()
 			.from(contract)
-			.where(eq(contract.id, firstAccepted.resultId as string));
+			.where(eq(contract.id, accepted.resultId as string));
+		expect(contractRow.clientId).toBe(existingClient.id);
 
-		// A second contract for the same counterparty — an addendum
-		// mis-read as first intake, or simply a second engagement —
-		// carries the identical client block (same taxId).
-		const secondDocument = await insertUnclaimedDocument(tx);
-		const secondFields = {
-			...fields,
-			contract: { ...(fields.contract as Record<string, unknown>), title: 'Second engagement' }
-		};
-		const secondProposal = await createProposal(
+		// Every field the document's client differs on (legal name, tax id,
+		// the whole address) stays exactly what was on file: no checkbox
+		// ticked it, so `applyProposal` never wrote it.
+		const [clientAfter] = await tx.select().from(client).where(eq(client.id, existingClient.id));
+		expect(clientAfter.legalName).toBe('Vetraria Storica S.r.l.');
+		expect(clientAfter.taxId).toBe('PRE-EXISTING-TAX-1');
+		expect(clientAfter.addressLine1).toBe('Via Vecchia 1');
+		expect(clientAfter.addressCity).toBe('Brescia');
+		expect(clientAfter.addressPostalCode).toBe('25100');
+
+		// And no duplicate client materialised under the document's own
+		// tax id — the whole point of linking rather than creating.
+		const documentTaxId = (fields.client as Record<string, unknown>).taxId as string;
+		const clientsWithDocumentTaxId = await tx
+			.select()
+			.from(client)
+			.where(eq(client.taxId, documentTaxId));
+		expect(clientsWithDocumentTaxId).toHaveLength(0);
+	});
+});
+
+test('#86 (client choice): linking an existing client applies only the fields ticked to adopt', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const existingClient = await insertClient(tx, {
+			legalName: 'Vetraria Storica S.r.l.',
+			taxId: 'PRE-EXISTING-TAX-2',
+			addressLine1: 'Via Vecchia 2',
+			addressCity: 'Brescia',
+			addressPostalCode: '25100'
+		});
+		const documentRow = await insertUnclaimedDocument(tx);
+		const fields = validContractFields();
+		const documentClient = fields.client as Record<string, unknown>;
+		const created = await createProposal(
 			{
-				documentId: secondDocument.id,
+				documentId: documentRow.id,
 				contractId: null,
 				targetType: 'contract',
-				proposedFields: secondFields,
+				proposedFields: fields,
 				excerpt: 'tra Vetraria del Garda S.p.A. e dott. Elia Fontana',
 				confidence: 0.9
 			},
 			tx
 		);
-		const secondAccepted = await acceptProposal(
-			secondProposal.id,
-			{ decidedBy: 'lorenzo@example.com' },
+
+		const accepted = await acceptProposal(
+			created.id,
+			{
+				decidedBy: 'lorenzo@example.com',
+				clientChoice: {
+					kind: 'existing',
+					clientId: existingClient.id,
+					// Only the registered address is ticked to adopt — the
+					// legal name and tax id also differ but stay what is on
+					// file, proving the choice is per field, not all-or-none.
+					updates: {
+						addressLine1: documentClient.addressLine1 as string,
+						addressCity: documentClient.addressCity as string
+					}
+				}
+			},
 			tx
 		);
-		const [secondContract] = await tx
+
+		const [contractRow] = await tx
 			.select()
 			.from(contract)
-			.where(eq(contract.id, secondAccepted.resultId as string));
+			.where(eq(contract.id, accepted.resultId as string));
+		expect(contractRow.clientId).toBe(existingClient.id);
 
-		expect(secondContract.clientId).toBe(firstContract.clientId);
-		const clients = await tx
+		const [clientAfter] = await tx.select().from(client).where(eq(client.id, existingClient.id));
+		expect(clientAfter.addressLine1).toBe(documentClient.addressLine1);
+		expect(clientAfter.addressCity).toBe(documentClient.addressCity);
+		expect(clientAfter.legalName).toBe('Vetraria Storica S.r.l.');
+		expect(clientAfter.taxId).toBe('PRE-EXISTING-TAX-2');
+		expect(clientAfter.addressPostalCode).toBe('25100');
+	});
+});
+
+test('#86 (client choice): creating a new client writes exactly the fields chosen', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const documentRow = await insertUnclaimedDocument(tx);
+		const fields = validContractFields();
+		const documentClient = fields.client as Record<string, unknown>;
+		const created = await createProposal(
+			{
+				documentId: documentRow.id,
+				contractId: null,
+				targetType: 'contract',
+				proposedFields: fields,
+				excerpt: 'tra Vetraria del Garda S.p.A. e dott. Elia Fontana',
+				confidence: 0.9
+			},
+			tx
+		);
+
+		const accepted = await acceptProposal(
+			created.id,
+			{ decidedBy: 'lorenzo@example.com', clientChoice: newClientChoice(documentClient) },
+			tx
+		);
+
+		const [contractRow] = await tx
 			.select()
-			.from(client)
-			.where(eq(client.taxId, (fields.client as Record<string, unknown>).taxId as string));
-		expect(clients).toHaveLength(1);
+			.from(contract)
+			.where(eq(contract.id, accepted.resultId as string));
+		const [clientRow] = await tx.select().from(client).where(eq(client.id, contractRow.clientId));
+		expect(clientRow.legalName).toBe(documentClient.legalName);
+		expect(clientRow.taxId).toBe(documentClient.taxId);
+		expect(clientRow.addressLine1).toBe(documentClient.addressLine1);
+		expect(clientRow.noticeChannel).toBeNull();
 	});
 });
 
@@ -900,12 +1041,13 @@ test('#86: an ambiguous clause flag whose verbatimText the excerpt does not carr
 			readings: ['solo ore intere', 'frazioni orarie ammesse'],
 			interpretationAdopted: 'solo ore intere, come da lettura pi\u00f9 conservativa'
 		};
+		const proposedFields = validContractFields({ clauseFlags: [flag] });
 		const created = await createProposal(
 			{
 				documentId: documentRow.id,
 				contractId: null,
 				targetType: 'contract',
-				proposedFields: validContractFields({ clauseFlags: [flag] }),
+				proposedFields,
 				excerpt: 'tra Vetraria del Garda S.p.A. e dott. Elia Fontana',
 				confidence: 0.7
 			},
@@ -917,7 +1059,14 @@ test('#86: an ambiguous clause flag whose verbatimText the excerpt does not carr
 		// whether contract.renewalType specifically is null.
 		expect(created.validationError).toBeNull();
 
-		const accepted = await acceptProposal(created.id, { decidedBy: 'lorenzo@example.com' }, tx);
+		const accepted = await acceptProposal(
+			created.id,
+			{
+				decidedBy: 'lorenzo@example.com',
+				clientChoice: newClientChoice(proposedFields.client as Record<string, unknown>)
+			},
+			tx
+		);
 		const notes = await tx
 			.select()
 			.from(clauseNote)

@@ -386,6 +386,13 @@
       "when": 1786707674766,
       "tag": "0055_invoice_transmission_status_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1786729017598,
+      "tag": "0056_client_minimum_identity",
+      "breakpoints": true
     }
   ]
 }

@@ -9,6 +9,7 @@ import {
 	resolveInvoiceRouting
 } from '$lib/server/domain/invoice';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
+import { clientInvoicingGaps } from '$lib/server/fiscal/client-invoicing-gaps';
 import { resolveActiveFiscalPack } from '$lib/server/fiscal/profile';
 import { generateAndStoreInvoiceDocument } from '$lib/server/fiscal/generate-invoice-document';
 import { minorUnitsFromMajor } from '$lib/money';
@@ -63,6 +64,15 @@ export const load: PageServerLoad = async ({ params }) => {
 		(resolvedPack?.pack.formats.length ?? 0) > 0
 			? resolveInvoiceRouting(invoiceRow.contract.client)
 			: null;
+
+	// What this client is still missing before the document its
+	// jurisdiction requires can be generated (migration 0056: a client
+	// needs only a legal name and a country). The generator refuses on the
+	// same answer, but a reviewer should be told before clicking, not
+	// after — and told which field, since the fix is on another screen.
+	const invoicingGaps = resolvedPack
+		? clientInvoicingGaps(invoiceRow.contract.client, resolvedPack.pack)
+		: [];
 
 	// Each day's own contribution (#239: "the days behind each line are
 	// visible", with a figure that reads as a verifiable sum, never an
@@ -127,6 +137,7 @@ export const load: PageServerLoad = async ({ params }) => {
 		// (#259), or `null` under a pack that carries no national e-invoice
 		// format at all — see the `formats` comment above.
 		routing,
+		invoicingGaps,
 		crumbs
 	};
 };

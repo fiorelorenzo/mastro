@@ -15,7 +15,7 @@
 	 */
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate } from '$lib/i18n/format';
-	import { Button, Field, Input, Select, Textarea } from '$lib/design';
+	import { Button, DropZone, Field, Input, Select, Textarea } from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
 	import { noticeChannelLabel, type NoticeChannelValue } from '../../clients/notice-channel';
 	import type { ActionData, PageProps } from './$types';
@@ -83,7 +83,11 @@
 			{#if errors.proof}<p class="proof-error" role="alert">{errors.proof}</p>{/if}
 
 			<Field label={m.approval_form_proof_file_label()}>
-				<Input type="file" name="proofFile" accept=".pdf,.eml,.png,.jpg,.jpeg,.txt" />
+				<DropZone
+					name="proofFile"
+					label={m.approval_form_proof_file_button()}
+					accept=".pdf,.eml,.png,.jpg,.jpeg,.txt"
+				/>
 			</Field>
 
 			<Field label={m.approval_form_proof_text_label()}>

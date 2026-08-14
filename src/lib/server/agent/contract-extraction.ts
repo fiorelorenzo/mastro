@@ -65,9 +65,10 @@ const ExpensePolicySchema = z
 	);
 
 /** The counterparty a first-intake contract PDF names — not yet a `client`
- * row, since #86's whole point is that one may not exist yet
- * (`getClientByTaxId` in `repositories/client.ts` decides find-or-create
- * at accept time, never here). */
+ * row, since #86's whole point is that one may not exist yet. Whether it
+ * becomes a new row or gets linked to one already on file is a reviewer's
+ * explicit choice on the proposal review screen, recorded as a
+ * `ClientChoice` (`repositories/proposal.ts`) — never decided here. */
 const ExtractedClientSchema = z.object({
 	legalName: trimmedNonBlank,
 	taxId: trimmedNonBlank,

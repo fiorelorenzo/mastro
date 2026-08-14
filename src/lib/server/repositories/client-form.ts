@@ -37,8 +37,12 @@ export function parseClientForm(formData: FormData): ClientFormResult {
 	const legalName = string('legalName');
 	if (!legalName) errors.legalName = m.client_validation_legal_name_required();
 
+	// Optional since migration 0056. What a client must have to be recorded
+	// is a legal name and a country; a tax id, an address and a notice
+	// channel are demanded by whatever needs them — `clientInvoicingGaps`
+	// tells an invoice screen which are missing before it offers to
+	// generate anything.
 	const taxId = string('taxId');
-	if (!taxId) errors.taxId = m.client_validation_tax_id_required();
 
 	const vatId = string('vatId');
 
@@ -60,16 +64,19 @@ export function parseClientForm(formData: FormData): ClientFormResult {
 	}
 
 	const addressLine1 = string('addressLine1');
-	if (!addressLine1) errors.addressLine1 = m.client_validation_address_line1_required();
 	const addressLine2 = string('addressLine2');
 	const addressCity = string('addressCity');
-	if (!addressCity) errors.addressCity = m.client_validation_city_required();
 	const addressPostalCode = string('addressPostalCode');
-	if (!addressPostalCode) errors.addressPostalCode = m.client_validation_postal_code_required();
 	const addressRegion = string('addressRegion');
 
+	// Blank is a legitimate answer — nobody has said yet which channel
+	// carries legal weight for this client — but a value that is present
+	// and not one of the enum's is still a mistake worth naming.
 	const noticeChannelValue = string('noticeChannel');
-	if (!noticeChannel.enumValues.includes(noticeChannelValue as NoticeChannel)) {
+	if (
+		noticeChannelValue &&
+		!noticeChannel.enumValues.includes(noticeChannelValue as NoticeChannel)
+	) {
 		errors.noticeChannel = m.client_validation_notice_channel_invalid();
 	}
 
@@ -94,7 +101,6 @@ export function parseClientForm(formData: FormData): ClientFormResult {
 		}
 		contacts.push({ name, email, phone: phone || null, role: role || null, canApprove });
 	}
-	if (contacts.length === 0) errors.contacts = m.client_validation_contacts_required();
 
 	const values: ClientFormValues = {
 		legalName,
@@ -119,15 +125,20 @@ export function parseClientForm(formData: FormData): ClientFormResult {
 		values,
 		input: {
 			legalName,
-			taxId,
+			// `|| null` throughout: an empty form field means "not known", and
+			// storing `''` would make a column that looks answered and reads
+			// blank on an invoice. `clientInvoicingGaps` treats both as
+			// missing precisely because nothing stops a `''` getting in, but
+			// the parser is the place not to create one.
+			taxId: taxId || null,
 			vatId: vatId || null,
 			country,
-			addressLine1,
+			addressLine1: addressLine1 || null,
 			addressLine2: addressLine2 || null,
-			addressCity,
-			addressPostalCode,
+			addressCity: addressCity || null,
+			addressPostalCode: addressPostalCode || null,
 			addressRegion: addressRegion || null,
-			noticeChannel: noticeChannelValue as NoticeChannel,
+			noticeChannel: (noticeChannelValue || null) as NoticeChannel | null,
 			sdiCode: sdiCode || null,
 			pecAddress: pecAddress || null,
 			contacts
