@@ -7,12 +7,14 @@ import { getContractWithClient } from '$lib/server/repositories/contract';
 import { toSourceDocumentValue } from '$lib/server/repositories/document';
 import { listRateCards } from '$lib/server/repositories/rate-card';
 import {
+	disputeWorkUnit,
 	getWorkUnit,
 	getWorkUnitDocument,
 	getWorkUnitInvoiceLine,
 	linkApprovalToWorkUnit,
 	listWorkUnitTransitions,
-	markWorkUnitUnbillable
+	markWorkUnitUnbillable,
+	resolveWorkUnitDispute
 } from '$lib/server/repositories/work-unit';
 import { resolveRateCard } from '$lib/server/domain/rate-card';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
@@ -171,5 +173,44 @@ export const actions: Actions = {
 		await markWorkUnitUnbillable(params.id, { kind: 'human', email: locals.user!.email }, reason);
 
 		return { markedUnbillable: true };
+	},
+
+	// #214's path in: legal only from `invoiced` — the trigger enforces
+	// that, this action does not re-check the day's current state first.
+	dispute: async ({ request, params, locals }) => {
+		const formData = await request.formData();
+		const reason = String(formData.get('reason') ?? '').trim();
+
+		const workUnit = await getWorkUnit(params.id);
+		if (!workUnit) error(404, m.day_detail_not_found());
+
+		if (!reason) {
+			return fail(400, { disputeError: m.day_detail_dispute_reason_required(), reason });
+		}
+
+		await disputeWorkUnit(params.id, { kind: 'human', email: locals.user!.email }, reason);
+
+		return { disputed: true };
+	},
+
+	// #214's way out: legal only from `disputed` — same reasoning as
+	// `dispute` above.
+	resolveDispute: async ({ request, params, locals }) => {
+		const formData = await request.formData();
+		const reason = String(formData.get('reason') ?? '').trim();
+
+		const workUnit = await getWorkUnit(params.id);
+		if (!workUnit) error(404, m.day_detail_not_found());
+
+		if (!reason) {
+			return fail(400, {
+				resolveDisputeError: m.day_detail_resolve_dispute_reason_required(),
+				reason
+			});
+		}
+
+		await resolveWorkUnitDispute(params.id, { kind: 'human', email: locals.user!.email }, reason);
+
+		return { disputeResolved: true };
 	}
 };

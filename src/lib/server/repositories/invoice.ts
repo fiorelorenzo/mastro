@@ -16,6 +16,7 @@ import {
 	payment,
 	workUnit,
 	type InvoiceDueDateSource,
+	type InvoiceTransmissionStatus,
 	type TransitionActor
 } from '$lib/server/db/schema';
 import {
@@ -27,7 +28,7 @@ import {
 } from '$lib/money';
 import type { InvoiceDocumentType } from '$lib/server/import/invoice';
 import type { ExistingInvoiceRecord } from '$lib/server/import/dedup';
-import { listDocumentsForOwner } from './document';
+import { listDocumentsForOwner, storeDocument } from './document';
 import { rebillExpense } from './expense';
 import { transitionWorkUnit } from './work-unit';
 
@@ -231,6 +232,81 @@ export async function getInvoiceWithLines(id: string, executor: DbExecutor = db)
  *  imported invoice"). */
 export async function getInvoiceDocuments(id: string, executor: DbExecutor = db) {
 	return listDocumentsForOwner('invoice', id, executor);
+}
+
+/**
+ * Marks `invoiceId` transmitted by hand (#261): the self-hoster sent the
+ * generated FatturaPA file themselves (AdE's own portal, PEC, or a paid
+ * intermediary — `docs/specs/2026-08-14-electronic-invoicing.md` §5) and
+ * records the identifier SdI (or the channel) gave them back. Legal from
+ * `generated` (first transmission) and from `rejected` (a corrected
+ * resubmission, same number and date per AdE's own guidance) alone —
+ * `invoice_enforce_transmission_status`
+ * (`0055_invoice_transmission_status_constraints.sql`) rejects any other
+ * edge, e.g. an already-`accepted` invoice, at the database level.
+ */
+export async function markInvoiceTransmitted(
+	invoiceId: string,
+	transmissionId: string,
+	executor: DbExecutor = db
+) {
+	const [row] = await executor
+		.update(invoice)
+		.set({ transmissionStatus: 'transmitted', transmissionId })
+		.where(eq(invoice.id, invoiceId))
+		.returning();
+	return row;
+}
+
+export interface RecordInvoiceReceiptInput {
+	readonly outcome: Extract<InvoiceTransmissionStatus, 'accepted' | 'rejected'>;
+	readonly bytes: Uint8Array;
+	readonly mime: string;
+	readonly originalName: string;
+}
+
+/**
+ * Records SdI's own receipt against `invoiceId` (#261): the uploaded
+ * file — a ricevuta di consegna/impossibilità di recapito (`accepted`)
+ * or a notifica di scarto (`rejected`) — is archived as a `document`
+ * (`ownerType: 'invoice'`, `provenance: 'upload'`, invariant 4: the
+ * receipt is the evidence, `transmissionStatus` the derived fact) in the
+ * same transaction that moves `transmissionStatus` to `input.outcome`,
+ * so a status change can never land with no evidence behind it, or vice
+ * versa. The transition itself — legal only from `transmitted` — is
+ * enforced by `invoice_enforce_transmission_status`; an illegal call
+ * (e.g. against a still-`generated` invoice) throws from the trigger and
+ * the document write rolls back with it, same pattern as
+ * {@link createInvoice}'s own `tx ? run(tx) : db.transaction(run)`.
+ */
+export async function recordInvoiceReceipt(
+	invoiceId: string,
+	contractId: string,
+	input: RecordInvoiceReceiptInput,
+	tx?: DbExecutor
+) {
+	const run = async (executor: DbExecutor) => {
+		const documentRow = await storeDocument(
+			{
+				bytes: input.bytes,
+				mime: input.mime,
+				originalName: input.originalName,
+				provenance: 'upload',
+				contractId,
+				confidential: true,
+				ownerType: 'invoice',
+				ownerId: invoiceId
+			},
+			executor
+		);
+		const [invoiceRow] = await executor
+			.update(invoice)
+			.set({ transmissionStatus: input.outcome })
+			.where(eq(invoice.id, invoiceId))
+			.returning();
+		return { document: documentRow, invoice: invoiceRow };
+	};
+	return tx ? run(tx) : db.transaction(run);
 }
 
 /** One `payment` row, oldest first — {@link listPaymentsForInvoice}'s and

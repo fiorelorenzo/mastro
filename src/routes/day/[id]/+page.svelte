@@ -46,6 +46,32 @@
 		toasts.push('neutral', m.day_detail_unbillable_toast());
 	});
 
+	// #214's path in: confirmed through a Dialog, the same shape #228's
+	// unbillable exit already uses, since disputing is consequential
+	// enough to name a reason for even though — unlike unbillable — it
+	// has a way back.
+	let disputeDialogOpen = $state(Boolean(form?.disputeError));
+	let disputeReason = $state(form?.reason ?? '');
+	let announcedDisputed = false;
+	$effect(() => {
+		if (!form?.disputed || announcedDisputed) return;
+		announcedDisputed = true;
+		disputeDialogOpen = false;
+		toasts.push('neutral', m.day_detail_dispute_toast());
+	});
+
+	// #214's way back: `disputed -> invoiced`, the only edge the state
+	// machine allows out of the dispute state.
+	let resolveDisputeDialogOpen = $state(Boolean(form?.resolveDisputeError));
+	let resolveDisputeReason = $state(form?.reason ?? '');
+	let announcedDisputeResolved = false;
+	$effect(() => {
+		if (!form?.disputeResolved || announcedDisputeResolved) return;
+		announcedDisputeResolved = true;
+		resolveDisputeDialogOpen = false;
+		toasts.push('neutral', m.day_detail_resolve_dispute_toast());
+	});
+
 	function actorLabel(actor: { kind: string; email?: string; proposalReference?: string }): string {
 		if (actor.kind === 'human') return actor.email ?? '';
 		if (actor.kind === 'agent') {
@@ -231,6 +257,96 @@
 					size="inline"
 				/>
 			</div>
+
+			{#if data.workUnit.state === 'invoiced'}
+				<div class="dispute-actions">
+					<Button
+						type="button"
+						variant="secondary"
+						size="sm"
+						onclick={() => {
+							disputeDialogOpen = true;
+						}}
+					>
+						{m.day_detail_dispute_button()}
+					</Button>
+				</div>
+				<form method="POST" action="?/dispute">
+					<Dialog
+						bind:open={disputeDialogOpen}
+						title={m.day_detail_dispute_confirm_title()}
+						role="alertdialog"
+					>
+						<p>{m.day_detail_dispute_confirm_body()}</p>
+						<Field label={m.day_detail_dispute_reason_label()} error={form?.disputeError}>
+							<Textarea name="reason" bind:value={disputeReason} rows={3} required />
+						</Field>
+						{#snippet actions()}
+							<Button
+								type="button"
+								variant="tertiary"
+								onclick={() => {
+									disputeDialogOpen = false;
+								}}
+							>
+								{m.day_detail_dispute_confirm_cancel()}
+							</Button>
+							<Button type="submit" variant="primary">
+								{m.day_detail_dispute_confirm_confirm()}
+							</Button>
+						{/snippet}
+					</Dialog>
+				</form>
+			{:else if data.workUnit.state === 'disputed'}
+				<div class="dispute-actions">
+					<Button
+						type="button"
+						variant="secondary"
+						size="sm"
+						onclick={() => {
+							resolveDisputeDialogOpen = true;
+						}}
+					>
+						{m.day_detail_resolve_dispute_button()}
+					</Button>
+					<Button
+						href={resolve('/day/[id]/evidence', { id: data.workUnit.id })}
+						variant="tertiary"
+						size="sm"
+					>
+						{m.day_detail_evidence_bundle_link()}
+					</Button>
+				</div>
+				<form method="POST" action="?/resolveDispute">
+					<Dialog
+						bind:open={resolveDisputeDialogOpen}
+						title={m.day_detail_resolve_dispute_confirm_title()}
+						role="alertdialog"
+					>
+						<p>{m.day_detail_resolve_dispute_confirm_body()}</p>
+						<Field
+							label={m.day_detail_resolve_dispute_reason_label()}
+							error={form?.resolveDisputeError}
+						>
+							<Textarea name="reason" bind:value={resolveDisputeReason} rows={3} required />
+						</Field>
+						{#snippet actions()}
+							<Button
+								type="button"
+								variant="tertiary"
+								onclick={() => {
+									resolveDisputeDialogOpen = false;
+								}}
+							>
+								{m.day_detail_resolve_dispute_confirm_cancel()}
+							</Button>
+							<Button type="submit" variant="primary">
+								{m.day_detail_resolve_dispute_confirm_confirm()}
+							</Button>
+						{/snippet}
+					</Dialog>
+				</form>
+			{/if}
 		</Section>
 	{/if}
 
@@ -309,5 +425,12 @@
 		align-items: center;
 		gap: var(--space-3);
 		flex-wrap: wrap;
+	}
+	.dispute-actions {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		flex-wrap: wrap;
+		margin-top: var(--space-3);
 	}
 </style>

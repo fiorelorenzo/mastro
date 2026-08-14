@@ -12,13 +12,24 @@
 	import { formatDate, formatDays, formatMinorUnits, formatNumber } from '$lib/i18n/format';
 	import { minorUnitsToDecimalString } from '$lib/money';
 	import LegalText from '$lib/legal/LegalText.svelte';
-	import { Amount, Badge, Button, Field, Input, SourceDocument } from '$lib/design';
+	import {
+		Amount,
+		Badge,
+		Button,
+		Dialog,
+		Field,
+		FileInput,
+		Input,
+		SourceDocument,
+		Textarea,
+		workUnitStateBadge
+	} from '$lib/design';
 	import Table from '$lib/design/Table.svelte';
 	import type { TableColumn } from '$lib/design/table';
 	import Page from '$lib/layout/Page.svelte';
 	import Section from '$lib/layout/Section.svelte';
 	import ChaseHistory from './ChaseHistory.svelte';
-	import { invoiceStatus } from '../status';
+	import { invoiceStatus, transmissionStatusBadge } from '../status';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -26,6 +37,7 @@
 	const invoice = $derived(data.invoice);
 	const balance = $derived(data.balance);
 	const status = $derived(invoiceStatus(data.daysLate, balance.settledOn));
+	const transmission = $derived(transmissionStatusBadge(invoice.transmissionStatus));
 	const subtitle = $derived(`${invoice.contract.client.legalName} — ${invoice.contract.title}`);
 	// The payment form's own amount default: the remaining balance, so
 	// the header's one-click action settles the invoice in full, while
@@ -38,6 +50,23 @@
 	const expenseRows = $derived(invoice.lines.flatMap((line) => line.expenses));
 
 	type PaymentRow = PageData['payments'][number];
+
+	// #214's path in and way back, offered per day row rather than for the
+	// whole invoice — a dispute is about one billed day, not the document.
+	// Same shared-dialog shape `alerts/+page.svelte`'s `openUnbillableFor`
+	// already uses: one dialog for the whole page, not one per row, opened
+	// against whichever day's button was clicked. These actions redirect
+	// on success (matching every other action on this page), so there is
+	// no success toast to wire up — only a failed submit's `form?.…Error`
+	// reopens the dialog with what was typed.
+	let disputeDialogFor = $state<string | null>(
+		form?.disputeError ? (form.workUnitId ?? null) : null
+	);
+	let disputeReason = $state(form?.reason ?? '');
+	let resolveDisputeDialogFor = $state<string | null>(
+		form?.resolveDisputeError ? (form.workUnitId ?? null) : null
+	);
+	let resolveDisputeReason = $state(form?.reason ?? '');
 </script>
 
 <svelte:head><title>{m.invoice_detail_page_title({ number: invoice.number })}</title></svelte:head>
@@ -115,7 +144,50 @@
 								</tr>
 								{#each line.days as day (day.id)}
 									<tr class="day-row">
-										<td class="muted">{formatDate(day.date)} — {day.scope}</td>
+										<td class="muted">
+											<div class="day-cell">
+												<span>{formatDate(day.date)} — {day.scope}</span>
+												{#if day.state === 'invoiced'}
+													<Button
+														type="button"
+														variant="tertiary"
+														size="sm"
+														onclick={() => {
+															disputeDialogFor = day.id;
+															disputeReason = '';
+														}}
+													>
+														{m.invoice_detail_dispute_button()}
+													</Button>
+												{:else if day.state === 'disputed'}
+													<div class="day-dispute-row">
+														<Badge
+															variant="serious"
+															label={workUnitStateBadge('disputed').label}
+															size="sm"
+														/>
+														<Button
+															type="button"
+															variant="tertiary"
+															size="sm"
+															onclick={() => {
+																resolveDisputeDialogFor = day.id;
+																resolveDisputeReason = '';
+															}}
+														>
+															{m.invoice_detail_resolve_dispute_button()}
+														</Button>
+														<Button
+															href={resolve('/day/[id]/evidence', { id: day.id })}
+															variant="tertiary"
+															size="sm"
+														>
+															{m.invoice_detail_evidence_bundle_link()}
+														</Button>
+													</div>
+												{/if}
+											</div>
+										</td>
 										<td class="num muted">{formatNumber(Number(day.quantity))}</td>
 										<td class="num muted">
 											<Amount minorUnits={line.unitPrice} currency={invoice.currency} size="md" />
@@ -170,6 +242,75 @@
 					</tfoot>
 				</table>
 			</div>
+
+			<form method="POST" action="?/dispute">
+				<input type="hidden" name="workUnitId" value={disputeDialogFor ?? ''} />
+				<Dialog
+					bind:open={
+						() => disputeDialogFor !== null,
+						(value) => {
+							if (!value) disputeDialogFor = null;
+						}
+					}
+					title={m.invoice_detail_dispute_confirm_title()}
+					role="alertdialog"
+				>
+					<p>{m.invoice_detail_dispute_confirm_body()}</p>
+					<Field label={m.invoice_detail_dispute_reason_label()} error={form?.disputeError}>
+						<Textarea name="reason" bind:value={disputeReason} rows={3} required />
+					</Field>
+					{#snippet actions()}
+						<Button
+							type="button"
+							variant="tertiary"
+							onclick={() => {
+								disputeDialogFor = null;
+							}}
+						>
+							{m.invoice_detail_dispute_confirm_cancel()}
+						</Button>
+						<Button type="submit" variant="primary">
+							{m.invoice_detail_dispute_confirm_confirm()}
+						</Button>
+					{/snippet}
+				</Dialog>
+			</form>
+
+			<form method="POST" action="?/resolveDispute">
+				<input type="hidden" name="workUnitId" value={resolveDisputeDialogFor ?? ''} />
+				<Dialog
+					bind:open={
+						() => resolveDisputeDialogFor !== null,
+						(value) => {
+							if (!value) resolveDisputeDialogFor = null;
+						}
+					}
+					title={m.invoice_detail_resolve_dispute_confirm_title()}
+					role="alertdialog"
+				>
+					<p>{m.invoice_detail_resolve_dispute_confirm_body()}</p>
+					<Field
+						label={m.invoice_detail_resolve_dispute_reason_label()}
+						error={form?.resolveDisputeError}
+					>
+						<Textarea name="reason" bind:value={resolveDisputeReason} rows={3} required />
+					</Field>
+					{#snippet actions()}
+						<Button
+							type="button"
+							variant="tertiary"
+							onclick={() => {
+								resolveDisputeDialogFor = null;
+							}}
+						>
+							{m.invoice_detail_resolve_dispute_confirm_cancel()}
+						</Button>
+						<Button type="submit" variant="primary">
+							{m.invoice_detail_resolve_dispute_confirm_confirm()}
+						</Button>
+					{/snippet}
+				</Dialog>
+			</form>
 			{#if invoice.taxTreatmentCode || invoice.statutoryReference || data.routing}
 				<div class="fiscal-note">
 					{#if invoice.taxTreatmentCode}
@@ -233,10 +374,6 @@
 						{#if invoice.iban}
 							<dt class="opacity-70">{m.invoice_form_iban_label()}</dt>
 							<dd class="mono">{invoice.iban}</dd>
-						{/if}
-						{#if invoice.transmissionId}
-							<dt class="opacity-70">{m.invoice_form_transmission_id_label()}</dt>
-							<dd class="mono">{invoice.transmissionId}</dd>
 						{/if}
 						{#if balance.paid > 0}
 							<dt class="opacity-70">{m.invoice_detail_received_label()}</dt>
@@ -321,6 +458,65 @@
 					</form>
 				{/if}
 			</Section>
+
+			{#if data.routing}
+				<Section title={m.invoice_detail_transmission_heading()}>
+					<Badge variant={transmission.variant} label={transmission.label} />
+
+					{#if invoice.transmissionId}
+						<p class="hint">
+							<span class="label">{m.invoice_form_transmission_id_label()}</span>
+							<span class="mono">{invoice.transmissionId}</span>
+						</p>
+					{/if}
+
+					{#if invoice.transmissionStatus === 'rejected'}
+						<p class="hint">{m.invoice_detail_transmission_reject_note()}</p>
+					{/if}
+
+					{#if invoice.transmissionStatus === 'generated' || invoice.transmissionStatus === 'rejected'}
+						<form method="POST" action="?/markTransmitted" class="fattura-form">
+							<Field label={m.invoice_form_transmission_id_label()} required>
+								<Input type="text" name="transmissionId" required />
+							</Field>
+							<Button type="submit" variant="tertiary" size="sm">
+								{invoice.transmissionStatus === 'rejected'
+									? m.invoice_detail_transmission_resubmit_button()
+									: m.invoice_detail_transmit_button()}
+							</Button>
+							{#if form?.transmissionError}<p class="error">{form.transmissionError}</p>{/if}
+						</form>
+					{:else if invoice.transmissionStatus === 'transmitted'}
+						<form
+							method="POST"
+							action="?/acceptReceipt"
+							enctype="multipart/form-data"
+							class="fattura-form"
+						>
+							<Field label={m.invoice_detail_transmission_accept_file_label()} required>
+								<FileInput name="file" label={m.invoice_propose_file_button()} required />
+							</Field>
+							<Button type="submit" variant="tertiary" size="sm">
+								{m.invoice_detail_transmission_accept_button()}
+							</Button>
+						</form>
+						<form
+							method="POST"
+							action="?/rejectReceipt"
+							enctype="multipart/form-data"
+							class="fattura-form"
+						>
+							<Field label={m.invoice_detail_transmission_reject_file_label()} required>
+								<FileInput name="file" label={m.invoice_propose_file_button()} required />
+							</Field>
+							<Button type="submit" variant="danger" size="sm">
+								{m.invoice_detail_transmission_reject_button()}
+							</Button>
+						</form>
+						{#if form?.receiptError}<p class="error">{form.receiptError}</p>{/if}
+					{/if}
+				</Section>
+			{/if}
 
 			<Section title={m.invoice_detail_history_heading()}>
 				<dl
@@ -432,6 +628,18 @@
 	}
 	.lines .muted {
 		color: var(--text-secondary);
+	}
+	.day-cell {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: var(--space-1);
+	}
+	.day-dispute-row {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		flex-wrap: wrap;
 	}
 	.lines .group-row td {
 		padding-top: var(--space-3);

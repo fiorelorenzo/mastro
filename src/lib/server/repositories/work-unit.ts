@@ -187,6 +187,37 @@ export async function markWorkUnitUnbillable(
 	return transitionWorkUnit(id, { state: 'unbillable' }, actor, reason, tx);
 }
 
+/** #214's path in: a client contests an already-billed day. Same shape as
+ * `markWorkUnitUnbillable` — one field through `transitionWorkUnit` —
+ * except the trigger's allowed-edge list only admits this from `invoiced`
+ * (`0038_work_unit_approved_to_risk_edge.sql`), so a day still `worked`,
+ * or already `paid`, is rejected by the database, not by this function.
+ * `reason` is the client's own objection — never optional in the caller,
+ * since that is what the log entry and the evidence bundle (#214) exist
+ * to carry forward. */
+export async function disputeWorkUnit(
+	id: string,
+	actor: TransitionActor,
+	reason: string,
+	tx?: DbExecutor
+) {
+	return transitionWorkUnit(id, { state: 'disputed' }, actor, reason, tx);
+}
+
+/** #214's way out: the argument is settled and the day returns to
+ * `invoiced`, at whatever quantity or scope was ultimately agreed —
+ * neither is touched here, only the state and why it changed back. Legal
+ * only from `disputed` (`'disputed' -> 'invoiced'`), the same edge the
+ * register already relies on to still call a disputed day "billed". */
+export async function resolveWorkUnitDispute(
+	id: string,
+	actor: TransitionActor,
+	reason: string,
+	tx?: DbExecutor
+) {
+	return transitionWorkUnit(id, { state: 'invoiced' }, actor, reason, tx);
+}
+
 export async function getWorkUnit(id: string, executor: DbExecutor = db) {
 	const [row] = await executor.select().from(workUnit).where(eq(workUnit.id, id));
 	return row;

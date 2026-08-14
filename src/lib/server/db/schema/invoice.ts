@@ -44,6 +44,32 @@ export const invoiceDueDateSource = pgEnum('invoice_due_date_source', ['document
 export type InvoiceDueDateSource = (typeof invoiceDueDateSource.enumValues)[number];
 
 /**
+ * Where an invoice sits in the hand-off to SdI (#261): `generated` (the
+ * XML exists, nothing sent) -> `transmitted` (the self-hoster marks it
+ * sent by hand, `transmissionId` recorded) -> `accepted` (ricevuta di
+ * consegna / impossibilità di recapito) or `rejected` (notifica di
+ * scarto). SdI's own rule is that a scarto invoice "non è mai stata
+ * emessa" (docs/specs/2026-08-14-electronic-invoicing.md §3) — a
+ * `rejected` invoice is excluded from revenue at the one place every
+ * ledger figure reads (`fiscal/revenue.ts`'s `fetchLedgerRows`), without
+ * deleting the row: invariant 4, the uploaded receipt (a `document` row)
+ * is the evidence, this column the derived fact. A corrected
+ * resubmission goes back to `transmitted`, never straight to `accepted`
+ * — SdI still has to issue a fresh receipt against it. The accompanying
+ * custom migration enforces the edges (`generated -> transmitted`,
+ * `transmitted -> accepted`, `transmitted -> rejected`, `rejected ->
+ * transmitted`) the same way `work_unit_enforce_state_machine` enforces
+ * the day lifecycle — never an application-layer check.
+ */
+export const invoiceTransmissionStatus = pgEnum('invoice_transmission_status', [
+	'generated',
+	'transmitted',
+	'accepted',
+	'rejected'
+]);
+export type InvoiceTransmissionStatus = (typeof invoiceTransmissionStatus.enumValues)[number];
+
+/**
  * The field set epic #3 describes, named after what a structured e-invoice
  * carries rather than after FatturaPA or any other national schema — the
  * same neutral vocabulary `$lib/server/import/invoice.ts` uses, so that
@@ -96,6 +122,12 @@ export const invoice = pgTable(
 		paymentMethod: text('payment_method'),
 		iban: text('iban'),
 		transmissionId: text('transmission_id'),
+		// Defaults `generated`: every invoice starts as just-generated XML,
+		// nothing sent yet. See `invoiceTransmissionStatus`'s own doc
+		// comment above for the full state machine.
+		transmissionStatus: invoiceTransmissionStatus('transmission_status')
+			.notNull()
+			.default('generated'),
 		// The invoice this one corrects (#213) — set only on a `credit_note`
 		// or `debit_note`, enforced by the CHECK below; which of those two
 		// values `document_type` actually is on the referencing row still
@@ -134,6 +166,14 @@ export const invoice = pgTable(
 		check(
 			'invoice_corrects_invoice_id_only_for_corrections',
 			sql`${table.correctsInvoiceId} is null or ${table.documentType} in ('credit_note', 'debit_note')`
+		),
+		// `transmissionId` is recorded by hand the moment the self-hoster
+		// marks an invoice transmitted (#261) — required from that point
+		// on, never before it, so a `generated` invoice with nothing sent
+		// yet is never mistaken for one that has been.
+		check(
+			'invoice_transmission_id_required_once_transmitted',
+			sql`${table.transmissionStatus} = 'generated' or ${table.transmissionId} is not null`
 		)
 	]
 );

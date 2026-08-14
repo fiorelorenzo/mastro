@@ -1,30 +1,56 @@
 <!--
-	The proposal review screen (#243). Evidence — the archived message in
-	full, the matched sentence marked — is the heavier column; the proposed
-	fields are the lighter one, each with a hint naming what it was read
-	from. Confidence and validation both render for real now that wave 2
-	added `confidence_reason`/`validation_error` to the row: a
-	low-confidence proposal explains why the model hesitated, and one whose
-	fields the database would reject names the offending field and cannot
-	be accepted until it is corrected. A decided proposal renders the same
-	layout read-only; an accepted one links the day it created.
+	The proposal review screen (#243, #86/#87). Evidence — the archived
+	message or PDF in full, the matched excerpt marked — is the heavier
+	column; the proposed fields are the lighter one. A `work_unit`
+	proposal's fields are a flat list, each with a hint naming what it was
+	read from. A `contract` proposal's are not: the proposed client, the
+	contract terms and the rate cards render as their own cards, and each
+	flagged clause renders its verbatim text next to the two or more
+	readings it admits, as a choice a reviewer has to make — Accept stays
+	disabled until every flag has one — recorded onto the clause note
+	`applyProposal` writes. An `invoice` proposal renders number, date,
+	client, lines and totals, read-only, against the excerpt: #87's brief
+	never asks for edits here, only for a reader to see what the model
+	read off the PDF. Confidence and validation both render for real:  a
+	low-confidence proposal explains why the model hesitated, and one
+	whose fields the database would reject names the offending field,
+	inline, and cannot be accepted until it is corrected — never a bare
+	failure after the click. A decided proposal renders the same layout
+	read-only; an accepted one links the day, contract or invoice it
+	created.
 -->
 <script lang="ts">
+	import { SvelteSet } from 'svelte/reactivity';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import { formatDate, formatDateTime, formatPercent } from '$lib/i18n/format';
-	import { factLine } from '$lib/nav/crumbs';
+	import { getLocale } from '$lib/paraglide/runtime';
 	import {
+		formatAmount,
+		formatDate,
+		formatDateTime,
+		formatNumber,
+		formatPercent
+	} from '$lib/i18n/format';
+	import { factLine } from '$lib/nav/crumbs';
+	import { minorUnitsToDecimalString } from '$lib/money';
+	import {
+		AmountInput,
 		Amount,
 		Badge,
 		Banner,
 		Button,
+		Checkbox,
+		countryOptions,
 		Dialog,
 		Field,
 		Input,
+		Radio,
+		Select,
 		Textarea,
 		toasts
 	} from '$lib/design';
+	import Table from '$lib/design/Table.svelte';
+	import type { TableColumn } from '$lib/design/table';
 	import SourceDocument from '$lib/design/SourceDocument.svelte';
 	import Page from '$lib/layout/Page.svelte';
 	import ProposalStatusBadge from '../ProposalStatusBadge.svelte';
@@ -35,29 +61,45 @@
 		proposalValidationField
 	} from '../proposal-status';
 	import { isFieldGroundedInExcerpt, splitOnExcerpt } from './evidence';
+	import type { ExtractedRateCard } from '$lib/server/agent/contract-extraction';
+	import {
+		contractRenewalTypes,
+		expensePolicyKinds,
+		invoicingCadences,
+		paymentTermsKinds,
+		expensePolicyKindLabel,
+		invoicingCadenceLabel,
+		paymentTermsKindLabel,
+		renewalTypeLabel
+	} from '../../clients/[id]/contracts/contract-enums';
+	import {
+		disbursementPeriodLabel,
+		rateCardKindLabel,
+		rateUnitLabel
+	} from '../../clients/[id]/contracts/[contractId]/rate-cards/rate-card-enums';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
+	const pending = $derived(data.proposal.status === 'pending');
+
 	const fieldEntries = $derived(Object.entries(data.proposal.proposedFields));
 	const confidence = $derived(proposalConfidenceBadge(data.proposal.confidence));
-	const validationField = $derived(
-		proposalValidationField(
-			data.proposal.validationError,
-			fieldEntries.map(([field]) => field)
-		)
-	);
 	const messageSplit = $derived(splitOnExcerpt(data.message.body, data.proposal.excerpt));
 
 	// A validationError blocks Accept until the reviewer has touched the
 	// offending field at least once — the true re-check is server-side, in
 	// `acceptProposal` itself (its own doc comment explains why); this only
 	// stops resubmitting the exact values already known to fail.
-	let editedFields = $state<Set<string>>(new Set());
+	// `SvelteSet`, not `$state(new Set())`: `$state` proxies plain objects and
+	// arrays, never a Set, so `.add()` on one mutates without notifying and
+	// nothing that reads it ever re-renders. The gate below therefore never
+	// reopened when a reviewer fixed the field it was complaining about —
+	// found by driving the screen rather than by reading it.
+	const editedFields = new SvelteSet<string>();
 	function markEdited(field: string) {
 		editedFields.add(field);
 	}
-	const acceptBlocked = $derived(validationField !== null && !editedFields.has(validationField));
 
 	function inputType(value: unknown): 'number' | 'date' | 'text' {
 		if (typeof value === 'number') return 'number';
@@ -74,6 +116,132 @@
 		typeof data.proposal.proposedFields.quantity === 'number'
 			? proposalQuantityLabel(data.proposal.proposedFields.quantity)
 			: ''
+	);
+
+	const pageHeading = $derived(
+		data.proposal.targetType === 'contract' && data.contractCandidate
+			? m.proposal_review_heading_contract({ client: data.contractCandidate.client.legalName })
+			: data.proposal.targetType === 'invoice' && data.invoiceFields
+				? m.proposal_review_heading_invoice({ number: data.invoiceFields.number })
+				: m.proposal_review_heading({ date: titleDate, quantity: titleQuantity })
+	);
+	const acceptSubmitLabel = $derived(
+		data.proposal.targetType === 'contract'
+			? m.proposal_review_accept_submit_contract()
+			: data.proposal.targetType === 'invoice'
+				? m.proposal_review_accept_submit_invoice()
+				: m.proposal_review_accept_submit()
+	);
+
+	// `proposalValidationError`'s own field vocabulary for a 'contract'
+	// proposal (`repositories/proposal.ts`), most-specific-first so a
+	// message naming two fields at once ("...renewalNoticeDays... when
+	// renewalType is...") blames the one it is actually about.
+	const CONTRACT_VALIDATION_FIELDS = [
+		'country',
+		'renewalNoticeDays',
+		'renewalType',
+		'terminationNoticeDays',
+		'endsOn',
+		'startsOn',
+		'currency',
+		'taxTreatment',
+		'paymentTerms',
+		'expensePolicy'
+	] as const;
+	const contractValidationField = $derived(
+		data.proposal.targetType === 'contract' && pending
+			? proposalValidationField(data.proposal.validationError, CONTRACT_VALIDATION_FIELDS)
+			: null
+	);
+	const workUnitValidationField = $derived(
+		data.proposal.targetType === 'work_unit'
+			? proposalValidationField(
+					data.proposal.validationError,
+					fieldEntries.map(([field]) => field)
+				)
+			: null
+	);
+
+	// One chosen reading per flagged clause, required before Accept: #86's
+	// "an ambiguous clause requires an explicit choice", enforced here
+	// independently of whatever `proposal.validationError` currently says
+	// (that message only ever names the *first* thing wrong, which may be
+	// an unrelated NOT NULL field checked earlier in the same switch).
+	let clauseReadings = $state<string[]>(
+		(data.contractCandidate?.clauseFlags ?? []).map((flag) => flag.interpretationAdopted ?? '')
+	);
+	const unresolvedClauseCount = $derived(clauseReadings.filter((reading) => !reading).length);
+
+	// Blocked while a flagged clause still needs its reading chosen (#86's
+	// "an ambiguous clause requires an explicit choice"), and — for a
+	// target type this screen never lets a reviewer edit (`invoice`) —
+	// while the database would reject the proposal as proposed.
+	//
+	// A `contract` is gated the same way a `work_unit` already was, and for
+	// a reason worth stating: choosing a reading records the interpretation
+	// on the clause note, it does not fill in the field the clause
+	// determines — that is a separate Select the reviewer sets. Gating on
+	// the clause alone therefore enabled Accept while `renewalType` was
+	// still null, and the reviewer learned that only from a failed submit.
+	// Observed on a real proposal built from the committed fixture, which
+	// is exactly the doomed click the field-level error exists to prevent.
+	const acceptBlocked = $derived(
+		data.proposal.targetType === 'invoice'
+			? data.proposal.validationError !== null
+			: data.proposal.targetType === 'contract'
+				? unresolvedClauseCount > 0 ||
+					(contractValidationField !== null && !editedFields.has(contractValidationField))
+				: workUnitValidationField !== null && !editedFields.has(workUnitValidationField)
+	);
+
+	// The three fields a Select drives conditionally — mirrors
+	// `ContractForm.svelte`'s own pattern exactly, so a reviewer resolving
+	// an ambiguous field sees the same conditional shape a person creating
+	// a contract by hand would.
+	let renewalType = $state(data.contractCandidate?.contract.renewalType ?? '');
+	let paymentTermsKind = $state(data.contractCandidate?.contract.paymentTerms?.kind ?? '');
+	let expensePolicyKind = $state(data.contractCandidate?.contract.expensePolicy?.kind ?? '');
+	let currency = $state(data.contractCandidate?.contract.currency ?? 'EUR');
+	const countries = $derived(countryOptions(getLocale()));
+
+	const expensePolicyCapValue = $derived(
+		data.contractCandidate?.contract.expensePolicy?.kind === 'reimbursed_with_cap'
+			? minorUnitsToDecimalString(data.contractCandidate.contract.expensePolicy.capAmount, currency)
+			: ''
+	);
+
+	// A `{@const}` block cannot be a direct child of `<form>`, only of a
+	// block (`{#if}`, `{#each}`, `{#snippet}`, …) — computed here instead,
+	// same as `ContractForm.svelte`'s own module-scope column definitions
+	// would if that page needed one.
+	const rateCardColumns = $derived(
+		data.contractCandidate
+			? ([
+					{
+						key: 'validity',
+						label: m.rate_card_column_validity(),
+						format: (row: ExtractedRateCard) =>
+							`${formatDate(row.validFrom)} – ${row.validTo ? formatDate(row.validTo) : m.rate_card_valid_to_open()}`
+					},
+					{
+						key: 'kind',
+						label: m.rate_card_column_kind(),
+						format: (row: ExtractedRateCard) => rateCardKindLabel(row.kind)
+					},
+					{
+						key: 'amount',
+						label: m.rate_card_column_amount(),
+						align: 'end' as const,
+						format: (row: ExtractedRateCard) => {
+							const perUnit = `${formatAmount(row.amount, currency)} / ${rateUnitLabel(row.unit)}`;
+							return row.disbursementPeriod
+								? `${perUnit} (${disbursementPeriodLabel(row.disbursementPeriod)})`
+								: perUnit;
+						}
+					}
+				] satisfies readonly TableColumn<ExtractedRateCard>[])
+			: []
 	);
 
 	// A save announces itself (#207): each action tags its own outcome so
@@ -104,11 +272,50 @@
 	let rejectDialogOpen = $state(false);
 </script>
 
+{#snippet rejectDialog()}
+	<Dialog bind:open={rejectDialogOpen} title={m.proposal_reject_confirm_title()} role="alertdialog">
+		<p>{m.proposal_reject_confirm_body()}</p>
+		{#snippet actions()}
+			<Button type="button" variant="tertiary" onclick={() => (rejectDialogOpen = false)}>
+				{m.proposal_reject_confirm_cancel()}
+			</Button>
+			<Button type="submit" formaction="?/reject" variant="danger">
+				{m.proposal_reject_confirm_confirm()}
+			</Button>
+		{/snippet}
+	</Dialog>
+{/snippet}
+
+{#snippet decisionActions()}
+	{#if form?.decisionError}
+		<p class="decision-error" role="alert">
+			{m.proposal_detail_decision_error_heading()}
+			{form.decisionError}
+		</p>
+	{/if}
+	<div class="submit-stack">
+		<Button type="submit" variant="primary" disabled={acceptBlocked}>
+			{acceptSubmitLabel}
+		</Button>
+		<Button type="button" variant="danger" onclick={() => (rejectDialogOpen = true)}>
+			{m.proposal_detail_reject_submit()}
+		</Button>
+		<Button href={resolve('/proposals')} variant="tertiary">
+			{m.proposal_review_skip()}
+		</Button>
+	</div>
+	{@render rejectDialog()}
+{/snippet}
+
+{#snippet rateCardsEmpty()}
+	<p class="muted">{m.rate_card_empty()}</p>
+{/snippet}
+
 <svelte:head><title>{m.proposal_detail_page_title()}</title></svelte:head>
 
 <Page
 	crumbs={data.crumbs}
-	title={m.proposal_review_heading({ date: titleDate, quantity: titleQuantity })}
+	title={pageHeading}
 	subtitle={factLine([data.contract?.title, data.contract?.clientLegalName])}
 >
 	{#snippet actions()}
@@ -143,8 +350,10 @@
 					<dt>{m.proposal_evidence_date_label()}</dt>
 					<dd>{formatDateTime(data.message.receivedAt)}</dd>
 				{/if}
-				<dt>{m.proposal_evidence_subject_label()}</dt>
-				<dd>{data.message.subject ?? m.proposal_queue_no_subject()}</dd>
+				{#if data.message.subject !== null || data.message.from}
+					<dt>{m.proposal_evidence_subject_label()}</dt>
+					<dd>{data.message.subject ?? m.proposal_queue_no_subject()}</dd>
+				{/if}
 			</dl>
 
 			{#if messageSplit}
@@ -153,7 +362,9 @@
 				</p>
 				<p class="hint">{m.proposal_evidence_excerpt_hint()}</p>
 			{:else}
-				<p class="message-body">{data.message.body}</p>
+				{#if data.message.body}
+					<p class="message-body">{data.message.body}</p>
+				{/if}
 				<div>
 					<h3>{m.proposal_detail_excerpt_heading()}</h3>
 					<blockquote>{data.proposal.excerpt}</blockquote>
@@ -167,11 +378,538 @@
 
 		<!-- Proposed fields — lighter, secondary column -->
 		<div class="fields">
-			{#if data.proposal.status === 'pending'}
+			{#if data.proposal.targetType === 'contract' && data.contractCandidate}
+				{@const candidate = data.contractCandidate}
+				<form method="POST" action="?/accept" class="fields-form">
+					<fieldset class="card">
+						<legend><h2>{m.client_form_legal_identity_legend()}</h2></legend>
+						<p class="hint">{m.proposal_contract_client_hint()}</p>
+						<Field label={m.client_form_legal_name_label()}>
+							<Input
+								name="client.legalName"
+								value={candidate.client.legalName}
+								disabled={!pending}
+								oninput={() => markEdited('legalName')}
+							/>
+						</Field>
+						<Field label={m.client_form_country_label()}>
+							<Select name="client.country" value={candidate.client.country} disabled={!pending}>
+								{#each countries as country (country.code)}
+									<option value={country.code} selected={candidate.client.country === country.code}>
+										{country.name}
+									</option>
+								{/each}
+							</Select>
+						</Field>
+						<div class="grid-2">
+							<Field label={m.client_form_tax_id_label()}>
+								<Input name="client.taxId" value={candidate.client.taxId} disabled={!pending} />
+							</Field>
+							<Field label={m.client_form_vat_id_label()}>
+								<Input
+									name="client.vatId"
+									value={candidate.client.vatId ?? ''}
+									disabled={!pending}
+								/>
+							</Field>
+						</div>
+					</fieldset>
+
+					<fieldset class="card">
+						<legend><h2>{m.client_form_address_legend()}</h2></legend>
+						<Field label={m.client_form_address_line1_label()}>
+							<Input
+								name="client.addressLine1"
+								value={candidate.client.addressLine1}
+								disabled={!pending}
+							/>
+						</Field>
+						<Field label={m.client_form_address_line2_label()}>
+							<Input
+								name="client.addressLine2"
+								value={candidate.client.addressLine2 ?? ''}
+								disabled={!pending}
+							/>
+						</Field>
+						<div class="grid-2">
+							<Field label={m.client_form_city_label()}>
+								<Input
+									name="client.addressCity"
+									value={candidate.client.addressCity}
+									disabled={!pending}
+								/>
+							</Field>
+							<Field label={m.client_form_postal_code_label()}>
+								<Input
+									name="client.addressPostalCode"
+									value={candidate.client.addressPostalCode}
+									disabled={!pending}
+								/>
+							</Field>
+						</div>
+						<Field label={m.client_form_region_label()}>
+							<Input
+								name="client.addressRegion"
+								value={candidate.client.addressRegion ?? ''}
+								disabled={!pending}
+							/>
+						</Field>
+					</fieldset>
+
+					<fieldset class="card">
+						<legend><h2>{m.contract_form_identity_legend()}</h2></legend>
+						<Field label={m.contract_form_title_label()}>
+							<Input
+								name="title"
+								value={candidate.contract.title}
+								disabled={!pending}
+								oninput={() => markEdited('title')}
+							/>
+						</Field>
+						<Field label={m.contract_form_signed_document_reference_label()}>
+							<Input
+								name="signedDocumentReference"
+								value={candidate.contract.signedDocumentReference ?? ''}
+								disabled={!pending}
+							/>
+						</Field>
+						<div class="grid-2">
+							<Field
+								label={m.contract_form_starts_on_label()}
+								error={contractValidationField === 'startsOn'
+									? (data.proposal.validationError ?? undefined)
+									: undefined}
+							>
+								<Input
+									type="date"
+									name="startsOn"
+									value={candidate.contract.startsOn}
+									disabled={!pending}
+									oninput={() => markEdited('startsOn')}
+								/>
+							</Field>
+							<Field
+								label={m.contract_form_ends_on_label()}
+								error={contractValidationField === 'endsOn'
+									? (data.proposal.validationError ?? undefined)
+									: undefined}
+							>
+								<Input
+									type="date"
+									name="endsOn"
+									value={candidate.contract.endsOn ?? ''}
+									disabled={!pending}
+									oninput={() => markEdited('endsOn')}
+								/>
+							</Field>
+						</div>
+					</fieldset>
+
+					<fieldset class="card">
+						<legend><h2>{m.contract_form_payment_legend()}</h2></legend>
+						<div class="grid-2">
+							<Field
+								label={m.contract_form_payment_terms_kind_label()}
+								error={contractValidationField === 'paymentTerms'
+									? (data.proposal.validationError ?? undefined)
+									: undefined}
+							>
+								<Select
+									name="paymentTermsKind"
+									bind:value={paymentTermsKind}
+									disabled={!pending}
+									oninput={() => markEdited('paymentTerms')}
+								>
+									<option value="" selected={paymentTermsKind === ''}>
+										{m.proposal_contract_field_unresolved_placeholder()}
+									</option>
+									{#each paymentTermsKinds as kind (kind)}
+										<option value={kind} selected={paymentTermsKind === kind}>
+											{paymentTermsKindLabel(kind)}
+										</option>
+									{/each}
+								</Select>
+							</Field>
+							{#if paymentTermsKind === 'net'}
+								<Field label={m.contract_form_payment_terms_net_days_label()}>
+									<Input
+										type="number"
+										min="1"
+										step="1"
+										numeric
+										name="paymentTermsNetDays"
+										value={candidate.contract.paymentTerms?.kind === 'net'
+											? candidate.contract.paymentTerms.days
+											: ''}
+										disabled={!pending}
+										oninput={() => markEdited('paymentTerms')}
+									/>
+								</Field>
+							{:else if paymentTermsKind === 'day_of_month'}
+								<Field
+									label={m.contract_form_payment_terms_day_of_month_label()}
+									hint={m.contract_form_payment_terms_day_of_month_hint()}
+								>
+									<Input
+										type="number"
+										min="1"
+										max="31"
+										step="1"
+										numeric
+										name="paymentTermsDayOfMonthDay"
+										value={candidate.contract.paymentTerms?.kind === 'day_of_month'
+											? candidate.contract.paymentTerms.day
+											: ''}
+										disabled={!pending}
+										oninput={() => markEdited('paymentTerms')}
+									/>
+								</Field>
+							{/if}
+						</div>
+						<div class="grid-2">
+							<Field label={m.contract_form_invoicing_cadence_label()}>
+								<Select
+									name="invoicingCadence"
+									value={candidate.contract.invoicingCadence}
+									disabled={!pending}
+								>
+									{#each invoicingCadences as cadence (cadence)}
+										<option
+											value={cadence}
+											selected={candidate.contract.invoicingCadence === cadence}
+										>
+											{invoicingCadenceLabel(cadence)}
+										</option>
+									{/each}
+								</Select>
+							</Field>
+							<Field
+								label={m.contract_form_currency_label()}
+								error={contractValidationField === 'currency'
+									? (data.proposal.validationError ?? undefined)
+									: undefined}
+							>
+								<Input
+									name="currency"
+									bind:value={currency}
+									maxlength={3}
+									style="text-transform: uppercase"
+									disabled={!pending}
+									oninput={() => markEdited('currency')}
+								/>
+							</Field>
+						</div>
+						<Field
+							label={m.contract_form_tax_treatment_label()}
+							hint={m.contract_form_tax_treatment_hint()}
+							error={contractValidationField === 'taxTreatment'
+								? (data.proposal.validationError ?? undefined)
+								: undefined}
+						>
+							<Input
+								name="taxTreatment"
+								value={candidate.contract.taxTreatment ?? ''}
+								disabled={!pending}
+								oninput={() => markEdited('taxTreatment')}
+							/>
+						</Field>
+					</fieldset>
+
+					<fieldset class="card">
+						<legend><h2>{m.contract_form_renewal_legend()}</h2></legend>
+						<Field
+							label={m.contract_form_renewal_type_label()}
+							error={contractValidationField === 'renewalType'
+								? (data.proposal.validationError ?? undefined)
+								: undefined}
+						>
+							<Select
+								name="renewalType"
+								bind:value={renewalType}
+								disabled={!pending}
+								oninput={() => markEdited('renewalType')}
+							>
+								<option value="" selected={renewalType === ''}>
+									{m.proposal_contract_field_unresolved_placeholder()}
+								</option>
+								{#each contractRenewalTypes as type (type)}
+									<option value={type} selected={renewalType === type}>
+										{renewalTypeLabel(type)}
+									</option>
+								{/each}
+							</Select>
+						</Field>
+						{#if renewalType !== '' && renewalType !== 'none'}
+							<Field
+								label={m.contract_form_renewal_notice_days_label()}
+								error={contractValidationField === 'renewalNoticeDays'
+									? (data.proposal.validationError ?? undefined)
+									: undefined}
+							>
+								<Input
+									type="number"
+									min="0"
+									step="1"
+									numeric
+									name="renewalNoticeDays"
+									value={candidate.contract.renewalNoticeDays ?? ''}
+									disabled={!pending}
+									oninput={() => markEdited('renewalNoticeDays')}
+								/>
+							</Field>
+						{/if}
+						<Field
+							label={m.contract_form_termination_notice_days_label()}
+							error={contractValidationField === 'terminationNoticeDays'
+								? (data.proposal.validationError ?? undefined)
+								: undefined}
+						>
+							<Input
+								type="number"
+								min="0"
+								step="1"
+								numeric
+								name="terminationNoticeDays"
+								value={candidate.contract.terminationNoticeDays}
+								disabled={!pending}
+								oninput={() => markEdited('terminationNoticeDays')}
+							/>
+						</Field>
+					</fieldset>
+
+					<fieldset class="card">
+						<legend><h2>{m.contract_form_expenses_legend()}</h2></legend>
+						<Field
+							label={m.contract_form_expense_policy_kind_label()}
+							error={contractValidationField === 'expensePolicy'
+								? (data.proposal.validationError ?? undefined)
+								: undefined}
+						>
+							<Select
+								name="expensePolicyKind"
+								bind:value={expensePolicyKind}
+								disabled={!pending}
+								oninput={() => markEdited('expensePolicy')}
+							>
+								<option value="" selected={expensePolicyKind === ''}>
+									{m.proposal_contract_field_unresolved_placeholder()}
+								</option>
+								{#each expensePolicyKinds as kind (kind)}
+									<option value={kind} selected={expensePolicyKind === kind}>
+										{expensePolicyKindLabel(kind)}
+									</option>
+								{/each}
+							</Select>
+						</Field>
+						{#if expensePolicyKind === 'reimbursed_with_cap'}
+							<AmountInput
+								label={m.contract_form_expense_policy_cap_amount_label()}
+								name="expensePolicyCapAmount"
+								value={expensePolicyCapValue}
+								{currency}
+								disabled={!pending}
+							/>
+						{/if}
+						{#if expensePolicyKind !== '' && expensePolicyKind !== 'not_reimbursed'}
+							<Checkbox
+								name="requiresExpensePreAuthorisation"
+								checked={candidate.contract.requiresExpensePreAuthorisation}
+								label={m.contract_form_requires_expense_pre_authorisation_label()}
+								disabled={!pending}
+							/>
+						{/if}
+						<Checkbox
+							name="requiresPriorApproval"
+							checked={candidate.contract.requiresPriorApproval}
+							label={m.contract_form_requires_prior_approval_label()}
+							disabled={!pending}
+						/>
+					</fieldset>
+
+					<div class="card">
+						<div class="card-head"><h2>{m.rate_card_section_heading()}</h2></div>
+						<Table
+							columns={rateCardColumns}
+							rows={candidate.rateCards}
+							caption={m.rate_card_section_heading()}
+							rowKey={(row) => `${row.validFrom}-${row.kind}-${row.amount}-${row.unit}`}
+							empty={rateCardsEmpty}
+						/>
+					</div>
+
+					<div class="card">
+						<div class="card-head"><h2>{m.proposal_contract_clauses_heading()}</h2></div>
+						{#if candidate.clauseFlags.length === 0}
+							<p class="muted">{m.clause_note_empty()}</p>
+						{:else}
+							{#each candidate.clauseFlags as flag, i (flag.clauseReference ?? i)}
+								<div class="clause-flag">
+									<div class="clause-flag-head">
+										<Badge variant="warning" label={flag.clauseReference ?? ''} size="sm" />
+										<span class="hint"
+											>{m.proposal_contract_clause_affects({ field: flag.field })}</span
+										>
+									</div>
+									<div>
+										<span class="hint">{m.clause_note_form_verbatim_text_label()}</span>
+										<blockquote>{flag.verbatimText}</blockquote>
+									</div>
+									<div
+										class="readings"
+										role="radiogroup"
+										aria-label={m.proposal_contract_clause_reading_legend()}
+									>
+										<p class="readings-legend">{m.proposal_contract_clause_reading_legend()}</p>
+										<p class="hint">{m.proposal_contract_clause_reading_hint()}</p>
+										{#each flag.readings as reading (reading)}
+											<Radio
+												name="clauseFlags.{i}.interpretationAdopted"
+												value={reading}
+												label={reading}
+												bind:group={clauseReadings[i]}
+												disabled={!pending}
+											/>
+										{/each}
+										{#if pending && !clauseReadings[i]}
+											<p class="err" role="alert">
+												{m.proposal_contract_clause_reading_required_error()}
+											</p>
+										{/if}
+									</div>
+								</div>
+							{/each}
+						{/if}
+					</div>
+
+					{#if pending && data.proposal.confidenceReason}
+						<Banner tone="warning">
+							<strong>{confidence.label} ({formatPercent(data.proposal.confidence)})</strong>: {data
+								.proposal.confidenceReason}
+						</Banner>
+					{/if}
+					{#if pending && data.proposal.validationError}
+						<Banner tone="critical">
+							<strong>{m.proposal_validation_banner_heading()}</strong>
+							{data.proposal.validationError}
+						</Banner>
+					{/if}
+
+					{#if pending}
+						{@render decisionActions()}
+					{:else if data.proposal.status === 'accepted' && data.proposal.resultId && data.acceptedContractClientId}
+						<Button
+							href={resolve('/clients/[id]/contracts/[contractId]', {
+								id: data.acceptedContractClientId,
+								contractId: data.proposal.resultId
+							})}
+							variant="primary"
+						>
+							{m.proposal_detail_result_link_contract()}
+						</Button>
+					{/if}
+				</form>
+			{:else if data.proposal.targetType === 'invoice' && data.invoiceFields}
+				{@const invoice = data.invoiceFields}
+				<div class="card fields-form">
+					<div class="card-head"><h2>{m.proposal_invoice_heading()}</h2></div>
+					<dl class="pairs">
+						<dt>{m.invoice_form_number_label()}</dt>
+						<dd>{invoice.number}</dd>
+						<dt>{m.invoice_form_issue_date_label()}</dt>
+						<dd>{formatDate(invoice.issueDate)}</dd>
+						{#if invoice.dueDate}
+							<dt>{m.invoice_detail_due_date_label()}</dt>
+							<dd>{formatDate(invoice.dueDate)}</dd>
+						{/if}
+						<dt>{m.proposal_invoice_client_label()}</dt>
+						<dd>{invoice.clientName}</dd>
+					</dl>
+
+					<div class="lines-scroll">
+						<table class="lines">
+							<caption class="sr-only"
+								>{m.invoice_detail_lines_heading()} — {invoice.number}</caption
+							>
+							<thead>
+								<tr>
+									<th scope="col">{m.invoice_form_line_description_label()}</th>
+									<th scope="col" class="num">{m.invoice_form_line_quantity_label()}</th>
+									<th scope="col" class="num">{m.invoice_form_line_unit_price_label()}</th>
+									<th scope="col" class="num">{m.invoice_form_line_amount_label()}</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each invoice.lines as line, i (i)}
+									<tr>
+										<td>{line.description}</td>
+										<td class="num">{formatNumber(line.quantity)}</td>
+										<td class="num">
+											<Amount minorUnits={line.unitPrice} currency={invoice.currency} size="md" />
+										</td>
+										<td class="num">
+											<Amount minorUnits={line.amount} currency={invoice.currency} size="md" />
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+							<tfoot>
+								<tr>
+									<td colspan="3">{m.invoice_detail_taxable_amount_label()}</td>
+									<td class="num">
+										<Amount
+											minorUnits={invoice.taxableAmount}
+											currency={invoice.currency}
+											size="md"
+										/>
+									</td>
+								</tr>
+								<tr>
+									<td colspan="3">{m.invoice_detail_tax_amount_label()}</td>
+									<td class="num">
+										<Amount minorUnits={invoice.taxAmount} currency={invoice.currency} size="md" />
+									</td>
+								</tr>
+								<tr class="total-row">
+									<td colspan="3">{m.invoice_detail_total_label()}</td>
+									<td class="num">
+										<Amount minorUnits={invoice.total} currency={invoice.currency} size="md" />
+									</td>
+								</tr>
+							</tfoot>
+						</table>
+					</div>
+
+					{#if pending && data.proposal.confidenceReason}
+						<Banner tone="warning">
+							<strong>{confidence.label} ({formatPercent(data.proposal.confidence)})</strong>: {data
+								.proposal.confidenceReason}
+						</Banner>
+					{/if}
+					{#if pending && data.proposal.validationError}
+						<Banner tone="critical">
+							<strong>{m.proposal_validation_banner_heading()}</strong>
+							{data.proposal.validationError}
+						</Banner>
+					{/if}
+
+					{#if pending}
+						<form method="POST" action="?/accept">
+							{@render decisionActions()}
+						</form>
+					{:else if data.proposal.status === 'accepted' && data.proposal.resultId}
+						<Button
+							href={resolve('/invoices/[id]', { id: data.proposal.resultId })}
+							variant="primary"
+						>
+							{m.proposal_detail_result_link_invoice()}
+						</Button>
+					{/if}
+				</div>
+			{:else if pending}
 				<form method="POST" action="?/accept" class="card fields-form">
 					{#each fieldEntries as [field, value] (field)}
 						{@const grounded = isFieldGroundedInExcerpt(value, data.proposal.excerpt)}
-						{@const invalid = field === validationField}
+						{@const invalid = field === workUnitValidationField}
 						<Field
 							label={proposalFieldLabel(field)}
 							hint={grounded
@@ -229,40 +967,7 @@
 						</Banner>
 					{/if}
 
-					{#if form?.decisionError}
-						<p class="decision-error" role="alert">
-							{m.proposal_detail_decision_error_heading()}
-							{form.decisionError}
-						</p>
-					{/if}
-
-					<div class="submit-stack">
-						<Button type="submit" variant="primary" disabled={acceptBlocked}>
-							{m.proposal_review_accept_submit()}
-						</Button>
-						<Button type="button" variant="danger" onclick={() => (rejectDialogOpen = true)}>
-							{m.proposal_detail_reject_submit()}
-						</Button>
-						<Button href={resolve('/proposals')} variant="tertiary">
-							{m.proposal_review_skip()}
-						</Button>
-					</div>
-
-					<Dialog
-						bind:open={rejectDialogOpen}
-						title={m.proposal_reject_confirm_title()}
-						role="alertdialog"
-					>
-						<p>{m.proposal_reject_confirm_body()}</p>
-						{#snippet actions()}
-							<Button type="button" variant="tertiary" onclick={() => (rejectDialogOpen = false)}>
-								{m.proposal_reject_confirm_cancel()}
-							</Button>
-							<Button type="submit" formaction="?/reject" variant="danger">
-								{m.proposal_reject_confirm_confirm()}
-							</Button>
-						{/snippet}
-					</Dialog>
+					{@render decisionActions()}
 				</form>
 			{:else}
 				<div class="card decided-fields">
@@ -337,7 +1042,7 @@
 				<dd>{data.proposal.decidedAt ? formatDateTime(data.proposal.decidedAt) : ''}</dd>
 			</dl>
 
-			{#if data.proposal.status === 'accepted'}
+			{#if data.proposal.status === 'accepted' && data.proposal.targetType === 'work_unit'}
 				<h3>{m.proposal_detail_changes_heading()}</h3>
 				{#if data.proposal.changes.length === 0}
 					<p class="muted">{m.proposal_detail_no_changes()}</p>
@@ -375,6 +1080,12 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-3);
+		margin: 0;
+		min-width: 0;
+	}
+	.card > legend {
+		padding: 0;
+		width: 100%;
 	}
 	.card-head {
 		display: flex;
@@ -382,11 +1093,22 @@
 		justify-content: space-between;
 		gap: var(--space-2);
 	}
-	.card-head h2 {
+	.card-head h2,
+	.card > legend h2 {
 		margin: 0;
 		font-size: var(--text-lg);
 		font-weight: var(--weight-medium);
 		color: var(--text-primary);
+	}
+	.grid-2 {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: var(--space-4);
+	}
+	@media (max-width: 639px) {
+		.grid-2 {
+			grid-template-columns: 1fr;
+		}
 	}
 	.pairs {
 		display: grid;
@@ -440,6 +1162,9 @@
 	}
 	.fields-form {
 		align-self: start;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-4);
 	}
 	.decided-fields {
 		align-items: flex-start;
@@ -465,6 +1190,61 @@
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-2);
+	}
+	.clause-flag {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+		padding: var(--space-3);
+		border: 1px solid var(--border-hairline);
+		border-radius: var(--radius-sm);
+	}
+	.clause-flag-head {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+	.readings {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+	}
+	.readings-legend {
+		margin: 0;
+		font-size: var(--text-sm);
+		font-weight: var(--weight-medium);
+		color: var(--text-primary);
+	}
+	.err {
+		margin: 0;
+		font-size: var(--text-xs);
+		color: var(--color-danger);
+		font-weight: var(--weight-medium);
+	}
+	.lines-scroll {
+		overflow-x: auto;
+	}
+	table.lines {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: var(--text-sm);
+	}
+	table.lines th,
+	table.lines td {
+		padding: var(--space-2) var(--space-3);
+		text-align: left;
+		border-bottom: 1px solid var(--border-hairline);
+	}
+	table.lines th.num,
+	table.lines td.num {
+		text-align: right;
+	}
+	table.lines tfoot td {
+		border-bottom: none;
+		border-top: 1px solid var(--border-hairline);
+	}
+	table.lines .total-row td {
+		font-weight: var(--weight-medium);
 	}
 	.siblings {
 		display: flex;
