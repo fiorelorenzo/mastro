@@ -65,6 +65,7 @@ COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/build ./build
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/scripts/migrate.ts ./scripts/migrate.ts
+COPY --from=build /app/scripts/check-storage.ts ./scripts/check-storage.ts
 COPY --from=build /app/scripts/record-backup-run.ts ./scripts/record-backup-run.ts
 # migrate.ts imports this one module to say which database it is about to
 # touch. Node resolves that import at runtime, inside this image, so the
@@ -87,7 +88,7 @@ EXPOSE 3000
 # Migrations run on boot (#76's acceptance): the same script and the same
 # committed SQL that `pnpm db:migrate` runs locally, so there is no second
 # migration path to keep in sync.
-CMD ["sh", "-c", "node scripts/migrate.ts && exec node build"]
+CMD ["sh", "-c", "node scripts/check-storage.ts && node scripts/migrate.ts && exec node build"]
 
 # The ACP runner (#82): a second image built from the same source, on the
 # same base as `runtime`, but a different CMD and a much smaller slice of

@@ -99,3 +99,25 @@ export function isImapConfigured(source: Record<string, string | undefined>): bo
 export function imapConfiguredInEnv(): boolean {
 	return isImapConfigured(env);
 }
+
+/** The sending half of the same idea. `runAlertDigest` (#75) is called by
+ * the scheduler (#222) on a timer, not by a human pressing send, so on an
+ * instance with no mailbox configured `mailConfigFromEnv()` throwing turns
+ * a supported configuration into a weekly 500 and — because a job that
+ * stops succeeding raises an alert — a recurring false alarm about the
+ * product's own health. The digest already knows how to say "there is
+ * content but nowhere to send it" when the allowlist is empty; this lets
+ * it say the same thing about an unconfigured mailbox. */
+export function isSmtpConfigured(source: Record<string, string | undefined>): boolean {
+	return Boolean(
+		source.SMTP_HOST?.trim() &&
+		source.SMTP_PORT?.trim() &&
+		source.SMTP_USER?.trim() &&
+		source.SMTP_APP_PASSWORD?.trim() &&
+		source.MAIL_FROM_ADDRESS?.trim()
+	);
+}
+
+export function smtpConfiguredInEnv(): boolean {
+	return isSmtpConfigured(env);
+}

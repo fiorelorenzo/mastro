@@ -20,6 +20,12 @@ below.
   in AGENTS.md: every derived datum keeps its source document, so a client dispute is
   settled by the original message, not the row an extraction produced from it. A
   backup that only has the row has already lost the thing invariant 4 exists to keep.
+- **`VAPID_PRIVATE_KEY`, when push is configured.** A browser's push subscription is
+  bound to the public half of this pair, so a restore under a new key leaves every
+  granted subscription addressed to a key nothing holds: alerts stop arriving and
+  nobody is told. Unlike the auth secret it is optional — an archive taken before
+  push was configured carries no key, and restoring one will not clear a key the
+  instance already has.
 
 Not in the backup set, on purpose: `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` and
 `POSTGRES_PASSWORD`. These are credentials the self-hoster issued and can reissue;
@@ -39,9 +45,10 @@ run:
 
 1. `docker compose exec db pg_dump -Fc` — the database, straight out of the running
    container, no separate client tooling needed on the host.
-2. Copies `BETTER_AUTH_SECRET` out of `.env.prod`.
+2. Copies `BETTER_AUTH_SECRET` out of `.env.prod`, and `VAPID_PRIVATE_KEY` too when
+   it is set.
 3. Archives `DOCUMENTS_DIR` with `tar`.
-4. Bundles the three into one timestamped `.tar.gz` under `backup-dir`.
+4. Bundles them into one timestamped `.tar.gz` under `backup-dir`.
 5. Calls `scripts/record-backup-run.ts` inside the running `web` container to record
    the outcome — see "Failure is observable" below. This runs whether steps 1–4
    succeeded or not: `fail()` records `failure` with the reason before exiting
@@ -73,7 +80,8 @@ script:
    dump's own `CREATE TABLE` statements and Drizzle's migration-tracking rows
    reproduce the exact schema state, so the `web` container's migration-on-boot step
    (Dockerfile `CMD`) finds every migration already applied and does nothing further.
-4. Overwrites `BETTER_AUTH_SECRET` in `.env.prod` with the value from the archive.
+4. Overwrites `BETTER_AUTH_SECRET` in `.env.prod` with the value from the archive,
+   and `VAPID_PRIVATE_KEY` too when the archive carries one.
 5. Replaces `DOCUMENTS_DIR` with the archived contents.
 6. Brings the full stack up.
 
