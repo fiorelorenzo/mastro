@@ -12,6 +12,7 @@
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate, formatMinorUnits, formatNumber } from '$lib/i18n/format';
 	import { Banner, Button, DropZone, Field, Tabs } from '$lib/design';
+	import { appHref } from '$lib/nav/href';
 	import Page from '$lib/layout/Page.svelte';
 	import {
 		scanDirectoryHandle,
@@ -50,6 +51,7 @@
 	let recognisedFiles = $state<EditableRecognised[]>([]);
 	let confirmResult = $state<ConfirmResponse | null>(null);
 	let errorText = $state('');
+	let missingIdentity = $state(false);
 
 	const supportsDirectoryPicker =
 		typeof window !== 'undefined' &&
@@ -91,9 +93,19 @@
 		}
 		const response = await fetch('/import/analyze', { method: 'POST', body: formData });
 		if (!response.ok) {
+			// The one refusal that is configuration rather than a broken file:
+			// direction detection cannot tell an outgoing invoice from an
+			// incoming one without the practice's own tax id, and a fresh
+			// instance has not filled it in yet. Say which screen fixes it.
+			if (response.status === 409) {
+				missingIdentity = true;
+				stage = 'idle';
+				return;
+			}
 			fail(new Error(await response.text()));
 			return;
 		}
+		missingIdentity = false;
 		const data = (await response.json()) as ReviewResult;
 		review = data;
 		clarifications = data.clarifications.map((group) => ({ ...group, include: true }));
@@ -206,8 +218,15 @@
 
 <svelte:head><title>{m.import_page_title()}</title></svelte:head>
 
-<Page title={m.import_heading()}>
+<Page title={m.import_heading()} width="wide">
 	<Tabs label={m.import_tabs_label()} {tabs} />
+
+	{#if missingIdentity}
+		<Banner tone="warning">
+			{m.import_missing_account_holder_tax_id()}
+			<a href={appHref('/settings/practice')}>{m.import_missing_account_holder_tax_id_link()}</a>
+		</Banner>
+	{/if}
 	<p class="mt-2 text-sm opacity-70">{m.import_intro()}</p>
 
 	{#if stage === 'idle' || stage === 'error'}

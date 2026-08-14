@@ -284,6 +284,12 @@ async function handleShellAsset(request: Request): Promise<Response> {
  * the network request that follows updates the cache in the background,
  * via `event.waitUntil` so it keeps running after the response is sent.
  */
+/** How long a revalidation may run before the copy on screen is called
+ * unconfirmed. Long enough that a healthy round trip never trips it,
+ * short enough that a reader is not left studying figures nothing has
+ * checked. */
+const STALE_ANNOUNCE_GRACE_MS = 1_500;
+
 function handleDataRequest(event: FetchEvent): Promise<Response> {
 	const { request } = event;
 	const cacheKey = dataCacheKey(request.url);
@@ -296,12 +302,39 @@ function handleDataRequest(event: FetchEvent): Promise<Response> {
 			.catch(() => null);
 
 		if (cached) {
-			event.waitUntil(revalidated);
-			notifyClients({
-				type: 'mastro:data-stale',
-				url: cacheKey,
-				cachedAt: cached.headers.get('x-mastro-cached-at')
-			});
+			// Serve the cached copy at once, but do NOT call it stale yet.
+			//
+			// Announcing staleness here fired on every navigation with a warm
+			// cache and was cleared a moment later by `data-fresh`, so the
+			// warning banner flashed yellow on every screen of a perfectly
+			// healthy instance. A marker that appears when nothing is wrong
+			// is not a marker, it is noise, and it trains you to ignore the
+			// one time it means something.
+			//
+			// #61 asks that a stale response be visibly marked as stale. That
+			// is true when revalidation FAILS, and when it is taking long
+			// enough that you are reading unconfirmed figures — not during
+			// the sub-second round trip that confirms them. So: announce on
+			// failure, or after a grace period, and never merely because a
+			// cache was hit.
+			const announceStale = () =>
+				notifyClients({
+					type: 'mastro:data-stale',
+					url: cacheKey,
+					cachedAt: cached.headers.get('x-mastro-cached-at')
+				});
+			const graceTimer = setTimeout(announceStale, STALE_ANNOUNCE_GRACE_MS);
+			event.waitUntil(
+				revalidated.then((response) => {
+					clearTimeout(graceTimer);
+					// `processNetworkDataResponse` emits `data-fresh` itself on
+					// the paths that cache; a null (network failure) or a
+					// non-ok response never reaches it, and that is exactly
+					// the case the banner exists for.
+					if (!response || !response.ok) announceStale();
+					return response;
+				})
+			);
 			return cached;
 		}
 

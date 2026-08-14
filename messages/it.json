@@ -753,6 +753,8 @@
 	"import_fallback_label": "Oppure scegli una cartella qui",
 	"import_heading": "Importa fatture",
 	"import_intro": "Scegli una cartella di fatture esportate. mastro analizza ogni documento strutturato che riconosce, abbina il cliente a quelli già presenti e non scrive nulla finché non confermi.",
+	"import_missing_account_holder_tax_id": "Per distinguere una fattura emessa da una ricevuta serve il tuo codice fiscale, e mastro non lo indovina.",
+	"import_missing_account_holder_tax_id_link": "Compila il profilo dello studio",
 	"import_no_active_pack": "Nessun profilo fiscale è attivo oggi, quindi mastro non può sapere quali formati di fattura aspettarsi. Configurane uno prima di importare.",
 	"import_page_title": "Importa fatture — mastro",
 	"import_pick_folder_button": "Scegli cartella",
