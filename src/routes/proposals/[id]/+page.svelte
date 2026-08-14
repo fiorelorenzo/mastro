@@ -14,7 +14,17 @@
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate, formatDateTime, formatPercent } from '$lib/i18n/format';
 	import { factLine } from '$lib/nav/crumbs';
-	import { Amount, Badge, Banner, Button, Field, Input, Textarea } from '$lib/design';
+	import {
+		Amount,
+		Badge,
+		Banner,
+		Button,
+		Dialog,
+		Field,
+		Input,
+		Textarea,
+		toasts
+	} from '$lib/design';
 	import SourceDocument from '$lib/design/SourceDocument.svelte';
 	import Page from '$lib/layout/Page.svelte';
 	import ProposalStatusBadge from '../ProposalStatusBadge.svelte';
@@ -65,6 +75,33 @@
 			? proposalQuantityLabel(data.proposal.proposedFields.quantity)
 			: ''
 	);
+
+	// A save announces itself (#207): each action tags its own outcome so
+	// the toast reads correctly regardless of which button was pressed.
+	// SvelteKit progressively enhances a plain `<form method="POST">`
+	// automatically (no `use:enhance` needed) — the action runs over
+	// fetch and `form` updates in place, which can re-run this effect more
+	// than once for the one decision (the accompanying `invalidateAll`
+	// reactivity settling in more than one flush). `announcedDecision`
+	// guards on the decision itself, not on how many times Svelte re-ran
+	// the effect, so a repeat fire is a silent no-op instead of a second toast.
+	let announcedDecision: string | null = null;
+	$effect(() => {
+		if (!form?.decided) return;
+		const key = `${data.proposal.id}:${form.action}`;
+		if (announcedDecision === key) return;
+		announcedDecision = key;
+		if (form.action === 'accept') {
+			toasts.push('success', m.proposal_review_accept_toast());
+		} else if (form.action === 'reject') {
+			toasts.push('neutral', m.proposal_reject_toast());
+		}
+	});
+
+	// Rejecting asks first: the Reject button opens this instead of
+	// submitting directly, and the dialog's own Reject button — inside the
+	// same <form> — is what actually submits `?/reject` (#207).
+	let rejectDialogOpen = $state(false);
 </script>
 
 <svelte:head><title>{m.proposal_detail_page_title()}</title></svelte:head>
@@ -203,13 +240,29 @@
 						<Button type="submit" variant="primary" disabled={acceptBlocked}>
 							{m.proposal_review_accept_submit()}
 						</Button>
-						<Button type="submit" formaction="?/reject" variant="danger">
+						<Button type="button" variant="danger" onclick={() => (rejectDialogOpen = true)}>
 							{m.proposal_detail_reject_submit()}
 						</Button>
 						<Button href={resolve('/proposals')} variant="tertiary">
 							{m.proposal_review_skip()}
 						</Button>
 					</div>
+
+					<Dialog
+						bind:open={rejectDialogOpen}
+						title={m.proposal_reject_confirm_title()}
+						role="alertdialog"
+					>
+						<p>{m.proposal_reject_confirm_body()}</p>
+						{#snippet actions()}
+							<Button type="button" variant="tertiary" onclick={() => (rejectDialogOpen = false)}>
+								{m.proposal_reject_confirm_cancel()}
+							</Button>
+							<Button type="submit" formaction="?/reject" variant="danger">
+								{m.proposal_reject_confirm_confirm()}
+							</Button>
+						{/snippet}
+					</Dialog>
 				</form>
 			{:else}
 				<div class="card decided-fields">

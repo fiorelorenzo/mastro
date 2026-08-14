@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDateTime } from '$lib/i18n/format';
-	import { StatusIndicator } from '$lib/design';
+	import { Banner } from '$lib/design';
 	import { swClient } from './sw-client.svelte';
 
 	onMount(() => swClient.init());
@@ -29,22 +29,19 @@
 	show, "offline" or an unreached instance.
 -->
 {#if swClient.oldestStaleAt}
-	<div role="status" class="banner">
-		<StatusIndicator
-			level="warning"
-			label={swClient.offline
+	<div class="wrap">
+		<Banner tone="warning">
+			{swClient.offline
 				? m.data_freshness_banner_offline_label({ time: formatDateTime(swClient.oldestStaleAt) })
 				: m.data_freshness_banner_unreachable_label({
 						time: formatDateTime(swClient.oldestStaleAt)
 					})}
-		/>
+		</Banner>
 	</div>
 {/if}
 
 <style>
-	.banner {
-		border-bottom: 1px solid var(--border-hairline);
-		background: var(--surface-1);
-		padding: 0.5rem 1rem;
+	.wrap {
+		padding: var(--space-2) var(--space-4) 0;
 	}
 </style>

@@ -172,7 +172,7 @@ export const actions: Actions = {
 		} catch (err) {
 			return fail(400, { decisionError: errorMessage(err) });
 		}
-		return { decided: true };
+		return { decided: true, action: 'accept' as const };
 	},
 
 	reject: async ({ params, locals }) => {
@@ -183,6 +183,6 @@ export const actions: Actions = {
 		}
 
 		await rejectProposal(params.id, locals.user!.email);
-		return { decided: true };
+		return { decided: true, action: 'reject' as const };
 	}
 };

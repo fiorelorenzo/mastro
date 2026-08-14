@@ -5,7 +5,9 @@
 	import Sidebar from '$lib/nav/Sidebar.svelte';
 	import BottomBar from '$lib/nav/BottomBar.svelte';
 	import InstallPrompt from '$lib/pwa/InstallPrompt.svelte';
+	import OfflineQueueIndicator from '$lib/pwa/OfflineQueueIndicator.svelte';
 	import OfflineDataBanner from '$lib/pwa/OfflineDataBanner.svelte';
+	import Toast from '$lib/design/Toast.svelte';
 	import { SURFACE_DARK, SURFACE_LIGHT } from '$lib/pwa/colors';
 	import type { LayoutProps } from './$types';
 
@@ -41,10 +43,12 @@
 	<div class="tabs">
 		<BottomBar pathname={page.url.pathname} counts={data.counts} />
 	</div>
+	<OfflineQueueIndicator />
 {:else}
 	{@render children()}
 {/if}
 <InstallPrompt />
+<Toast />
 
 <style>
 	.shell {

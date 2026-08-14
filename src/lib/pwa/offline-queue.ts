@@ -89,3 +89,20 @@ export function extractRejectionMessage(result: ReplayResult): string | null {
 	);
 	return messages.length > 0 ? messages.join(' ') : null;
 }
+
+export type QueueSeverity = 'warning' | 'critical';
+
+/**
+ * The escalation `OfflineQueuePanel` already applies per entry (warning
+ * while an entry waits or syncs, critical once the server has refused
+ * it), lifted to the whole queue for #227's shell-wide indicator: any
+ * entry the server has actually rejected makes the aggregate critical,
+ * since that is the one status that will not resolve on its own — a
+ * `pending`/`syncing` entry is just waiting for a reconnect. Only
+ * meaningful for a non-empty queue; callers hide the indicator entirely
+ * once `entries.length === 0` rather than calling this with nothing to
+ * summarize.
+ */
+export function queueSeverity(entries: readonly QueuedDay[]): QueueSeverity {
+	return entries.some((entry) => entry.status === 'failed') ? 'critical' : 'warning';
+}

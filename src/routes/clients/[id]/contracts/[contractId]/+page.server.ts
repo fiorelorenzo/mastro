@@ -6,6 +6,8 @@ import { resolveRateCard } from '$lib/server/domain/rate-card';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
 import { daysLate } from '$lib/server/domain/invoice';
 import { listApprovalsForContract } from '$lib/server/repositories/approval';
+import { listCeilingsByContract } from '$lib/server/repositories/ceiling';
+import { getRenewalAssumptionByContract } from '$lib/server/repositories/contract-renewal-assumption';
 import { getContractDocuments, getContractWithClient } from '$lib/server/repositories/contract';
 import { listClauseNotes } from '$lib/server/repositories/clause-note';
 import { toSourceDocumentValue } from '$lib/server/repositories/document';
@@ -39,7 +41,9 @@ export const load: PageServerLoad = async ({ params }) => {
 		documents,
 		approvals,
 		workUnits,
-		invoices
+		invoices,
+		ceilings,
+		renewalAssumption
 	] = await Promise.all([
 		listRateCards(contract.id),
 		listClauseNotes(contract.id),
@@ -48,7 +52,9 @@ export const load: PageServerLoad = async ({ params }) => {
 		getContractDocuments(contract.id),
 		listApprovalsForContract(contract.id),
 		listWorkUnitsForContract(contract.id),
-		listInvoicesForContract(contract.id)
+		listInvoicesForContract(contract.id),
+		listCeilingsByContract(contract.id),
+		getRenewalAssumptionByContract(contract.id)
 	]);
 
 	const now = new Date();
@@ -154,6 +160,13 @@ export const load: PageServerLoad = async ({ params }) => {
 			documentId: row.documentId
 		})),
 		crumbs,
+		// #223: this contract's own ceilings and its renewal assumption,
+		// both created and edited from here — invariant 2's "a clause
+		// capping one client's share belongs to the contract, not the
+		// pack" for the first, and #39's "set from the contract's own
+		// renewal block" for the second.
+		ceilings,
+		renewalAssumption,
 		renewalWindowOpensOn: renewalWindowOpensOn(contract)?.toISOString().slice(0, 10) ?? null,
 		renewalWindowOpen: isRenewalWindowOpen(contract, now)
 	};

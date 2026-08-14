@@ -88,3 +88,55 @@ export function shellCacheName(version: string): string {
 export function dataCacheName(version: string): string {
 	return `mastro-data-${version}`;
 }
+
+/**
+ * True for a navigation that already targets the offline fallback page
+ * itself (#227) — the one document `handleNavigate` (service-worker.ts)
+ * must answer straight from `SHELL_CACHE` instead of trying the network
+ * first like every other navigation. Without this special case, a
+ * session with no network at all fetches `/offline`, fails exactly the
+ * same way every other navigation just did, and is handed the redirect
+ * `offlineFallbackUrl` below builds — which the *browser* then re-
+ * requests as a brand new navigation to `/offline`, looping forever
+ * (`ERR_TOO_MANY_REDIRECTS`) instead of ever painting anything. `/offline`
+ * is prerendered, public and stateless (`route-guard.ts`), so serving it
+ * from Cache Storage here is not the "never cache a document" rule
+ * bending — it is the one document that rule was always written to
+ * allow.
+ */
+export function isOfflineDocumentRequest(pathname: string, offlinePathname: string): boolean {
+	return pathname === offlinePathname;
+}
+
+/**
+ * Where a failed navigation redirects to (#227): the offline fallback,
+ * carrying the URL that could not be reached as `?to=` so that page's own
+ * client script can attempt a same-app `goto()` once hydrated — a normal
+ * client-side route change, which `handleDataRequest`'s existing stale-
+ * while-revalidate cache can already answer with zero network the moment
+ * that route's data was ever warmed (a previous visit, or `install`'s own
+ * proactive warm-up for `/day/new` — see `dayEntryDataUrl` below). Never
+ * carries `?to=` back to itself: a failed load of `/offline` needs no
+ * further redirect target at all.
+ */
+export function offlineFallbackUrl(failedUrl: string, offlineUrl: string, origin: string): string {
+	const target = new URL(offlineUrl, origin);
+	const failed = new URL(failedUrl, origin);
+	if (!isOfflineDocumentRequest(failed.pathname, target.pathname)) {
+		target.searchParams.set('to', `${failed.pathname}${failed.search}`);
+	}
+	return target.href;
+}
+
+/**
+ * The exact URL SvelteKit's client router fetches for `/day/new`'s own
+ * `load()` — the same `/<route>/__data.json` shape `dataCacheKey` above
+ * already documents for every other route. Computed once here so
+ * `install`'s proactive warm-up of the day-entry form's own data
+ * (service-worker.ts, #227 — "cache the app shell so the entry form
+ * opens offline from cold") and `dataCacheKey`'s own normalisation of the
+ * request that later reads it back never drift apart on the string.
+ */
+export function dayEntryDataUrl(base: string, origin: string): string {
+	return new URL(`${base}/day/new/__data.json`, origin).href;
+}

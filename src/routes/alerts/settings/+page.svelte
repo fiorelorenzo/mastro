@@ -39,6 +39,8 @@
 				return m.alerts_type_mailbox_poll_failure();
 			case 'agent_run_failure':
 				return m.alerts_type_agent_run_failure();
+			case 'proposal_pending':
+				return m.alerts_type_proposal_pending();
 		}
 	}
 

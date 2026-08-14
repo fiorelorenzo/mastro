@@ -51,6 +51,16 @@ const FIXTURES: Record<AlertType, AlertDetail> = {
 		receivedAt: '2026-08-01T09:00:00.000Z',
 		daysUnactioned: 5
 	},
+	proposal_pending: {
+		type: 'proposal_pending',
+		proposalId: 'proposal-1',
+		contractId: 'contract-1',
+		clientId: 'client-1',
+		contractTitle: 'Consulting agreement',
+		clientLegalName: 'Acme Srl',
+		createdAt: '2026-08-01T09:00:00.000Z',
+		daysPending: 5
+	},
 	invoice_overdue: {
 		type: 'invoice_overdue',
 		invoiceId: 'invoice-1',
@@ -181,4 +191,10 @@ test('mirror_failure links to the contract that owns the unmirrored document, bo
 	const resolution = alertResolution(FIXTURES.mirror_failure, 'en');
 	expect(resolution.subjectHref).toBe('/clients/client-1/contracts/contract-1');
 	expect(resolution.actionHref).toBe('/clients/client-1/contracts/contract-1');
+});
+
+test('proposal_pending — subject and action both open the proposal review screen', () => {
+	const resolution = alertResolution(FIXTURES.proposal_pending, 'en');
+	expect(resolution.subjectHref).toBe('/proposals/proposal-1');
+	expect(resolution.actionHref).toBe('/proposals/proposal-1');
 });

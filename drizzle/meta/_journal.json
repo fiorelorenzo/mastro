@@ -330,6 +330,13 @@
       "when": 1786655965421,
       "tag": "0046_sent_email_invoice_id",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1786689498708,
+      "tag": "0047_alert_type_proposal_pending",
+      "breakpoints": true
     }
   ]
 }

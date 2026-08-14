@@ -4,6 +4,7 @@
 import { afterAll, expect, test } from 'vitest';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool } from '$lib/server/db';
+import { detectWorkedWithoutApproval } from './detectors';
 import {
 	acknowledgeAlert,
 	covers,
@@ -94,6 +95,47 @@ test('recordDelivery is upserted per alertKey the same way acknowledgement is, a
 		deliveries = await listDeliveries(tx);
 		expect(deliveries.size).toBe(1);
 		expect(deliveries.get(a.key)).toMatchObject({ severityRank: 3, channel: 'push' });
+	});
+});
+
+// ── escalation clears delivery dedup (#229) ─────────────────────────────
+
+test('a worked_without_approval risk that ages past the escalation threshold re-detects at a strictly higher severity, which delivery dedup does not cover — the fix for "raised once, then silent forever"', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const row = {
+			workUnitId: crypto.randomUUID(),
+			contractId: 'contract-1',
+			clientId: 'client-1',
+			contractTitle: 'Consulting agreement',
+			clientLegalName: 'Acme Srl',
+			date: '2026-08-04', // Tuesday
+			sinceAt: '2026-08-04T09:00:00.000Z'
+		};
+
+		// Tuesday: freshly at risk, delivered once at `serious`.
+		const [freshAlert] = detectWorkedWithoutApproval([row], '2026-08-04');
+		expect(freshAlert.severity).toBe('serious');
+		await recordDelivery(freshAlert, 'digest', tx);
+
+		let deliveries = await listDeliveries(tx);
+		expect(covers(deliveries.get(freshAlert.key), 'serious')).toBe(true);
+
+		// Friday, three days later, still unresolved: the same occurrence
+		// (same `key`) now detects at `critical` — before #229's fix this
+		// alert was hardcoded `critical` from day one, so a second detection
+		// never carried a higher rank than what was already delivered and
+		// `covers` suppressed it forever. Escalating through
+		// `severityForDaysElapsed` gives it a strictly higher rank instead.
+		const [agedAlert] = detectWorkedWithoutApproval([row], '2026-08-07');
+		expect(agedAlert.key).toBe(freshAlert.key);
+		expect(agedAlert.severity).toBe('critical');
+		expect(covers(deliveries.get(agedAlert.key), agedAlert.severity)).toBe(false);
+
+		// Delivering it again at the new severity records the higher rank —
+		// the second delivery this issue asks for.
+		await recordDelivery(agedAlert, 'digest', tx);
+		deliveries = await listDeliveries(tx);
+		expect(deliveries.get(agedAlert.key)).toMatchObject({ severityRank: 3 });
 	});
 });
 

@@ -98,6 +98,16 @@ export function alertResolution(detail: AlertDetail, locale: Locale): AlertResol
 			};
 		}
 
+		case 'proposal_pending': {
+			// The review queue's own detail screen (`routes/proposals/[id]`) is
+			// the one place a proposal is decided; subject and action collapse
+			// onto it, the same shape ceiling/system-health alerts already use
+			// for "one real screen".
+			const href = `/proposals/${detail.proposalId}`;
+			const label = m.alerts_action_review_proposal(undefined, { locale });
+			return { subjectHref: href, subjectLabel: label, actionHref: href, actionLabel: label };
+		}
+
 		case 'invoice_overdue': {
 			const href = `/invoices/${detail.invoiceId}`;
 			return {

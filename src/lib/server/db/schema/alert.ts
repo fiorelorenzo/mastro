@@ -12,7 +12,11 @@ import { id, timestamps } from '../columns';
  * that table but exist because `backup_run` (#77), `document_mirror_run`
  * (#50), `mailbox_poll_run` (#84) and `agent_run` (#222) were each built
  * with exactly this engine as their stated reader — see those tables'
- * own doc comments.
+ * own doc comments. `proposal_pending` (#229) is the same widening again:
+ * a proposal sitting on `proposal` with no human decision yet was
+ * previously invisible to this engine entirely (invariant 3's "humans
+ * confirm" has no teeth if nobody is ever told there is something to
+ * confirm) — see `alerts/detectors.ts`'s `detectProposalPending`.
  */
 export const ALERT_TYPES = [
 	'contract_expiring',
@@ -26,7 +30,8 @@ export const ALERT_TYPES = [
 	'backup_failure',
 	'mirror_failure',
 	'mailbox_poll_failure',
-	'agent_run_failure'
+	'agent_run_failure',
+	'proposal_pending'
 ] as const;
 export type AlertType = (typeof ALERT_TYPES)[number];
 

@@ -8,8 +8,10 @@
 	// protects the initial navigation the same way it protects every other
 	// route, since it runs before any page (with or without server data) is
 	// served.
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate, formatMinorUnits, formatNumber } from '$lib/i18n/format';
+	import { Banner, Button, Field, FileInput, Tabs } from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
 	import {
 		scanDirectoryHandle,
@@ -53,6 +55,11 @@
 		typeof window !== 'undefined' &&
 		typeof (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker ===
 			'function';
+
+	const tabs = [
+		{ href: resolve('/import'), label: m.import_tab_invoices(), selected: true },
+		{ href: resolve('/import/days'), label: m.import_tab_days(), selected: false }
+	];
 
 	const acceptedClarificationCount = $derived(
 		clarifications.filter((group) => group.include).length
@@ -200,27 +207,26 @@
 <svelte:head><title>{m.import_page_title()}</title></svelte:head>
 
 <Page title={m.import_heading()}>
+	<Tabs label={m.import_tabs_label()} {tabs} />
 	<p class="mt-2 text-sm opacity-70">{m.import_intro()}</p>
 
 	{#if stage === 'idle' || stage === 'error'}
 		<div class="mt-6 flex flex-col items-start gap-3">
 			{#if supportsDirectoryPicker}
-				<button type="button" class="w-fit border px-4 py-2 text-sm" onclick={pickFolder}>
+				<Button variant="secondary" onclick={pickFolder}>
 					{m.import_pick_folder_button()}
-				</button>
+				</Button>
 			{/if}
-			<label class="flex flex-col gap-1 text-sm">
-				{m.import_fallback_label()}
-				<input
-					type="file"
+			<Field label={m.import_fallback_label()}>
+				<FileInput
+					label={m.import_fallback_button()}
 					multiple
 					webkitdirectory
-					class="border px-2 py-1"
 					onchange={onFallbackChange}
 				/>
-			</label>
+			</Field>
 			{#if stage === 'error'}
-				<p class="text-xs font-semibold" role="alert">{errorText}</p>
+				<Banner tone="critical">{errorText}</Banner>
 			{/if}
 		</div>
 	{:else if stage === 'scanning'}

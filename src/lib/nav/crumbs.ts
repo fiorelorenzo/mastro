@@ -141,3 +141,8 @@ export function alertsCrumbs(): Crumb[] {
 export function proposalsCrumbs(): Crumb[] {
 	return trail({ href: resolve('/proposals'), label: m.proposal_list_heading() });
 }
+
+/** The settings page, parent of the fiscal profile sub-page. */
+export function settingsCrumbs(): Crumb[] {
+	return trail({ href: resolve('/settings'), label: m.settings_heading() });
+}

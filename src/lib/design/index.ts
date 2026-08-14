@@ -45,6 +45,7 @@ export type {
 export { default as Button } from './Button.svelte';
 export { default as Field } from './Field.svelte';
 export { default as Input } from './Input.svelte';
+export { default as FileInput } from './FileInput.svelte';
 export { default as Textarea } from './Textarea.svelte';
 export { default as Select } from './Select.svelte';
 export { default as Checkbox } from './Checkbox.svelte';
@@ -117,3 +118,33 @@ export { BANNER_TONES, bannerGlyph, bannerRole, type BannerTone } from './banner
 // ── navigation — a row of links that switch which slice of one list is
 // showing; real URLs, not a same-page panel swap (see Tabs.svelte) ───────
 export { default as Tabs } from './Tabs.svelte';
+
+// ── overlays — Dialog/Sheet (one component, `placement` prop — see
+// Dialog.svelte's own header for why), Toast (a page-wide singleton, see
+// toast-store.svelte.ts) and Skeleton (shape-only, aria-hidden). Elevation
+// on every one of these comes from --shadow-overlay only ──────────────────
+export { default as Dialog } from './Dialog.svelte';
+export {
+	FOCUSABLE_SELECTOR,
+	isDismissKey,
+	nextTrappedIndex,
+	tabDirection,
+	type TabDirection
+} from './dialog-focus';
+export { default as Toast } from './Toast.svelte';
+export { toasts } from './toast-store.svelte';
+export {
+	TOAST_DEFAULT_DURATION_MS,
+	TOAST_MAX_STACK,
+	TOAST_MIN_DURATION_MS,
+	TOAST_TONES,
+	dismissToast,
+	pushToast,
+	resolveToastDuration,
+	toastPoliteness,
+	toastRole,
+	type ToastRecord,
+	type ToastTone
+} from './toast';
+export { default as Skeleton } from './Skeleton.svelte';
+export { SKELETON_SHAPES, skeletonLineWidths, type SkeletonShape } from './skeleton';

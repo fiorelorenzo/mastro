@@ -27,7 +27,11 @@ import {
 	MAILBOX_POLL_STALE_HOURS,
 	MIRROR_STALE_HOURS,
 	OVERRUN_CRITICAL_RATIO,
-	OVERRUN_SERIOUS_RATIO
+	OVERRUN_SERIOUS_RATIO,
+	PROPOSAL_PENDING_CRITICAL_DAYS,
+	PROPOSAL_PENDING_SERIOUS_DAYS,
+	PROPOSAL_PENDING_WARNING_DAYS,
+	WORKED_WITHOUT_APPROVAL_CRITICAL_DAYS
 } from './thresholds';
 import { makeAlert, type Alert, type AlertSeverity } from './types';
 
@@ -159,14 +163,31 @@ export interface WorkedWithoutApprovalRow {
 	readonly sinceAt: string;
 }
 
-/** Every day currently sitting in `worked_without_approval` — always
- * `critical`: the moment this state is reached the practitioner has
- * exposure (work done with no written authorisation on file), which #23's
- * database trigger already treats as the one state the product must make
- * unmistakable. There is no lower severity for this one. */
-export function detectWorkedWithoutApproval(rows: readonly WorkedWithoutApprovalRow[]): Alert[] {
-	return rows.map((row) =>
-		makeAlert(row.workUnitId, 'critical', {
+/** Every day currently sitting in `worked_without_approval` — never
+ * `warning`: the moment this state is reached the practitioner already
+ * has exposure (work done with no written authorisation on file), which
+ * #23's database trigger already treats as the one state the product
+ * must make unmistakable. It does not stay at one severity forever
+ * though (#229): unresolved for `WORKED_WITHOUT_APPROVAL_CRITICAL_DAYS`
+ * or longer, it steps up to `critical`. Before this, every occurrence was
+ * hardcoded `critical` from the instant it was reached, which reads as
+ * "always the worst it can be" but actually meant delivery dedup
+ * (`state.ts`'s `covers`, keyed on severity rank) never saw a rank higher
+ * than the one already delivered — a risk raised once never fired again,
+ * whatever happened to it afterwards. Escalating through
+ * `severityForDaysElapsed`, the same mechanism `approval_unactioned`
+ * already uses below, is the fix: an unresolved risk earns a strictly
+ * higher rank as it ages, which is exactly what clears the dedup and
+ * raises it again. */
+export function detectWorkedWithoutApproval(
+	rows: readonly WorkedWithoutApprovalRow[],
+	asOfDate: string
+): Alert[] {
+	return rows.map((row) => {
+		const daysUnresolved = daysLate(row.sinceAt.slice(0, 10), asOfMidnight(asOfDate));
+		const severity: AlertSeverity =
+			daysUnresolved >= WORKED_WITHOUT_APPROVAL_CRITICAL_DAYS ? 'critical' : 'serious';
+		return makeAlert(row.workUnitId, severity, {
 			type: 'worked_without_approval',
 			workUnitId: row.workUnitId,
 			contractId: row.contractId,
@@ -175,8 +196,8 @@ export function detectWorkedWithoutApproval(rows: readonly WorkedWithoutApproval
 			clientLegalName: row.clientLegalName,
 			date: row.date,
 			sinceAt: row.sinceAt
-		})
-	);
+		});
+	});
 }
 
 export interface ApprovalUnactionedRow {
@@ -219,6 +240,54 @@ export function detectApprovalUnactioned(
 				clientLegalName: row.clientLegalName,
 				receivedAt: row.receivedAt.toISOString(),
 				daysUnactioned
+			})
+		);
+	}
+	return alerts;
+}
+
+export interface ProposalPendingRow {
+	readonly proposalId: string;
+	readonly contractId: string;
+	readonly clientId: string;
+	readonly contractTitle: string;
+	readonly clientLegalName: string;
+	readonly createdAt: Date;
+}
+
+/** Fires once a proposal has sat `pending` for `PROPOSAL_PENDING_
+ * WARNING_DAYS` with nobody deciding it (#229) — invariant 3's "agents
+ * propose, humans confirm" is the entire point of the ingestion loop, and
+ * a proposal nobody looks at defeats it exactly as much as an approval
+ * nobody actions defeats the day it should have unblocked, which is why
+ * this reuses `severityForDaysElapsed` at `approval_unactioned`'s own
+ * figures rather than inventing a second cadence for what is the same
+ * kind of neglect. */
+export function detectProposalPending(
+	rows: readonly ProposalPendingRow[],
+	asOfDate: string
+): Alert[] {
+	const alerts: Alert[] = [];
+	for (const row of rows) {
+		const createdAtDate = row.createdAt.toISOString().slice(0, 10);
+		const daysPending = daysLate(createdAtDate, asOfMidnight(asOfDate));
+		const severity = severityForDaysElapsed(
+			daysPending,
+			PROPOSAL_PENDING_WARNING_DAYS,
+			PROPOSAL_PENDING_SERIOUS_DAYS,
+			PROPOSAL_PENDING_CRITICAL_DAYS
+		);
+		if (severity === null) continue;
+		alerts.push(
+			makeAlert(row.proposalId, severity, {
+				type: 'proposal_pending',
+				proposalId: row.proposalId,
+				contractId: row.contractId,
+				clientId: row.clientId,
+				contractTitle: row.contractTitle,
+				clientLegalName: row.clientLegalName,
+				createdAt: row.createdAt.toISOString(),
+				daysPending
 			})
 		);
 	}

@@ -19,6 +19,7 @@ import {
 	detectInvoiceOverdue,
 	detectMailboxPollFailure,
 	detectMirrorFailure,
+	detectProposalPending,
 	detectRenewalWindowOpen,
 	detectWorkedWithoutApproval,
 	detectYearEndOverrunRisk,
@@ -143,25 +144,42 @@ test('renewal_window_open fires for counterparty_option and explicit too', () =>
 
 // ── worked_without_approval ─────────────────────────────────────────────
 
-test('worked_without_approval is always critical', () => {
-	const alerts = detectWorkedWithoutApproval([
-		{
-			workUnitId: 'wu-1',
-			contractId: 'c-1',
-			clientId: 'client-1',
-			contractTitle: 'Consulting agreement',
-			clientLegalName: 'Acme Srl',
-			date: '2026-08-01',
-			sinceAt: '2026-08-01T09:00:00.000Z'
-		}
-	]);
+function workedWithoutApprovalRow(sinceAt: string) {
+	return {
+		workUnitId: 'wu-1',
+		contractId: 'c-1',
+		clientId: 'client-1',
+		contractTitle: 'Consulting agreement',
+		clientLegalName: 'Acme Srl',
+		date: sinceAt.slice(0, 10),
+		sinceAt
+	};
+}
+
+test('worked_without_approval fires serious the instant it is reached, never warning', () => {
+	const alerts = detectWorkedWithoutApproval(
+		[workedWithoutApprovalRow('2026-08-04T09:00:00.000Z')],
+		'2026-08-04'
+	);
 	expect(alerts).toEqual([
-		expect.objectContaining({ key: 'worked_without_approval:wu-1', severity: 'critical' })
+		expect.objectContaining({ key: 'worked_without_approval:wu-1', severity: 'serious' })
 	]);
 });
 
+test('worked_without_approval escalates to critical once unresolved for WORKED_WITHOUT_APPROVAL_CRITICAL_DAYS — #229: Friday now does tell you Tuesday is still unapproved', () => {
+	const row = workedWithoutApprovalRow('2026-08-04T09:00:00.000Z'); // entered the state on a Tuesday
+
+	// Tuesday, freshly at risk: serious.
+	expect(detectWorkedWithoutApproval([row], '2026-08-04')[0].severity).toBe('serious');
+	// Two days later, still under the threshold: still serious, not re-escalated.
+	expect(detectWorkedWithoutApproval([row], '2026-08-06')[0].severity).toBe('serious');
+	// Friday, three days later: strictly higher rank, which is what clears
+	// delivery dedup (`state.ts`'s `covers`) and raises it again.
+	expect(detectWorkedWithoutApproval([row], '2026-08-07')[0].severity).toBe('critical');
+});
+
 test('worked_without_approval is empty once nothing is currently in that state', () => {
-	expect(detectWorkedWithoutApproval([])).toEqual([]);
+	expect(detectWorkedWithoutApproval([], '2026-08-07')).toEqual([]);
 });
 
 // ── approval_unactioned ─────────────────────────────────────────────────
@@ -197,6 +215,45 @@ test('approval_unactioned fires serious exactly at 7 days', () => {
 test('approval_unactioned fires critical exactly at 14 days', () => {
 	const alerts = detectApprovalUnactioned([approvalRow(14)], '2026-08-07');
 	expect(alerts[0].severity).toBe('critical');
+});
+
+// ── proposal_pending ──────────────────────────────────────────────────────
+
+function proposalRow(daysAgo: number) {
+	const createdAt = new Date('2026-08-07T00:00:00.000Z');
+	createdAt.setUTCDate(createdAt.getUTCDate() - daysAgo);
+	return {
+		proposalId: 'proposal-1',
+		contractId: 'contract-1',
+		clientId: 'client-1',
+		contractTitle: 'Consulting agreement',
+		clientLegalName: 'Acme Srl',
+		createdAt
+	};
+}
+
+test('proposal_pending does not fire the same day, or two days later', () => {
+	expect(detectProposalPending([proposalRow(0)], '2026-08-07')).toEqual([]);
+	expect(detectProposalPending([proposalRow(2)], '2026-08-07')).toEqual([]);
+});
+
+test('proposal_pending fires warning exactly at 3 days', () => {
+	const alerts = detectProposalPending([proposalRow(3)], '2026-08-07');
+	expect(alerts[0].severity).toBe('warning');
+});
+
+test('proposal_pending fires serious exactly at 7 days', () => {
+	const alerts = detectProposalPending([proposalRow(7)], '2026-08-07');
+	expect(alerts[0].severity).toBe('serious');
+});
+
+test('proposal_pending fires critical exactly at 14 days', () => {
+	const alerts = detectProposalPending([proposalRow(14)], '2026-08-07');
+	expect(alerts[0].severity).toBe('critical');
+});
+
+test('proposal_pending is empty once nothing is currently pending', () => {
+	expect(detectProposalPending([], '2026-08-07')).toEqual([]);
 });
 
 // ── invoice_overdue ──────────────────────────────────────────────────────

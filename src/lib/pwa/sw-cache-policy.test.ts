@@ -2,8 +2,11 @@ import { describe, expect, test } from 'vitest';
 import {
 	dataCacheKey,
 	dataCacheName,
+	dayEntryDataUrl,
 	isCacheableDataRequest,
+	isOfflineDocumentRequest,
 	isSessionInvalidPayload,
+	offlineFallbackUrl,
 	shellCacheName
 } from './sw-cache-policy';
 
@@ -68,5 +71,48 @@ describe('cache names', () => {
 		expect(shellCacheName('abc123')).toBe('mastro-shell-abc123');
 		expect(dataCacheName('abc123')).toBe('mastro-data-abc123');
 		expect(shellCacheName('abc123')).not.toBe(dataCacheName('abc123'));
+	});
+});
+
+describe('isOfflineDocumentRequest', () => {
+	test('the offline page itself is recognised', () => {
+		expect(isOfflineDocumentRequest('/offline', '/offline')).toBe(true);
+	});
+
+	test('every other pathname is not', () => {
+		expect(isOfflineDocumentRequest('/day/new', '/offline')).toBe(false);
+	});
+});
+
+describe('offlineFallbackUrl', () => {
+	test('carries the failed URL forward as ?to=', () => {
+		const url = offlineFallbackUrl('http://localhost/day/new', '/offline', 'http://localhost');
+		expect(url).toBe('http://localhost/offline?to=%2Fday%2Fnew');
+	});
+
+	test("preserves the failed URL's own query string inside ?to=", () => {
+		const url = offlineFallbackUrl(
+			'http://localhost/day/new?contractId=abc',
+			'/offline',
+			'http://localhost'
+		);
+		expect(new URL(url).searchParams.get('to')).toBe('/day/new?contractId=abc');
+	});
+
+	test('a failed load of /offline itself carries no ?to= — nothing to redirect to twice', () => {
+		const url = offlineFallbackUrl('http://localhost/offline', '/offline', 'http://localhost');
+		expect(url).toBe('http://localhost/offline');
+	});
+});
+
+describe('dayEntryDataUrl', () => {
+	test('matches the /<route>/__data.json shape every other route request uses', () => {
+		expect(dayEntryDataUrl('', 'http://localhost')).toBe('http://localhost/day/new/__data.json');
+	});
+
+	test('respects a configured base path', () => {
+		expect(dayEntryDataUrl('/mastro', 'http://localhost')).toBe(
+			'http://localhost/mastro/day/new/__data.json'
+		);
 	});
 });

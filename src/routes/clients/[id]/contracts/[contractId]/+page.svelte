@@ -18,14 +18,17 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
+	import { getLocale } from '$lib/paraglide/runtime';
 	import {
 		formatAmount,
 		formatDate,
 		formatDateTime,
 		formatDays,
 		formatMinorUnits,
-		formatNumber
+		formatNumber,
+		formatPercent
 	} from '$lib/i18n/format';
+	import { ceilingBasisWords } from '$lib/dashboard/ceiling';
 	import { Amount, Badge, Banner, Button, EmptyState, Select, StatTile } from '$lib/design';
 	import SourceDocument from '$lib/design/SourceDocument.svelte';
 	import Table from '$lib/design/Table.svelte';
@@ -62,6 +65,9 @@
 	type RateCardRow = PageData['rateCards'][number];
 	type ExpenseRow = PageData['expenses'][number];
 	type ApprovalRow = PageData['approvals'][number];
+	type CeilingRow = PageData['ceilings'][number];
+
+	const locale = $derived(getLocale());
 
 	// A language names itself — the same choice `mail/contracts/[id]`
 	// already made for the same field, so this page's "Template language"
@@ -172,6 +178,22 @@
 	function canRebill(row: ExpenseRow): boolean {
 		return row.reimbursable && !row.invoiceLineId && data.invoiceLines.length > 0;
 	}
+
+	// #223's renewal-assumption summary: the same three parameters the
+	// edit form collects, read back as one sentence — never a second
+	// place a reader has to reconstruct what the recorded belief means.
+	const renewalAssumptionSummary = $derived(
+		data.renewalAssumption
+			? m.renewal_assumption_summary({
+					probability: formatPercent(data.renewalAssumption.probability),
+					volume: formatMinorUnits(
+						data.renewalAssumption.expectedVolumeMinorUnits,
+						contract.currency
+					),
+					horizon: formatDate(data.renewalAssumption.horizonEndsOn)
+				})
+			: null
+	);
 </script>
 
 <svelte:head><title>{m.contract_detail_page_title({ title: contract.title })}</title></svelte:head>
@@ -264,6 +286,16 @@
 {/snippet}
 {#snippet expensesEmpty()}
 	<EmptyState icon="▧" title={m.contract_detail_empty_title()} body={m.expense_empty()} />
+{/snippet}
+{#snippet ceilingLimitCell(row: CeilingRow)}
+	{#if row.measure === 'absolute_amount' && row.absoluteValueMinorUnits !== null}
+		<Amount minorUnits={row.absoluteValueMinorUnits} currency={contract.currency} size="md" />
+	{:else if row.shareRatio !== null}
+		{formatPercent(row.shareRatio)}
+	{/if}
+{/snippet}
+{#snippet ceilingsEmpty()}
+	<EmptyState icon="◒" title={m.contract_detail_empty_title()} body={m.contract_ceiling_empty()} />
 {/snippet}
 
 <Page title={contract.title} {subtitle} crumbs={data.crumbs} width="wide">
@@ -547,6 +579,46 @@
 		{/if}
 	</Section>
 
+	{@const ceilingColumns = [
+		{
+			key: 'label',
+			label: m.contract_ceiling_column_label(),
+			format: (row: CeilingRow) => row.label[locale]
+		},
+		{
+			key: 'limit',
+			label: m.contract_ceiling_column_limit(),
+			align: 'end',
+			cell: ceilingLimitCell
+		},
+		{
+			key: 'basis',
+			label: m.contract_ceiling_column_basis(),
+			format: (row: CeilingRow) => ceilingBasisWords(row.basis)
+		}
+	] satisfies readonly TableColumn<CeilingRow>[]}
+
+	<Section title={m.contract_ceiling_section_heading()}>
+		{#snippet actions()}
+			<a
+				href={resolve('/clients/[id]/contracts/[contractId]/ceilings/new', {
+					id: contract.client.id,
+					contractId: contract.id
+				})}
+				class="underline">{m.contract_ceiling_new_link()}</a
+			>
+		{/snippet}
+		<Table
+			columns={ceilingColumns}
+			rows={data.ceilings}
+			caption={m.contract_ceiling_section_heading()}
+			rowKey={(row) => row.id}
+			rowHref={(row) =>
+				`/clients/${contract.client.id}/contracts/${contract.id}/ceilings/${row.id}/edit`}
+			empty={ceilingsEmpty}
+		/>
+	</Section>
+
 	<Section title={m.contract_documents_heading()}>
 		{#each data.documents as document (document.id)}
 			<SourceDocument {document} />
@@ -564,6 +636,24 @@
 				{/each}
 			</dl>
 		</Card>
+	</Section>
+
+	<Section title={m.renewal_assumption_heading()}>
+		{#snippet actions()}
+			<a
+				href={resolve('/clients/[id]/contracts/[contractId]/renewal-assumption/edit', {
+					id: contract.client.id,
+					contractId: contract.id
+				})}
+				class="underline"
+				>{data.renewalAssumption
+					? m.renewal_assumption_edit_link()
+					: m.renewal_assumption_set_link()}</a
+			>
+		{/snippet}
+		<p class="empty-note">
+			{renewalAssumptionSummary ?? m.renewal_assumption_none()}
+		</p>
 	</Section>
 </Page>
 

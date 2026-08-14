@@ -6,11 +6,11 @@ import { resolveActiveFiscalPack } from '$lib/server/fiscal/profile';
 import type { PageServerLoad } from './$types';
 
 /**
- * The fiscal pack in force today, read-only here (configuring it is not
- * built yet — task #146 only has to stop `/settings` pointing at a 404).
- * `null` on a fresh instance, which has no `fiscal_profile` row: the
- * common case for a self-hoster who has not run the setup step yet, not
- * an error state.
+ * The fiscal pack in force today — a summary card only; the read/write
+ * screen (#223) lives at `/settings/fiscal`, reached through this page's
+ * own `settings_fiscal_manage_link`. `null` on a fresh instance, which
+ * has no `fiscal_profile` row: the common case for a self-hoster who has
+ * not run the setup step yet, not an error state.
  */
 export const load: PageServerLoad = async () => {
 	const today = new Date().toISOString().slice(0, 10);
