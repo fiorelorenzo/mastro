@@ -82,7 +82,16 @@ COPY --from=build /app/package.json ./package.json
 # root:root, and non-root `mastro` gets EACCES on the very first
 # `POST /api/agent/run` — found by actually running the scheduler (#222)
 # against a fresh stack, not by inspection.
-RUN mkdir -p /app/data/runner-queue && chown mastro:mastro /app/data/runner-queue
+#
+# `/app/data/documents` is the same story with one more twist. It is
+# usually a bind mount, whose ownership comes from the host and which the
+# boot check verifies — but the default when nothing is mounted has to
+# work too, and `/app/data` itself is root-owned, so without this a plain
+# `docker run` of this image cannot even create its own document root.
+# Chowning `/app/data` as well means a named volume mounted there inherits
+# the right owner instead of locking the app out.
+RUN mkdir -p /app/data/runner-queue /app/data/documents \
+	&& chown mastro:mastro /app/data /app/data/runner-queue /app/data/documents
 USER mastro
 EXPOSE 3000
 # Migrations run on boot (#76's acceptance): the same script and the same
