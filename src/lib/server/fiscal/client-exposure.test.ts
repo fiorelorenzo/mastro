@@ -6,14 +6,13 @@
 // its validity period — this file inserts none, so every ceiling read
 // here is contract-origin only, which is exactly what it means to test.
 
-import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { minorUnits } from '$lib/money';
 import { client as pool, type DbExecutor } from '$lib/server/db';
-import { client, contract, invoice } from '$lib/server/db/schema';
+import { client, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
-import { createInvoice, type InvoiceInput } from '$lib/server/repositories/invoice';
+import { createInvoice, recordPayment, type InvoiceInput } from '$lib/server/repositories/invoice';
 import { createWorkUnit } from '$lib/server/repositories/work-unit';
 import { createCeiling } from '$lib/server/repositories/ceiling';
 import { fetchLedgerRows } from './revenue';
@@ -106,14 +105,14 @@ test('outstanding sums only this client\u2019s unpaid invoices, collected-this-y
 			'test fixture',
 			tx
 		);
-		await tx.update(invoice).set({ paidOn: '2087-07-01' }).where(eq(invoice.id, paidThisYear.id));
+		await recordPayment(paidThisYear.id, { amount: paidThisYear.total, date: '2087-07-01' }, tx);
 		const paidLastYear = await createInvoice(
 			invoiceInput(contractRow.id, { number: `INV-${crypto.randomUUID()}` }),
 			{ kind: 'human', email: 'lorenzo@example.com' },
 			'test fixture',
 			tx
 		);
-		await tx.update(invoice).set({ paidOn: '2086-12-15' }).where(eq(invoice.id, paidLastYear.id));
+		await recordPayment(paidLastYear.id, { amount: paidLastYear.total, date: '2086-12-15' }, tx);
 
 		const exposures = await listClientExposures('2087-08-13', tx);
 		const exposure = exposures.get(clientRow.id);

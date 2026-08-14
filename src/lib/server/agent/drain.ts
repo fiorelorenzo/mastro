@@ -14,7 +14,7 @@
 // document. That check is the real guard; the move is just tidying.
 
 import type { DbExecutor } from '$lib/server/db';
-import { listProposalsForDocument } from '$lib/server/repositories/proposal';
+import { listProposalsForDocument, type ProposalRow } from '$lib/server/repositories/proposal';
 import { getContract } from '$lib/server/repositories/contract';
 import { getInboundThreadForDocument } from '$lib/server/repositories/inbound-thread';
 import {
@@ -23,7 +23,19 @@ import {
 	readCompletedJob,
 	type CompletedJob
 } from '$lib/server/runner/queue';
+import { writeContractProposal } from './contract-producer';
 import { writeDayProposals, type DayProposalOutcome } from './day-producer';
+import { writeInvoiceProposal, type InvoiceProposalOutcome } from './invoice-producer';
+
+/** What every target type's own write-half returns, narrowed to the one
+ * shape `drainCompletedJobs` actually reads off it. `DayProposalOutcome`
+ * and `InvoiceProposalOutcome` both satisfy this structurally — a day's
+ * own `RejectedDay` carries more (`day`, not just `reason`), which is
+ * fine, since nothing here reads more than `reason`. */
+interface AppliedJobOutcome {
+	readonly proposals: readonly ProposalRow[];
+	readonly rejected: readonly { readonly reason: string }[];
+}
 
 export interface DrainOutcome {
 	readonly applied: number;
@@ -79,15 +91,56 @@ export async function drainCompletedJobs(
 	return { applied, skipped, failed, rejectedDays };
 }
 
+/**
+ * Writes the row `job.result.targetType`'s own producer produces —
+ * mirrors `repositories/proposal.ts`'s `applyProposal` dispatch, one
+ * level up: that switch decides what an *accepted* proposal writes to
+ * the ledger, this one decides which producer turns a *finished
+ * extraction job* into a proposal in the first place. `job.result.
+ * targetType` is a plain `string` (`runner/types.ts`'s own choice — the
+ * runner never interprets it), so this is a `switch`/`default` rather
+ * than the compile-time-exhaustive kind `applyProposal` can afford.
+ */
 async function applyCompletedJob(
 	job: CompletedJob,
 	executor?: DbExecutor
-): Promise<DayProposalOutcome> {
-	if (job.result.targetType !== 'work_unit') {
-		throw new Error(`no producer for target type ${job.result.targetType}`);
+): Promise<AppliedJobOutcome> {
+	switch (job.result.targetType) {
+		case 'work_unit':
+			return applyDayJob(job, executor);
+		case 'invoice':
+			return applyInvoiceJob(job, executor);
+		case 'contract':
+			return applyContractJob(job, executor);
+		default:
+			throw new Error(`no producer for target type ${job.result.targetType}`);
 	}
-	const contract = await getContract(job.result.contractId, executor);
-	if (!contract) throw new Error(`contract ${job.result.contractId} no longer exists`);
+}
+
+/** `job.result.contractId` is `string | null` at the type level
+ * (`runner/types.ts`'s `ProposalCandidate` — one shape shared by every
+ * target type, since #86 needed it nullable for a first-intake
+ * `'contract'` job). For `work_unit` and `invoice`, it is never actually
+ * null: `job.ts`'s own defence-in-depth check refuses a job whose
+ * `contractId` disagrees with the document it names, and #86's own CHECK
+ * constraint (`proposal_contract_id_required_unless_first_intake_
+ * contract`) means a document behind a `work_unit`/`invoice` job always
+ * has one. This is that runtime guarantee, made into the type-level
+ * narrowing `applyDayJob`/`applyInvoiceJob` need. */
+function requireJobContractId(job: CompletedJob): string {
+	if (job.result.contractId === null) {
+		throw new Error(
+			`job for document ${job.result.documentId} has no contractId, which target type ` +
+				`${job.result.targetType} requires`
+		);
+	}
+	return job.result.contractId;
+}
+
+async function applyDayJob(job: CompletedJob, executor?: DbExecutor): Promise<DayProposalOutcome> {
+	const contractId = requireJobContractId(job);
+	const contract = await getContract(contractId, executor);
+	if (!contract) throw new Error(`contract ${contractId} no longer exists`);
 
 	const thread = executor
 		? await getInboundThreadForDocument(job.result.documentId, executor)
@@ -99,7 +152,7 @@ async function applyCompletedJob(
 	return writeDayProposals(
 		{
 			documentId: job.result.documentId,
-			contractId: job.result.contractId,
+			contractId,
 			startsOn: contract.startsOn,
 			endsOn: contract.endsOn,
 			// The message as it was sent to the model, straight off the job:
@@ -114,4 +167,51 @@ async function applyCompletedJob(
 		job.result,
 		executor
 	);
+}
+
+/**
+ * #87's own half: no contract lookup, no inbound thread — an invoice PDF
+ * carries its own absolute dates, so there is nothing here to date
+ * relative to a message the way a day proposal needs. `job.request.
+ * content` is exactly the PDF text the model saw (`enqueue`'s caller
+ * already ran it through `extractPdfText` once, before the job was ever
+ * queued), so `writeInvoiceProposal` reads it back rather than this file
+ * touching the blob store or a PDF library at all.
+ */
+async function applyInvoiceJob(
+	job: CompletedJob,
+	executor?: DbExecutor
+): Promise<InvoiceProposalOutcome> {
+	return writeInvoiceProposal(
+		{ documentId: job.result.documentId, contractId: requireJobContractId(job) },
+		job.request.content,
+		job.result,
+		executor
+	);
+}
+
+/**
+ * #86's own half: no contract lookup at all — a first-intake `'contract'`
+ * job's document has no contract to look up, which is the entire point
+ * (`db/schema/document.ts`'s "unclaimed" state). `job.request.content` is
+ * exactly the PDF text the model saw, the same way `applyInvoiceJob`
+ * reads it back rather than touching the blob store or a PDF library
+ * here.
+ */
+async function applyContractJob(
+	job: CompletedJob,
+	executor?: DbExecutor
+): Promise<AppliedJobOutcome> {
+	// `ContractProposalOutcome` carries a single `proposal` (a contract PDF
+	// is never fan-out the way a day-approval message is) and
+	// `rejectedFlags` rather than `rejected` — the shape that reads best
+	// for `writeContractProposal`'s own direct callers. This adapts it to
+	// the plural, `rejected`-named shape `drainCompletedJobs` reads off
+	// every producer.
+	const outcome = await writeContractProposal(
+		{ documentId: job.result.documentId, content: job.request.content },
+		job.result,
+		executor
+	);
+	return { proposals: [outcome.proposal], rejected: outcome.rejectedFlags };
 }

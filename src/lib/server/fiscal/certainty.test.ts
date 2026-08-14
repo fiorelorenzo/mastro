@@ -21,7 +21,7 @@ test('collected is money in the bank: cash basis, unconditionally', () => {
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2024-03-01',
-			paidOn: '2024-04-10',
+			payments: [{ date: '2024-04-10', amount: minorUnits(70_000) }],
 			amount: minorUnits(70_000)
 		},
 		{
@@ -29,7 +29,7 @@ test('collected is money in the bank: cash basis, unconditionally', () => {
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2024-05-01',
-			paidOn: null,
+			payments: [],
 			amount: minorUnits(20_000)
 		}
 	];
@@ -49,7 +49,7 @@ test('an issued unpaid invoice counts as committed, by issue date', () => {
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2024-03-01',
-			paidOn: null,
+			payments: [],
 			amount: minorUnits(50_000)
 		}
 	];
@@ -175,7 +175,7 @@ test('the three levels are separately queryable and also composable into one bre
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2024-02-01',
-			paidOn: '2024-02-10',
+			payments: [{ date: '2024-02-10', amount: minorUnits(10_000) }],
 			amount: minorUnits(10_000)
 		}
 	];

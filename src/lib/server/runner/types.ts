@@ -16,8 +16,12 @@ export interface ExtractionRequest {
 	documentId: string;
 	/** The contract `content` is being extracted on behalf of. The runner
 	 * re-derives it from `documentId` and rejects a job whose claim
-	 * disagrees, which is the one check it still makes for itself. */
-	contractId: string;
+	 * disagrees, which is the one check it still makes for itself. Null
+	 * for a first-intake contract PDF (#86): the document it was archived
+	 * against has no contract yet either, and the runner's check becomes
+	 * "both sides agree there is none" rather than "both sides name the
+	 * same one". */
+	contractId: string | null;
 	/** What kind of proposal this becomes once accepted — passed straight
 	 * through to `proposal.targetType` by whichever producer calls this;
 	 * the runner does not interpret it. */
@@ -57,6 +61,6 @@ export interface ExtractionResult {
  * `createProposal` after a human never touches this shape in between. */
 export type ProposalCandidate = ExtractionResult & {
 	documentId: string;
-	contractId: string;
+	contractId: string | null;
 	targetType: string;
 };

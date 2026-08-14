@@ -65,14 +65,16 @@ export function ageingBandLabel(key: AgeingBandKey): string {
  * The status badge for one invoice row wherever it renders — the ageing
  * list's Status column and the detail page's header alike (#238, #239).
  * Paid is its own branch, never a fifth ageing band: `daysLate` stops
- * mattering the instant `paidOn` is set, the same reasoning the detail
- * page's own `statusLabel` already used before this moved here to be the
- * one place both screens read it from.
+ * mattering the instant `settledOn` is set (#212 — a partly paid invoice
+ * is not yet settled, and stays in the ordinary ageing bands for
+ * whatever it still owes), the same reasoning the detail page's own
+ * `statusLabel` already used before this moved here to be the one place
+ * both screens read it from.
  */
 export function invoiceStatus(
 	daysLate: number,
-	paidOn: string | null
+	settledOn: string | null
 ): { level: StatusLevel; label: string } {
-	if (paidOn !== null) return { level: 'good', label: m.invoice_day_status_paid() };
+	if (settledOn !== null) return { level: 'good', label: m.invoice_day_status_paid() };
 	return ageingStatus(daysLate);
 }

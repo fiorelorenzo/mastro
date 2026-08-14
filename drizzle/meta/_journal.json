@@ -358,6 +358,20 @@
       "when": 1786695025466,
       "tag": "0050_client_sdi_routing",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1786699670835,
+      "tag": "0051_payment",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1786699382783,
+      "tag": "0052_contract_proposal_first_intake",
+      "breakpoints": true
     }
   ]
 }

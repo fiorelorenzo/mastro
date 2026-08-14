@@ -185,10 +185,12 @@ export async function fetchProposalPendingRows(
 		.where(eq(proposal.status, 'pending'));
 }
 
-/** Every unpaid invoice, reusing #29's own ageing-table query
- * (`listUnpaidInvoices`) rather than a second one — `detectInvoiceOverdue`
- * decides which of these are actually overdue, this only fetches the
- * candidates. */
+/** Every invoice not yet fully settled (#212), reusing #29's own
+ * ageing-table query (`listUnpaidInvoices`) rather than a second one —
+ * `detectInvoiceOverdue` decides which of these are actually overdue,
+ * this only fetches the candidates. `total` is the remaining balance,
+ * never the invoice's full original total: what an overdue alert
+ * reports is what is actually still owed. */
 export async function fetchInvoiceOverdueRows(): Promise<InvoiceOverdueRow[]> {
 	const rows = await listUnpaidInvoices();
 	return rows.map((row) => ({
@@ -197,8 +199,8 @@ export async function fetchInvoiceOverdueRows(): Promise<InvoiceOverdueRow[]> {
 		contractTitle: row.contractTitle,
 		clientLegalName: row.clientLegalName,
 		dueDate: row.invoice.dueDate,
-		paidOn: row.invoice.paidOn,
-		total: row.invoice.total,
+		settledOn: row.balance.settledOn,
+		total: row.balance.remaining,
 		currency: row.invoice.currency
 	}));
 }

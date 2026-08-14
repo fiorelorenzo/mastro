@@ -1,6 +1,10 @@
 import { and, asc, desc, eq, notInArray, sql } from 'drizzle-orm';
 import type { LegalText } from '$lib/legal/legal-text';
-import { resolveDueDate } from '$lib/server/domain/invoice';
+import {
+	computeInvoiceBalance,
+	resolveDueDate,
+	type InvoiceBalance
+} from '$lib/server/domain/invoice';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
 	client,
@@ -9,6 +13,7 @@ import {
 	expense,
 	invoice,
 	invoiceLine,
+	payment,
 	workUnit,
 	type InvoiceDueDateSource,
 	type TransitionActor
@@ -228,18 +233,94 @@ export async function getInvoiceDocuments(id: string, executor: DbExecutor = db)
 	return listDocumentsForOwner('invoice', id, executor);
 }
 
+/** One `payment` row, oldest first — {@link listPaymentsForInvoice}'s and
+ *  {@link listPaymentsByInvoiceId}'s own element type, and the shape the
+ *  detail page's payment history table renders directly. */
+export type PaymentRow = typeof payment.$inferSelect;
+
+/** Every payment recorded against `invoiceId`, oldest first — the detail
+ *  page's own payment history, and the raw material {@link getInvoiceBalance}
+ *  sums. */
+export async function listPaymentsForInvoice(
+	invoiceId: string,
+	executor: DbExecutor = db
+): Promise<PaymentRow[]> {
+	return executor
+		.select()
+		.from(payment)
+		.where(eq(payment.invoiceId, invoiceId))
+		.orderBy(asc(payment.date), asc(payment.createdAt));
+}
+
+/** Every payment on record, grouped by the invoice it was recorded
+ *  against, oldest first — the one bulk read {@link listInvoices} and
+ *  {@link listInvoiceTotalsByClient} both group by, so an ageing-list row
+ *  and a client-exposure row can never compute a different balance for
+ *  the same invoice. */
+export async function listPaymentsByInvoiceId(
+	executor: DbExecutor = db
+): Promise<Map<string, PaymentRow[]>> {
+	const rows = await executor
+		.select()
+		.from(payment)
+		.orderBy(asc(payment.date), asc(payment.createdAt));
+	const byInvoiceId = new Map<string, PaymentRow[]>();
+	for (const row of rows) {
+		const existing = byInvoiceId.get(row.invoiceId) ?? [];
+		existing.push(row);
+		byInvoiceId.set(row.invoiceId, existing);
+	}
+	return byInvoiceId;
+}
+
+/** `total` plus every payment on record against `invoiceId`, reduced to
+ *  {@link InvoiceBalance} through `domain/invoice.ts`'s
+ *  `computeInvoiceBalance` — the one place a total and a set of payments
+ *  become "paid / remaining / settled". `null` for an invoice id that
+ *  does not exist. */
+export async function getInvoiceBalance(
+	invoiceId: string,
+	executor: DbExecutor = db
+): Promise<InvoiceBalance | null> {
+	const invoiceRow = await executor.query.invoice.findFirst({
+		where: eq(invoice.id, invoiceId),
+		columns: { total: true }
+	});
+	if (!invoiceRow) return null;
+	const payments = await listPaymentsForInvoice(invoiceId, executor);
+	return computeInvoiceBalance(invoiceRow.total, payments);
+}
+
+export interface RecordPaymentInput {
+	readonly amount: MinorUnits;
+	readonly date: string;
+	readonly method?: string | null;
+	readonly reference?: string | null;
+}
+
 /**
- * Marks an invoice paid on `paidOn` (#27) — the one column this writes.
- * Days on this invoice's lines are never bulk-transitioned to `paid` here:
- * "paid" for a day is derived from its line's invoice at read time (see
- * `routes/invoices/[id]`), not stored, exactly as #27 asks. No batch job
- * exists to keep a stored flag current because nothing stores one.
+ * Records one payment against an invoice as a row (#212) — never a flag
+ * or a single stored date: a client who pays half is a second row away
+ * from a client who pays the rest. The invoice's own paid state is never
+ * written here; it is derived on every read through
+ * {@link getInvoiceBalance}/`computeInvoiceBalance`, so there is nothing
+ * for this function to keep in sync when a second, third, or overpaying
+ * payment is recorded later.
  */
-export async function recordPayment(invoiceId: string, paidOn: string, executor: DbExecutor = db) {
+export async function recordPayment(
+	invoiceId: string,
+	input: RecordPaymentInput,
+	executor: DbExecutor = db
+): Promise<PaymentRow> {
 	const [row] = await executor
-		.update(invoice)
-		.set({ paidOn })
-		.where(eq(invoice.id, invoiceId))
+		.insert(payment)
+		.values({
+			invoiceId,
+			amount: input.amount,
+			date: input.date,
+			method: input.method ?? null,
+			reference: input.reference ?? null
+		})
 		.returning();
 	return row;
 }
@@ -254,6 +335,14 @@ export interface InvoiceListRow {
 	contractTitle: string;
 	clientLegalName: string;
 	dayCount: number;
+	/** #212: derived from `invoice.total` and every payment on record —
+	 *  never a stored flag. */
+	balance: InvoiceBalance;
+	/** Every payment behind `balance`, oldest first — a caller asking
+	 *  "how much actually arrived within year Y" (the dashboard, the
+	 *  ageing list's own "collected this year" stat) needs each payment's
+	 *  own date, not just the aggregate. */
+	payments: readonly { readonly date: string; readonly amount: MinorUnits }[];
 }
 
 /**
@@ -267,30 +356,58 @@ export interface InvoiceListRow {
  * this query could `ORDER BY` without duplicating that arithmetic in SQL.
  */
 export async function listInvoices(executor: DbExecutor = db): Promise<InvoiceListRow[]> {
-	return executor
-		.select({
-			invoice,
-			contractTitle: contract.title,
-			clientLegalName: client.legalName,
-			dayCount: sql<number>`count(${workUnit.id})`.mapWith(Number)
-		})
-		.from(invoice)
-		.innerJoin(contract, eq(contract.id, invoice.contractId))
-		.innerJoin(client, eq(client.id, contract.clientId))
-		.leftJoin(invoiceLine, eq(invoiceLine.invoiceId, invoice.id))
-		.leftJoin(workUnit, eq(workUnit.invoiceLineId, invoiceLine.id))
-		.groupBy(invoice.id, contract.id, client.id);
+	const [rows, paymentsByInvoiceId] = await Promise.all([
+		executor
+			.select({
+				invoice,
+				contractTitle: contract.title,
+				clientLegalName: client.legalName,
+				dayCount: sql<number>`count(${workUnit.id})`.mapWith(Number)
+			})
+			.from(invoice)
+			.innerJoin(contract, eq(contract.id, invoice.contractId))
+			.innerJoin(client, eq(client.id, contract.clientId))
+			.leftJoin(invoiceLine, eq(invoiceLine.invoiceId, invoice.id))
+			.leftJoin(workUnit, eq(workUnit.invoiceLineId, invoiceLine.id))
+			.groupBy(invoice.id, contract.id, client.id),
+		listPaymentsByInvoiceId(executor)
+	]);
+	return rows.map((row) => {
+		const payments = paymentsByInvoiceId.get(row.invoice.id) ?? [];
+		return {
+			...row,
+			balance: computeInvoiceBalance(row.invoice.total, payments),
+			payments: payments.map((p) => ({ date: p.date, amount: p.amount }))
+		};
+	});
 }
 
 /**
  * The ageing list's original query (#29), now `listInvoices` with the one
  * filter reapplied in JS rather than a second, near-identical `SELECT`:
  * the two cannot drift apart on the join or the grouping, only on which
- * rows they keep.
+ * rows they keep. "Unpaid" (#212) means not fully settled — a partly
+ * paid invoice stays here, for whatever it still owes.
  */
 export async function listUnpaidInvoices(executor: DbExecutor = db) {
 	const rows = await listInvoices(executor);
-	return rows.filter((row) => row.invoice.paidOn === null);
+	return rows.filter((row) => !row.balance.settled);
+}
+
+/** One row of {@link listInvoiceTotalsByClient} — an invoice's own gross
+ *  total, its balance against it (read the same way
+ *  {@link InvoiceListRow.balance} is), and the raw payments behind that
+ *  balance — `client-exposure.ts`'s own "collected this calendar year"
+ *  needs each payment's own date, since a payment landing in one year
+ *  and another in the next must not be lumped into a single figure by
+ *  either. */
+export interface InvoiceTotalRow {
+	readonly clientId: string;
+	readonly invoiceId: string;
+	readonly total: MinorUnits;
+	readonly currency: string;
+	readonly balance: InvoiceBalance;
+	readonly payments: readonly { readonly date: string; readonly amount: MinorUnits }[];
 }
 
 /**
@@ -301,20 +418,34 @@ export async function listUnpaidInvoices(executor: DbExecutor = db) {
  * not the fiscal ledger's own net revenue figure (`fiscal/ledger.ts`'s
  * `LedgerRow.amount`, which excludes VAT on purpose — see its header
  * comment). One query; the caller classifies each row as outstanding
- * (`paidOn` null) or collected-this-year (`paidOn` within the year) in
- * application code, the same "no stored flag" convention
- * `routes/invoices/+page.server.ts` already sets for `daysLate`.
+ * (`balance.remaining`) or collected-in-a-year (summing `payments` whose
+ * own date falls in it) in application code, the same "no stored flag"
+ * convention `routes/invoices/+page.server.ts` already sets for
+ * `daysLate`.
  */
-export async function listInvoiceTotalsByClient(executor: DbExecutor = db) {
-	return executor
-		.select({
-			clientId: contract.clientId,
-			total: invoice.total,
-			currency: invoice.currency,
-			paidOn: invoice.paidOn
-		})
-		.from(invoice)
-		.innerJoin(contract, eq(contract.id, invoice.contractId));
+export async function listInvoiceTotalsByClient(
+	executor: DbExecutor = db
+): Promise<InvoiceTotalRow[]> {
+	const [rows, paymentsByInvoiceId] = await Promise.all([
+		executor
+			.select({
+				clientId: contract.clientId,
+				invoiceId: invoice.id,
+				total: invoice.total,
+				currency: invoice.currency
+			})
+			.from(invoice)
+			.innerJoin(contract, eq(contract.id, invoice.contractId)),
+		listPaymentsByInvoiceId(executor)
+	]);
+	return rows.map((row) => {
+		const payments = paymentsByInvoiceId.get(row.invoiceId) ?? [];
+		return {
+			...row,
+			balance: computeInvoiceBalance(row.total, payments),
+			payments: payments.map((p) => ({ date: p.date, amount: p.amount }))
+		};
+	});
 }
 
 /**
@@ -347,6 +478,13 @@ export async function listInvoicesForDedup(
 
 	const hashesByInvoiceId = new Map<string, string[]>();
 	for (const row of documentRows) {
+		// `document.owner_id` is nullable in the schema now (an
+		// unclaimed, first-intake document, #86/#87), but every row this
+		// query reads is `owner_type = 'invoice'`, and
+		// `document_unclaimed_together` (0052) guarantees `owner_id` is
+		// set whenever `owner_type` is — this filter already excludes
+		// every row where it could be null.
+		if (row.invoiceId === null) continue;
 		const hashes = hashesByInvoiceId.get(row.invoiceId) ?? [];
 		hashes.push(row.hash);
 		hashesByInvoiceId.set(row.invoiceId, hashes);
@@ -355,16 +493,22 @@ export async function listInvoicesForDedup(
 	return invoiceRows.map((row) => ({ ...row, hashes: hashesByInvoiceId.get(row.id) ?? [] }));
 }
 
-/** Every invoice raised against a contract, most recent first — the
- * contract detail page's own "what has this contract produced" feed
- * (#240), the sibling of `listInvoiceLinesForContract` (expenses'
- * rebill picker) at the invoice-row grain instead of the line grain. */
+/** Every invoice raised against a contract, most recent first, each with
+ *  its own {@link InvoiceBalance} (#212) — the contract detail page's own
+ *  "what has this contract produced" feed (#240), the sibling of
+ *  `listInvoiceLinesForContract` (expenses' rebill picker) at the
+ *  invoice-row grain instead of the line grain. */
 export async function listInvoicesForContract(contractId: string, executor: DbExecutor = db) {
-	return executor
+	const rows = await executor
 		.select()
 		.from(invoice)
 		.where(eq(invoice.contractId, contractId))
 		.orderBy(desc(invoice.issueDate), desc(invoice.createdAt));
+	const payments = await Promise.all(rows.map((row) => listPaymentsForInvoice(row.id, executor)));
+	return rows.map((row, index) => ({
+		...row,
+		balance: computeInvoiceBalance(row.total, payments[index])
+	}));
 }
 
 /** Every ordinary invoice on this contract — never itself a `credit_note`

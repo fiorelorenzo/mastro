@@ -300,14 +300,14 @@ export interface InvoiceOverdueRow {
 	readonly contractTitle: string;
 	readonly clientLegalName: string;
 	readonly dueDate: string;
-	readonly paidOn: string | null;
+	readonly settledOn: string | null;
 	readonly total: number;
 	readonly currency: string;
 }
 
 /** Reuses `domain/invoice.ts`'s `isOverdue`/`daysLate` (#27) rather than
- * re-deriving "late" from `dueDate`/`paidOn` here — the ageing table and
- * this alert must never be able to disagree about which invoice is
+ * re-deriving "late" from `dueDate`/`settledOn` here — the ageing table
+ * and this alert must never be able to disagree about which invoice is
  * overdue. Severity bands mirror `routes/invoices/status.ts`'s
  * `ageingStatus` (see `thresholds.ts`). */
 export function detectInvoiceOverdue(
@@ -317,7 +317,7 @@ export function detectInvoiceOverdue(
 	const today = asOfMidnight(asOfDate);
 	const alerts: Alert[] = [];
 	for (const row of rows) {
-		if (!isOverdue(row.dueDate, row.paidOn, today)) continue;
+		if (!isOverdue(row.dueDate, row.settledOn, today)) continue;
 		const late = daysLate(row.dueDate, today);
 		const severity: AlertSeverity =
 			late >= INVOICE_OVERDUE_CRITICAL_DAYS

@@ -2,14 +2,13 @@
 // works inside a transaction it rolls back, same pattern as
 // `revenue.test.ts`.
 
-import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { minorUnits } from '$lib/money';
 import { client as pool, type DbExecutor } from '$lib/server/db';
-import { client, contract, invoice, rateCard } from '$lib/server/db/schema';
+import { client, contract, rateCard } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
-import { createInvoice, type InvoiceInput } from '$lib/server/repositories/invoice';
+import { createInvoice, recordPayment, type InvoiceInput } from '$lib/server/repositories/invoice';
 import { createRenewalAssumption } from '$lib/server/repositories/contract-renewal-assumption';
 import { createWorkUnit, transitionWorkUnit } from '$lib/server/repositories/work-unit';
 import {
@@ -105,7 +104,7 @@ test('forecastCollected reads paid invoices in the period', async () => {
 			'test fixture',
 			tx
 		);
-		await tx.update(invoice).set({ paidOn: '2024-06-15' }).where(eq(invoice.id, invoiceRow.id));
+		await recordPayment(invoiceRow.id, { amount: invoiceRow.total, date: '2024-06-15' }, tx);
 
 		const figure = await forecastCollected('2024-01-01', '2025-01-01', tx);
 		expect(figure.amount).toBe(100_000);
@@ -200,7 +199,7 @@ test('forecastRevenue combines all three levels, matching the individual calls',
 			'test fixture',
 			tx
 		);
-		await tx.update(invoice).set({ paidOn: '2024-03-10' }).where(eq(invoice.id, invoiceRow.id));
+		await recordPayment(invoiceRow.id, { amount: invoiceRow.total, date: '2024-03-10' }, tx);
 
 		const breakdown = await forecastRevenue('2024-06-01', '2024-01-01', '2025-01-01', tx);
 		const collected = await forecastCollected('2024-01-01', '2025-01-01', tx);
@@ -238,7 +237,7 @@ test('forecastRevenueByMonth places a paid invoice in the month it was actually 
 			'test fixture',
 			tx
 		);
-		await tx.update(invoice).set({ paidOn: '2024-03-10' }).where(eq(invoice.id, invoiceRow.id));
+		await recordPayment(invoiceRow.id, { amount: invoiceRow.total, date: '2024-03-10' }, tx);
 
 		const months = await forecastRevenueByMonth('2024-06-01', '2024-01-01', '2024-04-01', tx);
 

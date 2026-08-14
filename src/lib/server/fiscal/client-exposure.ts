@@ -95,20 +95,14 @@ export async function listClientExposures(
 	const result = new Map<string, ClientExposure>();
 	for (const clientId of clientIds) {
 		const outstanding = sumMinorUnits(
-			invoiceTotals
-				.filter((row) => row.clientId === clientId && row.paidOn === null)
-				.map((row) => row.total)
+			invoiceTotals.filter((row) => row.clientId === clientId).map((row) => row.balance.remaining)
 		);
 		const collectedThisYear = sumMinorUnits(
 			invoiceTotals
-				.filter(
-					(row) =>
-						row.clientId === clientId &&
-						row.paidOn !== null &&
-						row.paidOn >= yearFrom &&
-						row.paidOn < yearTo
-				)
-				.map((row) => row.total)
+				.filter((row) => row.clientId === clientId)
+				.flatMap((row) => row.payments)
+				.filter((p) => p.date >= yearFrom && p.date < yearTo)
+				.map((p) => p.amount)
 		);
 		const daysThisYear = dayCounts.find((row) => row.clientId === clientId)?.days ?? 0;
 		const clientRevenueThisYear = sumLedger(

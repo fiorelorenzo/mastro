@@ -149,7 +149,9 @@ export const load: PageServerLoad = async ({ locals }) => {
 	// #234's money section — what is owed: every currently unpaid
 	// invoice, most urgent first, the same `daysLate` recomputation
 	// `routes/invoices/+page.server.ts` uses so the two screens never
-	// disagree about how late something is.
+	// disagree about how late something is. `total` is the remaining
+	// balance (#212), never the invoice's full original total — a
+	// partly paid invoice shows what is actually still owed.
 	const invoiceRows = unpaidInvoices
 		.map((row) => ({
 			id: row.invoice.id,
@@ -157,7 +159,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 			clientLegalName: row.clientLegalName,
 			dueDate: row.invoice.dueDate,
 			daysLate: daysLate(row.invoice.dueDate, now),
-			total: row.invoice.total,
+			total: row.balance.remaining,
 			currency: row.invoice.currency
 		}))
 		.sort((a, b) => b.daysLate - a.daysLate);

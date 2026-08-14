@@ -116,14 +116,18 @@ export function collectedAmount(
 }
 
 /**
- * Committed: issued unpaid invoices, approved not-yet-invoiced days, and
- * recurring fees inside the irrevocability window (#38, epic #5).
+ * Committed: issued invoices' own *remaining* balance, approved
+ * not-yet-invoiced days, and recurring fees inside the irrevocability
+ * window (#38, epic #5).
  *
- * The unpaid-invoice share reuses `sumLedger` too — `rows` filtered to
- * `paidOn === null` (an invoice that has not been collected has no cash
- * date to read), summed under `'accrual'` (issue date is the only date it
- * has). Not a new summation: the same function `collectedAmount` calls,
- * over a different slice of the same rows and a different basis.
+ * A partly paid invoice (#212) contributes only what is left, not its
+ * full accrual amount — the collected share already counts under
+ * `collectedAmount`, and double-counting it here would overstate what is
+ * still outstanding. `row.amount - sum(row.payments)`, floored at zero,
+ * summed by `issueDate` over `[from, to)`: not `sumLedger`, since that
+ * function's accrual reading is deliberately "the whole invoice, once,
+ * unconditionally" — exactly the figure a partly settled invoice must
+ * not contribute here.
  */
 export function committedAmount(
 	rows: readonly LedgerRow[],
@@ -133,12 +137,14 @@ export function committedAmount(
 	from: string,
 	to: string
 ): CertaintyFigure {
-	const issuedUnpaid = sumLedger(
-		rows.filter((row) => row.paidOn === null),
-		'accrual',
-		from,
-		to
-	).amount;
+	const issuedUnpaid = sumMinorUnits(
+		rows
+			.filter((row) => row.issueDate >= from && row.issueDate < to)
+			.map((row) => {
+				const collected = sumMinorUnits(row.payments.map((p) => p.amount));
+				return Math.max(row.amount - collected, 0) as MinorUnits;
+			})
+	);
 
 	const pricedApproved = approvedWorkUnits.filter(
 		(unit): unit is ApprovedWorkUnit & { amount: MinorUnits } =>

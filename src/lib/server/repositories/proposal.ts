@@ -28,19 +28,36 @@
 // per document, not one per accepted day.
 
 import { desc, eq } from 'drizzle-orm';
+import { minorUnits } from '$lib/money';
 import { db, type DbExecutor } from '$lib/server/db';
-import { proposal, type ProposalStatus, type ProposalTargetType } from '$lib/server/db/schema';
+import {
+	document,
+	proposal,
+	type ProposalStatus,
+	type ProposalTargetType
+} from '$lib/server/db/schema';
 import { parseMessage } from '$lib/server/mail/headers';
+import {
+	parseExtractedContract,
+	type ExtractedContractCandidate
+} from '../agent/contract-extraction';
 import { createApprovalForDocument } from './approval';
-import { getDocument, readDocumentBytes } from './document';
+import { createClauseNote } from './clause-note';
+import { createClient, getClientByTaxId } from './client';
+import { createContract } from './contract';
+import { claimDocumentForContract, getDocument, readDocumentBytes } from './document';
 import { getInboundThreadForDocument } from './inbound-thread';
+import { createInvoice, type InvoiceInput, type InvoiceLineInput } from './invoice';
+import { createRateCard } from './rate-card';
 import { createApprovedWorkUnit, getWorkUnit, type WorkUnitInput } from './work-unit';
 
 export type ProposalRow = typeof proposal.$inferSelect;
 
 export type ProposalInput = {
 	documentId: string;
-	contractId: string;
+	// Null only for a first-intake 'contract' proposal (#86) — see
+	// `db/schema/proposal.ts`'s own doc comment on this column.
+	contractId: string | null;
 	targetType: ProposalTargetType;
 	proposedFields: Record<string, unknown>;
 	excerpt: string;
@@ -107,7 +124,7 @@ export async function listProposals(status: ProposalStatus | undefined, executor
  * it is linked to (#209).
  */
 function workUnitInputFromFields(
-	row: Pick<ProposalRow, 'contractId'>,
+	row: { contractId: string },
 	fields: Record<string, unknown>
 ): WorkUnitInput {
 	const { date, quantity, scope, notes } = fields;
@@ -118,6 +135,94 @@ function workUnitInputFromFields(
 		throw new Error("proposal field 'notes' must be a string when present");
 	}
 	return { contractId: row.contractId, date, quantity, scope, notes: notes ?? null };
+}
+
+/**
+ * Maps an `'invoice'` proposal's fields onto `InvoiceInput` (minus
+ * `contractId`, which `applyProposal` already has off `row`) — the same
+ * role `workUnitInputFromFields` plays for `'work_unit'`. A producer
+ * targeting `'invoice'` (#87) supplies `proposedFields` shaped exactly
+ * like `InvoiceProposedFields` in `agent/invoice-extraction.ts`: `number`,
+ * `issueDate`, `dueDate` (string or null), `clientName` (display only —
+ * the client is reached through `contractId`, never a column of its own,
+ * the same choice `invoice.contractId`'s own doc comment explains),
+ * `currency`, `lines`, and the document's own declared `taxableAmount`/
+ * `taxAmount`/`total`.
+ *
+ * `taxableAmount`/`taxAmount`/`total` are read only far enough to
+ * type-check — never passed to `createInvoice`, which has no such
+ * parameters and computes all three itself from `lines` (#26's own
+ * invariant: an invoice's stored totals are always derived, never typed
+ * twice, `persist.ts`'s `mapInvoiceToInput` makes the identical choice
+ * for a structured import). They exist in `proposedFields` purely for
+ * the review screen and the supersession diff to show, and staying
+ * unread here is what keeps them from ever silently overriding what
+ * `lines` alone determines.
+ */
+function invoiceInputFromFields(fields: Record<string, unknown>): Omit<InvoiceInput, 'contractId'> {
+	const { number, issueDate, dueDate, currency, lines } = fields;
+	if (typeof number !== 'string' || number.trim() === '') {
+		throw new Error("proposal field 'number' must be a non-blank string");
+	}
+	if (typeof issueDate !== 'string') {
+		throw new Error("proposal field 'issueDate' must be a string");
+	}
+	if (dueDate !== null && typeof dueDate !== 'string') {
+		throw new Error("proposal field 'dueDate' must be a string or null");
+	}
+	if (typeof currency !== 'string' || currency.trim() === '') {
+		throw new Error("proposal field 'currency' must be a non-blank string");
+	}
+	if (!Array.isArray(lines) || lines.length === 0) {
+		throw new Error("proposal field 'lines' must be a non-empty array");
+	}
+
+	const invoiceLines: InvoiceLineInput[] = lines.map((raw, index) => {
+		if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+			throw new Error(`line ${index} must be an object`);
+		}
+		const { description, quantity, unitPrice, amount, taxRate } = raw as Record<string, unknown>;
+		if (typeof description !== 'string' || description.trim() === '') {
+			throw new Error(`line ${index} field 'description' must be a non-blank string`);
+		}
+		if (typeof quantity !== 'number') {
+			throw new Error(`line ${index} field 'quantity' must be a number`);
+		}
+		if (typeof unitPrice !== 'number') {
+			throw new Error(`line ${index} field 'unitPrice' must be a number`);
+		}
+		if (typeof amount !== 'number') {
+			throw new Error(`line ${index} field 'amount' must be a number`);
+		}
+		if (typeof taxRate !== 'number') {
+			throw new Error(`line ${index} field 'taxRate' must be a number`);
+		}
+		return {
+			description: description.trim(),
+			quantity,
+			unitPrice: minorUnits(unitPrice),
+			amount: minorUnits(amount),
+			taxRate,
+			taxTreatmentCode: null,
+			workUnitIds: []
+		};
+	});
+
+	return {
+		number: number.trim(),
+		issueDate,
+		documentType: 'invoice',
+		currency: currency.trim(),
+		taxTreatmentCode: null,
+		statutoryReference: null,
+		stampDuty: null,
+		socialCharge: null,
+		dueDate: typeof dueDate === 'string' ? dueDate : null,
+		paymentMethod: null,
+		iban: null,
+		transmissionId: null,
+		lines: invoiceLines
+	};
 }
 
 /**
@@ -139,11 +244,17 @@ function workUnitInputFromFields(
  */
 function proposalValidationError(
 	targetType: ProposalTargetType,
-	contractId: string,
+	contractId: string | null,
 	fields: Record<string, unknown>
 ): string | null {
 	switch (targetType) {
 		case 'work_unit': {
+			// The CHECK constraint `proposal_contract_id_required_unless_
+			// first_intake_contract` guarantees this at the database level
+			// for every row already written; this is that same guarantee
+			// re-checked here so a producer bug cannot reach
+			// `workUnitInputFromFields` with nothing to scope the day by.
+			if (contractId === null) return 'a work_unit proposal requires a contract';
 			let input: WorkUnitInput;
 			try {
 				input = workUnitInputFromFields({ contractId }, fields);
@@ -163,6 +274,176 @@ function proposalValidationError(
 			const parsed = new Date(`${input.date}T00:00:00Z`);
 			if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== input.date) {
 				return `date ${input.date} is not a real date`;
+			}
+			return null;
+		}
+		case 'invoice': {
+			if (contractId === null) return 'an invoice proposal requires a contract';
+			let input: Omit<InvoiceInput, 'contractId'>;
+			try {
+				input = invoiceInputFromFields(fields);
+			} catch (error) {
+				return error instanceof Error ? error.message : String(error);
+			}
+			const issueParsed = new Date(`${input.issueDate}T00:00:00Z`);
+			if (
+				Number.isNaN(issueParsed.getTime()) ||
+				issueParsed.toISOString().slice(0, 10) !== input.issueDate
+			) {
+				return `issueDate ${input.issueDate} is not a real date`;
+			}
+			if (input.dueDate !== null) {
+				const dueParsed = new Date(`${input.dueDate}T00:00:00Z`);
+				if (
+					Number.isNaN(dueParsed.getTime()) ||
+					dueParsed.toISOString().slice(0, 10) !== input.dueDate
+				) {
+					return `dueDate ${input.dueDate} is not a real date`;
+				}
+			}
+			for (const [index, line] of input.lines.entries()) {
+				// invoice_line_quantity_positive
+				if (line.quantity <= 0) {
+					return `line ${index} quantity ${line.quantity} must be greater than 0`;
+				}
+				// numeric(6, 2): four digits before the point, two after.
+				if (!Number.isFinite(line.quantity) || Math.abs(line.quantity) >= 10_000) {
+					return `line ${index} quantity ${line.quantity} does not fit the invoice_line table's numeric(6,2) column`;
+				}
+				// invoice_line_unit_price_non_negative
+				if (line.unitPrice < 0) {
+					return `line ${index} unitPrice ${line.unitPrice} must not be negative`;
+				}
+				// invoice_line_amount_non_negative
+				if (line.amount < 0) {
+					return `line ${index} amount ${line.amount} must not be negative`;
+				}
+				// invoice_line_tax_rate_range
+				if (line.taxRate < 0 || line.taxRate > 100) {
+					return `line ${index} taxRate ${line.taxRate} must be between 0 and 100`;
+				}
+			}
+			return null;
+		}
+		case 'contract': {
+			let candidate: ExtractedContractCandidate;
+			try {
+				candidate = parseExtractedContract(fields);
+			} catch (error) {
+				return error instanceof Error ? error.message : String(error);
+			}
+			// client_country_is_alpha2
+			if (!/^[A-Z]{2}$/.test(candidate.client.country)) {
+				return `client.country ${candidate.client.country} must be exactly two uppercase letters`;
+			}
+			const c = candidate.contract;
+			// Every ambiguity-capable NOT NULL column: this is the actual
+			// mechanism behind "an ambiguous clause blocks silent
+			// acceptance" — a field a producer left null because a clause
+			// read two ways stays null, and stays refused, until a
+			// reviewer's own edit resolves it.
+			if (c.renewalType === null) {
+				return 'contract.renewalType is required before this proposal can be accepted';
+			}
+			if (c.paymentTerms === null) {
+				return 'contract.paymentTerms is required before this proposal can be accepted';
+			}
+			if (c.expensePolicy === null) {
+				return 'contract.expensePolicy is required before this proposal can be accepted';
+			}
+			// Same rule, and the reason the parser is allowed to accept a
+			// null: a contract PDF often states no tax treatment at all, so
+			// the extraction must survive that, and the refusal belongs here
+			// where a human can supply it.
+			if (c.taxTreatment === null) {
+				return 'contract.taxTreatment is required before this proposal can be accepted';
+			}
+			// contract_renewal_notice_days_required
+			if (c.renewalType === 'none' && c.renewalNoticeDays !== null) {
+				return "contract.renewalNoticeDays must be null when renewalType is 'none'";
+			}
+			if (c.renewalType !== 'none' && (c.renewalNoticeDays === null || c.renewalNoticeDays < 0)) {
+				return `contract.renewalNoticeDays is required and must be >= 0 when renewalType is '${c.renewalType}'`;
+			}
+			// contract_termination_notice_days_non_negative
+			if (c.terminationNoticeDays < 0) {
+				return `contract.terminationNoticeDays ${c.terminationNoticeDays} must not be negative`;
+			}
+			const startsOnParsed = new Date(`${c.startsOn}T00:00:00Z`);
+			if (
+				Number.isNaN(startsOnParsed.getTime()) ||
+				startsOnParsed.toISOString().slice(0, 10) !== c.startsOn
+			) {
+				return `contract.startsOn ${c.startsOn} is not a real date`;
+			}
+			if (c.endsOn !== null) {
+				const endsOnParsed = new Date(`${c.endsOn}T00:00:00Z`);
+				if (
+					Number.isNaN(endsOnParsed.getTime()) ||
+					endsOnParsed.toISOString().slice(0, 10) !== c.endsOn
+				) {
+					return `contract.endsOn ${c.endsOn} is not a real date`;
+				}
+				// contract_ends_on_after_starts_on
+				if (c.endsOn < c.startsOn) {
+					return `contract.endsOn ${c.endsOn} is before contract.startsOn ${c.startsOn}`;
+				}
+			}
+			// contract_currency_is_alpha3
+			if (!/^[A-Z]{3}$/.test(c.currency)) {
+				return `contract.currency ${c.currency} must be exactly three uppercase letters`;
+			}
+
+			for (const [index, card] of candidate.rateCards.entries()) {
+				// rate_card_amount_positive
+				if (card.amount <= 0) {
+					return `rateCards[${index}].amount ${card.amount} must be greater than 0`;
+				}
+				// rate_card_allowed_fractions_present
+				if (card.allowedFractions.length === 0) {
+					return `rateCards[${index}].allowedFractions must not be empty`;
+				}
+				// rate_card_minimum_hours_only_for_hourly
+				if (card.kind !== 'hourly' && card.minimumHours !== null) {
+					return `rateCards[${index}].minimumHours is only allowed for kind 'hourly'`;
+				}
+				// rate_card_disbursement_period_matches_kind
+				if (card.kind === 'fixed_recurring' && card.disbursementPeriod === null) {
+					return `rateCards[${index}].disbursementPeriod is required for kind 'fixed_recurring'`;
+				}
+				if (card.kind !== 'fixed_recurring' && card.disbursementPeriod !== null) {
+					return `rateCards[${index}].disbursementPeriod is only allowed for kind 'fixed_recurring'`;
+				}
+				// rate_card_valid_to_after_valid_from
+				if (card.validTo !== null && card.validTo < card.validFrom) {
+					return `rateCards[${index}].validTo is before its own validFrom`;
+				}
+			}
+			// rate_card_no_overlapping_validity, checked among the proposed
+			// cards themselves — the database's own exclusion constraint
+			// would catch a real overlap too, but only after the first
+			// insert already succeeded.
+			const sortedCards = candidate.rateCards
+				.map((card, index) => ({ card, index }))
+				.sort((a, b) => a.card.validFrom.localeCompare(b.card.validFrom));
+			for (let i = 1; i < sortedCards.length; i++) {
+				const previous = sortedCards[i - 1];
+				const current = sortedCards[i];
+				if (previous.card.validTo === null || previous.card.validTo >= current.card.validFrom) {
+					return (
+						`rateCards[${previous.index}] and rateCards[${current.index}] have ` +
+						'overlapping validity periods'
+					);
+				}
+			}
+
+			for (const [index, flag] of candidate.clauseFlags.entries()) {
+				if (flag.interpretationAdopted === null) {
+					return (
+						`clauseFlags[${index}] (${flag.clauseReference}, affecting ${flag.field}) needs ` +
+						'an interpretation chosen before this proposal can be accepted'
+					);
+				}
 			}
 			return null;
 		}
@@ -214,7 +495,10 @@ function extractSender(raw: Buffer): string {
  * resolves to `'email'` in practice; `'other'` is a defensive fallback a
  * future non-mail producer would hit, not a case this table exercises yet.
  */
-async function approvalForDocument(row: ProposalRow, executor: DbExecutor): Promise<string> {
+async function approvalForDocument(
+	row: ProposalRow & { contractId: string },
+	executor: DbExecutor
+): Promise<string> {
 	for (const sibling of await listProposalsForDocument(row.documentId, executor)) {
 		if (sibling.status !== 'accepted' || !sibling.resultId) continue;
 		const siblingWorkUnit = await getWorkUnit(sibling.resultId, executor);
@@ -264,15 +548,138 @@ async function applyProposal(
 ): Promise<string> {
 	switch (row.targetType) {
 		case 'work_unit': {
-			const approvalId = await approvalForDocument(row, executor);
+			// Guaranteed non-null by `proposal_contract_id_required_unless_
+			// first_intake_contract` — re-bound to a local so the narrowing
+			// carries into the object literals below, which TypeScript does
+			// not infer through a property read on `row` alone.
+			const contractId = row.contractId;
+			if (contractId === null) {
+				throw new Error(`proposal ${row.id} has no contract, which a work_unit target requires`);
+			}
+			const approvalId = await approvalForDocument({ ...row, contractId }, executor);
 			const created = await createApprovedWorkUnit(
-				workUnitInputFromFields(row, fields),
+				workUnitInputFromFields({ contractId }, fields),
 				approvalId,
 				{ kind: 'agent', proposalReference: row.id },
 				`accepted from proposal ${row.id}`,
 				executor
 			);
 			return created.id;
+		}
+		case 'invoice': {
+			const contractId = row.contractId;
+			if (contractId === null) {
+				throw new Error(`proposal ${row.id} has no contract, which an invoice target requires`);
+			}
+			const input = invoiceInputFromFields(fields);
+			const created = await createInvoice(
+				{ ...input, contractId },
+				{ kind: 'agent', proposalReference: row.id },
+				`accepted from proposal ${row.id}`,
+				executor
+			);
+			// The PDF this proposal read becomes the invoice's own evidence
+			// (invariant 4) the moment it exists to belong to — the same
+			// re-owning `approvalForDocument` above does for a day's
+			// approval, and the same shape `persist.ts` uses for a
+			// structured import's own document. A structured document
+			// arriving later for the same invoice
+			// (`import/invoice-supersession.ts`) adds its own document
+			// under the same owner, alongside this one; both are kept, the
+			// PDF now reading as an attachment rather than the invoice's
+			// only proof.
+			await executor
+				.update(document)
+				.set({ ownerType: 'invoice', ownerId: created.id })
+				.where(eq(document.id, row.documentId));
+			return created.id;
+		}
+		case 'contract': {
+			// `proposalValidationError`'s 'contract' case already refused
+			// an accept while `renewalType`/`paymentTerms`/`expensePolicy`
+			// or any `clauseFlags[].interpretationAdopted` was still null —
+			// every `!` below is that guarantee, not a fresh assumption.
+			const candidate = parseExtractedContract(fields);
+			const c = candidate.contract;
+
+			const existingClient = await getClientByTaxId(candidate.client.taxId, executor);
+			const clientRow =
+				existingClient ??
+				(await createClient(
+					{
+						legalName: candidate.client.legalName,
+						taxId: candidate.client.taxId,
+						vatId: candidate.client.vatId,
+						country: candidate.client.country,
+						addressLine1: candidate.client.addressLine1,
+						addressLine2: candidate.client.addressLine2,
+						addressCity: candidate.client.addressCity,
+						addressPostalCode: candidate.client.addressPostalCode,
+						addressRegion: candidate.client.addressRegion,
+						// A contract's own letterhead never carries a notice
+						// channel or an SdI routing code — those are set from
+						// the client edit screen once a human has this row to
+						// edit. `email` costs nothing to default and nothing
+						// to correct.
+						noticeChannel: 'email',
+						sdiCode: null,
+						pecAddress: null,
+						contacts: []
+					},
+					executor
+				));
+
+			const contractRow = await createContract(
+				{
+					clientId: clientRow.id,
+					title: c.title,
+					signedDocumentReference: c.signedDocumentReference,
+					startsOn: c.startsOn,
+					endsOn: c.endsOn,
+					renewalType: c.renewalType!,
+					renewalNoticeDays: c.renewalNoticeDays,
+					terminationNoticeDays: c.terminationNoticeDays,
+					paymentTerms: c.paymentTerms!,
+					invoicingCadence: c.invoicingCadence,
+					currency: c.currency,
+					taxTreatment: c.taxTreatment!,
+					requiresPriorApproval: c.requiresPriorApproval,
+					templateLanguage: 'en',
+					expensePolicy: c.expensePolicy!,
+					requiresExpensePreAuthorisation: c.requiresExpensePreAuthorisation,
+					status: 'draft'
+				},
+				executor
+			);
+
+			for (const card of candidate.rateCards) {
+				await createRateCard({ ...card, contractId: contractRow.id }, executor);
+			}
+
+			// Every flag stored on a proposal has already been through
+			// `validateClauseFlags` in the producer, which drops any that
+			// cites no clause — so `clauseReference` is non-null here for the
+			// same reason `renewalType` is: the validator above refused the
+			// alternative.
+			for (const flag of candidate.clauseFlags) {
+				await createClauseNote(
+					{
+						contractId: contractRow.id,
+						clauseReference: flag.clauseReference!,
+						verbatimText: flag.verbatimText,
+						interpretationAdopted: flag.interpretationAdopted!,
+						notes: null
+					},
+					executor
+				);
+			}
+
+			// The founding PDF (#86) was archived unclaimed — no contract
+			// existed yet to scope it by. One does now: claim it, in the
+			// same transaction as everything else this accept just wrote.
+			await claimDocumentForContract(row.documentId, contractRow.id, executor);
+
+			return contractRow.id;
 		}
 	}
 }

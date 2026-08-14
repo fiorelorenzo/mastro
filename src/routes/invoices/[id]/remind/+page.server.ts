@@ -14,7 +14,7 @@
 import { error, fail } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
 import { invoiceCrumbs } from '$lib/nav/crumbs';
-import { daysLate, isOverdue } from '$lib/server/domain/invoice';
+import { computeInvoiceBalance, daysLate, isOverdue } from '$lib/server/domain/invoice';
 import { getClientWithContacts } from '$lib/server/repositories/client';
 import {
 	parseDunningSendForm,
@@ -22,7 +22,7 @@ import {
 	type DunningTemplateOption
 } from '$lib/server/repositories/dunning-form';
 import { listEmailTemplatesForContract } from '$lib/server/repositories/email-template';
-import { getInvoiceWithLines } from '$lib/server/repositories/invoice';
+import { getInvoiceWithLines, listPaymentsForInvoice } from '$lib/server/repositories/invoice';
 import { chasePeriodStart, findChaseThisPeriod } from '$lib/server/repositories/sent-email';
 import { mailConfigFromEnv } from '$lib/server/mail/config';
 import { buildDunningContext } from '$lib/server/mail/dunning';
@@ -30,9 +30,15 @@ import { dispatchEmail, prepareEmail, type PreparedSend } from '$lib/server/mail
 import type { Actions, PageServerLoad } from './$types';
 
 async function loadOverdueInvoice(id: string) {
-	const invoiceRow = await getInvoiceWithLines(id);
-	if (!invoiceRow) error(404, m.invoice_not_found());
-	if (!isOverdue(invoiceRow.dueDate, invoiceRow.paidOn)) {
+	const rawInvoiceRow = await getInvoiceWithLines(id);
+	if (!rawInvoiceRow) error(404, m.invoice_not_found());
+	const payments = await listPaymentsForInvoice(id);
+	const balance = computeInvoiceBalance(rawInvoiceRow.total, payments);
+	// #212: `settledOn` is derived here once, so `runForm`'s
+	// `buildDunningContext` call and this route's own `load` never
+	// disagree about whether the invoice is still overdue.
+	const invoiceRow = { ...rawInvoiceRow, settledOn: balance.settledOn };
+	if (!isOverdue(invoiceRow.dueDate, invoiceRow.settledOn)) {
 		error(400, m.mail_dunning_not_overdue());
 	}
 	const templates: DunningTemplateOption[] = (

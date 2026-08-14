@@ -36,7 +36,7 @@ export type DunningInvoice = {
 	readonly currency: string;
 	readonly issueDate: string;
 	readonly dueDate: string;
-	readonly paidOn: string | null;
+	readonly settledOn: string | null;
 };
 
 /**
@@ -47,7 +47,9 @@ export type DunningInvoice = {
  * days (their real date range), the same "real data" standard as
  * `amount`/`dueDate`/`daysLate`: if a reminder template ever references
  * `{{day_list}}`/`{{day_total}}`/`{{period}}` they are as real as every
- * other placeholder, never a stand-in.
+ * other placeholder, never a stand-in. `settledOn` (#212) is
+ * `InvoiceBalance.settledOn` — a partly paid invoice is exactly as
+ * overdue as one nobody has paid anything against yet.
  */
 export async function buildDunningContext(
 	invoiceRow: DunningInvoice,
@@ -55,7 +57,7 @@ export async function buildDunningContext(
 	executor: DbExecutor = db,
 	today: Date = new Date()
 ): Promise<EmailTemplateContext> {
-	if (!isOverdue(invoiceRow.dueDate, invoiceRow.paidOn, today)) {
+	if (!isOverdue(invoiceRow.dueDate, invoiceRow.settledOn, today)) {
 		throw new InvoiceNotOverdueError(invoiceRow.number);
 	}
 

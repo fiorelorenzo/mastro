@@ -96,9 +96,6 @@ export const invoice = pgTable(
 		paymentMethod: text('payment_method'),
 		iban: text('iban'),
 		transmissionId: text('transmission_id'),
-		// Human input, never present on any imported document (epic #3) —
-		// the one field the product exists to make effortless to keep current.
-		paidOn: date('paid_on'),
 		// The invoice this one corrects (#213) — set only on a `credit_note`
 		// or `debit_note`, enforced by the CHECK below; which of those two
 		// values `document_type` actually is on the referencing row still

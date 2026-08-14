@@ -88,8 +88,11 @@ export async function getContractDocuments(id: string, executor: DbExecutor = db
 	return listDocumentsForOwner('contract', id, executor);
 }
 
-export async function createContract(input: ContractInput) {
-	const [row] = await db.insert(contract).values(input).returning();
+/** `executor`, if given, is used directly instead of the pool — lets a
+ * caller (#86's accept dispatcher) compose this with other writes
+ * atomically, the same reason `createApproval` takes one. */
+export async function createContract(input: ContractInput, executor: DbExecutor = db) {
+	const [row] = await executor.insert(contract).values(input).returning();
 	return row;
 }
 

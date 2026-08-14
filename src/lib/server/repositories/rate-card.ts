@@ -36,8 +36,8 @@ export async function getRateCard(id: string) {
  * `isPostgresConstraintViolation` (`$lib/server/db/postgres-error`) to
  * recognise it (`code: '23P01'`), since drizzle wraps the real Postgres
  * error on `.cause`. */
-export async function createRateCard(input: RateCardInput) {
-	const [row] = await db.insert(rateCard).values(input).returning();
+export async function createRateCard(input: RateCardInput, executor: DbExecutor = db) {
+	const [row] = await executor.insert(rateCard).values(input).returning();
 	return row;
 }
 

@@ -26,15 +26,15 @@ export async function processExtractionJob(
 	model: ExtractionModel,
 	request: ExtractionRequest
 ): Promise<ProposalCandidate> {
-	const actualContractId = await getDocumentContractId(sql, request.documentId);
-	if (actualContractId === null) {
+	const found = await getDocumentContractId(sql, request.documentId);
+	if (!found.found) {
 		throw new Error(
 			`document ${request.documentId} does not exist, or is not readable by the runner's role`
 		);
 	}
-	if (actualContractId !== request.contractId) {
+	if (found.contractId !== request.contractId) {
 		throw new Error(
-			`document ${request.documentId} belongs to contract ${actualContractId}, not ` +
+			`document ${request.documentId} belongs to contract ${found.contractId}, not ` +
 				`${request.contractId} as the job claimed`
 		);
 	}

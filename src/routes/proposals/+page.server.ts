@@ -54,7 +54,13 @@ async function readSender(documentId: string): Promise<string | null> {
 	return parseMessage(bytes).headers.get('from') ?? null;
 }
 
-async function contractSummary(contractId: string) {
+/** Null only for a first-intake `'contract'` proposal (#86) — there is no
+ * contract row yet to summarise, so the queue falls back to a generic
+ * label rather than crashing on `getContractWithClient(null)`. */
+async function contractSummary(contractId: string | null) {
+	if (contractId === null) {
+		return { title: m.proposal_list_new_contract_title(), clientLegalName: '', currency: 'EUR' };
+	}
 	const contract = await getContractWithClient(contractId);
 	return {
 		title: contract?.title ?? contractId,
@@ -65,7 +71,10 @@ async function contractSummary(contractId: string) {
 
 async function priceProposal(row: Pick<ProposalRow, 'contractId' | 'proposedFields'>) {
 	const fields = workUnitFields(row.proposedFields);
-	if (!fields) return null;
+	// A 'contract' proposal's proposedFields never match workUnitFields'
+	// shape, so contractId is never null past this point in practice —
+	// still checked, since its type is now nullable (#86).
+	if (!fields || row.contractId === null) return null;
 	const rateCards = await listRateCards(row.contractId);
 	return priceWorkUnitOnDate(fields, rateCards);
 }

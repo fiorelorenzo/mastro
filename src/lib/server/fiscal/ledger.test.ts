@@ -13,7 +13,7 @@ const rows: LedgerRow[] = [
 		contractId: 'c1',
 		clientId: 'client-a',
 		issueDate: '2024-12-20',
-		paidOn: '2025-01-05',
+		payments: [{ date: '2025-01-05', amount: minorUnits(100_000) }],
 		amount: minorUnits(100_000)
 	},
 	{
@@ -21,7 +21,7 @@ const rows: LedgerRow[] = [
 		contractId: 'c1',
 		clientId: 'client-a',
 		issueDate: '2024-06-01',
-		paidOn: '2024-06-15',
+		payments: [{ date: '2024-06-15', amount: minorUnits(50_000) }],
 		amount: minorUnits(50_000)
 	},
 	{
@@ -29,7 +29,7 @@ const rows: LedgerRow[] = [
 		contractId: 'c1',
 		clientId: 'client-a',
 		issueDate: '2024-11-01',
-		paidOn: null,
+		payments: [],
 		amount: minorUnits(30_000)
 	}
 ];
@@ -57,7 +57,12 @@ test('a December invoice paid in January lands in next year under cash, this yea
 
 test('every figure carries the basis, and the period, that produced it', () => {
 	const figure = sumLedger(rows, 'cash', '2024-01-01', '2025-01-01');
-	expect(figure).toEqual({ basis: 'cash', from: '2024-01-01', to: '2025-01-01', amount: 50_000 });
+	expect(figure).toEqual({
+		basis: 'cash',
+		from: '2024-01-01',
+		to: '2025-01-01',
+		amount: 50_000
+	});
 });
 
 test('"what if I collect this in January" is one extra row through the same function, never a second one', () => {
@@ -71,15 +76,72 @@ test('"what if I collect this in January" is one extra row through the same func
 	expect(sumLedger(rows, 'cash', from, to).amount).toBe(0);
 
 	// The projection: collect it on 2025-01-20 instead. No new function —
-	// `sumLedger` runs again over a row list with one date changed.
+	// `sumLedger` runs again over a row list with one payment added.
 	const ifCollectedInJanuary = rows.map((row) =>
-		row.invoiceId === 'still-unpaid' ? { ...row, paidOn: '2025-01-20' } : row
+		row.invoiceId === 'still-unpaid'
+			? { ...row, payments: [{ date: '2025-01-20', amount: minorUnits(30_000) }] }
+			: row
 	);
 	expect(sumLedger(ifCollectedInJanuary, 'cash', from, to).amount).toBe(30_000);
 });
 
 test('an invalid period (from not before to) is rejected rather than silently summing nothing', () => {
 	expect(() => sumLedger(rows, 'cash', '2025-01-01', '2025-01-01')).toThrow(/invalid period/);
+});
+
+test('a partial payment counts for exactly what it received under cash basis, not the invoice total (#212)', () => {
+	const partiallyPaid: LedgerRow[] = [
+		{
+			invoiceId: 'half-paid',
+			contractId: 'c1',
+			clientId: 'client-a',
+			issueDate: '2024-05-01',
+			amount: minorUnits(100_000),
+			payments: [{ date: '2024-06-01', amount: minorUnits(40_000) }]
+		}
+	];
+	const cash = sumLedger(partiallyPaid, 'cash', '2024-01-01', '2025-01-01');
+	const accrual = sumLedger(partiallyPaid, 'accrual', '2024-01-01', '2025-01-01');
+	expect(cash.amount).toBe(40_000);
+	// Accrual is unaffected by how much has actually been paid — the
+	// whole invoice is revenue at issuance either way.
+	expect(accrual.amount).toBe(100_000);
+});
+
+test('several payments against one invoice each count on their own date, summing to more than any single one', () => {
+	const splitPayments: LedgerRow[] = [
+		{
+			invoiceId: 'paid-in-three',
+			contractId: 'c1',
+			clientId: 'client-a',
+			issueDate: '2024-03-01',
+			amount: minorUnits(90_000),
+			payments: [
+				{ date: '2024-04-01', amount: minorUnits(30_000) },
+				{ date: '2024-05-01', amount: minorUnits(30_000) },
+				{ date: '2024-06-01', amount: minorUnits(30_000) }
+			]
+		}
+	];
+	// A window covering only the first two payments.
+	const partial = sumLedger(splitPayments, 'cash', '2024-01-01', '2024-05-15');
+	expect(partial.amount).toBe(60_000);
+	const full = sumLedger(splitPayments, 'cash', '2024-01-01', '2025-01-01');
+	expect(full.amount).toBe(90_000);
+});
+
+test('an overpayment counts every minor unit actually received, exceeding the invoice total', () => {
+	const overpaid: LedgerRow[] = [
+		{
+			invoiceId: 'overpaid',
+			contractId: 'c1',
+			clientId: 'client-a',
+			issueDate: '2024-02-01',
+			amount: minorUnits(50_000),
+			payments: [{ date: '2024-03-01', amount: minorUnits(55_000) }]
+		}
+	];
+	expect(sumLedger(overpaid, 'cash', '2024-01-01', '2025-01-01').amount).toBe(55_000);
 });
 
 test('a period spanning a regime change sums each sub-period under its own basis', () => {
@@ -91,7 +153,7 @@ test('a period spanning a regime change sums each sub-period under its own basis
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2024-03-01',
-			paidOn: '2024-03-10',
+			payments: [{ date: '2024-03-10', amount: minorUnits(40_000) }],
 			amount: minorUnits(40_000)
 		},
 		// Issued after the switch to accrual, paid later still: counted
@@ -101,7 +163,7 @@ test('a period spanning a regime change sums each sub-period under its own basis
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2024-08-01',
-			paidOn: null,
+			payments: [],
 			amount: minorUnits(60_000)
 		}
 	];

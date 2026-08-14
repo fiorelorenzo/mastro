@@ -1,0 +1,67 @@
+```json
+{
+  "proposedFields": {
+    "client": {
+      "legalName": "Meridiana Software Solutions S.r.l.",
+      "taxId": "04455667788",
+      "vatId": "IT04455667788",
+      "country": "IT",
+      "addressLine1": "Via Garibaldi 12",
+      "addressLine2": null,
+      "addressCity": "Bologna",
+      "addressPostalCode": "40121",
+      "addressRegion": null
+    },
+    "contract": {
+      "title": "Consulenza tecnica in ambito piattaforme dati",
+      "signedDocumentReference": null,
+      "startsOn": "2026-02-01",
+      "endsOn": "2027-01-31",
+      "renewalType": null,
+      "renewalNoticeDays": 60,
+      "terminationNoticeDays": 30,
+      "paymentTerms": { "kind": "net", "days": 30 },
+      "invoicingCadence": "monthly",
+      "currency": "EUR",
+      "taxTreatment": null,
+      "requiresPriorApproval": true,
+      "requiresExpensePreAuthorisation": false,
+      "expensePolicy": { "kind": "reimbursed_at_cost" }
+    },
+    "rateCards": [
+      {
+        "validFrom": "2026-02-01",
+        "validTo": null,
+        "kind": "daily",
+        "amount": 620,
+        "unit": "day",
+        "allowedFractions": [1, 0.5],
+        "minimumHours": null,
+        "disbursementPeriod": null
+      }
+    ],
+    "clauseFlags": [
+      {
+        "field": "contract.renewalType",
+        "clauseReference": "Art. 4",
+        "verbatimText": "Il contratto si intende rinnovato per un ulteriore anno salvo disdetta; la disdetta puo essere comunicata entro 60 giorni dalla scadenza. Resta inteso che le parti potranno concordare il rinnovo per iscritto prima della scadenza.",
+        "readings": [
+          "Tacit renewal: the contract renews automatically unless one party gives notice within 60 days of expiry, making renewalType 'tacit'.",
+          "Explicit renewal: the second sentence ('le parti potranno concordare il rinnovo per iscritto') suggests renewal requires a written agreement, which would make renewalType 'explicit' and the first sentence merely a default that the second overrides or qualifies."
+        ]
+      },
+      {
+        "field": "contract.taxTreatment",
+        "clauseReference": null,
+        "verbatimText": "",
+        "readings": [
+          "The contract does not state the applicable tax treatment (e.g. VAT-exempt under forfettario, standard-rated, reverse charge). It cannot be inferred from the text alone."
+        ]
+      }
+    ]
+  },
+  "excerpt": "Tra Meridiana Software Solutions S.r.l., con sede in Via Garibaldi 12, 40121 Bologna, P.IVA IT04455667788, C.F. 04455667788 (di seguito \"il Cliente\") e il dott. Marco Venturi, consulente indipendente. Sottoscritto il 12 gennaio 2026.",
+  "confidence": 0.72,
+  "confidenceReason": "Renewal type is genuinely ambiguous between tacit and explicit (Art. 4's two sentences pull in opposite directions). Tax treatment is absent from the document entirely. The rate card's validTo is left open because the contract end date is itself subject to the unresolved renewal clause."
+}
+```

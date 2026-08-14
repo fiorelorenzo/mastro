@@ -77,6 +77,33 @@ export async function insertCommittedDocument(
 	return row;
 }
 
+/** An unclaimed document (#86): no contract, no owner — the shape a
+ * first-intake contract PDF is archived under before anything has
+ * claimed it. Deleted directly (`deleteCommittedDocument`) rather than
+ * through `deleteCommittedContract`, since there is no contract to
+ * cascade from. */
+export async function insertCommittedUnclaimedDocument() {
+	const [row] = await db
+		.insert(document)
+		.values({
+			hash: crypto.randomUUID().replaceAll('-', '').padEnd(64, '0'),
+			mime: 'application/pdf',
+			size: 10,
+			originalName: 'first-intake.pdf',
+			provenance: 'upload' as const,
+			contractId: null,
+			confidential: true,
+			ownerType: null,
+			ownerId: null
+		})
+		.returning();
+	return row;
+}
+
+export async function deleteCommittedDocument(documentId: string): Promise<void> {
+	await db.delete(document).where(eq(document.id, documentId));
+}
+
 /** Deletes every document owned by this contract, then the contract and
  * client rows themselves — the reverse of insertion order, respecting every
  * `ON DELETE RESTRICT` foreign key involved. */

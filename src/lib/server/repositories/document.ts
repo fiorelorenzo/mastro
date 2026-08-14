@@ -16,12 +16,17 @@ export type DocumentInput = {
 	mime: string;
 	originalName: string;
 	provenance: DocumentProvenance;
-	contractId: string;
+	// Null only for a first-intake contract PDF (#86): the document is
+	// archived before the contract it will belong to exists, and stays
+	// unclaimed — `contractId`/`ownerType`/`ownerId` all null together —
+	// until `claimDocumentForContract` below points it at the contract
+	// accepting its proposal creates.
+	contractId: string | null;
 	// No default on purpose: the caller must decide, from provenance and
 	// contract context, at the moment of ingestion (#49's acceptance).
 	confidential: boolean;
-	ownerType: DocumentOwnerType;
-	ownerId: string;
+	ownerType: DocumentOwnerType | null;
+	ownerId: string | null;
 };
 
 /**
@@ -57,6 +62,28 @@ export async function storeDocument(input: DocumentInput, executor: DbExecutor =
 
 export async function getDocument(id: string, executor: DbExecutor = db) {
 	const [row] = await executor.select().from(document).where(eq(document.id, id));
+	return row;
+}
+
+/**
+ * Claims an unclaimed document (#86): points a first-intake document at
+ * the contract that accepting its own proposal just created, in the same
+ * transaction as that insert. `document_forbid_retrofit`
+ * (`drizzle/0052_contract_proposal_first_intake.sql`) is the actual
+ * enforcement — it allows `contract_id` to move exactly once, from null,
+ * and rejects re-pointing an already-claimed document to a different
+ * contract — this function does not re-check that itself.
+ */
+export async function claimDocumentForContract(
+	documentId: string,
+	contractId: string,
+	executor: DbExecutor = db
+) {
+	const [row] = await executor
+		.update(document)
+		.set({ contractId, ownerType: 'contract', ownerId: contractId })
+		.where(eq(document.id, documentId))
+		.returning();
 	return row;
 }
 

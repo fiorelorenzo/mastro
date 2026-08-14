@@ -2,15 +2,14 @@
 // works inside a transaction it rolls back, same pattern as
 // `profile.test.ts`.
 
-import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, type DbExecutor } from '$lib/server/db';
 import { minorUnits } from '$lib/money';
-import { client, contract, invoice } from '$lib/server/db/schema';
+import { client, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { fiscalProfile } from '$lib/server/db/schema/fiscal';
-import { createInvoice, type InvoiceInput } from '$lib/server/repositories/invoice';
+import { createInvoice, recordPayment, type InvoiceInput } from '$lib/server/repositories/invoice';
 import { fetchClientRevenueBreakdown, fetchLedgerRows, fetchRevenueOverRange } from './revenue';
 import { buildRegistry, type PackRegistry } from './registry';
 import type { FiscalPack } from './pack';
@@ -185,7 +184,7 @@ test('fetchLedgerRows negates a credit note\u2019s amount (#213), and leaves a d
 	});
 });
 
-test('fetchLedgerRows carries both dates, paidOn null until collected', async () => {
+test('fetchLedgerRows carries both dates, payments empty until collected', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const { contractRow } = await insertContract(tx);
 		const invoiceRow = await createInvoice(
@@ -196,13 +195,13 @@ test('fetchLedgerRows carries both dates, paidOn null until collected', async ()
 		);
 
 		const beforePayment = await fetchLedgerRows(tx);
-		expect(beforePayment.find((r) => r.invoiceId === invoiceRow.id)?.paidOn).toBeNull();
+		expect(beforePayment.find((r) => r.invoiceId === invoiceRow.id)?.payments).toEqual([]);
 
-		await tx.update(invoice).set({ paidOn: '2024-07-05' }).where(eq(invoice.id, invoiceRow.id));
+		await recordPayment(invoiceRow.id, { amount: invoiceRow.total, date: '2024-07-05' }, tx);
 
 		const afterPayment = await fetchLedgerRows(tx);
 		const row = afterPayment.find((r) => r.invoiceId === invoiceRow.id);
-		expect(row?.paidOn).toBe('2024-07-05');
+		expect(row?.payments).toEqual([{ date: '2024-07-05', amount: invoiceRow.total }]);
 		expect(row?.issueDate).toBe('2024-06-01');
 	});
 });
@@ -221,7 +220,7 @@ test('fetchRevenueOverRange sums under the sole pack in force for a range with n
 			'test fixture',
 			tx
 		);
-		await tx.update(invoice).set({ paidOn: '1950-03-10' }).where(eq(invoice.id, invoiceRow.id));
+		await recordPayment(invoiceRow.id, { amount: invoiceRow.total, date: '1950-03-10' }, tx);
 
 		const cashPack: FiscalPack = {
 			id: 'test-revenue-cash',
@@ -272,7 +271,7 @@ test('fetchRevenueOverRange sums each sub-period under its own basis across a re
 			'test fixture',
 			tx
 		);
-		await tx.update(invoice).set({ paidOn: '1951-02-10' }).where(eq(invoice.id, beforeSwitch.id));
+		await recordPayment(beforeSwitch.id, { amount: beforeSwitch.total, date: '1951-02-10' }, tx);
 
 		// Issued after the switch to accrual, never paid: still counted,
 		// because the sub-period it falls in reads by issue date.
@@ -361,7 +360,7 @@ test('fetchClientRevenueBreakdown splits revenue by client under the pack in for
 			'test fixture',
 			tx
 		);
-		await tx.update(invoice).set({ paidOn: '1954-03-10' }).where(eq(invoice.id, invoiceA.id));
+		await recordPayment(invoiceA.id, { amount: invoiceA.total, date: '1954-03-10' }, tx);
 
 		// Client B only has revenue before the queried range: left out of
 		// `byClient` entirely rather than listed at zero.
@@ -384,7 +383,7 @@ test('fetchClientRevenueBreakdown splits revenue by client under the pack in for
 			'test fixture',
 			tx
 		);
-		await tx.update(invoice).set({ paidOn: '1953-11-05' }).where(eq(invoice.id, invoiceB.id));
+		await recordPayment(invoiceB.id, { amount: invoiceB.total, date: '1953-11-05' }, tx);
 
 		const cashPack: FiscalPack = {
 			id: 'test-client-breakdown-cash',

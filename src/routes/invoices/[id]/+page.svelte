@@ -9,7 +9,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import { formatDate, formatDays, formatNumber } from '$lib/i18n/format';
+	import { formatDate, formatDays, formatMinorUnits, formatNumber } from '$lib/i18n/format';
+	import { minorUnitsToDecimalString } from '$lib/money';
 	import LegalText from '$lib/legal/LegalText.svelte';
 	import { Amount, Badge, Button, Field, Input, SourceDocument } from '$lib/design';
 	import Table from '$lib/design/Table.svelte';
@@ -23,30 +24,49 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	const invoice = $derived(data.invoice);
-	const status = $derived(invoiceStatus(data.daysLate, invoice.paidOn));
+	const balance = $derived(data.balance);
+	const status = $derived(invoiceStatus(data.daysLate, balance.settledOn));
 	const subtitle = $derived(`${invoice.contract.client.legalName} — ${invoice.contract.title}`);
+	// The payment form's own amount default: the remaining balance, so
+	// the header's one-click action settles the invoice in full, while
+	// the field stays freely editable for a partial payment (#212).
+	const defaultPaymentAmount = $derived(
+		minorUnitsToDecimalString(balance.remaining, invoice.currency)
+	);
 
 	type ExpenseRow = PageData['invoice']['lines'][number]['expenses'][number];
 	const expenseRows = $derived(invoice.lines.flatMap((line) => line.expenses));
+
+	type PaymentRow = PageData['payments'][number];
 </script>
 
 <svelte:head><title>{m.invoice_detail_page_title({ number: invoice.number })}</title></svelte:head>
 
 {#snippet headerActions()}
-	{#if invoice.paidOn === null}
+	{#if !balance.settled}
 		{#if data.overdue}
 			<Button href={resolve('/invoices/[id]/remind', { id: invoice.id })} variant="primary">
 				{m.invoice_detail_remind_link()}
 			</Button>
 			<Button type="submit" form="invoice-pay-form" variant="secondary">
-				{m.invoice_mark_paid_toggle()}
+				{m.invoice_record_payment_toggle()}
 			</Button>
 		{:else}
 			<Button type="submit" form="invoice-pay-form" variant="primary">
-				{m.invoice_mark_paid_toggle()}
+				{m.invoice_record_payment_toggle()}
 			</Button>
 		{/if}
 	{/if}
+{/snippet}
+
+{#snippet paymentDateCell(row: PaymentRow)}
+	{formatDate(row.date)}
+{/snippet}
+{#snippet paymentAmountCell(row: PaymentRow)}
+	<Amount minorUnits={row.amount} currency={invoice.currency} size="md" />
+{/snippet}
+{#snippet paymentsEmpty()}
+	<p class="table-empty">{m.invoice_payment_history_empty()}</p>
 {/snippet}
 
 {#snippet expenseAmountCell(row: ExpenseRow)}
@@ -182,8 +202,19 @@
 
 		<div class="stack">
 			<Section title={m.invoice_detail_payment_heading()}>
-				{#if invoice.paidOn}
-					<p class="paid-note">{m.invoice_detail_paid_on({ date: formatDate(invoice.paidOn) })}</p>
+				{#if balance.settled}
+					{#if balance.settledOn}
+						<p class="paid-note">
+							{m.invoice_detail_paid_on({ date: formatDate(balance.settledOn) })}
+						</p>
+					{/if}
+					{#if balance.paid > invoice.total}
+						<p class="hint">
+							{m.invoice_detail_overpaid_note({
+								amount: formatMinorUnits(balance.paid, invoice.currency)
+							})}
+						</p>
+					{/if}
 				{:else}
 					<dl
 						class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm [&_dd]:min-w-0 [&_dd]:break-words"
@@ -207,16 +238,71 @@
 							<dt class="opacity-70">{m.invoice_form_transmission_id_label()}</dt>
 							<dd class="mono">{invoice.transmissionId}</dd>
 						{/if}
+						{#if balance.paid > 0}
+							<dt class="opacity-70">{m.invoice_detail_received_label()}</dt>
+							<dd><Amount minorUnits={balance.paid} currency={invoice.currency} size="md" /></dd>
+							<dt class="opacity-70">{m.invoice_detail_remaining_label()}</dt>
+							<dd>
+								<Amount minorUnits={balance.remaining} currency={invoice.currency} size="md" />
+							</dd>
+						{/if}
 					</dl>
 					<form id="invoice-pay-form" method="POST" action="?/pay" class="pay-form">
-						<Field label={m.invoice_paid_on_label()} required>
-							<Input type="date" name="paidOn" value={data.today} required />
+						<Field label={m.invoice_payment_amount_label()} required>
+							<Input
+								type="number"
+								step="0.01"
+								min="0.01"
+								name="amount"
+								value={defaultPaymentAmount}
+								numeric
+								required
+							/>
+						</Field>
+						<Field label={m.invoice_payment_date_label()} required>
+							<Input type="date" name="date" value={data.today} required />
+						</Field>
+						<Field label={m.invoice_payment_method_label()}>
+							<Input type="text" name="method" />
+						</Field>
+						<Field label={m.invoice_payment_reference_label()}>
+							<Input type="text" name="reference" />
 						</Field>
 						<Button type="submit" variant="tertiary" size="sm">
-							{m.invoice_mark_paid_submit()}
+							{m.invoice_record_payment_submit()}
 						</Button>
 						{#if form?.payError}<p class="error">{form.payError}</p>{/if}
 					</form>
+				{/if}
+
+				{#if data.payments.length > 0}
+					{@const paymentColumns = [
+						{ key: 'date', label: m.invoice_payment_column_date(), cell: paymentDateCell },
+						{
+							key: 'amount',
+							label: m.invoice_payment_column_amount(),
+							align: 'end',
+							cell: paymentAmountCell
+						},
+						{
+							key: 'method',
+							label: m.invoice_payment_column_method(),
+							format: (row: PaymentRow) => row.method ?? '—'
+						},
+						{
+							key: 'reference',
+							label: m.invoice_payment_column_reference(),
+							format: (row: PaymentRow) => row.reference ?? '—'
+						}
+					] satisfies readonly TableColumn<PaymentRow>[]}
+					<Table
+						columns={paymentColumns}
+						rows={data.payments}
+						caption={m.invoice_payment_history_heading()}
+						rowKey={(row) => row.id}
+						empty={paymentsEmpty}
+						density="compact"
+					/>
 				{/if}
 			</Section>
 
@@ -226,6 +312,14 @@
 				{:else}
 					<SourceDocument document={null} />
 				{/each}
+				{#if data.routing}
+					<form method="POST" action="?/generateFattura" class="fattura-form">
+						<Button type="submit" variant="tertiary" size="sm">
+							{m.invoice_detail_fattura_generate_button()}
+						</Button>
+						{#if form?.fatturaError}<p class="error">{form.fatturaError}</p>{/if}
+					</form>
+				{/if}
 			</Section>
 
 			<Section title={m.invoice_detail_history_heading()}>
@@ -234,9 +328,9 @@
 				>
 					<dt class="opacity-70">{m.invoice_detail_issue_date_label()}</dt>
 					<dd>{formatDate(invoice.issueDate)}</dd>
-					{#if invoice.paidOn}
+					{#if balance.settledOn}
 						<dt class="opacity-70">{m.invoice_detail_paid_date_label()}</dt>
-						<dd>{formatDate(invoice.paidOn)}</dd>
+						<dd>{formatDate(balance.settledOn)}</dd>
 					{:else}
 						<dt class="opacity-70">{m.invoice_detail_due_date_label()}</dt>
 						<dd>
@@ -383,6 +477,13 @@
 		align-items: flex-end;
 		gap: var(--space-3);
 		margin-top: var(--space-4);
+	}
+	.fattura-form {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: var(--space-2);
+		margin-top: var(--space-3);
 	}
 	.error {
 		font-size: var(--text-xs);
