@@ -54,13 +54,16 @@ test('rejects a country that is not a two-letter code', () => {
 	expect(result.errors.country).toBeDefined();
 });
 
-test('requires at least one contact', () => {
+// A client needs a legal name and a country and nothing else (migration
+// 0056). A contact is one of the things you often do not have when the
+// row first has to exist, so a blank slot is dropped rather than refused.
+test('accepts a client with no contact at all', () => {
 	const result = parseClientForm(
 		formData({ ...validBase, contactCount: '1', contactName_0: '', contactEmail_0: '' })
 	);
-	expect(result.ok).toBe(false);
-	if (result.ok) throw new Error('expected errors');
-	expect(result.errors.contacts).toBeDefined();
+	expect(result.ok).toBe(true);
+	if (!result.ok) throw new Error(JSON.stringify(result.errors));
+	expect(result.input.contacts).toEqual([]);
 });
 
 test('reports a contact with a name but no email', () => {

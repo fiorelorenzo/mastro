@@ -22,15 +22,15 @@
 	const values = $derived(
 		form?.values ?? {
 			legalName: data.client.legalName,
-			taxId: data.client.taxId,
+			taxId: data.client.taxId ?? '',
 			vatId: data.client.vatId ?? '',
 			country: data.client.country,
-			addressLine1: data.client.addressLine1,
+			addressLine1: data.client.addressLine1 ?? '',
 			addressLine2: data.client.addressLine2 ?? '',
-			addressCity: data.client.addressCity,
-			addressPostalCode: data.client.addressPostalCode,
+			addressCity: data.client.addressCity ?? '',
+			addressPostalCode: data.client.addressPostalCode ?? '',
 			addressRegion: data.client.addressRegion ?? '',
-			noticeChannel: data.client.noticeChannel,
+			noticeChannel: data.client.noticeChannel ?? '',
 			sdiCode: data.client.sdiCode ?? '',
 			pecAddress: data.client.pecAddress ?? ''
 		}

@@ -92,7 +92,7 @@ test('buildClientContractProposal copies the customer party onto the client prop
 		addressCity: 'Milano',
 		addressPostalCode: '20100',
 		addressRegion: null,
-		noticeChannel: 'email'
+		noticeChannel: null
 	});
 });
 

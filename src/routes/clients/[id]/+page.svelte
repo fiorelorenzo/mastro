@@ -13,7 +13,9 @@
 	import Section from '$lib/layout/Section.svelte';
 	import RecordList from '$lib/layout/RecordList.svelte';
 	import type { RecordColumn } from '$lib/layout/types';
-	import { Badge, EmptyState, StatTile } from '$lib/design';
+	import { Badge, Banner, EmptyState, StatTile } from '$lib/design';
+	import { clientFieldLabel } from '$lib/i18n/client-fields';
+	import { appHref } from '$lib/nav/href';
 	import { noticeChannelLabel } from '../notice-channel';
 	import { concentrationBadge } from '../concentration-badge';
 	import { renewalTypeLabel, statusLabel } from './contracts/contract-enums';
@@ -93,9 +95,23 @@
 
 <Page
 	title={data.client.legalName}
-	subtitle={factLine([data.client.taxId, noticeChannelLabel(data.client.noticeChannel)])}
+	subtitle={factLine([
+		data.client.taxId,
+		data.client.noticeChannel ? noticeChannelLabel(data.client.noticeChannel) : null
+	])}
 	crumbs={data.crumbs}
 >
+	<!-- A client can legitimately be incomplete (migration 0056). This is
+	     the same "not configured yet" shape `practice_profile` uses, and it
+	     names the fields rather than leaving a reader to notice the blanks. -->
+	{#if data.invoicingGaps.length > 0}
+		<Banner tone="warning">
+			{m.client_detail_incomplete({
+				fields: data.invoicingGaps.map((field) => clientFieldLabel(field)).join(', ')
+			})}
+			<a href={appHref(`/clients/${data.client.id}/edit`)}>{m.client_detail_incomplete_link()}</a>
+		</Banner>
+	{/if}
 	{#snippet actions()}
 		<a href={resolve('/clients/[id]/edit', { id: data.client.id })} class="underline"
 			>{m.clients_edit_link()}</a
@@ -157,7 +173,11 @@
 			<dt class="opacity-70">{m.client_form_country_label()}</dt>
 			<dd>{data.client.country}</dd>
 			<dt class="opacity-70">{m.clients_column_notice_channel()}</dt>
-			<dd>{noticeChannelLabel(data.client.noticeChannel)}</dd>
+			<dd>
+				{data.client.noticeChannel
+					? noticeChannelLabel(data.client.noticeChannel)
+					: m.client_detail_not_set()}
+			</dd>
 			<dt class="opacity-70">{m.client_form_address_legend()}</dt>
 			<dd>
 				{data.client.addressLine1}{#if data.client.addressLine2}, {data.client.addressLine2}{/if},

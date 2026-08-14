@@ -12,15 +12,15 @@ export type ClientContactInput = {
 
 export type ClientInput = {
 	legalName: string;
-	taxId: string;
+	taxId: string | null;
 	vatId: string | null;
 	country: string;
-	addressLine1: string;
+	addressLine1: string | null;
 	addressLine2: string | null;
-	addressCity: string;
-	addressPostalCode: string;
+	addressCity: string | null;
+	addressPostalCode: string | null;
 	addressRegion: string | null;
-	noticeChannel: NoticeChannel;
+	noticeChannel: NoticeChannel | null;
 	// #259: FatturaPA's CodiceDestinatario/PECDestinatario. Both optional —
 	// see `client.ts`'s schema comment for why, and
 	// `domain/invoice.ts`'s `resolveInvoiceRouting` for how an invoice

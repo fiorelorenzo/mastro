@@ -93,8 +93,8 @@
 			</Select>
 		</Field>
 		<div class="grid-2">
-			<Field label={m.client_form_tax_id_label()} error={errors.taxId} required>
-				<Input name="taxId" value={values.taxId} required />
+			<Field label={m.client_form_tax_id_label()} error={errors.taxId}>
+				<Input name="taxId" value={values.taxId} />
 			</Field>
 			<Field label={m.client_form_vat_id_label()} error={errors.vatId}>
 				<Input name="vatId" value={values.vatId} />
@@ -116,18 +116,18 @@
 
 	<fieldset class="card">
 		<legend><h2>{m.client_form_address_legend()}</h2></legend>
-		<Field label={m.client_form_address_line1_label()} error={errors.addressLine1} required>
-			<Input name="addressLine1" value={values.addressLine1} required />
+		<Field label={m.client_form_address_line1_label()} error={errors.addressLine1}>
+			<Input name="addressLine1" value={values.addressLine1} />
 		</Field>
 		<Field label={m.client_form_address_line2_label()} error={errors.addressLine2}>
 			<Input name="addressLine2" value={values.addressLine2} />
 		</Field>
 		<div class="grid-2">
-			<Field label={m.client_form_city_label()} error={errors.addressCity} required>
-				<Input name="addressCity" value={values.addressCity} required />
+			<Field label={m.client_form_city_label()} error={errors.addressCity}>
+				<Input name="addressCity" value={values.addressCity} />
 			</Field>
-			<Field label={m.client_form_postal_code_label()} error={errors.addressPostalCode} required>
-				<Input name="addressPostalCode" value={values.addressPostalCode} required />
+			<Field label={m.client_form_postal_code_label()} error={errors.addressPostalCode}>
+				<Input name="addressPostalCode" value={values.addressPostalCode} />
 			</Field>
 		</div>
 		<Field label={m.client_form_region_label()} error={errors.addressRegion}>
@@ -137,9 +137,13 @@
 
 	<fieldset class="card">
 		<legend><h2>{m.client_form_notices_legend()}</h2></legend>
-		<Field label={m.client_form_notice_channel_label()} error={errors.noticeChannel} required>
-			<Select name="noticeChannel" value={values.noticeChannel} required>
-				<option value="" disabled selected={values.noticeChannel === ''}>
+		<Field label={m.client_form_notice_channel_label()} error={errors.noticeChannel}>
+			<Select name="noticeChannel" value={values.noticeChannel}>
+				<!-- Selectable, not `disabled`: leaving it empty is a legitimate
+				     answer now that the column is nullable, and a placeholder
+				     nobody can return to would make the first accidental pick
+				     permanent. -->
+				<option value="" selected={values.noticeChannel === ''}>
 					{m.client_form_notice_channel_placeholder()}
 				</option>
 				{#each noticeChannels as channel (channel)}

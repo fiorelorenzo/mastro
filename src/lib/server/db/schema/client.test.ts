@@ -84,3 +84,47 @@ test('a pecAddress that is not shaped like an email is rejected by the database'
 		});
 	});
 });
+
+// ── migration 0056: a legal name and a country, and nothing else ──────────
+
+test('a client with only a legal name and a country is accepted', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const [row] = await tx
+			.insert(client)
+			.values({ legalName: 'Minimal Client', country: 'IT' })
+			.returning();
+		expect(row.taxId).toBeNull();
+		expect(row.addressLine1).toBeNull();
+		expect(row.addressCity).toBeNull();
+		expect(row.addressPostalCode).toBeNull();
+		expect(row.noticeChannel).toBeNull();
+	});
+});
+
+// The half of the nullability that is easy to get wrong. Postgres does not
+// treat two NULLs as equal under a unique constraint, so the guarantee
+// import matching relies on survives for every client that has a tax id,
+// while any number of clients without one coexist. Asserted against the
+// database rather than reasoned about, because the whole design of #0056
+// rests on it.
+test('two clients can both have no tax id at all', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		await tx.insert(client).values({ legalName: 'No Tax Id A', country: 'IT' });
+		await tx.insert(client).values({ legalName: 'No Tax Id B', country: 'FR' });
+		const rows = await tx.select().from(client);
+		expect(rows.filter((row) => row.taxId === null).length).toBeGreaterThanOrEqual(2);
+	});
+});
+
+test('two clients still cannot share a real tax id', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const shared = `SHARED-TAX-${Date.now()}`;
+		await tx.insert(client).values({ legalName: 'First', country: 'IT', taxId: shared });
+		expect(
+			await rejection(
+				() => tx.insert(client).values({ legalName: 'Second', country: 'IT', taxId: shared }),
+				tx
+			)
+		).toMatchObject({ code: '23505', constraint_name: 'client_tax_id_unique' });
+	});
+});

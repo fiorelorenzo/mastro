@@ -9,6 +9,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
+	import { clientFieldLabel } from '$lib/i18n/client-fields';
+	import { appHref } from '$lib/nav/href';
 	import { formatDate, formatDays, formatMinorUnits, formatNumber } from '$lib/i18n/format';
 	import { minorUnitsToDecimalString } from '$lib/money';
 	import LegalText from '$lib/legal/LegalText.svelte';
@@ -451,9 +453,27 @@
 				{/each}
 				{#if data.routing}
 					<form method="POST" action="?/generateFattura" class="fattura-form">
-						<Button type="submit" variant="tertiary" size="sm">
+						<Button
+							type="submit"
+							variant="tertiary"
+							size="sm"
+							disabled={data.invoicingGaps.length > 0}
+						>
 							{m.invoice_detail_fattura_generate_button()}
 						</Button>
+						<!-- Named before the click, not after: the fields live on
+						     the client's own screen, so a bare refusal would send
+						     a reviewer hunting. -->
+						{#if data.invoicingGaps.length > 0}
+							<p class="gaps">
+								{m.invoice_detail_fattura_client_incomplete({
+									fields: data.invoicingGaps.map((field) => clientFieldLabel(field)).join(', ')
+								})}
+								<a href={appHref(`/clients/${data.invoice.contract.client.id}/edit`)}>
+									{m.invoice_detail_fattura_client_fix_link()}
+								</a>
+							</p>
+						{/if}
 						{#if form?.fatturaError}<p class="error">{form.fatturaError}</p>{/if}
 					</form>
 				{/if}

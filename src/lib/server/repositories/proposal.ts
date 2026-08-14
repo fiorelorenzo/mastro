@@ -617,11 +617,12 @@ async function applyProposal(
 						addressPostalCode: candidate.client.addressPostalCode,
 						addressRegion: candidate.client.addressRegion,
 						// A contract's own letterhead never carries a notice
-						// channel or an SdI routing code — those are set from
-						// the client edit screen once a human has this row to
-						// edit. `email` costs nothing to default and nothing
-						// to correct.
-						noticeChannel: 'email',
+						// channel or an SdI routing code. This used to default
+						// to `email`, which asserted a legal fact nobody had
+						// agreed; the column is nullable since migration 0056,
+						// so it stays empty until somebody sets it from the
+						// client's own screen.
+						noticeChannel: null,
 						sdiCode: null,
 						pecAddress: null,
 						contacts: []
