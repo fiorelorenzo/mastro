@@ -340,10 +340,10 @@ test('fetchLatestBackupRun returns the most recent row, null when none exist', a
 		// pick either one.
 		await tx
 			.insert(backupRun)
-			.values({ status: 'failure', detail: 'first', createdAt: new Date('2026-02-01T03:17:00Z') });
+			.values({ status: 'failure', detail: 'first', createdAt: new Date('2099-02-01T03:17:00Z') });
 		const [second] = await tx
 			.insert(backupRun)
-			.values({ status: 'success', detail: null, createdAt: new Date('2026-02-02T03:17:00Z') })
+			.values({ status: 'success', detail: null, createdAt: new Date('2099-02-02T03:17:00Z') })
 			.returning();
 
 		const latest = await fetchLatestBackupRun(tx);
@@ -357,17 +357,22 @@ test('fetchLatestBackupRun returns the most recent row, null when none exist', a
 
 test('fetchLatestAgentRun returns the most recent row, null when none exist', async () => {
 	await inRolledBackTransaction(async (tx) => {
-		expect(await fetchLatestAgentRun(tx)).toBeNull();
+		// No assertion that the table is empty: a real drain writes an
+		// `agent_run` row, so an instance that has ever run one has rows
+		// here, and this test is about ordering, not about the table being
+		// untouched (AGENTS.md: a test runs against a database with data
+		// in it). The rows below are dated far enough in the future to be
+		// the most recent whatever else is on file.
 
 		// Explicit timestamps: `now()` is the transaction's start time, so two
 		// rows inserted here would tie and `ORDER BY created_at DESC` would
 		// pick either one.
 		await tx
 			.insert(agentRun)
-			.values({ status: 'failure', detail: 'first', createdAt: new Date('2026-02-01T03:17:00Z') });
+			.values({ status: 'failure', detail: 'first', createdAt: new Date('2099-02-01T03:17:00Z') });
 		const [second] = await tx
 			.insert(agentRun)
-			.values({ status: 'success', detail: null, createdAt: new Date('2026-02-02T03:17:00Z') })
+			.values({ status: 'success', detail: null, createdAt: new Date('2099-02-02T03:17:00Z') })
 			.returning();
 
 		const latest = await fetchLatestAgentRun(tx);
