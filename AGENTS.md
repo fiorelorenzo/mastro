@@ -352,3 +352,29 @@ away. A fixture either sits in a past era disjoint from every other test file's,
 or takes the timeline exclusively for the length of its own rolled-back
 transaction. Picking a "far future" year is the trick that looked safe for months
 and never was (#225).
+
+**A route only a timer calls needs a caller in CI.** `/api/agent/run` answered 500 on
+every scheduler tick for a whole release while `pnpm build`, `pnpm check` and the
+entire suite stayed green, because nothing but the scheduler ever requested it. The
+`image` job now POSTs the three cron-shaped routes against the real runtime image,
+and any route added to `scripts/scheduler.ts` belongs in that list on the same day.
+
+**A server-only dependency that touches DOM globals must be `ssr.external`.**
+`pdf-parse` wraps pdfjs, whose module body references `DOMMatrix`. Bundled into a
+server chunk it throws the moment anything in that chunk loads, which is how one
+PDF library took the whole ingestion loop down. Making the import lazy was not
+enough — the bundler inlined it anyway and only moved the failure into a different
+chunk — so the fix is `ssr: { external: [...] }` in `vite.config.ts` plus a real
+`dependencies` entry, since the runtime image installs the production set and a
+bundled copy is not a dependency it can rely on. Check the built output, not the
+source: `grep -rl DOMMatrix build/server` should find nothing, and the chunk should
+still carry its `await import('pdf-parse')` verbatim (#267, #268).
+
+**Two facts about the session cookie, because both cost real time.** Its name
+depends on `useSecureCookies: !dev`, so a production build reads
+`__Secure-better-auth.session_token` and `pnpm dev` reads the plain name — probe
+both rather than assuming. And a browser cannot _set_ a `__Secure-` cookie over
+plain http, so an authenticated browser pass against `node build` on localhost is
+not possible with a planted cookie: drive the pages with `curl` against the
+production build (which is what catches a resolved-path 500 on a breadcrumb) and do
+the visual sweep against `pnpm dev`.
