@@ -753,6 +753,8 @@
 	"import_fallback_label": "Or choose a folder here",
 	"import_heading": "Import invoices",
 	"import_intro": "Pick a folder of exported invoices. mastro parses every structured document it recognises, matches the customer against your existing clients, and writes nothing until you confirm.",
+	"import_missing_account_holder_tax_id": "mastro needs your own tax id before it can tell an outgoing invoice from an incoming one, and it will not guess.",
+	"import_missing_account_holder_tax_id_link": "Fill in your practice profile",
 	"import_no_active_pack": "No fiscal profile is active today, so mastro cannot tell which invoice formats to expect. Set one up before importing.",
 	"import_page_title": "Import invoices — mastro",
 	"import_pick_folder_button": "Choose folder",

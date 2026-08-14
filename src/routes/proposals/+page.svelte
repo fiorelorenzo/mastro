@@ -51,7 +51,7 @@
 
 <svelte:head><title>{m.proposal_list_page_title()}</title></svelte:head>
 
-<Page title={m.proposal_list_heading()} subtitle={m.proposal_list_subtitle()}>
+<Page title={m.proposal_list_heading()} subtitle={m.proposal_list_subtitle()} width="wide">
 	<Tabs label={m.proposal_list_heading()} {tabs} />
 
 	{#if form?.actionError}

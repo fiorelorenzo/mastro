@@ -19,7 +19,7 @@ import { resolveActiveFiscalPack } from '$lib/server/fiscal/profile';
 import type { ImportableFile } from '$lib/server/import/adapter';
 import type { ClientProposal, ContractProposal } from '$lib/server/import/client-match';
 import { confirmClientContractProposal } from '$lib/server/import/confirm';
-import { getAccountHolderTaxId } from '$lib/server/import/config';
+import { resolveAccountHolderTaxId } from '$lib/server/import/config';
 import { importFile } from '$lib/server/import/importer';
 import {
 	persistImportedInvoice,
@@ -96,8 +96,15 @@ function emptyLineDecisions(
 }
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	// Read per request, not at module load: see config.ts and #133.
-	const accountHolderTaxId = getAccountHolderTaxId();
+	// Read per request, not at module load: see config.ts and #133. A
+	// fresh instance legitimately has neither the practice profile nor the
+	// environment variable, and this used to throw — so the first thing a
+	// new self-hoster tried answered 500 with a stack. It is a 409 naming
+	// the fix now: the screen turns it into a sentence and a link.
+	const accountHolderTaxId = await resolveAccountHolderTaxId();
+	if (!accountHolderTaxId) {
+		return json({ error: 'account_holder_tax_id_missing' }, { status: 409 });
+	}
 	const formData = await request.formData();
 
 	const decisionsRaw = formData.get('decisions');
