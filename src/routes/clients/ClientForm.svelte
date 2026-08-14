@@ -43,6 +43,8 @@
 			addressPostalCode: string;
 			addressRegion: string;
 			noticeChannel: string;
+			sdiCode: string;
+			pecAddress: string;
 		};
 		contactSlots: ContactSlot[];
 		errors?: Record<string, string>;
@@ -96,6 +98,18 @@
 			</Field>
 			<Field label={m.client_form_vat_id_label()} error={errors.vatId}>
 				<Input name="vatId" value={values.vatId} />
+			</Field>
+		</div>
+		<div class="grid-2">
+			<Field
+				label={m.client_form_sdi_code_label()}
+				error={errors.sdiCode}
+				hint={m.client_form_sdi_code_hint()}
+			>
+				<Input name="sdiCode" value={values.sdiCode} maxlength={7} />
+			</Field>
+			<Field label={m.client_form_pec_address_label()} error={errors.pecAddress}>
+				<Input name="pecAddress" type="email" value={values.pecAddress} />
 			</Field>
 		</div>
 	</fieldset>

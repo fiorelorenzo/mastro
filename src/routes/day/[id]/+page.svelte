@@ -12,9 +12,12 @@
 		Badge,
 		Banner,
 		Button,
+		Dialog,
 		Field,
 		Select,
 		SourceDocument,
+		Textarea,
+		toasts,
 		workUnitStateBadge,
 		type WorkUnitStateValue
 	} from '$lib/design';
@@ -26,6 +29,22 @@
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
 	let linkApprovalId = $state('');
+
+	// #228: the day's other exit from the risk state — closing it out as
+	// `unbillable` when nobody will ever approve it. Confirmed through a
+	// Dialog (never a bare click) since it is one-way: the state machine
+	// has no edge back out of `unbillable`. Pre-filling `open`/`reason`
+	// from `form` on a failed submit (a blank reason) means the dialog
+	// reopens with what was typed rather than silently discarding it.
+	let unbillableDialogOpen = $state(Boolean(form?.unbillableError));
+	let unbillableReason = $state(form?.reason ?? '');
+	let announcedUnbillable = false;
+	$effect(() => {
+		if (!form?.markedUnbillable || announcedUnbillable) return;
+		announcedUnbillable = true;
+		unbillableDialogOpen = false;
+		toasts.push('neutral', m.day_detail_unbillable_toast());
+	});
 
 	function actorLabel(actor: { kind: string; email?: string; proposalReference?: string }): string {
 		if (actor.kind === 'human') return actor.email ?? '';
@@ -125,11 +144,44 @@
 				>
 					{m.day_detail_approval_record_link()}
 				</Button>
-				<Button variant="secondary" disabled title={m.day_detail_mark_unbillable_unavailable()}>
+				<Button
+					type="button"
+					variant="danger"
+					onclick={() => {
+						unbillableDialogOpen = true;
+					}}
+				>
 					{m.day_detail_mark_unbillable()}
 				</Button>
 			{/snippet}
 		</Banner>
+
+		<form method="POST" action="?/unbillable">
+			<Dialog
+				bind:open={unbillableDialogOpen}
+				title={m.day_detail_unbillable_confirm_title()}
+				role="alertdialog"
+			>
+				<p>{m.day_detail_unbillable_confirm_body()}</p>
+				<Field label={m.day_detail_unbillable_reason_label()} error={form?.unbillableError}>
+					<Textarea name="reason" bind:value={unbillableReason} rows={3} required />
+				</Field>
+				{#snippet actions()}
+					<Button
+						type="button"
+						variant="tertiary"
+						onclick={() => {
+							unbillableDialogOpen = false;
+						}}
+					>
+						{m.day_detail_unbillable_confirm_cancel()}
+					</Button>
+					<Button type="submit" variant="danger">
+						{m.day_detail_unbillable_confirm_confirm()}
+					</Button>
+				{/snippet}
+			</Dialog>
+		</form>
 
 		{#if data.linkableApprovals.length > 0}
 			<form method="POST" action="?/link" class="link-form">

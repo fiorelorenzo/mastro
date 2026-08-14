@@ -19,17 +19,39 @@
 	import { formatDateTime } from '$lib/i18n/format';
 	import Badge from '$lib/design/Badge.svelte';
 	import Button from '$lib/design/Button.svelte';
+	import Dialog from '$lib/design/Dialog.svelte';
+	import Field from '$lib/design/Field.svelte';
+	import Textarea from '$lib/design/Textarea.svelte';
+	import { toasts } from '$lib/design/toast-store.svelte';
 	import Page from '$lib/layout/Page.svelte';
 	import type { AlertSeverity } from '$lib/server/db/schema/alert';
-	import type { PageData } from './$types';
+	import type { ActionData, PageData } from './$types';
 
-	let { data }: { data: PageData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	function severityLabel(severity: AlertSeverity): string {
 		if (severity === 'critical') return m.alerts_severity_critical();
 		if (severity === 'serious') return m.alerts_severity_serious();
 		return m.alerts_severity_warning();
 	}
+
+	// #228's other exit from the risk state, offered right here as a
+	// Dialog-confirmed form action — never a bare click, since it is
+	// one-way. Only one row's dialog is ever open at a time, so a single
+	// key (rather than one flag per alert) is enough; `alerts_unbillable_
+	// reason_required` on a failed submit reopens the same row instead of
+	// silently discarding what was typed.
+	let openUnbillableFor = $state<string | null>(
+		form?.unbillableError ? (form.workUnitId ?? null) : null
+	);
+	let unbillableReason = $state(form?.reason ?? '');
+	let announcedUnbillableFor: string | null = null;
+	$effect(() => {
+		if (!form?.markedUnbillable || !form.workUnitId) return;
+		if (announcedUnbillableFor === form.workUnitId) return;
+		announcedUnbillableFor = form.workUnitId;
+		toasts.push('neutral', m.alerts_unbillable_toast());
+	});
 </script>
 
 <svelte:head><title>{m.alerts_page_title()}</title></svelte:head>
@@ -76,8 +98,56 @@
 									</Button>
 								</form>
 							{/if}
+							{#if alert.closeUnbillable}
+								<Button
+									type="button"
+									variant="danger"
+									size="sm"
+									onclick={() => {
+										openUnbillableFor = alert.key;
+										unbillableReason = '';
+									}}
+								>
+									{alert.closeUnbillable.label}
+								</Button>
+							{/if}
 						</div>
 					</div>
+					{#if alert.closeUnbillable}
+						{@const closeUnbillable = alert.closeUnbillable}
+						<form method="POST" action="?/unbillable" use:enhance>
+							<input type="hidden" name="workUnitId" value={closeUnbillable.workUnitId} />
+							<Dialog
+								bind:open={
+									() => openUnbillableFor === alert.key,
+									(value) => {
+										openUnbillableFor = value ? alert.key : null;
+									}
+								}
+								title={m.alerts_unbillable_confirm_title()}
+								role="alertdialog"
+							>
+								<p>{m.alerts_unbillable_confirm_body()}</p>
+								<Field label={m.alerts_unbillable_reason_label()} error={form?.unbillableError}>
+									<Textarea name="reason" bind:value={unbillableReason} rows={3} required />
+								</Field>
+								{#snippet actions()}
+									<Button
+										type="button"
+										variant="tertiary"
+										onclick={() => {
+											openUnbillableFor = null;
+										}}
+									>
+										{m.alerts_unbillable_confirm_cancel()}
+									</Button>
+									<Button type="submit" variant="danger">
+										{m.alerts_unbillable_confirm_confirm()}
+									</Button>
+								{/snippet}
+							</Dialog>
+						</form>
+					{/if}
 				</li>
 			{/each}
 		</ul>

@@ -337,6 +337,27 @@
       "when": 1786689498708,
       "tag": "0047_alert_type_proposal_pending",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1786694850267,
+      "tag": "0048_invoice_number_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1786694913393,
+      "tag": "0049_practice_profile",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1786695025466,
+      "tag": "0050_client_sdi_routing",
+      "breakpoints": true
     }
   ]
 }

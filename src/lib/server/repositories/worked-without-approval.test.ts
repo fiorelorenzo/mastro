@@ -10,8 +10,11 @@ import { createApproval } from './approval';
 import {
 	createWorkUnit,
 	linkApprovalToWorkUnit,
-	listWorkedWithoutApprovalEvents
+	listWorkedWithoutApprovalEvents,
+	listWorkUnitTransitions,
+	markWorkUnitUnbillable
 } from './work-unit';
+import { fetchWorkedWithoutApprovalRows } from '$lib/server/alerts/repository';
 
 // Needs a migrated database: `pnpm db:up && pnpm db:migrate`. Postgres work
 // happens inside a transaction that is always rolled back, same pattern as
@@ -144,5 +147,49 @@ test('listWorkedWithoutApprovalEvents(sinceInclusive) excludes events before the
 		const past = new Date(Date.now() - 60_000);
 		const feedFromPast = await listWorkedWithoutApprovalEvents(past, tx);
 		expect(feedFromPast.some((event) => event.workUnitId === row.id)).toBe(true);
+	});
+});
+
+test('#228: a day nobody will ever approve can be closed out as unbillable — the reason lands in the log, and it drops off the alert feed', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+
+		const row = await createWorkUnit(
+			{
+				contractId: contractRow.id,
+				date: '2024-05-03',
+				quantity: 1,
+				scope: 'Emergency patch the client never wrote back about.',
+				state: 'worked'
+			},
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'recorded the same day it happened',
+			tx
+		);
+		expect(row.state).toBe('worked_without_approval');
+
+		const stillFlagged = await fetchWorkedWithoutApprovalRows(tx);
+		expect(stillFlagged.some((r) => r.workUnitId === row.id)).toBe(true);
+
+		const closed = await markWorkUnitUnbillable(
+			row.id,
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'client confirmed by phone they will never approve this in writing',
+			tx
+		);
+		expect(closed.state).toBe('unbillable');
+
+		const log = await listWorkUnitTransitions(row.id, tx);
+		const last = log.at(-1);
+		expect(last?.fromState).toBe('worked_without_approval');
+		expect(last?.toState).toBe('unbillable');
+		expect(last?.reason).toBe('client confirmed by phone they will never approve this in writing');
+		expect(last?.actor).toEqual({ kind: 'human', email: 'lorenzo@example.com' });
+
+		// The whole point (#228's acceptance bullet): it leaves the alert
+		// feed the moment it does, the same state-filtered query the alert
+		// engine itself polls (`fetchWorkedWithoutApprovalRows`).
+		const clearedFromFeed = await fetchWorkedWithoutApprovalRows(tx);
+		expect(clearedFromFeed.some((r) => r.workUnitId === row.id)).toBe(false);
 	});
 });

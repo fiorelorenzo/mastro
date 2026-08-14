@@ -19,7 +19,9 @@
 			addressCity: '',
 			addressPostalCode: '',
 			addressRegion: '',
-			noticeChannel: ''
+			noticeChannel: '',
+			sdiCode: '',
+			pecAddress: ''
 		}
 	);
 </script>

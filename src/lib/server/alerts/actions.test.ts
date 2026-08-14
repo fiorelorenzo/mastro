@@ -152,6 +152,16 @@ test('worked_without_approval — the day at risk is one click from the form tha
 	expect(resolution.actionLabel).toBe('Link an approval');
 });
 
+test("worked_without_approval — also carries #228's second exit, closing the day out as unbillable, present on no other alert kind", () => {
+	const resolution = alertResolution(FIXTURES.worked_without_approval, 'en');
+	expect(resolution.closeUnbillable).toEqual({ workUnitId: 'wu-1', label: 'Mark unbillable' });
+
+	for (const type of ALERT_TYPES) {
+		if (type === 'worked_without_approval') continue;
+		expect(alertResolution(FIXTURES[type], 'en').closeUnbillable, type).toBeUndefined();
+	}
+});
+
 test('invoice_overdue — subject opens the invoice by number, action opens its dunning reminder form', () => {
 	const resolution = alertResolution(FIXTURES.invoice_overdue, 'it');
 	expect(resolution.subjectHref).toBe('/invoices/invoice-1');

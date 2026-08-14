@@ -30,7 +30,9 @@
 			addressCity: data.client.addressCity,
 			addressPostalCode: data.client.addressPostalCode,
 			addressRegion: data.client.addressRegion ?? '',
-			noticeChannel: data.client.noticeChannel
+			noticeChannel: data.client.noticeChannel,
+			sdiCode: data.client.sdiCode ?? '',
+			pecAddress: data.client.pecAddress ?? ''
 		}
 	);
 </script>

@@ -2,6 +2,8 @@ import * as m from '$lib/paraglide/messages';
 import { noticeChannel, type NoticeChannel } from '$lib/server/db/schema';
 import type { ClientInput } from './client';
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export type ClientFormValues = {
 	legalName: string;
 	taxId: string;
@@ -13,6 +15,8 @@ export type ClientFormValues = {
 	addressPostalCode: string;
 	addressRegion: string;
 	noticeChannel: string;
+	sdiCode: string;
+	pecAddress: string;
 	contacts: { name: string; email: string; phone: string; role: string; canApprove: boolean }[];
 };
 
@@ -40,6 +44,20 @@ export function parseClientForm(formData: FormData): ClientFormResult {
 
 	const country = string('country').toUpperCase();
 	if (!/^[A-Z]{2}$/.test(country)) errors.country = m.client_validation_country_invalid();
+
+	// #259: FatturaPA's CodiceDestinatario, exactly 7 characters when
+	// present — mirrors the DB's own `client_sdi_code_length` CHECK, so a
+	// bad code never reaches it.
+	const sdiCode = string('sdiCode').toUpperCase();
+	if (sdiCode && sdiCode.length !== 7) errors.sdiCode = m.client_validation_sdi_code_invalid();
+
+	// FatturaPA's PECDestinatario: a certified-mail address, same shape
+	// check every other email field in this app applies (mirrors the DB's
+	// `client_pec_address_is_email` CHECK).
+	const pecAddress = string('pecAddress');
+	if (pecAddress && !EMAIL_PATTERN.test(pecAddress)) {
+		errors.pecAddress = m.client_validation_pec_address_invalid();
+	}
 
 	const addressLine1 = string('addressLine1');
 	if (!addressLine1) errors.addressLine1 = m.client_validation_address_line1_required();
@@ -89,6 +107,8 @@ export function parseClientForm(formData: FormData): ClientFormResult {
 		addressPostalCode,
 		addressRegion,
 		noticeChannel: noticeChannelValue,
+		sdiCode,
+		pecAddress,
 		contacts: contactValues
 	};
 
@@ -108,6 +128,8 @@ export function parseClientForm(formData: FormData): ClientFormResult {
 			addressPostalCode,
 			addressRegion: addressRegion || null,
 			noticeChannel: noticeChannelValue as NoticeChannel,
+			sdiCode: sdiCode || null,
+			pecAddress: pecAddress || null,
 			contacts
 		}
 	};

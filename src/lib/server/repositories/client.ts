@@ -21,6 +21,12 @@ export type ClientInput = {
 	addressPostalCode: string;
 	addressRegion: string | null;
 	noticeChannel: NoticeChannel;
+	// #259: FatturaPA's CodiceDestinatario/PECDestinatario. Both optional —
+	// see `client.ts`'s schema comment for why, and
+	// `domain/invoice.ts`'s `resolveInvoiceRouting` for how an invoice
+	// detail screen turns these into "which of the three cases applies".
+	sdiCode: string | null;
+	pecAddress: string | null;
 	contacts: ClientContactInput[];
 };
 

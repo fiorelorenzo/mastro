@@ -60,6 +60,10 @@ test('the default treatment is the ordinary case: no code, no legal text, the st
 	expect(treatment).toEqual({ code: null, taxRate: 22, legalText: null });
 });
 
+test('the issuer tax-regime code is RF01 (#256)', () => {
+	expect(itStandardPack.taxRegimeCode).toBe('RF01');
+});
+
 test('the pack ships registered by default, resolvable by id and version', () => {
 	expect(lookupPack(defaultRegistry, 'it-standard', '1')).toBe(itStandardPack);
 });

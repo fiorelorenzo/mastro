@@ -66,7 +66,12 @@ import { minorUnits } from '$lib/money';
  *   outcome for the immediate-exit case: "ai fini delle imposte dirette
  *   ... rileva il momento di incasso della fattura", taxed "con la
  *   dichiarazione dell'anno successivo" under ordinary rules. This is
- *   the concrete case #122 was filed for.
+ * the concrete case #122 was filed for.
+ * - Issuer tax-regime code (`RF19`, FatturaPA's `CedentePrestatore` /
+ *   `RegimeFiscale`): https://www.fattureincloud.it/glossario/regime-forfettario/rf-19/,
+ *   corroborated by multiple 2026-dated practitioner guides, the same
+ *   standard this file's other citations already use; not read directly
+ *   against Agenzia delle Entrate's FatturaPA technical specifications.
  */
 export const itFlatRatePack: FiscalPack = {
 	id: 'it-flat-rate',
@@ -204,5 +209,7 @@ export const itFlatRatePack: FiscalPack = {
 	// Comma 58 draws no exception for any kind of operation this regime
 	// invoices — N2.2 is not one exceptional case among others, it is what
 	// every invoice under this pack takes (#216).
-	defaultTreatment: { kind: 'treatment', code: 'N2.2' }
+	defaultTreatment: { kind: 'treatment', code: 'N2.2' },
+	// See the header comment's last source entry.
+	taxRegimeCode: 'RF19'
 };

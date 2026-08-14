@@ -1,8 +1,10 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
 import { invoicesCrumbs } from '$lib/nav/crumbs';
-import { daysLate, isOverdue } from '$lib/server/domain/invoice';
+import { db } from '$lib/server/db';
+import { daysLate, isOverdue, resolveInvoiceRouting } from '$lib/server/domain/invoice';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
+import { resolveActiveFiscalPack } from '$lib/server/fiscal/profile';
 import { minorUnitsFromMajor } from '$lib/money';
 import { toSourceDocumentValue } from '$lib/server/repositories/document';
 import {
@@ -17,11 +19,27 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ params }) => {
 	const invoiceRow = await getInvoiceWithLines(params.id);
 	if (!invoiceRow) error(404, m.invoice_not_found());
-	const [documents, rateCards, chaseHistory] = await Promise.all([
+	const [documents, rateCards, chaseHistory, resolvedPack] = await Promise.all([
 		getInvoiceDocuments(invoiceRow.id),
 		listRateCards(invoiceRow.contractId),
-		listSentEmailsForInvoice(invoiceRow.id)
+		listSentEmailsForInvoice(invoiceRow.id),
+		// The pack in force on the invoice's own issue date, never "today":
+		// which regime applied — and therefore whether SdI routing (#259)
+		// is even a thing to say — is a fact about the invoice, not about
+		// whoever happens to be reading it later.
+		resolveActiveFiscalPack(db, invoiceRow.issueDate)
 	]);
+
+	// `formats` is a jurisdiction pack's own declaration of which national
+	// invoice format(s) it uses (AGENTS.md invariant 1: never branch on a
+	// country literal here) — empty for the generic pack, `['FPR12']` for
+	// both Italian regimes. SdI routing only exists to say something about
+	// when FatturaPA applies; showing it under the generic pack would be
+	// showing a fact about a system this invoice never goes through.
+	const routing =
+		(resolvedPack?.pack.formats.length ?? 0) > 0
+			? resolveInvoiceRouting(invoiceRow.contract.client)
+			: null;
 
 	// Each day's own contribution (#239: "the days behind each line are
 	// visible", with a figure that reads as a verifiable sum, never an
@@ -80,6 +98,10 @@ export const load: PageServerLoad = async ({ params }) => {
 		// unpaid, but always recomputed against "now" rather than trusting
 		// a stored flag, same reasoning as `overdue` above.
 		daysLate: daysLate(invoiceRow.dueDate),
+		// Which of SdI's three delivery paths this invoice would take
+		// (#259), or `null` under a pack that carries no national e-invoice
+		// format at all — see the `formats` comment above.
+		routing,
 		crumbs
 	};
 };

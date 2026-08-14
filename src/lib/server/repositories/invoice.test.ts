@@ -283,6 +283,73 @@ test('a supplied due date is stored verbatim, sourced as "document"', async () =
 	});
 });
 
+test('#257: two invoices on different contracts cannot share a number — numbering is unique across the whole ledger, not just within one contract', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractA = await insertContract(tx);
+		const contractB = await insertContract(tx);
+		// Random, not a literal like '2026/014': a fixed number here would
+		// collide with the demo seed's own invoices once this runs against a
+		// seeded database (AGENTS.md — "a test runs against a database that
+		// has data in it"), and that collision would fail the *first* insert
+		// below, outside `rejection`, not the one this test means to observe.
+		const sharedNumber = `INV-257-${crypto.randomUUID().slice(0, 8)}`;
+
+		const fieldsFor = (contractId: string): InvoiceInput => ({
+			contractId,
+			number: sharedNumber,
+			issueDate: '2024-06-30',
+			documentType: 'invoice',
+			currency: 'EUR',
+			taxTreatmentCode: null,
+			statutoryReference: null,
+			stampDuty: null,
+			socialCharge: null,
+			dueDate: '2024-07-30',
+			paymentMethod: null,
+			iban: null,
+			transmissionId: null,
+			lines: [
+				{
+					description: 'Flat fee',
+					quantity: 1,
+					unitPrice: minorUnits(100000),
+					amount: minorUnits(100000),
+					taxRate: 0,
+					taxTreatmentCode: 'N2.2',
+					workUnitIds: []
+				}
+			]
+		});
+
+		await createInvoice(
+			fieldsFor(contractA.id),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+
+		// invoice_number_unique (0048_invoice_number_unique.sql) is a plain,
+		// non-deferred UNIQUE constraint on `number` alone — it fires on this
+		// statement itself, no `set constraints all immediate` needed, unlike
+		// the deferred totals/correction triggers above.
+		const error = await rejection(
+			() =>
+				createInvoice(
+					fieldsFor(contractB.id),
+					{ kind: 'human', email: 'lorenzo@example.com' },
+					'test fixture',
+					tx
+				),
+			tx
+		);
+
+		expect(error).toMatchObject({
+			code: '23505',
+			constraint_name: 'invoice_number_unique'
+		});
+	});
+});
+
 test('the database rejects an invoice whose lines do not sum to its stated taxable amount', async () => {
 	const failure = await db
 		.transaction(async (tx) => {

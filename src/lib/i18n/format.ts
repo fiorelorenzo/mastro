@@ -199,3 +199,28 @@ export function formatWeekRange(start: string, end: string, locale: Locale = get
 		.map((part) => (part.type === 'day' ? String(Number(part.value)) : part.value))
 		.join('');
 }
+
+const BYTE_UNITS = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const;
+
+/**
+ * A byte count as the largest unit that keeps the figure readable, e.g.
+ * `432000000` reads `432 MB` in English and `432 MB` in Italian (settings
+ * health page, #246 — the last backup's own size, `backup_run.detail`).
+ * Decimal (1000-based) steps, matching the CLDR `kilobyte`/`megabyte`/…
+ * units `Intl.NumberFormat`'s `unit` style already defines — never a
+ * hand-rolled `/1024` and string suffix.
+ */
+export function formatBytes(bytes: number, locale: Locale = getLocale()): string {
+	let value = bytes;
+	let unitIndex = 0;
+	while (Math.abs(value) >= 1000 && unitIndex < BYTE_UNITS.length - 1) {
+		value /= 1000;
+		unitIndex += 1;
+	}
+	return new Intl.NumberFormat(locale, {
+		style: 'unit',
+		unit: BYTE_UNITS[unitIndex],
+		unitDisplay: 'short',
+		maximumFractionDigits: 1
+	}).format(value);
+}

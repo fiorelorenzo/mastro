@@ -45,6 +45,12 @@ import { legalText } from '$lib/legal/legal-text';
  * switches to this pack is governed by `it-flat-rate`'s own declared
  * value, not this one — see that pack's header for the citation (Legge
  * 190/2014, art. 1, comma 72).
+ *
+ * `taxRegimeCode` (#256): `'RF01'`, FatturaPA's code for regime
+ * ordinario, carried inside `CedentePrestatore` / `RegimeFiscale` —
+ * https://centrofiscale.com/codice-rf19-730-2026-regime-forfettario/,
+ * not read directly against Agenzia delle Entrate's FatturaPA technical
+ * specifications.
  */
 export const itStandardPack: FiscalPack = {
 	id: 'it-standard',
@@ -74,5 +80,7 @@ export const itStandardPack: FiscalPack = {
 	// Shared with it-flat-rate; see that file's comment on 'FPR12'.
 	formats: ['FPR12'],
 	unresolvedRevenue: 'carries_forward',
-	defaultTreatment: { kind: 'ordinary', taxRate: 22 }
+	defaultTreatment: { kind: 'ordinary', taxRate: 22 },
+	// See the header comment's last entry.
+	taxRegimeCode: 'RF01'
 };

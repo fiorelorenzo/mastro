@@ -45,6 +45,16 @@ export interface AlertResolution {
 	/** The action that actually resolves the alert — never "hide it". */
 	readonly actionHref: string;
 	readonly actionLabel: string;
+	/** #228's other exit, present only on `worked_without_approval`: closing
+	 * the day out as `unbillable` instead of linking a late approval. This
+	 * one is never a plain link — it changes the day's state — so the
+	 * caller renders it as a Dialog-confirmed form action rather than an
+	 * `<a>`, and needs the id to post. `undefined` for every other alert
+	 * type, including the ones that never touch a work unit at all. */
+	readonly closeUnbillable?: {
+		readonly workUnitId: string;
+		readonly label: string;
+	};
 }
 
 function contractHref(contractId: string, clientId: string): string {
@@ -73,7 +83,10 @@ export function alertResolution(detail: AlertDetail, locale: Locale): AlertResol
 			// primary action is `approvals/new` (#210) so a day with *no*
 			// approval on file at all — not just one not yet linked — is one
 			// click from the form that records one and links it in the same
-			// transaction.
+			// transaction. `closeUnbillable` is #228's second exit, offered
+			// alongside it rather than instead of it: linking a late approval
+			// stays the primary action because it is the one that keeps the
+			// day billable.
 			const dayHref = `/day/${detail.workUnitId}`;
 			return {
 				subjectHref: dayHref,
@@ -82,7 +95,11 @@ export function alertResolution(detail: AlertDetail, locale: Locale): AlertResol
 					{ locale }
 				),
 				actionHref: `/approvals/new?contractId=${detail.contractId}&workUnitId=${detail.workUnitId}`,
-				actionLabel: m.alerts_action_link_approval(undefined, { locale })
+				actionLabel: m.alerts_action_link_approval(undefined, { locale }),
+				closeUnbillable: {
+					workUnitId: detail.workUnitId,
+					label: m.alerts_action_mark_unbillable(undefined, { locale })
+				}
 			};
 		}
 
