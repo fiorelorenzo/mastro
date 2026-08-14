@@ -61,7 +61,10 @@
 		proposalValidationField
 	} from '../proposal-status';
 	import { isFieldGroundedInExcerpt, splitOnExcerpt } from './evidence';
-	import type { ExtractedRateCard } from '$lib/server/agent/contract-extraction';
+	import type {
+		ExtractedContractCandidate,
+		ExtractedRateCard
+	} from '$lib/server/agent/contract-extraction';
 	import {
 		contractRenewalTypes,
 		expensePolicyKinds,
@@ -173,6 +176,54 @@
 	);
 	const unresolvedClauseCount = $derived(clauseReadings.filter((reading) => !reading).length);
 
+	// The client section's own state (design: "the client behind an
+	// extracted contract is always an explicit choice"). Defaults to
+	// 'existing' only when `data.clientMatchId` gives it something to
+	// preselect — the same starting point the old accept dispatcher's own
+	// find-or-create silently produced when a tax id matched, now an
+	// explicit default a reviewer can see and override rather than a
+	// decision nobody saw. No match — including every client having no
+	// tax id at all, or no clients existing yet — falls back to 'new',
+	// the same default the no-match path always produced before this.
+	let clientMode = $state<'existing' | 'new'>(data.clientMatchId ? 'existing' : 'new');
+	let selectedClientId = $state(data.clientMatchId ?? '');
+	const selectedClient = $derived(
+		data.existingClients.find((row) => row.id === selectedClientId) ?? null
+	);
+
+	// The vocabulary a document's client and a linked client can differ
+	// on — every field a contract PDF's extraction carries (#86's own
+	// `ExtractedClient`), reusing `client_form_*`'s own labels rather than
+	// naming the fields a second time.
+	type ClientFieldKey =
+		| 'legalName'
+		| 'taxId'
+		| 'vatId'
+		| 'country'
+		| 'addressLine1'
+		| 'addressLine2'
+		| 'addressCity'
+		| 'addressPostalCode'
+		| 'addressRegion';
+	const CLIENT_DIFF_FIELDS: { key: ClientFieldKey; label: () => string }[] = [
+		{ key: 'legalName', label: m.client_form_legal_name_label },
+		{ key: 'taxId', label: m.client_form_tax_id_label },
+		{ key: 'vatId', label: m.client_form_vat_id_label },
+		{ key: 'country', label: m.client_form_country_label },
+		{ key: 'addressLine1', label: m.client_form_address_line1_label },
+		{ key: 'addressLine2', label: m.client_form_address_line2_label },
+		{ key: 'addressCity', label: m.client_form_city_label },
+		{ key: 'addressPostalCode', label: m.client_form_postal_code_label },
+		{ key: 'addressRegion', label: m.client_form_region_label }
+	];
+	/** Only the fields where the document's value differs from what is on
+	 * file — a linked client with nothing to reconcile shows no rows at
+	 * all, per `proposal_contract_client_diff_none`. */
+	function clientDiffs(documentClient: { [K in ClientFieldKey]: string | null }) {
+		if (!selectedClient) return [];
+		return CLIENT_DIFF_FIELDS.filter(({ key }) => documentClient[key] !== selectedClient![key]);
+	}
+
 	// Blocked while a flagged clause still needs its reading chosen (#86's
 	// "an ambiguous clause requires an explicit choice"), and — for a
 	// target type this screen never lets a reviewer edit (`invoice`) —
@@ -191,6 +242,7 @@
 			? data.proposal.validationError !== null
 			: data.proposal.targetType === 'contract'
 				? unresolvedClauseCount > 0 ||
+					(clientMode === 'existing' && selectedClientId === '') ||
 					(contractValidationField !== null && !editedFields.has(contractValidationField))
 				: workUnitValidationField !== null && !editedFields.has(workUnitValidationField)
 	);
@@ -311,6 +363,71 @@
 	<p class="muted">{m.rate_card_empty()}</p>
 {/snippet}
 
+{#snippet newClientFields(candidate: ExtractedContractCandidate)}
+	<fieldset class="card">
+		<legend><h2>{m.client_form_legal_identity_legend()}</h2></legend>
+		<p class="hint">{m.proposal_contract_client_hint()}</p>
+		<Field label={m.client_form_legal_name_label()}>
+			<Input
+				name="client.legalName"
+				value={candidate.client.legalName}
+				disabled={!pending}
+				oninput={() => markEdited('legalName')}
+			/>
+		</Field>
+		<Field label={m.client_form_country_label()}>
+			<Select name="client.country" value={candidate.client.country} disabled={!pending}>
+				{#each countries as country (country.code)}
+					<option value={country.code} selected={candidate.client.country === country.code}>
+						{country.name}
+					</option>
+				{/each}
+			</Select>
+		</Field>
+		<div class="grid-2">
+			<Field label={m.client_form_tax_id_label()}>
+				<Input name="client.taxId" value={candidate.client.taxId} disabled={!pending} />
+			</Field>
+			<Field label={m.client_form_vat_id_label()}>
+				<Input name="client.vatId" value={candidate.client.vatId ?? ''} disabled={!pending} />
+			</Field>
+		</div>
+	</fieldset>
+
+	<fieldset class="card">
+		<legend><h2>{m.client_form_address_legend()}</h2></legend>
+		<Field label={m.client_form_address_line1_label()}>
+			<Input name="client.addressLine1" value={candidate.client.addressLine1} disabled={!pending} />
+		</Field>
+		<Field label={m.client_form_address_line2_label()}>
+			<Input
+				name="client.addressLine2"
+				value={candidate.client.addressLine2 ?? ''}
+				disabled={!pending}
+			/>
+		</Field>
+		<div class="grid-2">
+			<Field label={m.client_form_city_label()}>
+				<Input name="client.addressCity" value={candidate.client.addressCity} disabled={!pending} />
+			</Field>
+			<Field label={m.client_form_postal_code_label()}>
+				<Input
+					name="client.addressPostalCode"
+					value={candidate.client.addressPostalCode}
+					disabled={!pending}
+				/>
+			</Field>
+		</div>
+		<Field label={m.client_form_region_label()}>
+			<Input
+				name="client.addressRegion"
+				value={candidate.client.addressRegion ?? ''}
+				disabled={!pending}
+			/>
+		</Field>
+	</fieldset>
+{/snippet}
+
 <svelte:head><title>{m.proposal_detail_page_title()}</title></svelte:head>
 
 <Page
@@ -381,81 +498,81 @@
 			{#if data.proposal.targetType === 'contract' && data.contractCandidate}
 				{@const candidate = data.contractCandidate}
 				<form method="POST" action="?/accept" class="fields-form">
-					<fieldset class="card">
-						<legend><h2>{m.client_form_legal_identity_legend()}</h2></legend>
-						<p class="hint">{m.proposal_contract_client_hint()}</p>
-						<Field label={m.client_form_legal_name_label()}>
-							<Input
-								name="client.legalName"
-								value={candidate.client.legalName}
-								disabled={!pending}
-								oninput={() => markEdited('legalName')}
-							/>
-						</Field>
-						<Field label={m.client_form_country_label()}>
-							<Select name="client.country" value={candidate.client.country} disabled={!pending}>
-								{#each countries as country (country.code)}
-									<option value={country.code} selected={candidate.client.country === country.code}>
-										{country.name}
-									</option>
-								{/each}
-							</Select>
-						</Field>
-						<div class="grid-2">
-							<Field label={m.client_form_tax_id_label()}>
-								<Input name="client.taxId" value={candidate.client.taxId} disabled={!pending} />
-							</Field>
-							<Field label={m.client_form_vat_id_label()}>
-								<Input
-									name="client.vatId"
-									value={candidate.client.vatId ?? ''}
-									disabled={!pending}
+					{#if pending}
+						<fieldset class="card">
+							<legend><h2>{m.proposal_contract_client_mode_legend()}</h2></legend>
+							<div
+								class="client-mode"
+								role="radiogroup"
+								aria-label={m.proposal_contract_client_mode_legend()}
+							>
+								<Radio
+									name="clientMode"
+									value="existing"
+									label={m.proposal_contract_client_mode_existing_label()}
+									bind:group={clientMode}
 								/>
-							</Field>
-						</div>
-					</fieldset>
+								<Radio
+									name="clientMode"
+									value="new"
+									label={m.proposal_contract_client_mode_new_label()}
+									bind:group={clientMode}
+								/>
+							</div>
 
-					<fieldset class="card">
-						<legend><h2>{m.client_form_address_legend()}</h2></legend>
-						<Field label={m.client_form_address_line1_label()}>
-							<Input
-								name="client.addressLine1"
-								value={candidate.client.addressLine1}
-								disabled={!pending}
-							/>
-						</Field>
-						<Field label={m.client_form_address_line2_label()}>
-							<Input
-								name="client.addressLine2"
-								value={candidate.client.addressLine2 ?? ''}
-								disabled={!pending}
-							/>
-						</Field>
-						<div class="grid-2">
-							<Field label={m.client_form_city_label()}>
-								<Input
-									name="client.addressCity"
-									value={candidate.client.addressCity}
-									disabled={!pending}
-								/>
-							</Field>
-							<Field label={m.client_form_postal_code_label()}>
-								<Input
-									name="client.addressPostalCode"
-									value={candidate.client.addressPostalCode}
-									disabled={!pending}
-								/>
-							</Field>
-						</div>
-						<Field label={m.client_form_region_label()}>
-							<Input
-								name="client.addressRegion"
-								value={candidate.client.addressRegion ?? ''}
-								disabled={!pending}
-							/>
-						</Field>
-					</fieldset>
+							{#if clientMode === 'existing'}
+								<Field label={m.proposal_contract_client_picker_label()}>
+									<Select name="clientId" bind:value={selectedClientId}>
+										<option value="" selected={selectedClientId === ''}>
+											{m.proposal_contract_client_picker_placeholder()}
+										</option>
+										{#each data.existingClients as row (row.id)}
+											<option value={row.id} selected={selectedClientId === row.id}>
+												{row.taxId ? `${row.legalName} (${row.taxId})` : row.legalName}
+											</option>
+										{/each}
+									</Select>
+								</Field>
+								{#if data.existingClients.length === 0}
+									<p class="hint">{m.proposal_contract_client_picker_empty_option()}</p>
+								{:else if data.clientMatchId && selectedClientId === data.clientMatchId}
+									<p class="hint">{m.proposal_contract_client_match_hint()}</p>
+								{/if}
 
+								{#if selectedClient}
+									{@const linkedClient = selectedClient}
+									{@const diffs = clientDiffs(candidate.client)}
+									{#if diffs.length === 0}
+										<p class="hint">{m.proposal_contract_client_diff_none()}</p>
+									{:else}
+										<div class="client-diff">
+											<p class="readings-legend">{m.proposal_contract_client_diff_heading()}</p>
+											{#each diffs as { key, label } (key)}
+												<div class="client-diff-row">
+													<span class="client-diff-field">{label()}</span>
+													<dl class="pairs">
+														<dt>{m.proposal_contract_client_diff_on_file_label()}</dt>
+														<dd>{linkedClient[key] ?? m.client_detail_not_set()}</dd>
+														<dt>{m.proposal_contract_client_diff_from_document_label()}</dt>
+														<dd>{candidate.client[key] ?? m.client_detail_not_set()}</dd>
+													</dl>
+													<Checkbox
+														name={`clientFieldAdopt.${key}`}
+														label={m.proposal_contract_client_diff_adopt_label()}
+														checked={false}
+													/>
+												</div>
+											{/each}
+										</div>
+									{/if}
+								{/if}
+							{/if}
+						</fieldset>
+					{/if}
+
+					{#if !pending || clientMode === 'new'}
+						{@render newClientFields(candidate)}
+					{/if}
 					<fieldset class="card">
 						<legend><h2>{m.contract_form_identity_legend()}</h2></legend>
 						<Field label={m.contract_form_title_label()}>
@@ -1211,6 +1328,29 @@
 	}
 	.readings-legend {
 		margin: 0;
+		font-size: var(--text-sm);
+		font-weight: var(--weight-medium);
+		color: var(--text-primary);
+	}
+	.client-mode {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+	}
+	.client-diff {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+	.client-diff-row {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-1);
+		padding: var(--space-2);
+		border: 1px solid var(--border-hairline);
+		border-radius: var(--radius-sm);
+	}
+	.client-diff-field {
 		font-size: var(--text-sm);
 		font-weight: var(--weight-medium);
 		color: var(--text-primary);

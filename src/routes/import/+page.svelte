@@ -11,7 +11,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate, formatMinorUnits, formatNumber } from '$lib/i18n/format';
-	import { Banner, Button, Field, FileInput, Tabs } from '$lib/design';
+	import { Banner, Button, DropZone, Field, Tabs } from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
 	import {
 		scanDirectoryHandle,
@@ -218,7 +218,7 @@
 				</Button>
 			{/if}
 			<Field label={m.import_fallback_label()}>
-				<FileInput
+				<DropZone
 					label={m.import_fallback_button()}
 					multiple
 					webkitdirectory

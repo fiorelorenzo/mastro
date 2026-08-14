@@ -10,7 +10,7 @@
 	 * synchronously" boundary.
 	 */
 	import * as m from '$lib/paraglide/messages';
-	import { Banner, Button, Field, FileInput } from '$lib/design';
+	import { Banner, Button, Field, DropZone } from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
 	import type { ActionData, PageProps } from './$types';
 
@@ -30,7 +30,7 @@
 
 	<form method="POST" enctype="multipart/form-data" class="form">
 		<Field label={m.invoice_propose_file_label()} required>
-			<FileInput
+			<DropZone
 				name="file"
 				label={m.invoice_propose_file_button()}
 				accept=".pdf,application/pdf"

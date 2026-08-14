@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
+	import DropZone from '$lib/design/DropZone.svelte';
 	import SourceDocument from '$lib/design/SourceDocument.svelte';
 	import type { DocumentProvenanceValue } from '$lib/design/source-document';
 	import type { ExpenseFormValues } from '$lib/server/repositories/expense-form';
@@ -68,7 +69,7 @@
 		{#if existingReceipt}
 			<SourceDocument document={existingReceipt} />
 		{:else}
-			<input type="file" name="receipt" class="border px-2 py-1" />
+			<DropZone name="receipt" label={m.expense_form_receipt_button()} />
 			<label class="flex items-center gap-2 text-sm">
 				<input type="checkbox" name="receiptConfidential" />
 				{m.expense_form_receipt_confidential_label()}

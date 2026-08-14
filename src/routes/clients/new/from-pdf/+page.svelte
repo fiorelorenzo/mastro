@@ -11,7 +11,7 @@
 	 * boundary — the same one `/invoices/propose` already uses.
 	 */
 	import * as m from '$lib/paraglide/messages';
-	import { Banner, Button, Field, FileInput } from '$lib/design';
+	import { Banner, Button, Field, DropZone } from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
 	import type { ActionData, PageProps } from './$types';
 
@@ -29,7 +29,7 @@
 
 	<form method="POST" enctype="multipart/form-data" class="form">
 		<Field label={m.client_new_from_pdf_file_label()} required>
-			<FileInput
+			<DropZone
 				name="file"
 				label={m.client_new_from_pdf_file_button()}
 				accept=".pdf,application/pdf"

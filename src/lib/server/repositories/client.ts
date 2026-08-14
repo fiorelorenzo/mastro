@@ -37,20 +37,15 @@ export async function listClients() {
 	});
 }
 
-export async function getClientWithContacts(id: string) {
-	return db.query.client.findFirst({
+/** `executor`, when given, lets a caller compose this read with other
+ * writes inside its own transaction (#86's contract-review accept
+ * dispatcher, resolving a linked client's current row before applying any
+ * selected updates) rather than always reading through the pool. */
+export async function getClientWithContacts(id: string, executor: DbExecutor = db) {
+	return executor.query.client.findFirst({
 		where: eq(client.id, id),
 		with: { contacts: true }
 	});
-}
-
-/** Looks a client up by its unique tax id — the same key #259 already
- * cites for import matching (`client.ts`'s own schema comment). Used by
- * #86's contract-from-PDF accept dispatcher to find-or-create the client
- * a first-intake contract names, rather than creating a duplicate row
- * every time the same counterparty's next contract is proposed. */
-export async function getClientByTaxId(taxId: string, executor: DbExecutor = db) {
-	return executor.query.client.findFirst({ where: eq(client.taxId, taxId) });
 }
 
 /** `tx`, if given, is used directly instead of opening a new transaction
@@ -73,16 +68,21 @@ export async function createClient(input: ClientInput, tx?: DbExecutor) {
 /** Replaces the client's contacts wholesale rather than diffing them: the
  * edit form has no stable client-side identity for a contact row to diff
  * against, and the table has no history worth preserving row by row. */
-export async function updateClient(id: string, input: ClientInput) {
+export async function updateClient(id: string, input: ClientInput, tx?: DbExecutor) {
 	const { contacts, ...clientFields } = input;
-	return db.transaction(async (tx) => {
-		const [row] = await tx.update(client).set(clientFields).where(eq(client.id, id)).returning();
-		await tx.delete(clientContact).where(eq(clientContact.clientId, id));
+	const run = async (executor: DbExecutor) => {
+		const [row] = await executor
+			.update(client)
+			.set(clientFields)
+			.where(eq(client.id, id))
+			.returning();
+		await executor.delete(clientContact).where(eq(clientContact.clientId, id));
 		if (contacts.length > 0) {
-			await tx
+			await executor
 				.insert(clientContact)
 				.values(contacts.map((contact) => ({ ...contact, clientId: id })));
 		}
 		return row;
-	});
+	};
+	return tx ? run(tx) : db.transaction(run);
 }

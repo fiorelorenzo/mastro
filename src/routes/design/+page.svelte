@@ -38,10 +38,10 @@
 		type WorkUnitStateValue
 	} from '$lib/design/day-state-badge';
 	import Dialog from '$lib/design/Dialog.svelte';
+	import DropZone from '$lib/design/DropZone.svelte';
 	import EmptyState from '$lib/design/EmptyState.svelte';
 	import ErrorState from '$lib/design/ErrorState.svelte';
 	import Field from '$lib/design/Field.svelte';
-	import FileInput from '$lib/design/FileInput.svelte';
 	import Input from '$lib/design/Input.svelte';
 	import KeyboardHint from '$lib/design/KeyboardHint.svelte';
 	import Radio from '$lib/design/Radio.svelte';
@@ -254,6 +254,12 @@
 	let demoFilesError = $state<FileList | null>(null);
 	let demoFilesDisabled = $state<FileList | null>(null);
 	let demoFilesChosen = $state<FileList | null>(null);
+	let demoFilesMultiple = $state<FileList | null>(null);
+	let demoFilesRejected = $state<FileList | null>(null);
+	// The target for a synthetic `drop` below — a real DOM node, not a
+	// stand-in, since the point is exercising DropZone's own `ondrop`
+	// handler exactly as a browser would.
+	let rejectedZoneEl = $state<HTMLDivElement | undefined>(undefined);
 	let demoAmountInputDefault = $state('850');
 	let demoAmountInputRequired = $state('');
 	let demoAmountInputError = $state('12,34,56');
@@ -262,13 +268,44 @@
 	// A real FileList cannot be constructed from a plain object — DataTransfer
 	// is the one browser API that produces one outside an actual file picker,
 	// client-side only, hence the effect rather than a module-level constant.
-	// Demonstrates FileInput's `chosen` filename display, the one state a
-	// picker with no file selected cannot show.
+	// Demonstrates DropZone's chosen-files list, the one state a picker with
+	// nothing selected cannot show.
 	$effect(() => {
 		if (typeof DataTransfer === 'undefined' || typeof File === 'undefined') return;
+		const chosenTransfer = new DataTransfer();
+		chosenTransfer.items.add(new File(['date,hours'], 'days-august.csv', { type: 'text/csv' }));
+		demoFilesChosen = chosenTransfer.files;
+
+		const multipleTransfer = new DataTransfer();
+		multipleTransfer.items.add(new File(['date,hours'], 'days-august.csv', { type: 'text/csv' }));
+		multipleTransfer.items.add(
+			new File(['date,hours'], 'days-september.csv', { type: 'text/csv' })
+		);
+		demoFilesMultiple = multipleTransfer.files;
+	});
+
+	// The "rejected" state is reachable only by an actual drop — there is no
+	// prop that fakes it, since the whole point is that `accept` mismatches
+	// are refused by real drag-and-drop handling, not by a flag someone
+	// remembered to pass. So this dispatches a real `DragEvent` at the
+	// rendered zone once it exists, carrying a wrong-typed file, and lets
+	// DropZone's own `ondrop` handler refuse it exactly as it would for a
+	// visitor's drag.
+	$effect(() => {
+		if (
+			typeof DataTransfer === 'undefined' ||
+			typeof File === 'undefined' ||
+			typeof DragEvent === 'undefined' ||
+			!rejectedZoneEl
+		)
+			return;
+		const target = rejectedZoneEl.querySelector('.surface');
+		if (!target) return;
 		const transfer = new DataTransfer();
-		transfer.items.add(new File(['date,hours'], 'days-august.csv', { type: 'text/csv' }));
-		demoFilesChosen = transfer.files;
+		transfer.items.add(new File(['not a pdf'], 'notes.docx', { type: 'application/msword' }));
+		target.dispatchEvent(
+			new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer })
+		);
 	});
 
 	// ── money — Amount's three sizes, a negative (credit) figure, and the
@@ -487,8 +524,8 @@
 		<p class="lede">
 			Every control below reads its id, <code>aria-invalid</code> and
 			<code>aria-describedby</code> off an ancestor <code>Field</code> automatically (field-context.ts)
-			— nothing here spreads those by hand. Checkbox, Radio and FileInput own their id/aria wiring directly
-			instead, since their label sits beside the control rather than above it.
+			— nothing here spreads those by hand. Checkbox and Radio own their id/aria wiring directly instead,
+			since their label sits beside the control rather than above it.
 		</p>
 
 		<h3>Input</h3>
@@ -685,36 +722,52 @@
 			</div>
 		</div>
 
-		<h3>File input</h3>
+		<h3>Drop zone</h3>
 		<div class="control-grid">
 			<div>
 				<span class="state-label">Default</span>
 				<Field label="Import file"
-					><FileInput label="Choose file" bind:files={demoFilesDefault} /></Field
+					><DropZone label="Choose file" bind:files={demoFilesDefault} /></Field
 				>
 			</div>
 			<div>
 				<span class="state-label">Required</span>
 				<Field label="Import file" required>
-					<FileInput label="Choose file" bind:files={demoFilesRequired} required />
+					<DropZone label="Choose file" bind:files={demoFilesRequired} required />
 				</Field>
 			</div>
 			<div>
 				<span class="state-label">Error</span>
 				<Field label="Import file" error="Choose a CSV file.">
-					<FileInput label="Choose file" bind:files={demoFilesError} />
+					<DropZone label="Choose file" bind:files={demoFilesError} />
 				</Field>
 			</div>
 			<div>
 				<span class="state-label">Disabled</span>
 				<Field label="Import file">
-					<FileInput label="Choose file" bind:files={demoFilesDisabled} disabled />
+					<DropZone label="Choose file" bind:files={demoFilesDisabled} disabled />
 				</Field>
 			</div>
 			<div>
 				<span class="state-label">Chosen</span>
 				<Field label="Import file"
-					><FileInput label="Choose file" bind:files={demoFilesChosen} /></Field
+					><DropZone label="Choose file" bind:files={demoFilesChosen} /></Field
+				>
+			</div>
+			<div>
+				<span class="state-label">Multiple, chosen</span>
+				<Field label="Days export"
+					><DropZone label="Choose files" multiple bind:files={demoFilesMultiple} /></Field
+				>
+			</div>
+			<div bind:this={rejectedZoneEl}>
+				<span class="state-label">Rejected (wrong type dropped)</span>
+				<Field label="Contract PDF"
+					><DropZone
+						label="Choose file"
+						accept=".pdf,application/pdf"
+						bind:files={demoFilesRejected}
+					/></Field
 				>
 			</div>
 		</div>

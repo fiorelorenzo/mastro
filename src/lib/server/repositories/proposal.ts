@@ -43,7 +43,7 @@ import {
 } from '../agent/contract-extraction';
 import { createApprovalForDocument } from './approval';
 import { createClauseNote } from './clause-note';
-import { createClient, getClientByTaxId } from './client';
+import { createClient, getClientWithContacts, updateClient, type ClientInput } from './client';
 import { createContract } from './contract';
 import { claimDocumentForContract, getDocument, readDocumentBytes } from './document';
 import { getInboundThreadForDocument } from './inbound-thread';
@@ -530,6 +530,64 @@ async function approvalForDocument(
 }
 
 /**
+ * What the reviewer decided the client behind a first-intake contract is
+ * (design: "where a client comes from when a document names one") — data
+ * `applyProposal`'s `'contract'` case performs rather than guesses. The
+ * screen always sends one of these two shapes; there is no third "do
+ * nothing" option, because invariant 3 requires an explicit human choice,
+ * not a default.
+ *
+ * `'existing'.updates` carries only the fields the reviewer actually
+ * ticked to adopt from the document — unchecked by default, so a changed
+ * registered address never reaches the client row merely because a PDF
+ * asserted it (the risk this whole section exists to close).
+ */
+export type ClientChoice =
+	| { kind: 'existing'; clientId: string; updates: Partial<ClientInput> }
+	| { kind: 'new'; fields: ClientInput };
+
+/** Performs a `ClientChoice`: links (and optionally patches) the client
+ * the reviewer picked, or creates the one they typed — the only two ways
+ * `applyProposal`'s `'contract'` case is allowed to decide whose contract
+ * this is. An empty `updates` object skips the write entirely rather than
+ * issuing a no-op UPDATE, so "link an existing client and leave it
+ * untouched" really does leave it untouched, `updated_at` included. */
+async function resolveClientChoice(proposalId: string, choice: ClientChoice, executor: DbExecutor) {
+	if (choice.kind === 'new') {
+		return createClient(choice.fields, executor);
+	}
+	const existing = await getClientWithContacts(choice.clientId, executor);
+	if (!existing) {
+		throw new Error(
+			`proposal ${proposalId} chose client ${choice.clientId}, which no longer exists`
+		);
+	}
+	if (Object.keys(choice.updates).length === 0) return existing;
+	const currentInput: ClientInput = {
+		legalName: existing.legalName,
+		taxId: existing.taxId,
+		vatId: existing.vatId,
+		country: existing.country,
+		addressLine1: existing.addressLine1,
+		addressLine2: existing.addressLine2,
+		addressCity: existing.addressCity,
+		addressPostalCode: existing.addressPostalCode,
+		addressRegion: existing.addressRegion,
+		noticeChannel: existing.noticeChannel,
+		sdiCode: existing.sdiCode,
+		pecAddress: existing.pecAddress,
+		contacts: existing.contacts.map((contact) => ({
+			name: contact.name,
+			email: contact.email,
+			phone: contact.phone,
+			role: contact.role,
+			canApprove: contact.canApprove
+		}))
+	};
+	return updateClient(choice.clientId, { ...currentInput, ...choice.updates }, executor);
+}
+
+/**
  * Writes the row `row`'s target type produces, through that type's own
  * repository function and its own database triggers — the literal
  * mechanism behind invariant 3's "no bypass". Returns the new row's id, to
@@ -544,7 +602,8 @@ async function approvalForDocument(
 async function applyProposal(
 	row: ProposalRow,
 	fields: Record<string, unknown>,
-	executor: DbExecutor
+	executor: DbExecutor,
+	clientChoice: ClientChoice | null
 ): Promise<string> {
 	switch (row.targetType) {
 		case 'work_unit': {
@@ -602,33 +661,16 @@ async function applyProposal(
 			const candidate = parseExtractedContract(fields);
 			const c = candidate.contract;
 
-			const existingClient = await getClientByTaxId(candidate.client.taxId, executor);
-			const clientRow =
-				existingClient ??
-				(await createClient(
-					{
-						legalName: candidate.client.legalName,
-						taxId: candidate.client.taxId,
-						vatId: candidate.client.vatId,
-						country: candidate.client.country,
-						addressLine1: candidate.client.addressLine1,
-						addressLine2: candidate.client.addressLine2,
-						addressCity: candidate.client.addressCity,
-						addressPostalCode: candidate.client.addressPostalCode,
-						addressRegion: candidate.client.addressRegion,
-						// A contract's own letterhead never carries a notice
-						// channel or an SdI routing code. This used to default
-						// to `email`, which asserted a legal fact nobody had
-						// agreed; the column is nullable since migration 0056,
-						// so it stays empty until somebody sets it from the
-						// client's own screen.
-						noticeChannel: null,
-						sdiCode: null,
-						pecAddress: null,
-						contacts: []
-					},
-					executor
-				));
+			// Not a structural fact `fields` itself carries (`clauseFlags`
+			// and the rest come off the document; who the client is comes
+			// off the reviewer) — same reason `work_unit`/`invoice` check
+			// `row.contractId` here rather than in `proposalValidationError`.
+			if (clientChoice === null) {
+				throw new Error(
+					`proposal ${row.id} has no client choice, which a contract target requires`
+				);
+			}
+			const clientRow = await resolveClientChoice(row.id, clientChoice, executor);
 
 			const contractRow = await createContract(
 				{
@@ -695,6 +737,11 @@ export type AcceptProposalInput = {
 	 * `resultId`'s row itself recording `{kind: 'agent', proposalReference}`
 	 * as the provenance of its *values*. */
 	decidedBy: string;
+	/** The reviewer's explicit decision about the client behind a
+	 * `'contract'` proposal (design: "the client behind an extracted
+	 * contract is always an explicit choice") — required for that target
+	 * type, ignored for every other one. */
+	clientChoice?: ClientChoice;
 };
 
 /**
@@ -739,7 +786,7 @@ export async function acceptProposal(
 		if (validationError !== null) {
 			throw new Error(`proposal ${id} cannot be accepted as proposed: ${validationError}`);
 		}
-		const resultId = await applyProposal(row, acceptedFields, executor);
+		const resultId = await applyProposal(row, acceptedFields, executor, input.clientChoice ?? null);
 
 		const [updated] = await executor
 			.update(proposal)
