@@ -12,7 +12,6 @@
 // never preferred over it when both exist. This module has no opinion on
 // that ordering; it only ever runs on a PDF nothing else already claimed.
 
-import { PDFParse } from 'pdf-parse';
 import { createProposal, type ProposalRow } from '$lib/server/repositories/proposal';
 import type { DbExecutor } from '$lib/server/db';
 import type { ProposalCandidate } from '$lib/server/runner/types';
@@ -59,6 +58,15 @@ export interface InvoiceProposalOutcome {
  * a PDF library, so the conversion happens here, before the request ever
  * reaches it. */
 export async function extractPdfText(bytes: Uint8Array): Promise<string> {
+	// Imported here, not at module scope. `pdf-parse` wraps pdfjs, whose
+	// own module body touches DOM globals Node does not have, so a static
+	// import made *loading this file* throw `DOMMatrix is not defined` in a
+	// production bundle — and this file is reached from `drain.ts`, so the
+	// whole `/api/agent/run` route 500'd on every scheduler tick and the
+	// ingestion loop was dead in production while every test stayed green.
+	// A lazy import keeps the failure where it belongs: on the one action
+	// that actually needs to read a PDF.
+	const { PDFParse } = await import('pdf-parse');
 	const parser = new PDFParse({ data: bytes });
 	try {
 		const { text } = await parser.getText();
