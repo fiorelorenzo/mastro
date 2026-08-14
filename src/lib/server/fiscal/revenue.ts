@@ -3,7 +3,7 @@
 // open transaction (`DbExecutor`), so tests can run inside the transaction
 // they are about to roll back — the same pattern `fiscal/profile.ts` sets.
 
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, ne } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import { contract, invoice, payment } from '$lib/server/db/schema';
 import { defaultRegistry, type PackRegistry } from './registry';
@@ -36,7 +36,15 @@ import {
  * corrects an *under*-billed amount. This is the one query that
  * assembles a `LedgerRow`; every ledger, ceiling, certainty and forecast
  * figure reads through it, never the raw table again — so the sign flip
- * lives here once, not once per caller.
+ * lives here once, not once per caller. The same reasoning is why the
+ * `rejected` exclusion (#261) lives in this one query's own WHERE clause
+ * rather than at each of those call sites: SdI's own rule for a scarto
+ * invoice is that it "non è mai stata emessa"
+ * (`docs/specs/2026-08-14-electronic-invoicing.md` §3) — it drops out of
+ * every revenue figure, cash and accrual alike, without its row ever
+ * being deleted (`transmission_status` is the derived fact, the uploaded
+ * receipt the evidence — invariant 4), and returns the moment a
+ * corrected resubmission is marked `transmitted` again.
  *
  * `payments` (#212) are recorded against `invoice.total` — the gross,
  * VAT-and-stamp-duty-inclusive figure a client actually pays — but this
@@ -61,7 +69,8 @@ export async function fetchLedgerRows(executor: DbExecutor = db): Promise<Ledger
 			total: invoice.total
 		})
 		.from(invoice)
-		.innerJoin(contract, eq(invoice.contractId, contract.id));
+		.innerJoin(contract, eq(invoice.contractId, contract.id))
+		.where(ne(invoice.transmissionStatus, 'rejected'));
 
 	const paymentRows = await executor
 		.select({ invoiceId: payment.invoiceId, date: payment.date, amount: payment.amount })

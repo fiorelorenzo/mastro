@@ -17,11 +17,18 @@ import {
 	getInvoiceDocuments,
 	getInvoiceWithLines,
 	listPaymentsForInvoice,
+	markInvoiceTransmitted,
+	recordInvoiceReceipt,
 	recordPayment
 } from '$lib/server/repositories/invoice';
 import { listRateCards } from '$lib/server/repositories/rate-card';
 import { getPracticeProfile } from '$lib/server/repositories/practice-profile';
 import { listSentEmailsForInvoice } from '$lib/server/repositories/sent-email';
+import {
+	disputeWorkUnit,
+	getWorkUnit,
+	resolveWorkUnitDispute
+} from '$lib/server/repositories/work-unit';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
@@ -124,6 +131,16 @@ export const load: PageServerLoad = async ({ params }) => {
 	};
 };
 
+/** Reads `formData.get('file')` as an uploaded receipt (#261) — the same
+ *  file-required validation `invoices/propose`'s own action already
+ *  uses, generalised past PDF since a scarto/RC receipt can arrive as
+ *  anything SdI or a PEC provider hands back. */
+async function readReceiptFile(request: Request): Promise<File | null> {
+	const formData = await request.formData();
+	const file = formData.get('file');
+	return file instanceof File && file.size > 0 ? file : null;
+}
+
 export const actions: Actions = {
 	// One form, in the Payment card, always visible (#239's "buries the
 	// one consequential action") — amount, date, method and reference
@@ -191,6 +208,160 @@ export const actions: Actions = {
 		} catch (err) {
 			const reason = err instanceof Error ? err.message : String(err);
 			return fail(400, { fatturaError: m.invoice_detail_fattura_generation_failed({ reason }) });
+		}
+		redirect(303, `/invoices/${params.id}`);
+	},
+
+	// Marks this invoice transmitted by hand (#261): legal only from
+	// `generated` (first transmission) or `rejected` (a corrected
+	// resubmission) — `invoice_enforce_transmission_status` rejects any
+	// other starting state, surfaced here as a form error rather than a
+	// 500.
+	markTransmitted: async ({ request, params }) => {
+		const invoiceRow = await getInvoiceWithLines(params.id);
+		if (!invoiceRow) error(404, m.invoice_not_found());
+
+		const formData = await request.formData();
+		const transmissionId = String(formData.get('transmissionId') ?? '').trim();
+		if (!transmissionId) {
+			return fail(400, { transmissionError: m.invoice_validation_transmission_id_required() });
+		}
+
+		try {
+			await markInvoiceTransmitted(params.id, transmissionId);
+		} catch (err) {
+			const reason = err instanceof Error ? err.message : String(err);
+			return fail(400, {
+				transmissionError: m.invoice_detail_transmission_transition_failed({ reason })
+			});
+		}
+		redirect(303, `/invoices/${params.id}`);
+	},
+
+	// SdI's ricevuta di consegna / impossibilità di recapito (#261): the
+	// uploaded file is what invariant 4 asks for — the receipt itself,
+	// archived as a `document`, not just its outcome typed in — and
+	// `recordInvoiceReceipt` writes it and the status transition in one
+	// transaction so neither can land without the other.
+	acceptReceipt: async ({ request, params }) => {
+		const invoiceRow = await getInvoiceWithLines(params.id);
+		if (!invoiceRow) error(404, m.invoice_not_found());
+
+		const file = await readReceiptFile(request);
+		if (!file) return fail(400, { receiptError: m.invoice_validation_receipt_file_required() });
+
+		try {
+			await recordInvoiceReceipt(invoiceRow.id, invoiceRow.contractId, {
+				outcome: 'accepted',
+				bytes: new Uint8Array(await file.arrayBuffer()),
+				mime: file.type || 'application/octet-stream',
+				originalName: file.name
+			});
+		} catch (err) {
+			const reason = err instanceof Error ? err.message : String(err);
+			return fail(400, {
+				receiptError: m.invoice_detail_transmission_transition_failed({ reason })
+			});
+		}
+		redirect(303, `/invoices/${params.id}`);
+	},
+
+	// SdI's notifica di scarto (#261): same shape as `acceptReceipt`, the
+	// other legal destination from `transmitted`. `recordInvoiceReceipt`
+	// moves `transmissionStatus` to `rejected`, which is the one write
+	// path that pulls this invoice out of `fetchLedgerRows` (#261's own
+	// acceptance) — never a second, separate "exclude from revenue" step.
+	rejectReceipt: async ({ request, params }) => {
+		const invoiceRow = await getInvoiceWithLines(params.id);
+		if (!invoiceRow) error(404, m.invoice_not_found());
+
+		const file = await readReceiptFile(request);
+		if (!file) return fail(400, { receiptError: m.invoice_validation_receipt_file_required() });
+
+		try {
+			await recordInvoiceReceipt(invoiceRow.id, invoiceRow.contractId, {
+				outcome: 'rejected',
+				bytes: new Uint8Array(await file.arrayBuffer()),
+				mime: file.type || 'application/octet-stream',
+				originalName: file.name
+			});
+		} catch (err) {
+			const reason = err instanceof Error ? err.message : String(err);
+			return fail(400, {
+				receiptError: m.invoice_detail_transmission_transition_failed({ reason })
+			});
+		}
+		redirect(303, `/invoices/${params.id}`);
+	},
+
+	// #214's path in, from an invoice line's own day row rather than the
+	// day detail page — same underlying transition (`disputeWorkUnit`).
+	// `workUnitId` names which day on this invoice; a missing or unknown
+	// one is a broken request, not a form the user can correct, so it 404s
+	// rather than reopening the dialog. Legal only from `invoiced` — the
+	// database trigger enforces that, surfaced here as a form error rather
+	// than a 500, the same shape `markTransmitted` already uses.
+	dispute: async ({ request, params, locals }) => {
+		const formData = await request.formData();
+		const workUnitId = String(formData.get('workUnitId') ?? '').trim();
+		const reason = String(formData.get('reason') ?? '').trim();
+
+		const workUnit = workUnitId ? await getWorkUnit(workUnitId) : undefined;
+		if (!workUnit) error(404, m.day_detail_not_found());
+
+		if (!reason) {
+			return fail(400, {
+				disputeError: m.invoice_detail_dispute_reason_required(),
+				workUnitId,
+				reason
+			});
+		}
+
+		try {
+			await disputeWorkUnit(workUnitId, { kind: 'human', email: locals.user!.email }, reason);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			return fail(400, {
+				disputeError: m.invoice_detail_dispute_transition_failed({ reason: message }),
+				workUnitId,
+				reason
+			});
+		}
+		redirect(303, `/invoices/${params.id}`);
+	},
+
+	// #214's way out, from the same day row: `disputed -> invoiced`.
+	resolveDispute: async ({ request, params, locals }) => {
+		const formData = await request.formData();
+		const workUnitId = String(formData.get('workUnitId') ?? '').trim();
+		const reason = String(formData.get('reason') ?? '').trim();
+
+		const workUnit = workUnitId ? await getWorkUnit(workUnitId) : undefined;
+		if (!workUnit) error(404, m.day_detail_not_found());
+
+		if (!reason) {
+			return fail(400, {
+				resolveDisputeError: m.invoice_detail_resolve_dispute_reason_required(),
+				workUnitId,
+				reason
+			});
+		}
+
+		try {
+			await resolveWorkUnitDispute(
+				workUnitId,
+				{ kind: 'human', email: locals.user!.email },
+				reason
+			);
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			return fail(400, {
+				resolveDisputeError: m.invoice_detail_resolve_dispute_transition_failed({
+					reason: message
+				}),
+				workUnitId,
+				reason
+			});
 		}
 		redirect(303, `/invoices/${params.id}`);
 	}

@@ -1,6 +1,7 @@
 import * as m from '$lib/paraglide/messages';
 import { formatDays } from '$lib/i18n/format';
-import type { StatusLevel } from '$lib/design';
+import type { BadgeVariant, StatusLevel } from '$lib/design';
+import type { InvoiceTransmissionStatus } from '$lib/server/db/schema';
 
 /**
  * The ageing chip for an unpaid invoice (#29). Never colour alone: `level`
@@ -77,4 +78,36 @@ export function invoiceStatus(
 ): { level: StatusLevel; label: string } {
 	if (settledOn !== null) return { level: 'good', label: m.invoice_day_status_paid() };
 	return ageingStatus(daysLate);
+}
+
+/**
+ * The transmission-status badge for the invoice detail page's own block
+ * (#261) — `BadgeVariant`, not `StatusLevel`: `generated` and
+ * `transmitted` are informational stages, not a two-tone
+ * good/bad reading like ageing, so they need `neutral`/`info` on top of
+ * the `good`/`critical` `StatusLevel` scale already covers for
+ * `accepted`/`rejected`.
+ */
+const TRANSMISSION_STATUS_VARIANT: Readonly<Record<InvoiceTransmissionStatus, BadgeVariant>> = {
+	generated: 'neutral',
+	transmitted: 'info',
+	accepted: 'good',
+	rejected: 'critical'
+};
+
+const TRANSMISSION_STATUS_LABEL: Readonly<Record<InvoiceTransmissionStatus, () => string>> = {
+	generated: () => m.invoice_transmission_status_generated(),
+	transmitted: () => m.invoice_transmission_status_transmitted(),
+	accepted: () => m.invoice_transmission_status_accepted(),
+	rejected: () => m.invoice_transmission_status_rejected()
+};
+
+export function transmissionStatusBadge(status: InvoiceTransmissionStatus): {
+	variant: BadgeVariant;
+	label: string;
+} {
+	return {
+		variant: TRANSMISSION_STATUS_VARIANT[status],
+		label: TRANSMISSION_STATUS_LABEL[status]()
+	};
 }

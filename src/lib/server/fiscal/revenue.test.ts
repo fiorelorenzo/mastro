@@ -2,14 +2,23 @@
 // works inside a transaction it rolls back, same pattern as
 // `profile.test.ts`.
 
-import { afterAll, expect, test } from 'vitest';
+import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, type DbExecutor } from '$lib/server/db';
 import { minorUnits } from '$lib/money';
 import { client, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { fiscalProfile } from '$lib/server/db/schema/fiscal';
-import { createInvoice, recordPayment, type InvoiceInput } from '$lib/server/repositories/invoice';
+import {
+	createInvoice,
+	markInvoiceTransmitted,
+	recordInvoiceReceipt,
+	recordPayment,
+	type InvoiceInput
+} from '$lib/server/repositories/invoice';
 import { fetchClientRevenueBreakdown, fetchLedgerRows, fetchRevenueOverRange } from './revenue';
 import { buildRegistry, type PackRegistry } from './registry';
 import type { FiscalPack } from './pack';
@@ -203,6 +212,68 @@ test('fetchLedgerRows carries both dates, payments empty until collected', async
 		const row = afterPayment.find((r) => r.invoiceId === invoiceRow.id);
 		expect(row?.payments).toEqual([{ date: '2024-07-05', amount: invoiceRow.total }]);
 		expect(row?.issueDate).toBe('2024-06-01');
+	});
+});
+
+// #261: SdI's own rule is that a scarto invoice "non è mai stata emessa" —
+// `fetchLedgerRows` is the one place every ledger, ceiling, certainty and
+// forecast figure reads (this file's own header comment), so excluding a
+// `rejected` invoice there is provably the one exclusion point, without
+// ever deleting the row. Receipt uploads go through the real blob store
+// against a throwaway temp directory, same pattern as
+// `fiscal/generate-invoice-document.test.ts`.
+let rejectionReceiptRoot: string;
+
+beforeEach(async () => {
+	rejectionReceiptRoot = await mkdtemp(join(tmpdir(), 'mastro-rejection-receipts-'));
+	process.env.DOCUMENT_STORAGE_ROOT = rejectionReceiptRoot;
+});
+
+afterEach(async () => {
+	delete process.env.DOCUMENT_STORAGE_ROOT;
+	await rm(rejectionReceiptRoot, { recursive: true, force: true });
+});
+
+test('fetchLedgerRows drops a rejected invoice from revenue without deleting it, and a resubmission restores it (#261)', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow } = await insertContract(tx);
+		const invoiceRow = await createInvoice(
+			invoiceInput(contractRow.id),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+		await markInvoiceTransmitted(invoiceRow.id, 'SDI-LEDGER-1', tx);
+
+		const beforeRejection = await fetchLedgerRows(tx);
+		expect(beforeRejection.find((r) => r.invoiceId === invoiceRow.id)?.amount).toBe(100_000);
+
+		await recordInvoiceReceipt(
+			invoiceRow.id,
+			invoiceRow.contractId,
+			{
+				outcome: 'rejected',
+				bytes: new TextEncoder().encode('<notificaScarto/>'),
+				mime: 'application/xml',
+				originalName: 'NS_LEDGER.xml'
+			},
+			tx
+		);
+
+		// The row disappears from every ledger figure — never deleted, a
+		// direct SELECT against `invoice` still finds it.
+		const afterRejection = await fetchLedgerRows(tx);
+		expect(afterRejection.find((r) => r.invoiceId === invoiceRow.id)).toBeUndefined();
+		const stillOnRecord = await tx.query.invoice.findFirst({
+			where: (row, { eq }) => eq(row.id, invoiceRow.id)
+		});
+		expect(stillOnRecord?.transmissionStatus).toBe('rejected');
+
+		// A corrected resubmission — marked `transmitted` again, same
+		// number and date — restores exactly the original figure.
+		await markInvoiceTransmitted(invoiceRow.id, 'SDI-LEDGER-1-BIS', tx);
+		const afterResubmission = await fetchLedgerRows(tx);
+		expect(afterResubmission.find((r) => r.invoiceId === invoiceRow.id)?.amount).toBe(100_000);
 	});
 });
 

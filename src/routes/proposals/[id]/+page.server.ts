@@ -1,14 +1,40 @@
-// The proposal review screen (#243): the evidence — the archived message
-// in full, the matched sentence marked — is the heavier half, the
-// proposed fields the lighter one, exactly the shape #243's brief asks
-// for. Pending proposals from the same document are siblings a reviewer
-// steps through in order; accepted/rejected ones render the same layout
-// read-only, with the day it created linked once it exists.
+// The proposal review screen (#243, #86): the evidence — the archived
+// message or PDF in full, the matched excerpt marked — is the heavier
+// half, the proposed fields the lighter one. A `work_unit` proposal's
+// fields are flat (`editedFieldsFromForm` below); a `contract` or
+// `invoice` proposal's are not, so each gets its own reconstruction —
+// `contractEditsFromForm` rebuilds the nested `client`/`contract`/
+// `clauseFlags` objects `acceptProposal` expects, `invoiceFieldsFromProposal`
+// only narrows for display since an invoice proposal is never edited here
+// (#86's own comment: rendering, not a second producer). Pending proposals
+// from the same document are siblings a reviewer steps through in order;
+// accepted/rejected ones render the same layout read-only, with the day,
+// contract or invoice it created linked once it exists.
 import { error, fail } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
+import { getLocale } from '$lib/paraglide/runtime';
 import { proposalsCrumbs } from '$lib/nav/crumbs';
+import { minorUnits } from '$lib/money';
+import {
+	parseExtractedContract,
+	type ExtractedClauseFlag,
+	type ExtractedClient,
+	type ExtractedContractCandidate,
+	type ExtractedContractFields
+} from '$lib/server/agent/contract-extraction';
+import type {
+	InvoiceProposedFields,
+	ValidatedInvoiceLine
+} from '$lib/server/agent/invoice-extraction';
+import type {
+	ContractRenewalType,
+	ExpensePolicy,
+	InvoicingCadence,
+	PaymentTerms
+} from '$lib/server/db/schema';
 import { decodeMessageBody, parseMessage } from '$lib/server/mail/headers';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
+import { decimalStringToMinorUnits } from '$lib/server/import/decimal';
 import { getContractWithClient } from '$lib/server/repositories/contract';
 import {
 	getDocument,
@@ -35,7 +61,10 @@ import type { Actions, PageServerLoad } from './$types';
  * raw string instead of guessing: `acceptProposal`'s own dispatcher then
  * rejects it with a clear type error rather than writing a silently wrong
  * value (a blank quantity becoming `0`, or worse, `NaN` slipping past a
- * `> 0` database check that treats `NaN` as greater than everything). */
+ * `> 0` database check that treats `NaN` as greater than everything).
+ * `work_unit`'s own fields are flat, so this stays the one place a plain
+ * top-level merge is correct — `contractEditsFromForm` below is why it is
+ * not reused for `'contract'`. */
 function editedFieldsFromForm(
 	proposedFields: Record<string, unknown>,
 	formData: FormData
@@ -73,6 +102,211 @@ function workUnitFields(
 	return { date, quantity, scope, notes: typeof notes === 'string' ? notes : null };
 }
 
+/** `fields` read as an `ExtractedContractCandidate` for display — the same
+ * parser `proposalValidationError`'s 'contract' case
+ * (`repositories/proposal.ts`) already runs, reused rather than
+ * duplicated so this screen and the accept dispatcher never disagree
+ * about the shape. `null` only for a row whose `proposedFields` do not
+ * even parse (a malformed producer run) — the template falls back to the
+ * generic per-field list in that case rather than crashing. */
+function contractCandidateFromProposal(
+	fields: Record<string, unknown>
+): ExtractedContractCandidate | null {
+	try {
+		return parseExtractedContract(fields);
+	} catch {
+		return null;
+	}
+}
+
+/** `fields` read as `InvoiceProposedFields` for display — a narrowing
+ * guard rather than a shared parser, since `invoiceInputFromFields`
+ * (`repositories/proposal.ts`) is module-private and this screen never
+ * edits an invoice proposal's own fields (#86's brief: render number,
+ * date, client, lines and totals, nothing more). `null` for a row whose
+ * `proposedFields` don't match — the template falls back to the generic
+ * per-field list. */
+function invoiceFieldsFromProposal(fields: Record<string, unknown>): InvoiceProposedFields | null {
+	const {
+		number,
+		issueDate,
+		dueDate,
+		clientName,
+		currency,
+		lines,
+		taxableAmount,
+		taxAmount,
+		total
+	} = fields;
+	if (
+		typeof number !== 'string' ||
+		typeof issueDate !== 'string' ||
+		typeof clientName !== 'string'
+	) {
+		return null;
+	}
+	if (dueDate !== null && typeof dueDate !== 'string') return null;
+	if (typeof currency !== 'string' || !Array.isArray(lines)) return null;
+	if (
+		typeof taxableAmount !== 'number' ||
+		typeof taxAmount !== 'number' ||
+		typeof total !== 'number'
+	) {
+		return null;
+	}
+	const validatedLines: ValidatedInvoiceLine[] = [];
+	for (const raw of lines) {
+		if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+		const { description, quantity, unitPrice, amount, taxRate } = raw as Record<string, unknown>;
+		if (
+			typeof description !== 'string' ||
+			typeof quantity !== 'number' ||
+			typeof unitPrice !== 'number' ||
+			typeof amount !== 'number' ||
+			typeof taxRate !== 'number'
+		) {
+			return null;
+		}
+		try {
+			validatedLines.push({
+				description,
+				quantity,
+				unitPrice: minorUnits(unitPrice),
+				amount: minorUnits(amount),
+				taxRate
+			});
+		} catch {
+			return null;
+		}
+	}
+	try {
+		return {
+			number,
+			issueDate,
+			dueDate,
+			clientName,
+			currency,
+			lines: validatedLines,
+			taxableAmount: minorUnits(taxableAmount),
+			taxAmount: minorUnits(taxAmount),
+			total: minorUnits(total)
+		};
+	} catch {
+		return null;
+	}
+}
+
+function stringField(formData: FormData, name: string): string {
+	return String(formData.get(name) ?? '').trim();
+}
+
+function optionalStringField(formData: FormData, name: string): string | null {
+	const value = stringField(formData, name);
+	return value.length > 0 ? value : null;
+}
+
+/**
+ * Rebuilds `client`, `contract` and `clauseFlags` from the review screen's
+ * own submission — the `'contract'` counterpart of `editedFieldsFromForm`
+ * above. Those three are nested objects, not flat top-level keys, so
+ * `acceptProposal`'s shallow `{...proposedFields, ...edits}` merge needs
+ * each one rebuilt whole rather than patched key by key; `candidate`
+ * supplies the fallback for any field the form did not carry (a
+ * conditionally-hidden one, e.g. `renewalNoticeDays` when `renewalType` is
+ * `'none'`, correctly comes back `null` rather than falling back — see the
+ * template's own conditional rendering). Every reading choice
+ * (`clauseFlags.{index}.interpretationAdopted`) is required by the
+ * template before Accept renders enabled, but a value is still read
+ * defensively here, since the true gate is `proposalValidationError`
+ * inside `acceptProposal`, not this screen's JavaScript.
+ */
+function contractEditsFromForm(
+	candidate: ExtractedContractCandidate,
+	formData: FormData
+): {
+	client: ExtractedClient;
+	contract: ExtractedContractFields;
+	clauseFlags: ExtractedClauseFlag[];
+} {
+	const client: ExtractedClient = {
+		legalName: stringField(formData, 'client.legalName') || candidate.client.legalName,
+		taxId: stringField(formData, 'client.taxId') || candidate.client.taxId,
+		vatId: optionalStringField(formData, 'client.vatId'),
+		country: (stringField(formData, 'client.country') || candidate.client.country).toUpperCase(),
+		addressLine1: stringField(formData, 'client.addressLine1') || candidate.client.addressLine1,
+		addressLine2: optionalStringField(formData, 'client.addressLine2'),
+		addressCity: stringField(formData, 'client.addressCity') || candidate.client.addressCity,
+		addressPostalCode:
+			stringField(formData, 'client.addressPostalCode') || candidate.client.addressPostalCode,
+		addressRegion: optionalStringField(formData, 'client.addressRegion')
+	};
+
+	const currency = (stringField(formData, 'currency') || candidate.contract.currency).toUpperCase();
+
+	const paymentTermsKind = stringField(formData, 'paymentTermsKind');
+	const paymentTerms: PaymentTerms | null =
+		paymentTermsKind === 'net'
+			? { kind: 'net', days: Number(stringField(formData, 'paymentTermsNetDays')) }
+			: paymentTermsKind === 'day_of_month'
+				? {
+						kind: 'day_of_month',
+						day: Number(stringField(formData, 'paymentTermsDayOfMonthDay')),
+						monthOffset: 1
+					}
+				: null;
+
+	const expensePolicyKind = stringField(formData, 'expensePolicyKind');
+	const expensePolicy: ExpensePolicy | null =
+		expensePolicyKind === 'not_reimbursed'
+			? { kind: 'not_reimbursed' }
+			: expensePolicyKind === 'reimbursed_at_cost'
+				? { kind: 'reimbursed_at_cost' }
+				: expensePolicyKind === 'reimbursed_with_cap'
+					? {
+							kind: 'reimbursed_with_cap',
+							capAmount: decimalStringToMinorUnits(
+								stringField(formData, 'expensePolicyCapAmount'),
+								currency,
+								getLocale()
+							)
+						}
+					: null;
+
+	const renewalNoticeDaysRaw = stringField(formData, 'renewalNoticeDays');
+	const terminationNoticeDaysRaw = stringField(formData, 'terminationNoticeDays');
+
+	const contract: ExtractedContractFields = {
+		title: stringField(formData, 'title') || candidate.contract.title,
+		signedDocumentReference: optionalStringField(formData, 'signedDocumentReference'),
+		startsOn: stringField(formData, 'startsOn') || candidate.contract.startsOn,
+		endsOn: optionalStringField(formData, 'endsOn'),
+		renewalType: (stringField(formData, 'renewalType') || null) as ContractRenewalType | null,
+		renewalNoticeDays: renewalNoticeDaysRaw.length > 0 ? Number(renewalNoticeDaysRaw) : null,
+		terminationNoticeDays: Number(
+			terminationNoticeDaysRaw.length > 0
+				? terminationNoticeDaysRaw
+				: candidate.contract.terminationNoticeDays
+		),
+		paymentTerms,
+		invoicingCadence: (stringField(formData, 'invoicingCadence') ||
+			candidate.contract.invoicingCadence) as InvoicingCadence,
+		currency,
+		taxTreatment: optionalStringField(formData, 'taxTreatment'),
+		requiresPriorApproval: formData.has('requiresPriorApproval'),
+		requiresExpensePreAuthorisation: formData.has('requiresExpensePreAuthorisation'),
+		expensePolicy
+	};
+
+	const clauseFlags: ExtractedClauseFlag[] = candidate.clauseFlags.map((flag, index) => ({
+		...flag,
+		interpretationAdopted:
+			optionalStringField(formData, `clauseFlags.${index}.interpretationAdopted`) ??
+			flag.interpretationAdopted
+	}));
+
+	return { client, contract, clauseFlags };
+}
+
 export const load: PageServerLoad = async ({ params }) => {
 	const row = await getProposal(params.id);
 	if (!row) error(404, m.proposal_detail_not_found());
@@ -98,10 +332,37 @@ export const load: PageServerLoad = async ({ params }) => {
 			? priceWorkUnitOnDate(effectiveFields, await listRateCards(row.contractId))
 			: null;
 
+	// The fields a 'contract' or 'invoice' proposal actually shows: the
+	// proposed shape while pending (so an in-progress edit reflects what
+	// was read from the PDF), the accepted shape once decided (so a
+	// resolved clause flag's own chosen reading shows here exactly as it
+	// was recorded on the clause note) — `acceptedFields ?? proposedFields`
+	// is the same fallback the generic decided-fields view already uses.
+	const decidedFields = row.acceptedFields ?? row.proposedFields;
+	const effectiveTargetFields = row.status === 'pending' ? row.proposedFields : decidedFields;
+	const contractCandidate =
+		row.targetType === 'contract' ? contractCandidateFromProposal(effectiveTargetFields) : null;
+	const invoiceFields =
+		row.targetType === 'invoice' ? invoiceFieldsFromProposal(effectiveTargetFields) : null;
+
+	// An accepted 'contract' proposal creates a client and a contract, but
+	// `proposal.contractId` stays null forever for a first-intake row
+	// (`db/schema/proposal.ts`'s own doc comment) — `resultId` is the new
+	// contract's id, and the client detail route needs its client's id
+	// too, so the accepted contract is looked up once here rather than
+	// the template guessing at a URL it cannot otherwise build.
+	const acceptedContract =
+		row.targetType === 'contract' && row.status === 'accepted' && row.resultId
+			? await getContractWithClient(row.resultId)
+			: null;
+
 	// Siblings from the same document, in the order a reviewer would step
 	// through them — the day each proposes, not creation order, since a
 	// producer's own fan-out order ("Thursday and Friday" -> two rows) has
-	// no particular reason to already be chronological.
+	// no particular reason to already be chronological. Only 'work_unit'
+	// proposals ever share a document with siblings (#86/#87 each write
+	// exactly one proposal per document), so this stays keyed on the same
+	// `workUnitFields` shape the queue itself sorts by.
 	const siblings = [...siblingRows].sort((a, b) => {
 		const dateA = workUnitFields(a.proposedFields)?.date ?? '';
 		const dateB = workUnitFields(b.proposedFields)?.date ?? '';
@@ -136,6 +397,9 @@ export const load: PageServerLoad = async ({ params }) => {
 			: null,
 		currency: contract?.currency ?? 'EUR',
 		amount,
+		contractCandidate,
+		invoiceFields,
+		acceptedContractClientId: acceptedContract?.client.id ?? null,
 		sourceDocument: document ? toSourceDocumentValue(document) : null,
 		message: {
 			from: parsedMessage?.headers.get('from') ?? null,
@@ -170,7 +434,26 @@ export const actions: Actions = {
 		}
 
 		const formData = await request.formData();
-		const edits = editedFieldsFromForm(row.proposedFields, formData);
+		let edits: Record<string, unknown>;
+		if (row.targetType === 'contract') {
+			const candidate = contractCandidateFromProposal(row.proposedFields);
+			if (!candidate) {
+				return fail(400, {
+					decisionError: 'proposed fields no longer match the contract shape'
+				});
+			}
+			try {
+				edits = contractEditsFromForm(candidate, formData);
+			} catch (err) {
+				return fail(400, { decisionError: errorMessage(err) });
+			}
+		} else if (row.targetType === 'invoice') {
+			// Never edited on this screen (#86's brief: render number, date,
+			// client, lines and totals) — accepted exactly as proposed.
+			edits = {};
+		} else {
+			edits = editedFieldsFromForm(row.proposedFields, formData);
+		}
 
 		try {
 			await acceptProposal(params.id, { edits, decidedBy: locals.user!.email });

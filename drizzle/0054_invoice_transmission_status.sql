@@ -1,0 +1,3 @@
+CREATE TYPE "public"."invoice_transmission_status" AS ENUM('generated', 'transmitted', 'accepted', 'rejected');--> statement-breakpoint
+ALTER TABLE "invoice" ADD COLUMN "transmission_status" "invoice_transmission_status" DEFAULT 'generated' NOT NULL;--> statement-breakpoint
+ALTER TABLE "invoice" ADD CONSTRAINT "invoice_transmission_id_required_once_transmitted" CHECK ("invoice"."transmission_status" = 'generated' or "invoice"."transmission_id" is not null);

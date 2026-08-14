@@ -71,8 +71,8 @@ export async function getContract(id: string, executor: DbExecutor = db) {
 	return executor.query.contract.findFirst({ where: eq(contract.id, id) });
 }
 
-export async function getContractWithClient(id: string) {
-	return db.query.contract.findFirst({ where: eq(contract.id, id), with: { client: true } });
+export async function getContractWithClient(id: string, executor: DbExecutor = db) {
+	return executor.query.contract.findFirst({ where: eq(contract.id, id), with: { client: true } });
 }
 
 /** Every document still owned by the contract itself rather than by one

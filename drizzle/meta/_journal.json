@@ -372,6 +372,20 @@
       "when": 1786699382783,
       "tag": "0052_contract_proposal_first_intake",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1786707640057,
+      "tag": "0054_invoice_transmission_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1786707674766,
+      "tag": "0055_invoice_transmission_status_constraints",
+      "breakpoints": true
     }
   ]
 }

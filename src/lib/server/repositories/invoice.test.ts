@@ -1,8 +1,11 @@
-import { afterAll, expect, test } from 'vitest';
+import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { rejection } from '$lib/server/db/pg-error';
 import { minorUnits } from '$lib/money';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract, document, invoice, invoiceLine } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
@@ -12,6 +15,8 @@ import {
 	getInvoiceDocuments,
 	getInvoiceWithLines,
 	listUnpaidInvoices,
+	markInvoiceTransmitted,
+	recordInvoiceReceipt,
 	recordPayment,
 	type InvoiceInput
 } from './invoice';
@@ -969,5 +974,173 @@ test('two payments that together exceed the total settle the invoice, with remai
 
 		const unpaid = await listUnpaidInvoices(tx);
 		expect(unpaid.some((row) => row.invoice.id === invoiceRow.id)).toBe(false);
+	});
+});
+
+// #261: the transmission-status state machine, enforced by
+// `invoice_enforce_transmission_status`
+// (0055_invoice_transmission_status_constraints.sql) the same way
+// `work_unit_enforce_state_machine` enforces the day lifecycle. Receipt
+// uploads exercise the real blob store against a throwaway temp
+// directory, same pattern as `fiscal/generate-invoice-document.test.ts`.
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+let receiptStorageRoot: string;
+
+beforeEach(async () => {
+	receiptStorageRoot = await mkdtemp(join(tmpdir(), 'mastro-receipt-documents-'));
+	process.env.DOCUMENT_STORAGE_ROOT = receiptStorageRoot;
+});
+
+afterEach(async () => {
+	delete process.env.DOCUMENT_STORAGE_ROOT;
+	await rm(receiptStorageRoot, { recursive: true, force: true });
+});
+
+async function insertGeneratedInvoice(tx: Tx) {
+	const contractRow = await insertContract(tx);
+	return createInvoice(
+		{
+			contractId: contractRow.id,
+			number: `INV-${crypto.randomUUID()}`,
+			issueDate: '2024-06-01',
+			documentType: 'invoice',
+			currency: 'EUR',
+			taxTreatmentCode: null,
+			statutoryReference: null,
+			stampDuty: null,
+			socialCharge: null,
+			dueDate: null,
+			paymentMethod: null,
+			iban: null,
+			transmissionId: null,
+			lines: [
+				{
+					description: 'Consulting',
+					quantity: 1,
+					unitPrice: minorUnits(100_000),
+					amount: minorUnits(100_000),
+					taxRate: 0,
+					taxTreatmentCode: null,
+					workUnitIds: []
+				}
+			]
+		} satisfies InvoiceInput,
+		{ kind: 'human', email: 'lorenzo@example.com' },
+		'test fixture',
+		tx
+	);
+}
+
+test('an invoice is created transmission_status generated, with transmission_id null', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const invoiceRow = await insertGeneratedInvoice(tx);
+		expect(invoiceRow.transmissionStatus).toBe('generated');
+		expect(invoiceRow.transmissionId).toBeNull();
+	});
+});
+
+test('markInvoiceTransmitted moves generated -> transmitted and records the id', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const invoiceRow = await insertGeneratedInvoice(tx);
+		const updated = await markInvoiceTransmitted(invoiceRow.id, 'SDI-0001', tx);
+		expect(updated.transmissionStatus).toBe('transmitted');
+		expect(updated.transmissionId).toBe('SDI-0001');
+	});
+});
+
+test('invoice_enforce_transmission_status rejects generated -> accepted, skipping transmitted', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const invoiceRow = await insertGeneratedInvoice(tx);
+		const error = await rejection(
+			() =>
+				tx
+					.update(invoice)
+					.set({ transmissionStatus: 'accepted' })
+					.where(eq(invoice.id, invoiceRow.id)),
+			tx
+		);
+		expect(error.message).toMatch(/illegal invoice transmission_status transition/);
+	});
+});
+
+test('invoice_transmission_id_required_once_transmitted rejects transmitted with no transmission_id', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const invoiceRow = await insertGeneratedInvoice(tx);
+		const error = await rejection(
+			() =>
+				tx
+					.update(invoice)
+					.set({ transmissionStatus: 'transmitted' })
+					.where(eq(invoice.id, invoiceRow.id)),
+			tx
+		);
+		expect(error.constraint_name).toBe('invoice_transmission_id_required_once_transmitted');
+	});
+});
+
+test('recordInvoiceReceipt archives the uploaded receipt as a document and moves transmitted -> accepted', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const invoiceRow = await insertGeneratedInvoice(tx);
+		await markInvoiceTransmitted(invoiceRow.id, 'SDI-0002', tx);
+
+		expect(await getInvoiceDocuments(invoiceRow.id, tx)).toEqual([]);
+
+		const { document: documentRow, invoice: updated } = await recordInvoiceReceipt(
+			invoiceRow.id,
+			invoiceRow.contractId,
+			{
+				outcome: 'accepted',
+				bytes: new TextEncoder().encode('<ricevuta/>'),
+				mime: 'application/xml',
+				originalName: 'RC_0001.xml'
+			},
+			tx
+		);
+		expect(updated.transmissionStatus).toBe('accepted');
+
+		const documents = await getInvoiceDocuments(invoiceRow.id, tx);
+		expect(documents.map((d) => d.id)).toEqual([documentRow.id]);
+		expect(documents[0].provenance).toBe('upload');
+		expect(documents[0].ownerType).toBe('invoice');
+		expect(documents[0].ownerId).toBe(invoiceRow.id);
+	});
+});
+
+test('recordInvoiceReceipt moves transmitted -> rejected, and a corrected resubmission goes back to transmitted', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const invoiceRow = await insertGeneratedInvoice(tx);
+		await markInvoiceTransmitted(invoiceRow.id, 'SDI-0003', tx);
+
+		const { invoice: rejected } = await recordInvoiceReceipt(
+			invoiceRow.id,
+			invoiceRow.contractId,
+			{
+				outcome: 'rejected',
+				bytes: new TextEncoder().encode('<notificaScarto/>'),
+				mime: 'application/xml',
+				originalName: 'NS_0001.xml'
+			},
+			tx
+		);
+		expect(rejected.transmissionStatus).toBe('rejected');
+
+		// A scarto invoice was never legally issued (AdE's own rule); the
+		// resubmission goes back to `transmitted`, never straight to
+		// `accepted` — SdI still has to issue a fresh receipt.
+		const rejectedToAccepted = await rejection(
+			() =>
+				tx
+					.update(invoice)
+					.set({ transmissionStatus: 'accepted' })
+					.where(eq(invoice.id, invoiceRow.id)),
+			tx
+		);
+		expect(rejectedToAccepted.message).toMatch(/illegal invoice transmission_status transition/);
+
+		const resubmitted = await markInvoiceTransmitted(invoiceRow.id, 'SDI-0003-BIS', tx);
+		expect(resubmitted.transmissionStatus).toBe('transmitted');
+		expect(resubmitted.transmissionId).toBe('SDI-0003-BIS');
 	});
 });

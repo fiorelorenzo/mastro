@@ -10,8 +10,8 @@ export type ClauseNoteInput = {
 	notes: string | null;
 };
 
-export async function listClauseNotes(contractId: string) {
-	return db.query.clauseNote.findMany({
+export async function listClauseNotes(contractId: string, executor: DbExecutor = db) {
+	return executor.query.clauseNote.findMany({
 		where: eq(clauseNote.contractId, contractId),
 		orderBy: asc(clauseNote.createdAt)
 	});
