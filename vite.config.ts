@@ -15,6 +15,14 @@ export default defineConfig(({ mode }) => ({
 	// port entirely, so that needs an isolated browser context. See AGENTS.md.
 	server: { port: Number(loadEnv(mode, process.cwd(), '').WEB_PORT ?? 5187), strictPort: true },
 	preview: { port: Number(loadEnv(mode, process.cwd(), '').WEB_PORT ?? 5187), strictPort: true },
+	// `pdf-parse` wraps pdfjs, whose module body touches DOM globals Node has
+	// not got. Bundled into a server chunk it therefore throws
+	// `DOMMatrix is not defined` the moment anything in that chunk is loaded,
+	// which took `/api/agent/run` down on every scheduler tick in production
+	// while every test stayed green (#267). Left external it is a plain
+	// runtime `import()` from node_modules, evaluated only when a PDF is
+	// actually read — so it is a runtime dependency, not a dev one.
+	ssr: { external: ['pdf-parse'] },
 	plugins: [
 		tailwindcss(),
 		sveltekit({
