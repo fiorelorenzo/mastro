@@ -65,6 +65,7 @@ COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/build ./build
 COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/scripts/migrate.ts ./scripts/migrate.ts
+COPY --from=build /app/scripts/check-storage.ts ./scripts/check-storage.ts
 COPY --from=build /app/scripts/record-backup-run.ts ./scripts/record-backup-run.ts
 # migrate.ts imports this one module to say which database it is about to
 # touch. Node resolves that import at runtime, inside this image, so the
@@ -81,13 +82,22 @@ COPY --from=build /app/package.json ./package.json
 # root:root, and non-root `mastro` gets EACCES on the very first
 # `POST /api/agent/run` — found by actually running the scheduler (#222)
 # against a fresh stack, not by inspection.
-RUN mkdir -p /app/data/runner-queue && chown mastro:mastro /app/data/runner-queue
+#
+# `/app/data/documents` is the same story with one more twist. It is
+# usually a bind mount, whose ownership comes from the host and which the
+# boot check verifies — but the default when nothing is mounted has to
+# work too, and `/app/data` itself is root-owned, so without this a plain
+# `docker run` of this image cannot even create its own document root.
+# Chowning `/app/data` as well means a named volume mounted there inherits
+# the right owner instead of locking the app out.
+RUN mkdir -p /app/data/runner-queue /app/data/documents \
+	&& chown mastro:mastro /app/data /app/data/runner-queue /app/data/documents
 USER mastro
 EXPOSE 3000
 # Migrations run on boot (#76's acceptance): the same script and the same
 # committed SQL that `pnpm db:migrate` runs locally, so there is no second
 # migration path to keep in sync.
-CMD ["sh", "-c", "node scripts/migrate.ts && exec node build"]
+CMD ["sh", "-c", "node scripts/check-storage.ts && node scripts/migrate.ts && exec node build"]
 
 # The ACP runner (#82): a second image built from the same source, on the
 # same base as `runtime`, but a different CMD and a much smaller slice of

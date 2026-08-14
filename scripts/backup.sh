@@ -62,13 +62,36 @@ echo "backup: copying BETTER_AUTH_SECRET"
 [ -n "${BETTER_AUTH_SECRET:-}" ] || fail "BETTER_AUTH_SECRET is empty in .env.prod"
 printf '%s' "$BETTER_AUTH_SECRET" >"$WORK_DIR/better-auth-secret"
 
+# Optional, unlike the auth secret: push is off when it is unset, and an
+# archive taken before push was configured must still restore. But losing
+# it invalidates every subscription a browser has already granted, which
+# no amount of database is going to bring back.
+ARCHIVE_MEMBERS="database.dump better-auth-secret documents.tar"
+if [ -n "${VAPID_PRIVATE_KEY:-}" ]; then
+	echo "backup: copying VAPID_PRIVATE_KEY"
+	printf '%s' "$VAPID_PRIVATE_KEY" >"$WORK_DIR/vapid-private-key"
+	ARCHIVE_MEMBERS="$ARCHIVE_MEMBERS vapid-private-key"
+fi
+
+# Read out through `web`, not off the host. The app writes each blob 0600
+# inside 0700 directories owned by the container's own non-root user
+# (#114: these are the evidentiary documents invariant 4 protects, so they
+# are never group- or world-readable), and the bind mount hands the host
+# those uids unchanged. A host-side `tar` therefore cannot read a single
+# one of them: this step failed on `Cannot open: Permission denied` the
+# first time a real document existed, which is later than anyone would
+# want to find out. `exec` runs as the user that owns them, so the
+# archive is complete regardless of who is running this script.
 echo "backup: archiving the documents directory"
-DOCUMENTS_DIR="${DOCUMENTS_DIR:-./data/documents}"
-mkdir -p "$DOCUMENTS_DIR"
-tar -C "$DOCUMENTS_DIR" -cf "$WORK_DIR/documents.tar" . || fail "archiving $DOCUMENTS_DIR failed"
+$COMPOSE exec -T web tar -C /app/data/documents -cf - . >"$WORK_DIR/documents.tar" \
+	|| fail "archiving the documents directory through the web container failed"
+[ -s "$WORK_DIR/documents.tar" ] || fail "the documents archive came out empty"
 
 echo "backup: writing $ARCHIVE"
-tar -C "$WORK_DIR" -czf "$ARCHIVE" database.dump better-auth-secret documents.tar \
+# Unquoted on purpose: the member list is a space-separated set of file
+# names this script chose itself, not user input.
+# shellcheck disable=SC2086
+tar -C "$WORK_DIR" -czf "$ARCHIVE" $ARCHIVE_MEMBERS \
 	|| fail "assembling the backup archive failed"
 
 record success "$ARCHIVE"
