@@ -150,7 +150,7 @@
 					</tfoot>
 				</table>
 			</div>
-			{#if invoice.taxTreatmentCode || invoice.statutoryReference}
+			{#if invoice.taxTreatmentCode || invoice.statutoryReference || data.routing}
 				<div class="fiscal-note">
 					{#if invoice.taxTreatmentCode}
 						<p>
@@ -162,6 +162,18 @@
 						<p>
 							<span class="label">{m.invoice_mandatory_annotation_label()}</span>
 							<LegalText value={invoice.statutoryReference} />
+						</p>
+					{/if}
+					{#if data.routing}
+						<p>
+							<span class="label">{m.invoice_detail_routing_label()}</span>
+							{#if data.routing.case === 'sdi_code'}
+								{m.invoice_detail_routing_sdi_code({ code: data.routing.sdiCode })}
+							{:else if data.routing.case === 'pec'}
+								{m.invoice_detail_routing_pec({ address: data.routing.pecAddress })}
+							{:else}
+								{m.invoice_detail_routing_reserved_area()}
+							{/if}
 						</p>
 					{/if}
 				</div>

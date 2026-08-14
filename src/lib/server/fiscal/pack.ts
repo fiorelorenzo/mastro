@@ -254,6 +254,11 @@ export interface FiscalPack {
 	readonly unresolvedRevenue: UnresolvedRevenueTreatment;
 	/** Absent means this pack has no opinion — see `DefaultTaxTreatment`. */
 	readonly defaultTreatment?: DefaultTaxTreatment;
+	/** The issuer's own FatturaPA `RegimeFiscale` code, carried inside
+	 * `CedentePrestatore` (e.g. `'RF19'`, `'RF01'`). Absent means this pack
+	 * has no opinion, the same shape `defaultTreatment` above uses — see
+	 * each pack's own header comment for the citation behind its value. */
+	readonly taxRegimeCode?: string;
 }
 
 function parseIsoDate(date: string): Date {

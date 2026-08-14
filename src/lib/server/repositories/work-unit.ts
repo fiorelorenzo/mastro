@@ -167,6 +167,26 @@ export async function linkApprovalToWorkUnit(
 	return transitionWorkUnit(id, { approvalId }, actor, reason, tx);
 }
 
+/** #228's other exit from the risk state: a day nobody will ever approve,
+ * closed out as `unbillable` instead of waiting forever for a late
+ * approval that is not coming. Same shape as `linkApprovalToWorkUnit` —
+ * one field through `transitionWorkUnit` — except the field changing is
+ * `state` itself; the trigger's allowed-edge list
+ * (`worked_without_approval -> unbillable`, 0012_work_unit_state_machine.sql)
+ * is what actually enforces this is only reachable from the risk state,
+ * so a day anywhere else is rejected by the database, not by this
+ * function. `reason` is what the person closing it out gave — never
+ * optional in the caller, since "why will this never be approved" is the
+ * entire point of the log entry it produces. */
+export async function markWorkUnitUnbillable(
+	id: string,
+	actor: TransitionActor,
+	reason: string,
+	tx?: DbExecutor
+) {
+	return transitionWorkUnit(id, { state: 'unbillable' }, actor, reason, tx);
+}
+
 export async function getWorkUnit(id: string, executor: DbExecutor = db) {
 	const [row] = await executor.select().from(workUnit).where(eq(workUnit.id, id));
 	return row;

@@ -52,8 +52,10 @@ run:
 5. Calls `scripts/record-backup-run.ts` inside the running `web` container to record
    the outcome — see "Failure is observable" below. This runs whether steps 1–4
    succeeded or not: `fail()` records `failure` with the reason before exiting
-   non-zero; the last line on the success path records `success` with the archive
-   path.
+   non-zero; the last line on the success path records `success` with the archive's
+   size in bytes (#246: `web` never mounts `backup-dir`, so the settings health page
+   has no other way to show it — the path itself is reconstructible from the run's
+   own timestamp, `mastro-<UTC-stamp>.tar.gz`).
 
 Schedule it with cron or a systemd timer, off the box the archive should not also
 live on exclusively — copy `backup-dir` somewhere else (another host, object
@@ -138,8 +140,10 @@ these scripts.
 
 `scripts/record-backup-run.ts` writes one row per attempt into the `backup_run`
 table (`src/lib/server/db/schema/backup.ts`), `status` `success` or `failure`, plus a
-`detail` string and an `acknowledged_at` that starts null. This is the signal the
-alert engine (#74, not built yet) must consume. It needs two checks, not one:
+`detail` string (the archive's size in bytes on a success, the failure reason on a
+failure) and an `acknowledged_at` that starts null. This is the signal the
+alert engine (#74) and the settings health page (#246) both read. It needs two
+checks, not one:
 
 ```sql
 -- An explicit failure nobody has acknowledged yet.

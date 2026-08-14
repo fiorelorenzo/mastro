@@ -115,8 +115,14 @@ export const invoice = pgTable(
 		...timestamps()
 	},
 	(table) => [
-		// Invoice numbers are unique per issuer's own series, not globally.
-		unique('invoice_contract_number_unique').on(table.contractId, table.number),
+		// Invoice numbers are unique across the whole ledger. mastro is
+		// single-tenant (AGENTS.md: one fiscal profile, one issuer), so
+		// "unique per issuer" and "globally unique" name the same set —
+		// two invoices on different contracts cannot share a number any
+		// more than two on the same one can (Art. 21, comma 2, lett. b),
+		// D.P.R. 633/1972: "un numero progressivo che la identifichi in
+		// modo univoco", and SdI rejects a collision on sight; #257).
+		unique('invoice_number_unique').on(table.number),
 		check('invoice_taxable_amount_non_negative', sql`${table.taxableAmount} >= 0`),
 		check('invoice_tax_amount_non_negative', sql`${table.taxAmount} >= 0`),
 		check('invoice_total_non_negative', sql`${table.total} >= 0`),

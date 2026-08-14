@@ -21,6 +21,10 @@ import type { FiscalPack } from '../pack';
  * `[]` would be a specific, wrong claim (0% VAT) rather than an honest
  * "not represented" — the invoice screen's manual fallback exists for
  * exactly this pack.
+ *
+ * `taxRegimeCode` (#256) is left absent for the same reason: an
+ * unmodelled jurisdiction has no FatturaPA `RegimeFiscale` code, or any
+ * other national regime code, to declare.
  */
 export const genericPack: FiscalPack = {
 	id: 'generic',

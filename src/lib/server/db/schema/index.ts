@@ -25,6 +25,7 @@ export * from './fiscal';
 export * from './inbound-thread';
 export * from './invoice';
 export * from './mailbox-poll-run';
+export * from './practice-profile';
 export * from './proposal';
 export * from './push';
 export * from './rate-card';

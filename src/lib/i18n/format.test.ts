@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 import { minorUnits } from '$lib/money';
 import {
 	formatAmount,
+	formatBytes,
 	formatDate,
 	formatDateTime,
 	formatDays,
@@ -117,4 +118,11 @@ test('a week range crossing a year boundary names both years', () => {
 	expect(formatWeekRange('2026-12-28', '2027-01-03', 'it')).toBe(
 		'28 dicembre 2026 – 3 gennaio 2027'
 	);
+});
+
+test('a byte count picks the largest unit that keeps it readable, decimal steps', () => {
+	expect(formatBytes(512, 'en')).toBe('512 byte');
+	expect(formatBytes(432_300_000, 'en')).toBe('432.3 MB');
+	expect(formatBytes(432_300_000, 'it')).toBe('432,3 MB');
+	expect(formatBytes(1_500_000_000, 'en')).toBe('1.5 GB');
 });

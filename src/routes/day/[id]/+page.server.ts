@@ -11,7 +11,8 @@ import {
 	getWorkUnitDocument,
 	getWorkUnitInvoiceLine,
 	linkApprovalToWorkUnit,
-	listWorkUnitTransitions
+	listWorkUnitTransitions,
+	markWorkUnitUnbillable
 } from '$lib/server/repositories/work-unit';
 import { resolveRateCard } from '$lib/server/domain/rate-card';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
@@ -149,5 +150,26 @@ export const actions: Actions = {
 		);
 
 		return { linked: true };
+	},
+
+	// #228's other exit from the risk state: a day nobody will ever approve,
+	// closed out instead of left as a permanent, escalating alert. Legal
+	// only from `worked_without_approval` — the database trigger
+	// (`work_unit_enforce_state_machine`) is what actually enforces that,
+	// this action does not re-check the day's current state first.
+	unbillable: async ({ request, params, locals }) => {
+		const formData = await request.formData();
+		const reason = String(formData.get('reason') ?? '').trim();
+
+		const workUnit = await getWorkUnit(params.id);
+		if (!workUnit) error(404, m.day_detail_not_found());
+
+		if (!reason) {
+			return fail(400, { unbillableError: m.day_detail_unbillable_reason_required(), reason });
+		}
+
+		await markWorkUnitUnbillable(params.id, { kind: 'human', email: locals.user!.email }, reason);
+
+		return { markedUnbillable: true };
 	}
 };

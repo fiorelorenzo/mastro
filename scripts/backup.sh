@@ -93,6 +93,13 @@ echo "backup: writing $ARCHIVE"
 # shellcheck disable=SC2086
 tar -C "$WORK_DIR" -czf "$ARCHIVE" $ARCHIVE_MEMBERS \
 	|| fail "assembling the backup archive failed"
-
-record success "$ARCHIVE"
-echo "backup: done ($ARCHIVE)"
+# Recorded as the size in bytes, not the path (#246): the settings health
+# page reads `backup_run.detail` on a successful run and has no
+# filesystem access to this archive to stat it itself — `web` never
+# mounts `backup-dir` (see compose.prod.yaml). The path is reconstructible
+# anyway from the run's own timestamp (`mastro-<UTC-stamp>.tar.gz`, line
+# 32 above), which the path string never told a reader that the run
+# timestamp doesn't already.
+ARCHIVE_SIZE_BYTES="$(stat -c%s "$ARCHIVE" 2>/dev/null || wc -c <"$ARCHIVE" | tr -d ' ')"
+record success "$ARCHIVE_SIZE_BYTES"
+echo "backup: done ($ARCHIVE, $ARCHIVE_SIZE_BYTES bytes)"

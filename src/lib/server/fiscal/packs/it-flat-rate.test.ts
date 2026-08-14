@@ -86,6 +86,10 @@ test('the default treatment is the unconditional exempt code, VAT-exempt, with i
 	);
 });
 
+test('the issuer tax-regime code is RF19 (#256)', () => {
+	expect(itFlatRatePack.taxRegimeCode).toBe('RF19');
+});
+
 test('evaluateInvoiceCharges sums the virtual stamp duty and the INPS surcharge into their own named slots', () => {
 	const result = evaluateInvoiceCharges(itFlatRatePack, { invoiceTotal: 50_000 });
 	expect(result.stampDuty).toBe(200);

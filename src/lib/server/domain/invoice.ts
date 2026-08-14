@@ -55,3 +55,31 @@ export function isOverdue(
 ): boolean {
 	return paidOn === null && daysLate(dueDate, today) > 0;
 }
+
+/**
+ * Which of SdI's three delivery paths an invoice would actually take
+ * (#259). `sdiCode` (`CodiceDestinatario`) wins when the client has one —
+ * SdI resolves it over `PECDestinatario` whenever both are on file. Falls
+ * back to `pecAddress` next, and to SdI's own reserved-area default,
+ * `'0000000'`, when neither is set: legally valid (SdI parks the file in
+ * the client's own "area riservata" and the invoice still counts as
+ * issued) but silent — the self-hoster has to notify the client
+ * out-of-band, which is why this is a named case rather than an invisible
+ * default folded into `'sdi_code'`. A discriminated union, not a
+ * `{case, sdiCode, pecAddress}` triple with the other two `null`: a
+ * reader (and the template) only ever needs the field the resolved case
+ * actually carries.
+ */
+export type InvoiceRouting =
+	| { readonly case: 'sdi_code'; readonly sdiCode: string }
+	| { readonly case: 'pec'; readonly pecAddress: string }
+	| { readonly case: 'reserved_area' };
+
+export function resolveInvoiceRouting(client: {
+	readonly sdiCode: string | null;
+	readonly pecAddress: string | null;
+}): InvoiceRouting {
+	if (client.sdiCode) return { case: 'sdi_code', sdiCode: client.sdiCode };
+	if (client.pecAddress) return { case: 'pec', pecAddress: client.pecAddress };
+	return { case: 'reserved_area' };
+}

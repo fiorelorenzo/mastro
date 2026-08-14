@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { daysLate, isOverdue, resolveDueDate } from './invoice';
+import { daysLate, isOverdue, resolveDueDate, resolveInvoiceRouting } from './invoice';
 
 test('resolveDueDate keeps a supplied date verbatim, sourced as "document"', () => {
 	const result = resolveDueDate({ kind: 'net', days: 30 }, '2024-03-01', '2024-03-20');
@@ -51,4 +51,29 @@ test('an invoice due today, with no payment yet, is not overdue: overdue means t
 
 test('a paid invoice is never overdue, however late the payment was', () => {
 	expect(isOverdue('2024-03-01', '2024-04-15', new Date('2024-06-01T00:00:00Z'))).toBe(false);
+});
+
+test('resolveInvoiceRouting picks the client sdiCode when one is on file', () => {
+	expect(
+		resolveInvoiceRouting({ sdiCode: 'ABC1234', pecAddress: 'client@pec.example.it' })
+	).toEqual({ case: 'sdi_code', sdiCode: 'ABC1234' });
+});
+
+test('resolveInvoiceRouting falls back to the PEC address when there is no sdiCode', () => {
+	expect(resolveInvoiceRouting({ sdiCode: null, pecAddress: 'client@pec.example.it' })).toEqual({
+		case: 'pec',
+		pecAddress: 'client@pec.example.it'
+	});
+});
+
+test('resolveInvoiceRouting falls back to the reserved area when neither is on file', () => {
+	expect(resolveInvoiceRouting({ sdiCode: null, pecAddress: null })).toEqual({
+		case: 'reserved_area'
+	});
+});
+
+test('resolveInvoiceRouting treats an empty sdiCode string the same as absent', () => {
+	expect(resolveInvoiceRouting({ sdiCode: '', pecAddress: null })).toEqual({
+		case: 'reserved_area'
+	});
 });

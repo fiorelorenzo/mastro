@@ -31,6 +31,10 @@ test('the generic pack has no opinion on tax treatment — the manual fallback a
 	expect(genericPack.formats).toEqual([]);
 });
 
+test('the generic pack has no opinion on the issuer tax-regime code either (#256)', () => {
+	expect(genericPack.taxRegimeCode).toBeUndefined();
+});
+
 test('a consumer reading ceilings off the generic pack gets an empty set, never an error', () => {
 	expect(() => genericPack.ceilings.map((c) => c.value)).not.toThrow();
 	expect(genericPack.ceilings.length).toBe(0);

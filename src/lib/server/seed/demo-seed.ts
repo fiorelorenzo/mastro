@@ -188,6 +188,10 @@ async function seedNordwind() {
 		addressPostalCode: '37122',
 		addressRegion: 'VR',
 		noticeChannel: 'email',
+		// #259: has its own CodiceDestinatario on file — the routing case
+		// an invoice detail screen resolves to `'sdi_code'`.
+		sdiCode: 'ABC1234',
+		pecAddress: null,
 		contacts: [
 			{
 				name: 'Elena Marchetti',
@@ -523,6 +527,10 @@ async function seedBellani() {
 		addressPostalCode: '40126',
 		addressRegion: 'BO',
 		noticeChannel: 'email',
+		// #259: no CodiceDestinatario on file, but a PEC address —
+		// resolves to the `'pec'` routing case.
+		sdiCode: null,
+		pecAddress: 'bellanipartners@pec.example.it',
 		contacts: [
 			{
 				name: 'Marco Bellani',
@@ -658,6 +666,12 @@ async function seedFermata() {
 		addressPostalCode: '10143',
 		addressRegion: 'TO',
 		noticeChannel: 'email',
+		// #259: neither on file — resolves to the `'reserved_area'` routing
+		// case, SdI's own default `'0000000'`. Deliberately the third
+		// archetype: the self-hoster has to notify Fermata out-of-band,
+		// same as any client whose routing address was never collected.
+		sdiCode: null,
+		pecAddress: null,
 		contacts: [
 			{
 				name: 'Giulia Conti',
