@@ -2,24 +2,32 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
 import { invoicesCrumbs } from '$lib/nav/crumbs';
 import { db } from '$lib/server/db';
-import { daysLate, isOverdue, resolveInvoiceRouting } from '$lib/server/domain/invoice';
+import {
+	computeInvoiceBalance,
+	daysLate,
+	isOverdue,
+	resolveInvoiceRouting
+} from '$lib/server/domain/invoice';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
 import { resolveActiveFiscalPack } from '$lib/server/fiscal/profile';
+import { generateAndStoreInvoiceDocument } from '$lib/server/fiscal/generate-invoice-document';
 import { minorUnitsFromMajor } from '$lib/money';
 import { toSourceDocumentValue } from '$lib/server/repositories/document';
 import {
 	getInvoiceDocuments,
 	getInvoiceWithLines,
+	listPaymentsForInvoice,
 	recordPayment
 } from '$lib/server/repositories/invoice';
 import { listRateCards } from '$lib/server/repositories/rate-card';
+import { getPracticeProfile } from '$lib/server/repositories/practice-profile';
 import { listSentEmailsForInvoice } from '$lib/server/repositories/sent-email';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
 	const invoiceRow = await getInvoiceWithLines(params.id);
 	if (!invoiceRow) error(404, m.invoice_not_found());
-	const [documents, rateCards, chaseHistory, resolvedPack] = await Promise.all([
+	const [documents, rateCards, chaseHistory, resolvedPack, payments] = await Promise.all([
 		getInvoiceDocuments(invoiceRow.id),
 		listRateCards(invoiceRow.contractId),
 		listSentEmailsForInvoice(invoiceRow.id),
@@ -27,8 +35,16 @@ export const load: PageServerLoad = async ({ params }) => {
 		// which regime applied — and therefore whether SdI routing (#259)
 		// is even a thing to say — is a fact about the invoice, not about
 		// whoever happens to be reading it later.
-		resolveActiveFiscalPack(db, invoiceRow.issueDate)
+		resolveActiveFiscalPack(db, invoiceRow.issueDate),
+		// Every payment on record (#212) — the payment history table and
+		// the balance below both read this one query, never a second.
+		listPaymentsForInvoice(invoiceRow.id)
 	]);
+
+	// #212: derived from `invoice.total` and every payment on record —
+	// never a stored flag. Every other figure on this page that used to
+	// read `invoice.paidOn` reads this instead.
+	const balance = computeInvoiceBalance(invoiceRow.total, payments);
 
 	// `formats` is a jurisdiction pack's own declaration of which national
 	// invoice format(s) it uses (AGENTS.md invariant 1: never branch on a
@@ -72,6 +88,8 @@ export const load: PageServerLoad = async ({ params }) => {
 	const crumbs = invoicesCrumbs();
 	return {
 		invoice,
+		balance,
+		payments,
 		// The archived original(s): an import stores the structured
 		// document plus any attachment alongside it (`persist.ts`), a
 		// hand-entered invoice none — #215's "the archived original of an
@@ -85,14 +103,14 @@ export const load: PageServerLoad = async ({ params }) => {
 			...row,
 			sentAt: row.sentAt.toISOString()
 		})),
-		// Today, at UTC midnight as an ISO date — what the "paid on" field
-		// defaults to (#27's "defaults to today"), computed once here so the
-		// form and any later reasoning about it agree on the same instant.
+		// Today, at UTC midnight as an ISO date — what the payment form's
+		// own date field defaults to, computed once here so the form and
+		// any later reasoning about it agree on the same instant.
 		today: new Date().toISOString().slice(0, 10),
 		// Whether "prepare a reminder" is the header rail's primary action
 		// (#239) — the same derivation the ageing table uses, recomputed
 		// here rather than read off a stored flag.
-		overdue: isOverdue(invoiceRow.dueDate, invoiceRow.paidOn),
+		overdue: isOverdue(invoiceRow.dueDate, balance.settledOn),
 		// Feeds the header's status badge (the list's own `invoiceStatus`,
 		// computed the same way): only meaningful when the invoice is
 		// unpaid, but always recomputed against "now" rather than trusting
@@ -107,15 +125,73 @@ export const load: PageServerLoad = async ({ params }) => {
 };
 
 export const actions: Actions = {
-	// One field, one button — now always visible in the Payment card
-	// rather than behind a `<details>` toggle (#239's "buries the one
-	// consequential action").
+	// One form, in the Payment card, always visible (#239's "buries the
+	// one consequential action") — amount, date, method and reference
+	// (#212): a payment is a row, not a flag, so this never marks the
+	// invoice "paid" directly. Whether it is now fully settled is derived
+	// on the next read, through `computeInvoiceBalance`, not written here.
 	pay: async ({ request, params }) => {
-		const formData = await request.formData();
-		const paidOn = String(formData.get('paidOn') ?? '').trim();
-		if (!paidOn) return fail(400, { payError: m.invoice_validation_paid_on_required() });
+		const invoiceRow = await getInvoiceWithLines(params.id);
+		if (!invoiceRow) error(404, m.invoice_not_found());
 
-		await recordPayment(params.id, paidOn);
+		const formData = await request.formData();
+		const amountRaw = String(formData.get('amount') ?? '').trim();
+		const date = String(formData.get('date') ?? '').trim();
+		const method = String(formData.get('method') ?? '').trim();
+		const reference = String(formData.get('reference') ?? '').trim();
+
+		const amount = Number(amountRaw);
+		if (!amountRaw || !Number.isFinite(amount) || amount <= 0) {
+			return fail(400, { payError: m.invoice_validation_amount_invalid() });
+		}
+		if (!date) return fail(400, { payError: m.invoice_validation_payment_date_required() });
+
+		await recordPayment(params.id, {
+			amount: minorUnitsFromMajor(amount, invoiceRow.currency),
+			date,
+			method: method || null,
+			reference: reference || null
+		});
+		redirect(303, `/invoices/${params.id}`);
+	},
+
+	// Generates this invoice's FatturaPA document under the pack in force
+	// on its own issue date and archives it as a `document` (#260,
+	// invariant 4: the generated XML is itself the source document once
+	// it exists). The existing Documents section re-renders it on the
+	// next load — no separate download route, `/documents/[id]` already
+	// serves any document by id.
+	generateFattura: async ({ params }) => {
+		const invoiceRow = await getInvoiceWithLines(params.id);
+		if (!invoiceRow) error(404, m.invoice_not_found());
+
+		const [practiceProfile, resolvedPack] = await Promise.all([
+			getPracticeProfile(),
+			// The pack in force on the invoice's own issue date, same
+			// reasoning as `load`'s own `resolvedPack` above — which regime
+			// governs is a fact about the invoice, not about now.
+			resolveActiveFiscalPack(db, invoiceRow.issueDate)
+		]);
+		if (!practiceProfile) {
+			return fail(400, { fatturaError: m.invoice_detail_fattura_missing_practice_profile() });
+		}
+		if (!resolvedPack) {
+			return fail(400, { fatturaError: m.invoice_detail_fattura_missing_pack() });
+		}
+
+		try {
+			const outcome = await generateAndStoreInvoiceDocument(
+				invoiceRow,
+				practiceProfile,
+				resolvedPack.pack
+			);
+			if (outcome.kind === 'unsupported') {
+				return fail(400, { fatturaError: m.invoice_detail_fattura_unsupported() });
+			}
+		} catch (err) {
+			const reason = err instanceof Error ? err.message : String(err);
+			return fail(400, { fatturaError: m.invoice_detail_fattura_generation_failed({ reason }) });
+		}
 		redirect(303, `/invoices/${params.id}`);
 	}
 };

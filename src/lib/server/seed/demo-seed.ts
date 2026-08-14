@@ -41,7 +41,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { client as clientTable, fiscalProfile } from '$lib/server/db/schema';
 import type { TransitionActor } from '$lib/server/db/schema/work-unit';
-import { minorUnitsFromMajor, type MinorUnits } from '$lib/money';
+import { minorUnitsFromMajor, scaleMinorUnits, type MinorUnits } from '$lib/money';
 import {
 	evaluateInvoiceCharges,
 	resolveDefaultTaxTreatment,
@@ -173,8 +173,9 @@ async function seedFiscalProfile() {
  * Nordwind Logistics: day rate, prior approval required. Ten days, one per
  * `work_unit_state` value, most of them sharing one archived approval email
  * — several days from one approval is #209's own contract, not a special
- * case. `2026/014` is the paid invoice; `2026/009` and `2026/012` are the
- * disputed and still-open ones the other two lifecycle days land on.
+ * case. `2026/014` is the paid invoice; `2026/009` is the disputed one;
+ * `2026/012` is invoiced and half paid (#212), the partial-payment case
+ * the other two lifecycle days land on.
  */
 async function seedNordwind() {
 	const clientRow = await createClient({
@@ -347,7 +348,10 @@ async function seedNordwind() {
 		'intervento urgente confermato solo per telefono, nessuna approvazione scritta'
 	);
 
-	// 5. invoiced — billed, still unpaid; no correction, no dispute.
+	// 5. invoiced — billed, partially paid (#212): a client who sends
+	// half is exactly the case the ageing list and the cash-basis ceiling
+	// both have to keep showing correctly, not a special case that
+	// disappears once collected in full.
 	const invoicedDay = await createWorkUnit(
 		{
 			contractId: contractRow.id,
@@ -360,9 +364,19 @@ async function seedNordwind() {
 		LORENZO,
 		'giornata svolta come da approvazione del 15 luglio'
 	);
-	await createTaxedInvoice(contractRow.id, '2026/012', '2026-05-20', null, [
-		dayLine('Riconciliazione inventario mensile — 20/05/2026', invoicedDay.id, dayRate)
-	]);
+	const partlyPaidInvoice = await createTaxedInvoice(
+		contractRow.id,
+		'2026/012',
+		'2026-05-20',
+		null,
+		[dayLine('Riconciliazione inventario mensile — 20/05/2026', invoicedDay.id, dayRate)]
+	);
+	await recordPayment(partlyPaidInvoice.id, {
+		amount: scaleMinorUnits(partlyPaidInvoice.total, 0.5),
+		date: '2026-07-05',
+		method: 'bonifico',
+		reference: 'Acconto — bonifico del 05/07/2026'
+	});
 
 	// 6. paid — billed and collected: 2026/014, the paid invoice #226 names.
 	const paidDay = await createWorkUnit(
@@ -380,7 +394,7 @@ async function seedNordwind() {
 	const paidInvoice = await createTaxedInvoice(contractRow.id, '2026/014', '2026-06-30', null, [
 		dayLine('Ottimizzazione rotte settimanali — 15/06/2026', paidDay.id, dayRate)
 	]);
-	await recordPayment(paidInvoice.id, '2026-07-10');
+	await recordPayment(paidInvoice.id, { amount: paidInvoice.total, date: '2026-07-10' });
 	await transitionWorkUnit(
 		paidDay.id,
 		{ state: 'paid' },

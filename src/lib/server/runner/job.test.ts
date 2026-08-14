@@ -7,8 +7,10 @@ import type { ExtractionModel } from './model.ts';
 import type { ExtractionRequest } from './types.ts';
 import {
 	deleteCommittedContract,
+	deleteCommittedDocument,
 	insertCommittedContract,
-	insertCommittedDocument
+	insertCommittedDocument,
+	insertCommittedUnclaimedDocument
 } from './__fixtures__/db-fixtures.ts';
 
 // Real database, real `mastro_runner` role — see db-privilege.test.ts.
@@ -89,6 +91,52 @@ test('a document id the runner cannot read at all is rejected', async () => {
 			baseRequest({ documentId: crypto.randomUUID(), contractId: crypto.randomUUID() })
 		)
 	).rejects.toThrow(/does not exist/);
+});
+
+test('#86: a first-intake job (no contract on either side) is accepted, not treated as a mismatch', async () => {
+	const documentRow = await insertCommittedUnclaimedDocument();
+	cleanup.push(() => deleteCommittedDocument(documentRow.id));
+	runnerSql = connectRunnerDb(runnerDatabaseUrl);
+
+	const model: ExtractionModel = {
+		async call() {
+			return {
+				text: JSON.stringify({
+					excerpt: 'Contratto di Consulenza — Rep. n. 1/2026',
+					confidence: 0.8,
+					proposedFields: { contract: { title: 'Contratto di Consulenza' } }
+				})
+			};
+		}
+	};
+
+	const result = await processExtractionJob(
+		runnerSql,
+		model,
+		baseRequest({ documentId: documentRow.id, contractId: null, targetType: 'contract' })
+	);
+	expect(result.contractId).toBeNull();
+	expect(result.targetType).toBe('contract');
+});
+
+test('#86: a first-intake job claiming a real contract for an unclaimed document is rejected before any model call', async () => {
+	const documentRow = await insertCommittedUnclaimedDocument();
+	cleanup.push(() => deleteCommittedDocument(documentRow.id));
+	const contractRow = await insertCommittedContract();
+	cleanup.push(() => deleteCommittedContract(contractRow.id, contractRow.clientId));
+	runnerSql = connectRunnerDb(runnerDatabaseUrl);
+
+	await expect(
+		processExtractionJob(
+			runnerSql,
+			NEVER_CALL,
+			baseRequest({
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				targetType: 'contract'
+			})
+		)
+	).rejects.toThrow(/belongs to contract null/);
 });
 
 test('a successful call returns a ProposalCandidate shaped from the model response', async () => {

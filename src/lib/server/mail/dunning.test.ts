@@ -14,6 +14,7 @@ import { client, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import {
 	createInvoice,
+	getInvoiceBalance,
 	getInvoiceWithLines,
 	recordPayment
 } from '$lib/server/repositories/invoice';
@@ -30,7 +31,10 @@ afterAll(async () => {
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-async function seedOverdueInvoice(tx: Tx, overrides: { dueDate: string; paidOn?: string | null }) {
+async function seedOverdueInvoice(
+	tx: Tx,
+	overrides: { dueDate: string; settledOn?: string | null }
+) {
 	const [clientRow] = await tx
 		.insert(client)
 		.values({
@@ -93,8 +97,8 @@ async function seedOverdueInvoice(tx: Tx, overrides: { dueDate: string; paidOn?:
 		tx
 	);
 
-	if (overrides.paidOn) {
-		await recordPayment(invoiceRow.id, overrides.paidOn, tx);
+	if (overrides.settledOn) {
+		await recordPayment(invoiceRow.id, { amount: invoiceRow.total, date: overrides.settledOn }, tx);
 	}
 
 	// Read back through the same repository function the compose route
@@ -104,7 +108,12 @@ async function seedOverdueInvoice(tx: Tx, overrides: { dueDate: string; paidOn?:
 	// see the invoice just inserted, and the seed fails.
 	const rehydrated = await getInvoiceWithLines(invoiceRow.id, tx);
 	if (!rehydrated) throw new Error('invoice failed to persist');
-	return rehydrated;
+	// #212: `settledOn` is derived, not a stored column — merged in here
+	// the same way `routes/invoices/[id]/remind/+page.server.ts` does, so
+	// this seed matches exactly what `buildDunningContext` sees in
+	// production.
+	const balance = await getInvoiceBalance(invoiceRow.id, tx);
+	return { ...rehydrated, settledOn: balance?.settledOn ?? null };
 }
 
 test('throws for an invoice that is not overdue: unpaid but not yet past its due date', async () => {
@@ -125,7 +134,7 @@ test('throws for an invoice already paid, however late the payment was', async (
 	await inRolledBackTransaction(async (tx) => {
 		const invoiceRow = await seedOverdueInvoice(tx, {
 			dueDate: '2024-05-01',
-			paidOn: '2024-07-01'
+			settledOn: '2024-07-01'
 		});
 		await expect(
 			buildDunningContext(

@@ -17,7 +17,7 @@ const rows: LedgerRow[] = [
 		contractId: 'c1',
 		clientId: 'client-a',
 		issueDate: '2024-05-01',
-		paidOn: '2024-05-10',
+		payments: [{ date: '2024-05-10', amount: minorUnits(60_000) }],
 		amount: minorUnits(60_000)
 	},
 	{
@@ -25,7 +25,7 @@ const rows: LedgerRow[] = [
 		contractId: 'c1',
 		clientId: 'client-a',
 		issueDate: '2024-08-01',
-		paidOn: '2024-08-15',
+		payments: [{ date: '2024-08-15', amount: minorUnits(25_000) }],
 		amount: minorUnits(25_000)
 	},
 	{
@@ -33,7 +33,7 @@ const rows: LedgerRow[] = [
 		contractId: 'c2',
 		clientId: 'client-b',
 		issueDate: '2024-09-01',
-		paidOn: '2024-09-20',
+		payments: [{ date: '2024-09-20', amount: minorUnits(40_000) }],
 		amount: minorUnits(40_000)
 	}
 ];
@@ -129,7 +129,7 @@ test('a percentage-share ceiling responds to the total changing, not just its ow
 			contractId: 'c3',
 			clientId: 'client-c',
 			issueDate: '2024-09-01',
-			paidOn: '2024-09-20',
+			payments: [{ date: '2024-09-20', amount: minorUnits(500_000) }],
 			amount: minorUnits(500_000)
 		}
 	];

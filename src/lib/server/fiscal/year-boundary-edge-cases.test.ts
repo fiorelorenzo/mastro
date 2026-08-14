@@ -30,7 +30,7 @@ test('an invoice issued 28 December and paid 3 January counts in different calen
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2024-12-28',
-			paidOn: '2025-01-03',
+			payments: [{ date: '2025-01-03', amount: minorUnits(250_000) }],
 			amount: minorUnits(250_000)
 		}
 	];
@@ -172,7 +172,7 @@ test('a regime change mid-year sums each sub-period under its own basis, resolve
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2024-03-01',
-			paidOn: '2024-03-15',
+			payments: [{ date: '2024-03-15', amount: minorUnits(40_000) }],
 			amount: minorUnits(40_000)
 		},
 		{
@@ -180,7 +180,7 @@ test('a regime change mid-year sums each sub-period under its own basis, resolve
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2024-05-01',
-			paidOn: '2024-08-01',
+			payments: [{ date: '2024-08-01', amount: minorUnits(35_000) }],
 			amount: minorUnits(35_000)
 		},
 		{
@@ -188,7 +188,7 @@ test('a regime change mid-year sums each sub-period under its own basis, resolve
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2024-09-01',
-			paidOn: null,
+			payments: [],
 			amount: minorUnits(55_000)
 		},
 		{
@@ -196,7 +196,7 @@ test('a regime change mid-year sums each sub-period under its own basis, resolve
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2024-06-15',
-			paidOn: '2024-06-20',
+			payments: [{ date: '2024-06-20', amount: minorUnits(20_000) }],
 			amount: minorUnits(20_000)
 		}
 	];
@@ -254,7 +254,7 @@ test("a contract-year basis anchored off the contract's own start date disagrees
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2024-02-15',
-			paidOn: '2024-03-01',
+			payments: [{ date: '2024-03-01', amount: minorUnits(10_000) }],
 			amount: minorUnits(10_000)
 		},
 		{
@@ -262,7 +262,7 @@ test("a contract-year basis anchored off the contract's own start date disagrees
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2024-04-10',
-			paidOn: '2024-04-20',
+			payments: [{ date: '2024-04-20', amount: minorUnits(20_000) }],
 			amount: minorUnits(20_000)
 		},
 		{
@@ -270,7 +270,7 @@ test("a contract-year basis anchored off the contract's own start date disagrees
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2025-02-15',
-			paidOn: '2025-03-01',
+			payments: [{ date: '2025-03-01', amount: minorUnits(30_000) }],
 			amount: minorUnits(30_000)
 		},
 		{
@@ -278,7 +278,7 @@ test("a contract-year basis anchored off the contract's own start date disagrees
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2025-04-10',
-			paidOn: '2025-04-20',
+			payments: [{ date: '2025-04-20', amount: minorUnits(40_000) }],
 			amount: minorUnits(40_000)
 		}
 	];
@@ -334,7 +334,7 @@ test('a percentage-share ceiling with zero revenue in the period is not reported
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2023-06-01',
-			paidOn: '2023-06-10',
+			payments: [{ date: '2023-06-10', amount: minorUnits(500_000) }],
 			amount: minorUnits(500_000)
 		}
 	];
@@ -430,7 +430,7 @@ test('an invoice issued under accrual and paid under a later cash regime is reve
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2024-03-01',
-			paidOn: '2024-08-01',
+			payments: [{ date: '2024-08-01', amount: minorUnits(50_000) }],
 			amount: minorUnits(50_000)
 		}
 	];
@@ -468,7 +468,7 @@ test('the earlier regime keeps a straddling invoice even when the periods arrive
 			contractId: 'c1',
 			clientId: 'client-a',
 			issueDate: '2024-03-01',
-			paidOn: '2024-08-01',
+			payments: [{ date: '2024-08-01', amount: minorUnits(50_000) }],
 			amount: minorUnits(50_000)
 		}
 	];

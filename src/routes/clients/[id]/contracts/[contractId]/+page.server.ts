@@ -99,19 +99,21 @@ export const load: PageServerLoad = async ({ params }) => {
 	// The last two stats: what this contract's invoices still owe and what
 	// they have already paid — every invoice ever raised against it, not
 	// scoped to this year, since a receivable does not expire at New Year.
+	// #212: `balance` is derived from `total` and every payment on
+	// record, never a stored flag.
 	const invoiceRows = invoices.map((row) => ({
 		id: row.id,
 		number: row.number,
 		issueDate: row.issueDate,
 		currency: row.currency,
 		total: row.total,
-		paidOn: row.paidOn,
-		daysLate: row.paidOn === null ? daysLate(row.dueDate, now) : null
+		balance: row.balance,
+		daysLate: row.balance.settled ? null : daysLate(row.dueDate, now)
 	}));
-	const unpaid = invoiceRows.filter((row) => row.paidOn === null);
-	const paid = invoiceRows.filter((row) => row.paidOn !== null);
-	const outstanding = sumMinorUnits(unpaid.map((row) => row.total));
-	const collected = sumMinorUnits(paid.map((row) => row.total));
+	const unpaid = invoiceRows.filter((row) => !row.balance.settled);
+	const paid = invoiceRows.filter((row) => row.balance.settled);
+	const outstanding = sumMinorUnits(unpaid.map((row) => row.balance.remaining));
+	const collected = sumMinorUnits(paid.map((row) => row.balance.paid));
 
 	// The rate in force today (#14's "marked in an explicit way instead of
 	// staying just another row in a flat table") — resolved once, here,

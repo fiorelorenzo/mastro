@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
+	import { Button } from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
 	import ClientForm from '../ClientForm.svelte';
 	import type { ActionData, PageData } from './$types';
@@ -29,6 +31,12 @@
 <svelte:head><title>{m.client_new_page_title()}</title></svelte:head>
 
 <Page crumbs={data.crumbs} title={m.client_new_heading()}>
+	{#snippet actions()}
+		<Button variant="secondary" href={resolve('/clients/new/from-pdf')}>
+			{m.client_new_from_pdf_link()}
+		</Button>
+	{/snippet}
+
 	<ClientForm
 		{values}
 		{contactSlots}

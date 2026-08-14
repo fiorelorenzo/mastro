@@ -3,14 +3,21 @@
 // open transaction (`DbExecutor`), so tests can run inside the transaction
 // they are about to roll back — the same pattern `fiscal/profile.ts` sets.
 
-import { eq } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
-import { contract, invoice } from '$lib/server/db/schema';
+import { contract, invoice, payment } from '$lib/server/db/schema';
 import { defaultRegistry, type PackRegistry } from './registry';
 import { resolveFiscalPackOverRange } from './profile';
-import { NO_MINOR_UNITS, addMinorUnits, negateMinorUnits, type MinorUnits } from '$lib/money';
+import {
+	NO_MINOR_UNITS,
+	addMinorUnits,
+	negateMinorUnits,
+	scaleMinorUnits,
+	type MinorUnits
+} from '$lib/money';
 import {
 	sumLedgerAcrossPeriods,
+	type LedgerPayment,
 	type LedgerPeriod,
 	type LedgerRegimeFigure,
 	type LedgerRow
@@ -30,6 +37,16 @@ import {
  * assembles a `LedgerRow`; every ledger, ceiling, certainty and forecast
  * figure reads through it, never the raw table again — so the sign flip
  * lives here once, not once per caller.
+ *
+ * `payments` (#212) are recorded against `invoice.total` — the gross,
+ * VAT-and-stamp-duty-inclusive figure a client actually pays — but this
+ * row's own `amount` is the net revenue figure above. A payment is
+ * scaled by the same ratio the invoice as a whole bears between the two,
+ * so a payment that settles a VAT-exempt flat-rate invoice in full still
+ * recognises exactly `amount`, and a payment that settles half of one
+ * recognises half of `amount` — never half of the gross figure the
+ * client actually transferred, which would silently smuggle VAT and
+ * stamp duty into a cash-basis revenue figure.
  */
 export async function fetchLedgerRows(executor: DbExecutor = db): Promise<LedgerRow[]> {
 	const rows = await executor
@@ -38,23 +55,48 @@ export async function fetchLedgerRows(executor: DbExecutor = db): Promise<Ledger
 			contractId: invoice.contractId,
 			clientId: contract.clientId,
 			issueDate: invoice.issueDate,
-			paidOn: invoice.paidOn,
 			documentType: invoice.documentType,
 			taxableAmount: invoice.taxableAmount,
-			socialCharge: invoice.socialCharge
+			socialCharge: invoice.socialCharge,
+			total: invoice.total
 		})
 		.from(invoice)
 		.innerJoin(contract, eq(invoice.contractId, contract.id));
 
+	const paymentRows = await executor
+		.select({ invoiceId: payment.invoiceId, date: payment.date, amount: payment.amount })
+		.from(payment)
+		.orderBy(asc(payment.date), asc(payment.createdAt));
+	const paymentsByInvoiceId = new Map<string, { date: string; amount: MinorUnits }[]>();
+	for (const row of paymentRows) {
+		const existing = paymentsByInvoiceId.get(row.invoiceId) ?? [];
+		existing.push({ date: row.date, amount: row.amount });
+		paymentsByInvoiceId.set(row.invoiceId, existing);
+	}
+
 	return rows.map((row) => {
-		const amount = addMinorUnits(row.taxableAmount, row.socialCharge ?? NO_MINOR_UNITS);
+		const netAmount = addMinorUnits(row.taxableAmount, row.socialCharge ?? NO_MINOR_UNITS);
+		const amount = row.documentType === 'credit_note' ? negateMinorUnits(netAmount) : netAmount;
+		const grossPayments = paymentsByInvoiceId.get(row.invoiceId) ?? [];
+		// `row.total` is zero only for a degenerate zero-amount invoice —
+		// there is no meaningful ratio to scale a payment by against a
+		// zero denominator, so such a row (never produced by any real
+		// write path) simply carries no cash events rather than dividing
+		// by zero.
+		const payments: LedgerPayment[] =
+			row.total === 0
+				? []
+				: grossPayments.map((p) => ({
+						date: p.date,
+						amount: scaleMinorUnits(amount, p.amount / row.total)
+					}));
 		return {
 			invoiceId: row.invoiceId,
 			contractId: row.contractId,
 			clientId: row.clientId,
 			issueDate: row.issueDate,
-			paidOn: row.paidOn,
-			amount: row.documentType === 'credit_note' ? negateMinorUnits(amount) : amount
+			amount,
+			payments
 		};
 	});
 }

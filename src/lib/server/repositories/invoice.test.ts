@@ -8,6 +8,7 @@ import { client, contract, document, invoice, invoiceLine } from '$lib/server/db
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import {
 	createInvoice,
+	getInvoiceBalance,
 	getInvoiceDocuments,
 	getInvoiceWithLines,
 	listUnpaidInvoices,
@@ -469,8 +470,13 @@ test('recording a payment sets paid_on, and the invoice no longer appears in the
 		const unpaidBefore = await listUnpaidInvoices(tx);
 		expect(unpaidBefore.some((row) => row.invoice.id === invoiceRow.id)).toBe(true);
 
-		const paid = await recordPayment(invoiceRow.id, '2024-02-01', tx);
-		expect(paid.paidOn).toBe('2024-02-01');
+		const paid = await recordPayment(
+			invoiceRow.id,
+			{ amount: invoiceRow.total, date: '2024-02-01' },
+			tx
+		);
+		expect(paid.amount).toBe(invoiceRow.total);
+		expect(paid.date).toBe('2024-02-01');
 
 		const unpaidAfter = await listUnpaidInvoices(tx);
 		expect(unpaidAfter.some((row) => row.invoice.id === invoiceRow.id)).toBe(false);
@@ -524,7 +530,7 @@ test('a day linked to an unpaid invoice line is not itself transitioned to "paid
 			tx
 		);
 
-		await recordPayment(invoiceRow.id, '2024-02-01', tx);
+		await recordPayment(invoiceRow.id, { amount: invoiceRow.total, date: '2024-02-01' }, tx);
 
 		const refreshedDay = await getWorkUnit(day.id, tx);
 		// The row itself is unchanged by paying the invoice — no cascade
@@ -861,5 +867,107 @@ test('the CHECK rejects corrects_invoice_id set on an invoice that is neither a 
 			code: '23514',
 			constraint_name: 'invoice_corrects_invoice_id_only_for_corrections'
 		});
+	});
+});
+
+test('a partial payment leaves the invoice unpaid with the correct remaining balance', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const invoiceRow = await createInvoice(
+			{
+				contractId: contractRow.id,
+				number: 'INV-0007',
+				issueDate: '2024-01-01',
+				documentType: 'invoice',
+				currency: 'EUR',
+				taxTreatmentCode: null,
+				statutoryReference: null,
+				stampDuty: null,
+				socialCharge: null,
+				dueDate: '2024-01-15',
+				paymentMethod: null,
+				iban: null,
+				transmissionId: null,
+				lines: [
+					{
+						description: 'Flat fee',
+						quantity: 1,
+						unitPrice: minorUnits(50000),
+						amount: minorUnits(50000),
+						taxRate: 0,
+						taxTreatmentCode: null,
+						workUnitIds: []
+					}
+				]
+			},
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'invoiced',
+			tx
+		);
+
+		const partial = minorUnits(Math.floor(invoiceRow.total / 2));
+		await recordPayment(invoiceRow.id, { amount: partial, date: '2024-02-01' }, tx);
+
+		const balance = await getInvoiceBalance(invoiceRow.id, tx);
+		expect(balance?.settled).toBe(false);
+		expect(balance?.paid).toBe(partial);
+		expect(balance?.remaining).toBe(invoiceRow.total - partial);
+
+		const unpaid = await listUnpaidInvoices(tx);
+		expect(unpaid.some((row) => row.invoice.id === invoiceRow.id)).toBe(true);
+	});
+});
+
+test('two payments that together exceed the total settle the invoice, with remaining floored at zero', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const invoiceRow = await createInvoice(
+			{
+				contractId: contractRow.id,
+				number: 'INV-0008',
+				issueDate: '2024-01-01',
+				documentType: 'invoice',
+				currency: 'EUR',
+				taxTreatmentCode: null,
+				statutoryReference: null,
+				stampDuty: null,
+				socialCharge: null,
+				dueDate: '2024-01-15',
+				paymentMethod: null,
+				iban: null,
+				transmissionId: null,
+				lines: [
+					{
+						description: 'Flat fee',
+						quantity: 1,
+						unitPrice: minorUnits(50000),
+						amount: minorUnits(50000),
+						taxRate: 0,
+						taxTreatmentCode: null,
+						workUnitIds: []
+					}
+				]
+			},
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'invoiced',
+			tx
+		);
+
+		// Neither payment alone reaches the total; together they exceed it
+		// by 10,000 — `settledOn` is the later date, the one at which the
+		// running sum first reaches or passes `total`.
+		const firstAmount = minorUnits(Math.floor(invoiceRow.total * 0.6));
+		const secondAmount = minorUnits(Math.floor(invoiceRow.total * 0.6));
+		await recordPayment(invoiceRow.id, { amount: firstAmount, date: '2024-02-01' }, tx);
+		await recordPayment(invoiceRow.id, { amount: secondAmount, date: '2024-03-01' }, tx);
+
+		const balance = await getInvoiceBalance(invoiceRow.id, tx);
+		expect(balance?.settled).toBe(true);
+		expect(balance?.remaining).toBe(0);
+		expect(balance?.paid).toBe(firstAmount + secondAmount);
+		expect(balance?.settledOn).toBe('2024-03-01');
+
+		const unpaid = await listUnpaidInvoices(tx);
+		expect(unpaid.some((row) => row.invoice.id === invoiceRow.id)).toBe(false);
 	});
 });

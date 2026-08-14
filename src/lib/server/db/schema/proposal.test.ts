@@ -197,6 +197,8 @@ test('a confidence outside 0..1 is rejected by the database', async () => {
 	});
 });
 
+// `'invoice'` was this test's unknown value until #87 made it known, and
+// `'contract'` until #86 did. `'expense'` is a target nothing proposes yet.
 test('a target_type outside the known set is rejected by the database', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const contractRow = await insertContract(tx);
@@ -208,7 +210,7 @@ test('a target_type outside the known set is rejected by the database', async ()
 					tx
 						.insert(proposal)
 						.values(
-							proposalFields(contractRow.id, documentRow.id, { targetType: 'invoice' as never })
+							proposalFields(contractRow.id, documentRow.id, { targetType: 'expense' as never })
 						),
 				tx
 			)

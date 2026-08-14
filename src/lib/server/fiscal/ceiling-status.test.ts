@@ -7,15 +7,14 @@
 // since a real instance's *current* regime is open-ended and therefore
 // unsafe to collide with at any future date, however distant.
 
-import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { minorUnits } from '$lib/money';
 import { client as pool, type DbExecutor } from '$lib/server/db';
-import { client, contract, invoice } from '$lib/server/db/schema';
+import { client, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { fiscalProfile } from '$lib/server/db/schema/fiscal';
-import { createInvoice, type InvoiceInput } from '$lib/server/repositories/invoice';
+import { createInvoice, recordPayment, type InvoiceInput } from '$lib/server/repositories/invoice';
 import { createCeiling } from '$lib/server/repositories/ceiling';
 import { evaluateActiveCeilings } from './ceiling-status';
 import type { FiscalPack } from './pack';
@@ -99,7 +98,7 @@ test('a pack ceiling and a persisted contract ceiling both appear, evaluated by 
 			'test fixture',
 			tx
 		);
-		await tx.update(invoice).set({ paidOn: '1940-06-10' }).where(eq(invoice.id, invoiceRow.id));
+		await recordPayment(invoiceRow.id, { amount: invoiceRow.total, date: '1940-06-10' }, tx);
 
 		await createCeiling(
 			{

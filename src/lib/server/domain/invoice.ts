@@ -1,3 +1,4 @@
+import { addMinorUnits, NO_MINOR_UNITS, type MinorUnits } from '$lib/money';
 import type { PaymentTerms } from '$lib/server/db/schema/contract';
 import { computeDueDate } from './contract';
 
@@ -42,18 +43,65 @@ export function daysLate(dueDate: string, today: Date = new Date()): number {
 }
 
 /**
+ * One payment (#212): whatever `repositories/invoice.ts`'s `payment`
+ * rows carry, reduced to what balance computation needs.
+ */
+export interface InvoicePayment {
+	readonly amount: MinorUnits;
+	readonly date: string;
+}
+
+/**
+ * An invoice's paid state, *derived* from `total` and every payment
+ * recorded against it (#212) — never stored as a single date the way
+ * `invoice.paid_on` used to be, so a client who pays half is a second
+ * row away from a client who pays the rest, not an unrepresentable
+ * state. `settled` is `paid >= total`: an overpayment still settles,
+ * exactly like an exact payment. `settledOn` is the date, walking
+ * `payments` oldest first, at which the running sum first reached
+ * `total` — `null` while any balance remains, so every caller that used
+ * to branch on "is `invoice.paid_on` set" branches on "is `settledOn`
+ * non-null" instead, with the identical result for an invoice paid in
+ * one go.
+ */
+export interface InvoiceBalance {
+	readonly paid: MinorUnits;
+	readonly remaining: MinorUnits;
+	readonly settled: boolean;
+	readonly settledOn: string | null;
+}
+
+export function computeInvoiceBalance(
+	total: MinorUnits,
+	payments: readonly InvoicePayment[]
+): InvoiceBalance {
+	const ordered = [...payments].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+	let paid = NO_MINOR_UNITS;
+	let settledOn: string | null = null;
+	for (const payment of ordered) {
+		paid = addMinorUnits(paid, payment.amount);
+		if (settledOn === null && paid >= total) settledOn = payment.date;
+	}
+	const remaining = Math.max(total - paid, 0) as MinorUnits;
+	return { paid, remaining, settled: paid >= total, settledOn };
+}
+
+/**
  * An invoice is overdue the instant its due date has passed with no
  * payment recorded — derived here on every read, never a stored flag a
  * batch job would have to refresh (#27's central acceptance bullet). A due
  * date that is today is not yet overdue: "past its due date" means
- * strictly after it.
+ * strictly after it. `settledOn` is {@link InvoiceBalance.settledOn}
+ * (#212) — a partly paid invoice (`settledOn` still `null`) is exactly as
+ * overdue as one nobody has paid anything against yet; only full
+ * settlement takes it off this list.
  */
 export function isOverdue(
 	dueDate: string,
-	paidOn: string | null,
+	settledOn: string | null,
 	today: Date = new Date()
 ): boolean {
-	return paidOn === null && daysLate(dueDate, today) > 0;
+	return settledOn === null && daysLate(dueDate, today) > 0;
 }
 
 /**

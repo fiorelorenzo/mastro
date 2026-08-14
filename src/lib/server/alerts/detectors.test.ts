@@ -258,14 +258,14 @@ test('proposal_pending is empty once nothing is currently pending', () => {
 
 // ── invoice_overdue ──────────────────────────────────────────────────────
 
-function invoiceRow(overrides: { dueDate: string; paidOn?: string | null }) {
+function invoiceRow(overrides: { dueDate: string; settledOn?: string | null }) {
 	return {
 		invoiceId: 'invoice-1',
 		invoiceNumber: '2026/1',
 		contractTitle: 'Consulting agreement',
 		clientLegalName: 'Acme Srl',
 		dueDate: overrides.dueDate,
-		paidOn: overrides.paidOn ?? null,
+		settledOn: overrides.settledOn ?? null,
 		total: 120000,
 		currency: 'EUR'
 	};
@@ -275,7 +275,7 @@ test('invoice_overdue does not fire on the due date itself, or once paid', () =>
 	expect(detectInvoiceOverdue([invoiceRow({ dueDate: '2026-08-07' })], '2026-08-07')).toEqual([]);
 	expect(
 		detectInvoiceOverdue(
-			[invoiceRow({ dueDate: '2026-07-01', paidOn: '2026-07-15' })],
+			[invoiceRow({ dueDate: '2026-07-01', settledOn: '2026-07-15' })],
 			'2026-08-07'
 		)
 	).toEqual([]);

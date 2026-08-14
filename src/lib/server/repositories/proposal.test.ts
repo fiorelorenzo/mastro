@@ -8,10 +8,12 @@ import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
 import {
 	approval,
+	clauseNote,
 	client,
 	contract,
 	document,
 	inboundThread,
+	rateCard,
 	workUnit
 } from '$lib/server/db/schema';
 import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
@@ -139,6 +141,79 @@ async function insertDocument(
 		receivedAt: new Date('2024-05-01T09:00:00Z')
 	});
 	return row;
+}
+
+/** An unclaimed document (#86): no contract, no owner — the shape a
+ * first-intake contract PDF is archived under before anything has claimed
+ * it. */
+async function insertUnclaimedDocument(tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) {
+	const row = await storeDocument(
+		{
+			bytes: new TextEncoder().encode('%PDF-1.7 fake contract bytes'),
+			mime: 'application/pdf',
+			originalName: 'contract-a.pdf',
+			provenance: 'upload' as const,
+			contractId: null,
+			confidential: true,
+			ownerType: null,
+			ownerId: null
+		},
+		tx
+	);
+	return row;
+}
+
+/** A well-formed `'contract'` proposal's `proposedFields` (#86), matching
+ * `agent/contract-extraction.ts`'s own shape exactly — these tests exercise
+ * `repositories/proposal.ts`'s accept dispatcher directly, independent of
+ * the producer that would normally build this blob from a model call. */
+function validContractFields(
+	overrides: { clauseFlags?: Record<string, unknown>[]; contract?: Record<string, unknown> } = {}
+): Record<string, unknown> {
+	counter += 1;
+	return {
+		client: {
+			legalName: `Vetraria del Garda ${counter} S.p.A.`,
+			taxId: `CONTRACT-TEST-TAX-${counter}`,
+			vatId: null,
+			country: 'IT',
+			addressLine1: 'Via Industriale 8',
+			addressLine2: null,
+			addressCity: 'Desenzano del Garda',
+			addressPostalCode: '25015',
+			addressRegion: null
+		},
+		contract: {
+			title: 'Contratto di Consulenza Professionale',
+			signedDocumentReference: 'Rep. n. 14/2025',
+			startsOn: '2025-09-01',
+			endsOn: '2026-08-31',
+			renewalType: 'none',
+			renewalNoticeDays: null,
+			terminationNoticeDays: 45,
+			paymentTerms: { kind: 'net', days: 30 },
+			invoicingCadence: 'monthly',
+			currency: 'EUR',
+			taxTreatment: 'IVA ordinaria 22%',
+			requiresPriorApproval: true,
+			requiresExpensePreAuthorisation: true,
+			expensePolicy: { kind: 'reimbursed_at_cost' },
+			...overrides.contract
+		},
+		rateCards: [
+			{
+				validFrom: '2025-09-01',
+				validTo: null,
+				kind: 'daily',
+				amount: 650,
+				unit: 'day',
+				allowedFractions: [1, 0.5],
+				minimumHours: null,
+				disbursementPeriod: null
+			}
+		],
+		clauseFlags: overrides.clauseFlags ?? []
+	};
 }
 
 test('createProposal records a pending proposal with no decision yet', async () => {
@@ -593,5 +668,261 @@ test('#245: an edit that fixes the offending field on the review screen is accep
 		);
 		expect(accepted.status).toBe('accepted');
 		expect(accepted.acceptedFields).toMatchObject({ quantity: 1 });
+	});
+});
+
+test('#86: a well-formed first-intake contract proposal has no validation error and no contract_id', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const documentRow = await insertUnclaimedDocument(tx);
+
+		const created = await createProposal(
+			{
+				documentId: documentRow.id,
+				contractId: null,
+				targetType: 'contract',
+				proposedFields: validContractFields(),
+				excerpt: 'tra Vetraria del Garda S.p.A. e dott. Elia Fontana',
+				confidence: 0.85
+			},
+			tx
+		);
+
+		expect(created.validationError).toBeNull();
+		expect(created.contractId).toBeNull();
+	});
+});
+
+test('#86: an ambiguous renewal clause with no interpretation chosen blocks silent acceptance', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const documentRow = await insertUnclaimedDocument(tx);
+		const flag = {
+			field: 'contract.renewalType',
+			clauseReference: 'Art. 4 e Art. 9',
+			verbatimText: 'si intende tacitamente rinnovato per ulteriori 12 mesi salvo disdetta',
+			readings: [
+				'tacit: Art. 4 controls, the contract renews unless notice is given',
+				'none: Art. 9 controls, the contract ends on its fixed term'
+			],
+			interpretationAdopted: null
+		};
+		const created = await createProposal(
+			{
+				documentId: documentRow.id,
+				contractId: null,
+				targetType: 'contract',
+				proposedFields: validContractFields({
+					contract: { renewalType: null },
+					clauseFlags: [flag]
+				}),
+				excerpt: 'tra Vetraria del Garda S.p.A. e dott. Elia Fontana',
+				confidence: 0.4
+			},
+			tx
+		);
+
+		// Blocked twice, the same "checked at creation, re-checked at
+		// accept" shape #245 already gives work_unit: named at creation...
+		expect(created.validationError).toMatch(/renewalType is required/);
+
+		// ...and acceptProposal itself refuses it, before any write.
+		await expect(
+			tx.transaction((nested) =>
+				acceptProposal(created.id, { decidedBy: 'lorenzo@example.com' }, nested)
+			)
+		).rejects.toThrow(/renewalType is required/);
+
+		const stillPending = await getProposal(created.id, tx);
+		expect(stillPending?.status).toBe('pending');
+		const contracts = await tx
+			.select()
+			.from(contract)
+			.where(eq(contract.title, 'Contratto di Consulenza Professionale'));
+		expect(contracts).toHaveLength(0);
+	});
+});
+
+test('#86: resolving the ambiguous clause with an edit creates the contract and records the reading adopted', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const documentRow = await insertUnclaimedDocument(tx);
+		const flag = {
+			field: 'contract.renewalType',
+			clauseReference: 'Art. 4 e Art. 9',
+			verbatimText: 'si intende tacitamente rinnovato per ulteriori 12 mesi salvo disdetta',
+			readings: [
+				'tacit: Art. 4 controls, the contract renews unless notice is given',
+				'none: Art. 9 controls, the contract ends on its fixed term'
+			],
+			interpretationAdopted: null
+		};
+		const proposedFields = validContractFields({
+			contract: { renewalType: null },
+			clauseFlags: [flag]
+		});
+		const created = await createProposal(
+			{
+				documentId: documentRow.id,
+				contractId: null,
+				targetType: 'contract',
+				proposedFields,
+				excerpt: 'tra Vetraria del Garda S.p.A. e dott. Elia Fontana',
+				confidence: 0.4
+			},
+			tx
+		);
+
+		const chosenReading =
+			'Art. 9 is the later, more specific clause and controls: the contract ends on its fixed term with no renewal.';
+		const accepted = await acceptProposal(
+			created.id,
+			{
+				edits: {
+					contract: {
+						...(proposedFields.contract as Record<string, unknown>),
+						renewalType: 'none'
+					},
+					clauseFlags: [{ ...flag, interpretationAdopted: chosenReading }]
+				},
+				decidedBy: 'lorenzo@example.com'
+			},
+			tx
+		);
+
+		expect(accepted.status).toBe('accepted');
+		expect(accepted.resultId).toBeTruthy();
+
+		const [contractRow] = await tx
+			.select()
+			.from(contract)
+			.where(eq(contract.id, accepted.resultId as string));
+		expect(contractRow.renewalType).toBe('none');
+		expect(contractRow.status).toBe('draft');
+
+		const [clientRow] = await tx.select().from(client).where(eq(client.id, contractRow.clientId));
+		expect(clientRow.taxId).toEqual((proposedFields.client as Record<string, unknown>).taxId);
+
+		const cards = await tx.select().from(rateCard).where(eq(rateCard.contractId, contractRow.id));
+		expect(cards).toHaveLength(1);
+		expect(Number(cards[0].amount)).toBe(650);
+
+		// The clause note is the record issue #86 asks for: the verbatim
+		// text and the reading actually adopted, next to each other.
+		const notes = await tx
+			.select()
+			.from(clauseNote)
+			.where(eq(clauseNote.contractId, contractRow.id));
+		expect(notes).toHaveLength(1);
+		expect(notes[0].verbatimText).toBe(flag.verbatimText);
+		expect(notes[0].interpretationAdopted).toBe(chosenReading);
+		expect(notes[0].clauseReference).toBe('Art. 4 e Art. 9');
+
+		// The founding PDF is claimed by the contract it just produced —
+		// no longer unowned.
+		const [claimedDocument] = await tx
+			.select()
+			.from(document)
+			.where(eq(document.id, documentRow.id));
+		expect(claimedDocument.contractId).toBe(contractRow.id);
+		expect(claimedDocument.ownerType).toBe('contract');
+		expect(claimedDocument.ownerId).toBe(contractRow.id);
+	});
+});
+
+test('#86: a second first-intake proposal for a client with the same tax id reuses the existing client', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const firstDocument = await insertUnclaimedDocument(tx);
+		const fields = validContractFields();
+		const firstProposal = await createProposal(
+			{
+				documentId: firstDocument.id,
+				contractId: null,
+				targetType: 'contract',
+				proposedFields: fields,
+				excerpt: 'tra Vetraria del Garda S.p.A. e dott. Elia Fontana',
+				confidence: 0.9
+			},
+			tx
+		);
+		const firstAccepted = await acceptProposal(
+			firstProposal.id,
+			{ decidedBy: 'lorenzo@example.com' },
+			tx
+		);
+		const [firstContract] = await tx
+			.select()
+			.from(contract)
+			.where(eq(contract.id, firstAccepted.resultId as string));
+
+		// A second contract for the same counterparty — an addendum
+		// mis-read as first intake, or simply a second engagement —
+		// carries the identical client block (same taxId).
+		const secondDocument = await insertUnclaimedDocument(tx);
+		const secondFields = {
+			...fields,
+			contract: { ...(fields.contract as Record<string, unknown>), title: 'Second engagement' }
+		};
+		const secondProposal = await createProposal(
+			{
+				documentId: secondDocument.id,
+				contractId: null,
+				targetType: 'contract',
+				proposedFields: secondFields,
+				excerpt: 'tra Vetraria del Garda S.p.A. e dott. Elia Fontana',
+				confidence: 0.9
+			},
+			tx
+		);
+		const secondAccepted = await acceptProposal(
+			secondProposal.id,
+			{ decidedBy: 'lorenzo@example.com' },
+			tx
+		);
+		const [secondContract] = await tx
+			.select()
+			.from(contract)
+			.where(eq(contract.id, secondAccepted.resultId as string));
+
+		expect(secondContract.clientId).toBe(firstContract.clientId);
+		const clients = await tx
+			.select()
+			.from(client)
+			.where(eq(client.taxId, (fields.client as Record<string, unknown>).taxId as string));
+		expect(clients).toHaveLength(1);
+	});
+});
+
+test('#86: an ambiguous clause flag whose verbatimText the excerpt does not carry still round-trips through accept unedited when interpretationAdopted is supplied', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const documentRow = await insertUnclaimedDocument(tx);
+		const flag = {
+			field: 'rateCards.0.disbursementPeriod',
+			clauseReference: 'Art. 2',
+			verbatimText: 'un minimo fatturabile di 2 ore per singolo intervento',
+			readings: ['solo ore intere', 'frazioni orarie ammesse'],
+			interpretationAdopted: 'solo ore intere, come da lettura pi\u00f9 conservativa'
+		};
+		const created = await createProposal(
+			{
+				documentId: documentRow.id,
+				contractId: null,
+				targetType: 'contract',
+				proposedFields: validContractFields({ clauseFlags: [flag] }),
+				excerpt: 'tra Vetraria del Garda S.p.A. e dott. Elia Fontana',
+				confidence: 0.7
+			},
+			tx
+		);
+		// Already resolved as proposed (interpretationAdopted set by the
+		// producer's own edit-free path is unrealistic, but this proves the
+		// gate is exactly "interpretationAdopted present", not tied to
+		// whether contract.renewalType specifically is null.
+		expect(created.validationError).toBeNull();
+
+		const accepted = await acceptProposal(created.id, { decidedBy: 'lorenzo@example.com' }, tx);
+		const notes = await tx
+			.select()
+			.from(clauseNote)
+			.where(eq(clauseNote.contractId, accepted.resultId as string));
+		expect(notes).toHaveLength(1);
+		expect(notes[0].interpretationAdopted).toBe(flag.interpretationAdopted);
 	});
 });

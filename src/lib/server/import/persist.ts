@@ -24,6 +24,7 @@ import { naturalInvoiceKey, type ExistingInvoiceRecord } from './dedup';
 import { classifyImportedInvoice } from './direction';
 import { importFile } from './importer';
 import type { Invoice } from './invoice';
+import { supersedePendingInvoiceProposals } from './invoice-supersession';
 import type { AdapterRegistry } from './registry';
 
 /** What a human decided for one line's proposed day mapping (#48):
@@ -214,6 +215,21 @@ export async function persistImportedInvoice(
 				executor
 			);
 			invoiceId = invoiceRow.id;
+			// #87: a PDF fallback proposal may already exist for this exact
+			// invoice (same contract, same natural key), still pending a
+			// human's review because nothing more authoritative had arrived
+			// yet. Now something has — supersede it: the structured document's
+			// own values win, and the PDF it was extracted from becomes this
+			// invoice's attachment rather than its only evidence, both kept
+			// (invariant 4).
+			await supersedePendingInvoiceProposals(
+				request.contractId,
+				invoice,
+				invoiceRow.id,
+				invoiceRow.dueDate,
+				accountHolderTaxId,
+				executor
+			);
 			knownHashes.add(hash);
 		}
 

@@ -103,11 +103,22 @@
 	<span class="mono">{row.invoice.number}</span>
 {/snippet}
 {#snippet statusCell(row: Row)}
-	{@const status = invoiceStatus(row.daysLate, row.invoice.paidOn)}
+	{@const status = invoiceStatus(row.daysLate, row.balance.settledOn)}
 	<Badge variant={status.level} label={status.label} />
 {/snippet}
 {#snippet totalCell(row: Row)}
-	<Amount minorUnits={row.invoice.total} currency={row.invoice.currency} size="md" />
+	<Amount
+		minorUnits={row.balance.settled ? row.invoice.total : row.balance.remaining}
+		currency={row.invoice.currency}
+		size="md"
+	/>
+	{#if !row.balance.settled && row.balance.paid > 0}
+		<span class="hint"
+			>{m.invoices_row_partial_payment_hint({
+				amount: formatMinorUnits(row.balance.paid, row.invoice.currency)
+			})}</span
+		>
+	{/if}
 {/snippet}
 {#snippet actionsCell(row: Row)}
 	{#if row.overdue}
@@ -249,6 +260,12 @@
 		padding: var(--space-3) 0;
 		font-size: var(--text-sm);
 		font-style: italic;
+		color: var(--text-muted);
+	}
+	.hint {
+		display: block;
+		text-align: right;
+		font-size: var(--text-xs);
 		color: var(--text-muted);
 	}
 </style>

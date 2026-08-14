@@ -78,20 +78,25 @@ export const load: PageServerLoad = async ({ params }) => {
 	if (!row) error(404, m.proposal_detail_not_found());
 
 	const [contract, document, thread, siblingRows] = await Promise.all([
-		getContractWithClient(row.contractId),
+		row.contractId ? getContractWithClient(row.contractId) : null,
 		getDocument(row.documentId),
 		getInboundThreadForDocument(row.documentId),
 		listProposalsForDocument(row.documentId)
 	]);
 
-	const bytes = document ? await readDocumentBytes(document) : null;
+	// A 'contract' or 'invoice' proposal's evidence is a PDF, not an RFC
+	// 822 message (#86/#87) — `parseMessage` is only meaningful for the
+	// mail provenance `work_unit` proposals actually carry.
+	const isMailDocument = document?.mime === 'message/rfc822';
+	const bytes = isMailDocument && document ? await readDocumentBytes(document) : null;
 	const parsedMessage = bytes ? parseMessage(bytes) : null;
 	const messageBody = parsedMessage ? decodeMessageBody(parsedMessage) : '';
 
 	const effectiveFields = workUnitFields(row.acceptedFields ?? row.proposedFields);
-	const amount = effectiveFields
-		? priceWorkUnitOnDate(effectiveFields, await listRateCards(row.contractId))
-		: null;
+	const amount =
+		effectiveFields && row.contractId
+			? priceWorkUnitOnDate(effectiveFields, await listRateCards(row.contractId))
+			: null;
 
 	// Siblings from the same document, in the order a reviewer would step
 	// through them — the day each proposes, not creation order, since a

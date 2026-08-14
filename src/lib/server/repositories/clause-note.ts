@@ -1,5 +1,5 @@
 import { asc, eq } from 'drizzle-orm';
-import { db } from '$lib/server/db';
+import { db, type DbExecutor } from '$lib/server/db';
 import { clauseNote } from '$lib/server/db/schema';
 
 export type ClauseNoteInput = {
@@ -21,8 +21,8 @@ export async function getClauseNote(id: string) {
 	return db.query.clauseNote.findFirst({ where: eq(clauseNote.id, id) });
 }
 
-export async function createClauseNote(input: ClauseNoteInput) {
-	const [row] = await db.insert(clauseNote).values(input).returning();
+export async function createClauseNote(input: ClauseNoteInput, executor: DbExecutor = db) {
+	const [row] = await executor.insert(clauseNote).values(input).returning();
 	return row;
 }
 

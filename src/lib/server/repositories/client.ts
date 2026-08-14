@@ -1,5 +1,5 @@
 import { asc, eq } from 'drizzle-orm';
-import { db } from '$lib/server/db';
+import { db, type DbExecutor } from '$lib/server/db';
 import { client, clientContact, type NoticeChannel } from '$lib/server/db/schema';
 
 export type ClientContactInput = {
@@ -44,17 +44,30 @@ export async function getClientWithContacts(id: string) {
 	});
 }
 
-export async function createClient(input: ClientInput) {
+/** Looks a client up by its unique tax id — the same key #259 already
+ * cites for import matching (`client.ts`'s own schema comment). Used by
+ * #86's contract-from-PDF accept dispatcher to find-or-create the client
+ * a first-intake contract names, rather than creating a duplicate row
+ * every time the same counterparty's next contract is proposed. */
+export async function getClientByTaxId(taxId: string, executor: DbExecutor = db) {
+	return executor.query.client.findFirst({ where: eq(client.taxId, taxId) });
+}
+
+/** `tx`, if given, is used directly instead of opening a new transaction
+ * — lets a caller (#86's accept dispatcher) compose this with other
+ * writes atomically, the same reason `createApproval` takes one. */
+export async function createClient(input: ClientInput, tx?: DbExecutor) {
 	const { contacts, ...clientFields } = input;
-	return db.transaction(async (tx) => {
-		const [row] = await tx.insert(client).values(clientFields).returning();
+	const run = async (executor: DbExecutor) => {
+		const [row] = await executor.insert(client).values(clientFields).returning();
 		if (contacts.length > 0) {
-			await tx
+			await executor
 				.insert(clientContact)
 				.values(contacts.map((contact) => ({ ...contact, clientId: row.id })));
 		}
 		return row;
-	});
+	};
+	return tx ? run(tx) : db.transaction(run);
 }
 
 /** Replaces the client's contacts wholesale rather than diffing them: the

@@ -21,14 +21,18 @@ export function connectRunnerDb(databaseUrl: string): RunnerDb {
  * whatever a job claims — `job.ts` compares this against the job's own
  * `contractId` before any content reaches a model, so a producer bug
  * naming the wrong contract cannot have this document extracted against
- * it.
+ * it. `found` is `false` only when no such document exists at all — a
+ * first-intake document (#86) exists and reads back `found: true,
+ * contractId: null`, which `job.ts` treats as agreement with a job that
+ * itself claims no contract, not as a missing row.
  */
 export async function getDocumentContractId(
 	sql: RunnerDb,
 	documentId: string
-): Promise<string | null> {
-	const rows = await sql<{ contract_id: string }[]>`
+): Promise<{ found: boolean; contractId: string | null }> {
+	const rows = await sql<{ contract_id: string | null }[]>`
 		SELECT contract_id FROM document WHERE id = ${documentId}
 	`;
-	return rows[0]?.contract_id ?? null;
+	if (rows.length === 0) return { found: false, contractId: null };
+	return { found: true, contractId: rows[0].contract_id };
 }

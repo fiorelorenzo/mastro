@@ -229,14 +229,18 @@
 	<EmptyState icon="✉" title={m.contract_detail_empty_title()} body={m.contract_approval_empty()} />
 {/snippet}
 {#snippet invoiceStatusCell(row: InvoiceRow)}
-	{@const status = invoiceStatus(row.daysLate ?? 0, row.paidOn)}
+	{@const status = invoiceStatus(row.daysLate ?? 0, row.balance.settledOn)}
 	<span class="stack">
 		<Badge variant={status.level} label={status.label} size="sm" />
-		{#if row.paidOn}<span class="hint">{formatDate(row.paidOn)}</span>{/if}
+		{#if row.balance.settledOn}<span class="hint">{formatDate(row.balance.settledOn)}</span>{/if}
 	</span>
 {/snippet}
 {#snippet invoiceTotalCell(row: InvoiceRow)}
-	<Amount minorUnits={row.total} currency={row.currency} size="md" />
+	<Amount
+		minorUnits={row.balance.settled ? row.total : row.balance.remaining}
+		currency={row.currency}
+		size="md"
+	/>
 {/snippet}
 {#snippet invoicesEmpty()}
 	<EmptyState
@@ -313,6 +317,13 @@
 			size="sm"
 		>
 			{m.contract_detail_new_invoice_action()}
+		</Button>
+		<Button
+			href={`${resolve('/invoices/propose')}?contractId=${contract.id}`}
+			variant="tertiary"
+			size="sm"
+		>
+			{m.contract_detail_propose_invoice_action()}
 		</Button>
 		<Button
 			href={resolve('/clients/[id]/contracts/[contractId]/edit', {
