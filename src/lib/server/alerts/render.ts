@@ -113,6 +113,19 @@ export function alertMessage(alert: Alert, locale: Locale): AlertMessage {
 				)
 			};
 
+		case 'proposal_pending':
+			return {
+				title: m.alerts_proposal_pending_title({ contractTitle: detail.contractTitle }, { locale }),
+				body: m.alerts_proposal_pending_body(
+					{
+						clientLegalName: detail.clientLegalName,
+						createdAt: formatDate(detail.createdAt, locale),
+						days: formatDays(detail.daysPending, locale)
+					},
+					{ locale }
+				)
+			};
+
 		case 'invoice_overdue':
 			return {
 				title: m.alerts_invoice_overdue_title({ invoiceNumber: detail.invoiceNumber }, { locale }),

@@ -26,12 +26,29 @@ import {
 import { deleteQueuedDay, loadQueuedDays, putQueuedDay } from './offline-queue-db';
 import * as m from '$lib/paraglide/messages';
 
+/** Persists across a reload, unlike the entries themselves: the last
+ * entry that synced is gone from IndexedDB the moment it does (see
+ * `#replayOne` below), but "when did this last actually happen" (#227's
+ * shell indicator) still needs an answer even right after a fresh page
+ * load with nothing currently queued. One scalar, so localStorage — not
+ * another IndexedDB store — is the right size tool. */
+const LAST_SYNCED_STORAGE_KEY = 'mastro:offline-queue:last-synced-at';
+
 class OfflineQueueStore {
 	#entries = $state<QueuedDay[]>([]);
 	#replaying = false;
+	#lastSyncedAt = $state<string | null>(null);
 
 	get entries(): readonly QueuedDay[] {
 		return this.#entries;
+	}
+
+	/** The last time a queued entry actually reached the server and was
+	 * recorded — `null` until this browser has ever completed one. Read
+	 * by the shell-wide indicator (#227); `OfflineQueuePanel` has no use
+	 * for it, a single page's own successful save needs no "when." */
+	get lastSyncedAt(): string | null {
+		return this.#lastSyncedAt;
 	}
 
 	/** Loads whatever survived a reload or a closed tab, then replays once
@@ -40,6 +57,8 @@ class OfflineQueueStore {
 	 * component's `onMount`. */
 	init(): () => void {
 		if (!browser) return () => {};
+
+		this.#lastSyncedAt = localStorage.getItem(LAST_SYNCED_STORAGE_KEY);
 
 		void loadQueuedDays().then((loaded) => {
 			this.#entries = loaded;
@@ -142,6 +161,8 @@ class OfflineQueueStore {
 		if (outcome === 'synced') {
 			this.#entries = this.#entries.filter((e) => e.id !== entry.id);
 			await deleteQueuedDay(entry.id);
+			this.#lastSyncedAt = new Date().toISOString();
+			localStorage.setItem(LAST_SYNCED_STORAGE_KEY, this.#lastSyncedAt);
 		} else if (outcome === 'rejected') {
 			const message = extractRejectionMessage(result) ?? m.day_offline_sync_failed_generic();
 			await this.#setStatus(entry.id, 'failed', message);

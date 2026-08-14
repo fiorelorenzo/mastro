@@ -20,6 +20,7 @@ import {
 	detectInvoiceOverdue,
 	detectMailboxPollFailure,
 	detectMirrorFailure,
+	detectProposalPending,
 	detectRenewalWindowOpen,
 	detectWorkedWithoutApproval,
 	detectYearEndOverrunRisk
@@ -34,6 +35,7 @@ import {
 	fetchLatestBackupRun,
 	fetchLatestMailboxPollRun,
 	fetchMirrorFailureRows,
+	fetchProposalPendingRows,
 	fetchWorkedWithoutApprovalRows,
 	fetchYearEndOverrunInputs
 } from './repository';
@@ -61,7 +63,8 @@ export async function detectAlerts(asOfDate: string, executor: DbExecutor = db):
 		latestBackupRun,
 		mirrorRows,
 		mailboxPollStatus,
-		latestAgentRun
+		latestAgentRun,
+		proposalPendingRows
 	] = await Promise.all([
 		fetchContractsForDeadlineAlerts(executor),
 		fetchContractsForBillablePeriod(executor),
@@ -72,7 +75,8 @@ export async function detectAlerts(asOfDate: string, executor: DbExecutor = db):
 		fetchLatestBackupRun(executor),
 		fetchMirrorFailureRows(mirrorConfigFromEnv() !== null, executor),
 		fetchLatestMailboxPollRun(imapConfiguredInEnv(), executor),
-		fetchLatestAgentRun(executor)
+		fetchLatestAgentRun(executor),
+		fetchProposalPendingRows(executor)
 	]);
 
 	const yearEndInputs = await fetchYearEndOverrunInputs(evaluatedCeilings, asOfDate, executor);
@@ -80,7 +84,7 @@ export async function detectAlerts(asOfDate: string, executor: DbExecutor = db):
 	return [
 		...detectContractExpiring(deadlineRows, asOfDate),
 		...detectRenewalWindowOpen(deadlineRows, asOfDate),
-		...detectWorkedWithoutApproval(workedWithoutApprovalRows),
+		...detectWorkedWithoutApproval(workedWithoutApprovalRows, asOfDate),
 		...detectApprovalUnactioned(approvalRows, asOfDate),
 		...detectInvoiceOverdue(invoiceRows, asOfDate),
 		...detectBillablePeriodClosed(billableRows, asOfDate),
@@ -93,7 +97,8 @@ export async function detectAlerts(asOfDate: string, executor: DbExecutor = db):
 			mailboxPollStatus.latestRun,
 			asOfInstant
 		),
-		...detectAgentRunFailure(latestAgentRun, asOfInstant)
+		...detectAgentRunFailure(latestAgentRun, asOfInstant),
+		...detectProposalPending(proposalPendingRows, asOfDate)
 	];
 }
 

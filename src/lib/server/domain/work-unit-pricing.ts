@@ -24,7 +24,7 @@ export type PriceableRateCard = RateCardValidity & RateCardPricing;
  */
 export function priceWorkUnitOnDate(
 	workUnit: { date: string; quantity: number },
-	rateCards: PriceableRateCard[]
+	rateCards: readonly PriceableRateCard[]
 ): number | null {
 	const card = resolveRateCard(rateCards, workUnit.date);
 	if (!card) return null;

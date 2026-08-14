@@ -98,7 +98,10 @@ export type RateCardValidity = { id: string; validFrom: string; validTo: string 
  * at most one card ever matches, so the result is unambiguous by
  * construction; this function does not itself re-validate non-overlap.
  */
-export function resolveRateCard<T extends RateCardValidity>(cards: T[], date: string): T | null {
+export function resolveRateCard<T extends RateCardValidity>(
+	cards: readonly T[],
+	date: string
+): T | null {
 	return (
 		cards.find(
 			(card) => card.validFrom <= date && (card.validTo === null || date <= card.validTo)

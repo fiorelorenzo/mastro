@@ -22,6 +22,25 @@ export const APPROVAL_UNACTIONED_WARNING_DAYS = 3;
 export const APPROVAL_UNACTIONED_SERIOUS_DAYS = 7;
 export const APPROVAL_UNACTIONED_CRITICAL_DAYS = 14;
 
+/** `worked_without_approval` (#229): real exposure exists the instant a
+ * day enters this state, so there is no "grace period" the way
+ * `approval_unactioned` has one — severity starts at `serious`, never
+ * `warning`. It does not stay there forever, though: unresolved for this
+ * many days or more, it steps up to `critical`, giving delivery dedup
+ * (`state.ts`'s `covers`) a strictly higher rank to clear against and
+ * re-deliver on — the fix for "the alert fires once, at whatever severity
+ * it was ever going to have, and then goes quiet forever". */
+export const WORKED_WITHOUT_APPROVAL_CRITICAL_DAYS = 3;
+
+/** `proposal_pending` (#229): days since a proposal was produced with no
+ * human decision yet. Same three-step climb as `approval_unactioned`, and
+ * the same figures — a human confirming is the entire point of the
+ * ingestion loop (invariant 3), so a proposal going unreviewed is exactly
+ * as urgent as an approval going unactioned. */
+export const PROPOSAL_PENDING_WARNING_DAYS = 3;
+export const PROPOSAL_PENDING_SERIOUS_DAYS = 7;
+export const PROPOSAL_PENDING_CRITICAL_DAYS = 14;
+
 /** `invoice_overdue`: mirrors the bands `routes/invoices/status.ts`'s
  * `ageingStatus` already established for the same `daysLate` figure, so
  * the ageing table and this alert never disagree about what "seriously

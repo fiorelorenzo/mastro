@@ -18,6 +18,7 @@ import {
 	document,
 	documentMirrorRun,
 	mailboxPollRun,
+	proposal,
 	workUnit
 } from '$lib/server/db/schema';
 import { forecastCommitted, forecastProjected } from '$lib/server/fiscal/forecast';
@@ -37,6 +38,7 @@ import type {
 	InvoiceOverdueRow,
 	MailboxPollRunRow,
 	MirrorCandidateRow,
+	ProposalPendingRow,
 	WorkedWithoutApprovalRow,
 	YearEndOverrunInput
 } from './detectors';
@@ -158,6 +160,29 @@ export async function fetchApprovalUnactionedRows(
 		.innerJoin(client, eq(contract.clientId, client.id))
 		.leftJoin(workUnit, eq(workUnit.approvalId, approval.id))
 		.where(isNull(workUnit.id));
+}
+
+/** Every proposal still `pending` — every decision, `applyProposal`'s
+ * whole purpose per invariant 3, happens through `acceptProposal`/
+ * `rejectProposal` (`repositories/proposal.ts`), so `status = 'pending'`
+ * alone is "nobody has looked at this yet", the same certainty
+ * `fetchWorkedWithoutApprovalRows`'s state filter gives that detector. */
+export async function fetchProposalPendingRows(
+	executor: DbExecutor = db
+): Promise<ProposalPendingRow[]> {
+	return executor
+		.select({
+			proposalId: proposal.id,
+			contractId: contract.id,
+			clientId: client.id,
+			contractTitle: contract.title,
+			clientLegalName: client.legalName,
+			createdAt: proposal.createdAt
+		})
+		.from(proposal)
+		.innerJoin(contract, eq(proposal.contractId, contract.id))
+		.innerJoin(client, eq(contract.clientId, client.id))
+		.where(eq(proposal.status, 'pending'));
 }
 
 /** Every unpaid invoice, reusing #29's own ageing-table query

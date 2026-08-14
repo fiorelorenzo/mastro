@@ -31,6 +31,7 @@ import {
 import { createApproval } from '$lib/server/repositories/approval';
 import { storeDocument } from '$lib/server/repositories/document';
 import { createInvoice, type InvoiceInput } from '$lib/server/repositories/invoice';
+import { createProposal, rejectProposal } from '$lib/server/repositories/proposal';
 import {
 	createWorkUnit,
 	transitionWorkUnit,
@@ -44,6 +45,7 @@ import {
 	fetchLatestBackupRun,
 	fetchLatestMailboxPollRun,
 	fetchMirrorFailureRows,
+	fetchProposalPendingRows,
 	fetchWorkedWithoutApprovalRows,
 	fetchYearEndOverrunInputs
 } from './repository';
@@ -245,6 +247,45 @@ test('fetchApprovalUnactionedRows returns an approval with no linked day and dro
 		expect(ids).toContain(unactioned.id);
 		expect(ids).not.toContain(actioned.id);
 		expect(rows.find((r) => r.approvalId === unactioned.id)?.clientId).toBe(clientRow.id);
+	});
+});
+
+// ── fetchProposalPendingRows ─────────────────────────────────────────────
+
+test('fetchProposalPendingRows returns a still-pending proposal and drops one already decided', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const { clientRow, contractRow } = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
+
+		const pending = await createProposal(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				targetType: 'work_unit',
+				proposedFields: { date: '2026-01-10', quantity: 1, scope: 'work' },
+				excerpt: 'Yes, go ahead for the 10th.',
+				confidence: 0.9
+			},
+			tx
+		);
+		const decided = await createProposal(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				targetType: 'work_unit',
+				proposedFields: { date: '2026-01-11', quantity: 1, scope: 'work' },
+				excerpt: 'Yes, go ahead for the 11th.',
+				confidence: 0.9
+			},
+			tx
+		);
+		await rejectProposal(decided.id, 'lorenzo@example.com', tx);
+
+		const rows = await fetchProposalPendingRows(tx);
+		const ids = rows.map((r) => r.proposalId);
+		expect(ids).toContain(pending.id);
+		expect(ids).not.toContain(decided.id);
+		expect(rows.find((r) => r.proposalId === pending.id)?.clientId).toBe(clientRow.id);
 	});
 });
 

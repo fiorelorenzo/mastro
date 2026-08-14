@@ -4,6 +4,28 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<!--
+			Pre-paint theme stamp — runs before any stylesheet (including this
+			document's own) so the correct scheme is already on <html> for the
+			very first paint, no flash of the other one (#232). Storage key and
+			values are duplicated from THEME_STORAGE_KEY/ThemePreference in
+			src/lib/theme.ts on purpose: this script executes before a module
+			graph exists, so it cannot import that module. theme.test.ts pins
+			this literal to that constant so the two cannot drift apart.
+			'system' writes no attribute at all — prefers-color-scheme in
+			palette.css/tokens.css keeps driving the scheme for that case, live,
+			with no JS involved.
+		-->
+		<script>
+			(function () {
+				try {
+					var stored = localStorage.getItem('mastro:theme');
+					if (stored === 'light' || stored === 'dark') {
+						document.documentElement.dataset.theme = stored;
+					}
+				} catch (e) {}
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

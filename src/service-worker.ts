@@ -62,8 +62,11 @@ import { base, build, files, prerendered, version } from '$service-worker';
 import {
 	dataCacheKey,
 	dataCacheName,
+	dayEntryDataUrl,
 	isCacheableDataRequest,
+	isOfflineDocumentRequest,
 	isSessionInvalidPayload,
+	offlineFallbackUrl,
 	shellCacheName
 } from '$lib/pwa/sw-cache-policy';
 
@@ -84,6 +87,18 @@ sw.addEventListener('install', (event) => {
 		(async () => {
 			const cache = await caches.open(SHELL_CACHE);
 			await cache.addAll(SHELL_URLS);
+			// #227: the day-entry form's own data — which contracts exist, the
+			// default one to preselect, today's date — is what lets a cold,
+			// offline start reach a *working* form rather than just the
+			// offline page's static prose: see /offline/+page.svelte's own
+			// goto() and handleDataRequest below, which this warms the same
+			// cache for. A signed-out install (no session cookie yet, e.g.
+			// this is the very first visit, to /sign-in) gets a redirect
+			// envelope here, which processNetworkDataResponse already treats
+			// as "wipe, don't cache" — the ordinary stale-while-revalidate
+			// path in handleDataRequest warms it for real the first time a
+			// signed-in visitor actually opens the page themselves.
+			await warmDayEntryData();
 			// A ledger stuck on an old build until every tab closes is worse
 			// than one extra reload (#61 — "a new deployment does not leave a
 			// stale shell serving forever"). No offline write queue exists
@@ -206,6 +221,23 @@ sw.addEventListener('notificationclick', (event) => {
  * does not match the route it is hydrating.
  */
 async function handleNavigate(request: Request): Promise<Response> {
+	const requestUrl = new URL(request.url);
+	const offlineUrl = new URL(OFFLINE_URL, sw.location.origin);
+
+	// #227: without this, a session with no network at all — not just a
+	// failed /day/new, /offline itself too — would fetch /offline below,
+	// fail exactly the same way, and be handed the same redirect every
+	// other failed navigation gets, which the browser re-requests as a
+	// brand new navigation to /offline: an infinite loop, never a working
+	// page. See isOfflineDocumentRequest's own doc comment for why serving
+	// this one document from Cache Storage does not weaken the "never
+	// cache a document" rule above.
+	if (isOfflineDocumentRequest(requestUrl.pathname, offlineUrl.pathname)) {
+		const cache = await caches.open(SHELL_CACHE);
+		const cached = await cache.match(OFFLINE_URL);
+		if (cached) return cached;
+	}
+
 	try {
 		return await fetch(request.url, {
 			method: request.method,
@@ -214,7 +246,29 @@ async function handleNavigate(request: Request): Promise<Response> {
 			redirect: 'manual'
 		});
 	} catch {
-		return Response.redirect(new URL(OFFLINE_URL, self.location.origin).href, 303);
+		return Response.redirect(offlineFallbackUrl(request.url, OFFLINE_URL, sw.location.origin), 303);
+	}
+}
+
+/**
+ * Proactively warms the day-entry form's own data into DATA_CACHE at
+ * `install` (#227), through the exact same `processNetworkDataResponse`
+ * path `handleDataRequest` uses for every other data fetch — so a build
+ * that adds a new field to `/day/new`'s `load()` return shape is still
+ * subject to the same content-type/session checks as any other cached
+ * response, with nothing duplicated here. Best-effort: a network error
+ * (offline at install time) or the absence of a session cookie yet (the
+ * very first, signed-out install) both leave the cache exactly as empty
+ * as it already was — `install` still resolves and `skipWaiting` still
+ * runs either way.
+ */
+async function warmDayEntryData(): Promise<void> {
+	const url = dayEntryDataUrl(base, sw.location.origin);
+	try {
+		const response = await fetch(url, { credentials: 'include' });
+		await processNetworkDataResponse(dataCacheKey(url), response);
+	} catch {
+		// No network yet, or nothing to catch — see the doc comment above.
 	}
 }
 

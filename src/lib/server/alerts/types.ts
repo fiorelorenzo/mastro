@@ -85,6 +85,16 @@ export type AlertDetail =
 			readonly daysUnactioned: number;
 	  }
 	| {
+			readonly type: 'proposal_pending';
+			readonly proposalId: string;
+			readonly contractId: string;
+			readonly clientId: string;
+			readonly contractTitle: string;
+			readonly clientLegalName: string;
+			readonly createdAt: string;
+			readonly daysPending: number;
+	  }
+	| {
 			readonly type: 'invoice_overdue';
 			readonly invoiceId: string;
 			readonly invoiceNumber: string;

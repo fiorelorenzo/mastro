@@ -1,5 +1,10 @@
 import { expect, test } from 'vitest';
-import { classifyReplay, extractRejectionMessage } from './offline-queue';
+import {
+	classifyReplay,
+	extractRejectionMessage,
+	queueSeverity,
+	type QueuedDay
+} from './offline-queue';
 
 test('a redirect result classifies as synced', () => {
 	expect(classifyReplay({ type: 'redirect', status: 303 })).toBe('synced');
@@ -47,4 +52,20 @@ test('extractRejectionMessage returns null when a failure carries no structured 
 	expect(
 		extractRejectionMessage({ type: 'failure', status: 400, data: { errors: null } })
 	).toBeNull();
+});
+
+function entry(status: QueuedDay['status']): QueuedDay {
+	return { id: status, queuedAt: '2026-08-14T00:00:00.000Z', fields: {}, status };
+}
+
+test('queueSeverity is warning for a queue with only pending/syncing entries', () => {
+	expect(queueSeverity([entry('pending'), entry('syncing')])).toBe('warning');
+});
+
+test('queueSeverity escalates to critical the moment any entry has failed', () => {
+	expect(queueSeverity([entry('pending'), entry('failed')])).toBe('critical');
+});
+
+test('queueSeverity is warning for an empty queue', () => {
+	expect(queueSeverity([])).toBe('warning');
 });
