@@ -41,31 +41,38 @@ export function isCacheableDataRequest(request: {
 
 /**
  * The Cache Storage key for a data request: same origin and pathname as
- * `url`, search string dropped. SvelteKit appends its own bookkeeping to a
- * repeat `__data.json` fetch — `?x-sveltekit-invalidated=…`, marking which
- * load node it considers stale on the client — and that marker varies
- * between requests for what is otherwise the same route's data. Keying
- * the cache on the full URL would miss on every such repeat fetch and
- * silently fall back to the network every time, defeating stale-while-
- * revalidate for exactly the case it exists for: revisiting a route
- * already cached.
+ * `url`, with SvelteKit's own bookkeeping parameters removed and every
+ * other one kept, in a stable order.
+ *
+ * SvelteKit appends `?x-sveltekit-invalidated=…` to a repeat `__data.json`
+ * fetch, marking which load node it considers stale on the client, and
+ * that marker varies between requests for what is otherwise the same
+ * route's data. Keying on the full URL would miss on every such repeat
+ * fetch and silently fall back to the network, defeating
+ * stale-while-revalidate for exactly the case it exists for.
+ *
+ * This used to drop the whole search string, which fixed that and broke
+ * something worse: a query parameter is usually the only thing telling two
+ * datasets apart. `/proposals?status=pending`, `?status=accepted` and
+ * `?status=rejected` collapsed onto one key, so whichever tab was fetched
+ * first was served for all three — the list, and the tab highlight with
+ * it, showed data belonging to a different tab. Every tabbed screen had
+ * it. A cache that answers one question with another question's answer is
+ * worse than no cache.
  */
+const SVELTEKIT_BOOKKEEPING_PREFIX = 'x-sveltekit-';
+
 export function dataCacheKey(url: string): string {
 	const normalized = new URL(url);
-	normalized.search = '';
+	const kept = new URLSearchParams();
+	for (const [key, value] of [...normalized.searchParams].sort(([a], [b]) => a.localeCompare(b))) {
+		if (key.startsWith(SVELTEKIT_BOOKKEEPING_PREFIX)) continue;
+		kept.append(key, value);
+	}
+	normalized.search = kept.toString();
 	return normalized.toString();
 }
 
-/**
- * SvelteKit serializes a `load`-thrown (or `handle`-thrown) redirect as a
- * `200` JSON envelope shaped `{ type: 'redirect', location }` for a data
- * request — see `@sveltejs/kit`'s `redirect_json_response`. The auth guard
- * in `hooks.server.ts` throws exactly this redirect for a session that no
- * longer validates, so this shape is the earliest, and only, origin-
- * verified signal available to a service worker that a cached response is
- * about to belong to nobody: a `fetch` event's `Request` never exposes the
- * `Cookie` header, so there is no way to check session validity locally.
- */
 export function isSessionInvalidPayload(payload: unknown): boolean {
 	return (
 		typeof payload === 'object' &&

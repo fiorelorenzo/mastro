@@ -17,7 +17,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import * as m from '$lib/paraglide/messages';
-import { clientsCrumbs } from '$lib/nav/crumbs';
+import { importCrumbs } from '$lib/nav/crumbs';
 import { contractExtractionInstructions } from '$lib/server/agent/contract-extraction';
 import { extractPdfText } from '$lib/server/agent/invoice-producer';
 import { storeDocument } from '$lib/server/repositories/document';
@@ -25,7 +25,7 @@ import { enqueueJob } from '$lib/server/runner/queue';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = () => {
-	return { crumbs: clientsCrumbs() };
+	return { crumbs: importCrumbs() };
 };
 
 export const actions: Actions = {

@@ -21,6 +21,7 @@ import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract
 import { storeDocument } from './document';
 import {
 	acceptProposal,
+	countPendingProposals,
 	createProposal,
 	diffProposalFields,
 	getProposal,
@@ -1073,5 +1074,32 @@ test('#86: an ambiguous clause flag whose verbatimText the excerpt does not carr
 			.where(eq(clauseNote.contractId, accepted.resultId as string));
 		expect(notes).toHaveLength(1);
 		expect(notes[0].interpretationAdopted).toBe(flag.interpretationAdopted);
+	});
+});
+
+// The tab badge reads this on every tab, not only the pending one: the
+// count used to be computed on the pending branch alone, so it vanished
+// the moment a reviewer looked at Accepted — which is exactly when they
+// want to know whether anything new arrived.
+test('countPendingProposals counts only what is still waiting on a human', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
+		const before = await countPendingProposals(tx);
+
+		const fields = {
+			documentId: documentRow.id,
+			contractId: contractRow.id,
+			targetType: 'work_unit' as const,
+			proposedFields: { date: '2024-06-10', quantity: 1, scope: 'API migration' },
+			excerpt: 'ok for Monday',
+			confidence: 0.9
+		};
+		await createProposal(fields, tx);
+		const second = await createProposal(fields, tx);
+		expect(await countPendingProposals(tx)).toBe(before + 2);
+
+		await rejectProposal(second.id, 'human', tx);
+		expect(await countPendingProposals(tx)).toBe(before + 1);
 	});
 });

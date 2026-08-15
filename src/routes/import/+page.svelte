@@ -60,7 +60,8 @@
 
 	const tabs = [
 		{ href: resolve('/import'), label: m.import_tab_invoices(), selected: true },
-		{ href: resolve('/import/days'), label: m.import_tab_days(), selected: false }
+		{ href: resolve('/import/days'), label: m.import_tab_days(), selected: false },
+		{ href: resolve('/import/contracts'), label: m.import_tab_contracts(), selected: false }
 	];
 
 	const acceptedClarificationCount = $derived(

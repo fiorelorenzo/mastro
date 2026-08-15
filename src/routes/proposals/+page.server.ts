@@ -13,6 +13,7 @@ import { getDocument, readDocumentBytes } from '$lib/server/repositories/documen
 import { getInboundThreadForDocument } from '$lib/server/repositories/inbound-thread';
 import {
 	acceptProposal,
+	countPendingProposals,
 	getProposal,
 	listProposals,
 	listProposalsForDocument,
@@ -188,14 +189,19 @@ export const load: PageServerLoad = async ({ url }) => {
 	const status: ProposalStatusValue =
 		statusParam === 'accepted' || statusParam === 'rejected' ? statusParam : 'pending';
 
+	// The pending count is loaded whichever tab is open, not only the
+	// pending one. It used to be `null` everywhere else, so the badge
+	// vanished the moment you looked at Accepted — exactly when you want
+	// to know whether anything new has arrived, and it made the tab bar
+	// change shape as you moved along it.
 	if (status === 'pending') {
 		const groups = await loadQueue();
 		const pendingCount = groups.reduce((sum, group) => sum + group.rows.length, 0);
 		return { status, groups, pendingCount } as const;
 	}
 
-	const rows = await loadHistory(status);
-	return { status, rows, pendingCount: null } as const;
+	const [rows, pendingCount] = await Promise.all([loadHistory(status), countPendingProposals()]);
+	return { status, rows, pendingCount } as const;
 };
 
 export const actions: Actions = {
