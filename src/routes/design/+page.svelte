@@ -726,48 +726,38 @@
 		<div class="control-grid">
 			<div>
 				<span class="state-label">Default</span>
-				<Field label="Import file"
-					><DropZone label="Choose file" bind:files={demoFilesDefault} /></Field
-				>
+				<Field label="Import file"><DropZone bind:files={demoFilesDefault} /></Field>
 			</div>
 			<div>
 				<span class="state-label">Required</span>
 				<Field label="Import file" required>
-					<DropZone label="Choose file" bind:files={demoFilesRequired} required />
+					<DropZone bind:files={demoFilesRequired} required />
 				</Field>
 			</div>
 			<div>
 				<span class="state-label">Error</span>
 				<Field label="Import file" error="Choose a CSV file.">
-					<DropZone label="Choose file" bind:files={demoFilesError} />
+					<DropZone bind:files={demoFilesError} />
 				</Field>
 			</div>
 			<div>
 				<span class="state-label">Disabled</span>
 				<Field label="Import file">
-					<DropZone label="Choose file" bind:files={demoFilesDisabled} disabled />
+					<DropZone bind:files={demoFilesDisabled} disabled />
 				</Field>
 			</div>
 			<div>
 				<span class="state-label">Chosen</span>
-				<Field label="Import file"
-					><DropZone label="Choose file" bind:files={demoFilesChosen} /></Field
-				>
+				<Field label="Import file"><DropZone bind:files={demoFilesChosen} /></Field>
 			</div>
 			<div>
 				<span class="state-label">Multiple, chosen</span>
-				<Field label="Days export"
-					><DropZone label="Choose files" multiple bind:files={demoFilesMultiple} /></Field
-				>
+				<Field label="Days export"><DropZone multiple bind:files={demoFilesMultiple} /></Field>
 			</div>
 			<div bind:this={rejectedZoneEl}>
 				<span class="state-label">Rejected (wrong type dropped)</span>
 				<Field label="Contract PDF"
-					><DropZone
-						label="Choose file"
-						accept=".pdf,application/pdf"
-						bind:files={demoFilesRejected}
-					/></Field
+					><DropZone accept=".pdf,application/pdf" bind:files={demoFilesRejected} /></Field
 				>
 			</div>
 		</div>

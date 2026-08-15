@@ -8,8 +8,8 @@
 	// protects the initial navigation the same way it protects every other
 	// route, since it runs before any page (with or without server data) is
 	// served.
-	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
+	import { importTabs } from '$lib/nav/import-tabs';
 	import { formatDate, formatMinorUnits, formatNumber } from '$lib/i18n/format';
 	import { Banner, Button, DropZone, Field, Tabs } from '$lib/design';
 	import { appHref } from '$lib/nav/href';
@@ -58,11 +58,7 @@
 		typeof (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker ===
 			'function';
 
-	const tabs = [
-		{ href: resolve('/import'), label: m.import_tab_invoices(), selected: true },
-		{ href: resolve('/import/days'), label: m.import_tab_days(), selected: false },
-		{ href: resolve('/import/contracts'), label: m.import_tab_contracts(), selected: false }
-	];
+	const tabs = importTabs('invoices');
 
 	const acceptedClarificationCount = $derived(
 		clarifications.filter((group) => group.include).length
@@ -231,19 +227,20 @@
 	<p class="mt-2 text-sm opacity-70">{m.import_intro()}</p>
 
 	{#if stage === 'idle' || stage === 'error'}
-		<div class="mt-6 flex flex-col items-start gap-3">
+		<!-- `items-start` used to shrink every child to its own content, which
+		     left the drop zone a 177px box while the days tab had a full-width
+		     one. The zone is the target you aim a file at, so it stretches;
+		     only the button keeps its natural width. -->
+		<div class="mt-6 flex flex-col gap-3">
 			{#if supportsDirectoryPicker}
-				<Button variant="secondary" onclick={pickFolder}>
-					{m.import_pick_folder_button()}
-				</Button>
+				<div class="w-fit">
+					<Button variant="secondary" onclick={pickFolder}>
+						{m.import_pick_folder_button()}
+					</Button>
+				</div>
 			{/if}
 			<Field label={m.import_fallback_label()}>
-				<DropZone
-					label={m.import_fallback_button()}
-					multiple
-					webkitdirectory
-					onchange={onFallbackChange}
-				/>
+				<DropZone multiple webkitdirectory onchange={onFallbackChange} />
 			</Field>
 			{#if stage === 'error'}
 				<Banner tone="critical">{errorText}</Banner>

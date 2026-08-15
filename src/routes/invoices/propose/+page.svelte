@@ -30,12 +30,7 @@
 
 	<form method="POST" enctype="multipart/form-data" class="form">
 		<Field label={m.invoice_propose_file_label()} required>
-			<DropZone
-				name="file"
-				label={m.invoice_propose_file_button()}
-				accept=".pdf,application/pdf"
-				required
-			/>
+			<DropZone name="file" accept=".pdf,application/pdf" required />
 		</Field>
 
 		<Button type="submit">{m.invoice_propose_submit()}</Button>

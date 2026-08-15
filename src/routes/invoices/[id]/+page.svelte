@@ -514,7 +514,7 @@
 							class="fattura-form"
 						>
 							<Field label={m.invoice_detail_transmission_accept_file_label()} required>
-								<DropZone name="file" label={m.invoice_propose_file_button()} required />
+								<DropZone name="file" required />
 							</Field>
 							<Button type="submit" variant="tertiary" size="sm">
 								{m.invoice_detail_transmission_accept_button()}
@@ -527,7 +527,7 @@
 							class="fattura-form"
 						>
 							<Field label={m.invoice_detail_transmission_reject_file_label()} required>
-								<DropZone name="file" label={m.invoice_propose_file_button()} required />
+								<DropZone name="file" required />
 							</Field>
 							<Button type="submit" variant="danger" size="sm">
 								{m.invoice_detail_transmission_reject_button()}
