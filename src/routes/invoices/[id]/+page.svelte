@@ -107,7 +107,7 @@
 	<p class="table-empty">{m.invoice_detail_no_expenses()}</p>
 {/snippet}
 
-<Page crumbs={data.crumbs} title={invoice.number} {subtitle} actions={headerActions}>
+<Page crumbs={data.crumbs} title={invoice.number} {subtitle} actions={headerActions} width="wide">
 	<div class="identity">
 		<Badge variant={status.level} label={status.label} />
 		<Amount minorUnits={invoice.total} currency={invoice.currency} size="figure" />
@@ -444,122 +444,129 @@
 					/>
 				{/if}
 			</Section>
+		</div>
+	</div>
 
-			<Section title={m.invoice_detail_documents_heading()}>
-				{#each data.documents as document (document.id)}
-					<SourceDocument {document} />
-				{:else}
-					<SourceDocument document={null} />
-				{/each}
-				{#if data.routing}
-					<form method="POST" action="?/generateFattura" class="fattura-form">
-						<Button
-							type="submit"
-							variant="tertiary"
-							size="sm"
-							disabled={data.invoicingGaps.length > 0}
-						>
-							{m.invoice_detail_fattura_generate_button()}
-						</Button>
-						<!-- Named before the click, not after: the fields live on
+	<!-- Reference material, below the fold and full width rather than
+	     stacked in the aside: the aside used to run 1206px against a
+	     512px lines table, which is the same inversion #280 fixed on the
+	     proposal screen. What stays beside the lines is the one thing a
+	     reader acts on there, the payment. -->
+	<div class="reference">
+		<Section title={m.invoice_detail_documents_heading()}>
+			{#each data.documents as document (document.id)}
+				<SourceDocument {document} />
+			{:else}
+				<SourceDocument document={null} />
+			{/each}
+			{#if data.routing}
+				<form method="POST" action="?/generateFattura" class="fattura-form">
+					<Button
+						type="submit"
+						variant="tertiary"
+						size="sm"
+						disabled={data.invoicingGaps.length > 0}
+					>
+						{m.invoice_detail_fattura_generate_button()}
+					</Button>
+					<!-- Named before the click, not after: the fields live on
 						     the client's own screen, so a bare refusal would send
 						     a reviewer hunting. -->
-						{#if data.invoicingGaps.length > 0}
-							<p class="gaps">
-								{m.invoice_detail_fattura_client_incomplete({
-									fields: data.invoicingGaps.map((field) => clientFieldLabel(field)).join(', ')
-								})}
-								<a href={appHref(`/clients/${data.invoice.contract.client.id}/edit`)}>
-									{m.invoice_detail_fattura_client_fix_link()}
-								</a>
-							</p>
-						{/if}
-						{#if form?.fatturaError}<p class="error">{form.fatturaError}</p>{/if}
-					</form>
-				{/if}
-			</Section>
-
-			{#if data.routing}
-				<Section title={m.invoice_detail_transmission_heading()}>
-					<Badge variant={transmission.variant} label={transmission.label} />
-
-					{#if invoice.transmissionId}
-						<p class="hint">
-							<span class="label">{m.invoice_form_transmission_id_label()}</span>
-							<span class="mono">{invoice.transmissionId}</span>
+					{#if data.invoicingGaps.length > 0}
+						<p class="gaps">
+							{m.invoice_detail_fattura_client_incomplete({
+								fields: data.invoicingGaps.map((field) => clientFieldLabel(field)).join(', ')
+							})}
+							<a href={appHref(`/clients/${data.invoice.contract.client.id}/edit`)}>
+								{m.invoice_detail_fattura_client_fix_link()}
+							</a>
 						</p>
 					{/if}
-
-					{#if invoice.transmissionStatus === 'rejected'}
-						<p class="hint">{m.invoice_detail_transmission_reject_note()}</p>
-					{/if}
-
-					{#if invoice.transmissionStatus === 'generated' || invoice.transmissionStatus === 'rejected'}
-						<form method="POST" action="?/markTransmitted" class="fattura-form">
-							<Field label={m.invoice_form_transmission_id_label()} required>
-								<Input type="text" name="transmissionId" required />
-							</Field>
-							<Button type="submit" variant="tertiary" size="sm">
-								{invoice.transmissionStatus === 'rejected'
-									? m.invoice_detail_transmission_resubmit_button()
-									: m.invoice_detail_transmit_button()}
-							</Button>
-							{#if form?.transmissionError}<p class="error">{form.transmissionError}</p>{/if}
-						</form>
-					{:else if invoice.transmissionStatus === 'transmitted'}
-						<form
-							method="POST"
-							action="?/acceptReceipt"
-							enctype="multipart/form-data"
-							class="fattura-form"
-						>
-							<Field label={m.invoice_detail_transmission_accept_file_label()} required>
-								<DropZone name="file" required />
-							</Field>
-							<Button type="submit" variant="tertiary" size="sm">
-								{m.invoice_detail_transmission_accept_button()}
-							</Button>
-						</form>
-						<form
-							method="POST"
-							action="?/rejectReceipt"
-							enctype="multipart/form-data"
-							class="fattura-form"
-						>
-							<Field label={m.invoice_detail_transmission_reject_file_label()} required>
-								<DropZone name="file" required />
-							</Field>
-							<Button type="submit" variant="danger" size="sm">
-								{m.invoice_detail_transmission_reject_button()}
-							</Button>
-						</form>
-						{#if form?.receiptError}<p class="error">{form.receiptError}</p>{/if}
-					{/if}
-				</Section>
+					{#if form?.fatturaError}<p class="error">{form.fatturaError}</p>{/if}
+				</form>
 			{/if}
+		</Section>
 
-			<Section title={m.invoice_detail_history_heading()}>
-				<dl
-					class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm [&_dd]:min-w-0 [&_dd]:break-words"
-				>
-					<dt class="opacity-70">{m.invoice_detail_issue_date_label()}</dt>
-					<dd>{formatDate(invoice.issueDate)}</dd>
-					{#if balance.settledOn}
-						<dt class="opacity-70">{m.invoice_detail_paid_date_label()}</dt>
-						<dd>{formatDate(balance.settledOn)}</dd>
-					{:else}
-						<dt class="opacity-70">{m.invoice_detail_due_date_label()}</dt>
-						<dd>
-							{formatDate(invoice.dueDate)}
-							{#if data.daysLate > 0}
-								— {m.invoice_detail_days_overdue_note({ days: formatDays(data.daysLate) })}
-							{/if}
-						</dd>
-					{/if}
-				</dl>
-				<ChaseHistory rows={data.chaseHistory} />
+		{#if data.routing}
+			<Section title={m.invoice_detail_transmission_heading()}>
+				<Badge variant={transmission.variant} label={transmission.label} />
+
+				{#if invoice.transmissionId}
+					<p class="hint">
+						<span class="label">{m.invoice_form_transmission_id_label()}</span>
+						<span class="mono">{invoice.transmissionId}</span>
+					</p>
+				{/if}
+
+				{#if invoice.transmissionStatus === 'rejected'}
+					<p class="hint">{m.invoice_detail_transmission_reject_note()}</p>
+				{/if}
+
+				{#if invoice.transmissionStatus === 'generated' || invoice.transmissionStatus === 'rejected'}
+					<form method="POST" action="?/markTransmitted" class="fattura-form">
+						<Field label={m.invoice_form_transmission_id_label()} required>
+							<Input type="text" name="transmissionId" required />
+						</Field>
+						<Button type="submit" variant="tertiary" size="sm">
+							{invoice.transmissionStatus === 'rejected'
+								? m.invoice_detail_transmission_resubmit_button()
+								: m.invoice_detail_transmit_button()}
+						</Button>
+						{#if form?.transmissionError}<p class="error">{form.transmissionError}</p>{/if}
+					</form>
+				{:else if invoice.transmissionStatus === 'transmitted'}
+					<form
+						method="POST"
+						action="?/acceptReceipt"
+						enctype="multipart/form-data"
+						class="fattura-form"
+					>
+						<Field label={m.invoice_detail_transmission_accept_file_label()} required>
+							<DropZone name="file" required />
+						</Field>
+						<Button type="submit" variant="tertiary" size="sm">
+							{m.invoice_detail_transmission_accept_button()}
+						</Button>
+					</form>
+					<form
+						method="POST"
+						action="?/rejectReceipt"
+						enctype="multipart/form-data"
+						class="fattura-form"
+					>
+						<Field label={m.invoice_detail_transmission_reject_file_label()} required>
+							<DropZone name="file" required />
+						</Field>
+						<Button type="submit" variant="danger" size="sm">
+							{m.invoice_detail_transmission_reject_button()}
+						</Button>
+					</form>
+					{#if form?.receiptError}<p class="error">{form.receiptError}</p>{/if}
+				{/if}
 			</Section>
-		</div>
+		{/if}
+
+		<Section title={m.invoice_detail_history_heading()}>
+			<dl
+				class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-2 text-sm [&_dd]:min-w-0 [&_dd]:break-words"
+			>
+				<dt class="opacity-70">{m.invoice_detail_issue_date_label()}</dt>
+				<dd>{formatDate(invoice.issueDate)}</dd>
+				{#if balance.settledOn}
+					<dt class="opacity-70">{m.invoice_detail_paid_date_label()}</dt>
+					<dd>{formatDate(balance.settledOn)}</dd>
+				{:else}
+					<dt class="opacity-70">{m.invoice_detail_due_date_label()}</dt>
+					<dd>
+						{formatDate(invoice.dueDate)}
+						{#if data.daysLate > 0}
+							— {m.invoice_detail_days_overdue_note({ days: formatDays(data.daysLate) })}
+						{/if}
+					</dd>
+				{/if}
+			</dl>
+			<ChaseHistory rows={data.chaseHistory} />
+		</Section>
 	</div>
 
 	{@const expenseColumns = [
@@ -592,31 +599,53 @@
 		margin-top: var(--space-2);
 		margin-bottom: var(--space-6);
 	}
+	/* Flex, and the aside declares the width it needs rather than a share
+	   of whatever is left: `minmax(0, 2fr) minmax(0, 1fr)` behind a
+	   `@media (min-width: 800px)` measured the window, not the content
+	   area the sidebar and the page's own max-width leave, so on a 1280px
+	   screen the lines table got 448px and the aside — the taller half at
+	   1262px against 564px — got 224px (#280). `flex-wrap` stacks them on
+	   the same evidence, at the width the columns actually stop fitting.
+
+	   Flex items default to `min-width: auto`, which refuses to shrink
+	   below the lines table's own content width — the "grid blowout" that
+	   pushed this page 47px past a 320px viewport until the minimum was
+	   pinned to zero and `.lines-scroll`'s own `overflow-x: auto` was let
+	   do the job it was already there to do. */
 	.layout {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr);
+		display: flex;
+		flex-wrap: wrap;
+		align-items: flex-start;
 		gap: var(--space-6);
 		margin-bottom: var(--space-6);
 	}
-	/* Grid items default to `min-width: auto`, which refuses to shrink below
-	   the lines table's own content width — the exact "grid blowout" that
-	   pushed this page 47px past a 320px viewport until `minmax(0, …)`
-	   pinned both tracks' minimum to zero and let `.lines-scroll`'s own
-	   `overflow-x: auto` do the job it was already there to do. */
-	.layout > :global(.section),
-	.layout > .stack {
+	/* Both grow, because grow is per flex line: sharing a line the 100:1
+	   ratio leaves the aside at its 20rem basis and hands the rest to the
+	   lines table, and alone on a wrapped line either one fills the row
+	   instead of sitting at 320px against a 900px page. */
+	.layout > :global(.section) {
+		flex: 100 1 28rem;
 		min-width: 0;
 	}
-	@media (min-width: 800px) {
-		.layout {
-			grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-			align-items: start;
-		}
-	}
-	.stack {
+	.layout > .stack {
+		flex: 1 1 20rem;
+		min-width: 0;
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-6);
+	}
+	/* Three short reference sections, side by side when they fit and
+	   stacked when they do not — `auto-fit` asks the row's own width, not
+	   the window's. */
+	.reference {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+		align-items: start;
+		gap: var(--space-6);
+		margin-bottom: var(--space-6);
+	}
+	.reference > :global(.section) {
+		min-width: 0;
 	}
 	.lines-scroll {
 		overflow-x: auto;

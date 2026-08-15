@@ -1,23 +1,32 @@
 <!--
-	The proposal review screen (#243, #86/#87). Evidence — the archived
-	message or PDF in full, the matched excerpt marked — is the heavier
-	column; the proposed fields are the lighter one. A `work_unit`
-	proposal's fields are a flat list, each with a hint naming what it was
-	read from. A `contract` proposal's are not: the proposed client, the
-	contract terms and the rate cards render as their own cards, and each
-	flagged clause renders its verbatim text next to the two or more
-	readings it admits, as a choice a reviewer has to make — Accept stays
-	disabled until every flag has one — recorded onto the clause note
-	`applyProposal` writes. An `invoice` proposal renders number, date,
-	client, lines and totals, read-only, against the excerpt: #87's brief
-	never asks for edits here, only for a reader to see what the model
-	read off the PDF. Confidence and validation both render for real:  a
-	low-confidence proposal explains why the model hesitated, and one
-	whose fields the database would reject names the offending field,
-	inline, and cannot be accepted until it is corrected — never a bare
-	failure after the click. A decided proposal renders the same layout
-	read-only; an accepted one links the day, contract or invoice it
-	created.
+	The proposal review screen (#243, #86/#87). What is heavy here depends
+	on what is being reviewed, and the layout follows it rather than
+	assuming: a `work_unit` proposal is a long archived message against
+	three fields, so the evidence is the major column; a `contract`
+	proposal is a short excerpt and a PDF against a whole contract to fill
+	in, so the form is (#280 — the fixed 2fr/1fr weighting used to put ten
+	stacked fieldsets in a 271px column, 3050px tall, next to 464px of
+	evidence and 2600px of blank screen). In form-major mode the evidence
+	sticks to the viewport instead of scrolling away after the first
+	screen, the fieldsets flow two-up instead of stacking, and the
+	decision stays pinned to the bottom carrying the reason Accept is
+	disabled — none of which a reviewer should have to scroll to find.
+	A `work_unit` proposal's fields are a flat list, each with a hint
+	naming what it was read from. A `contract` proposal's are not: the
+	proposed client, the contract terms and the rate cards render as their
+	own cards, and each flagged clause renders its verbatim text next to
+	the two or more readings it admits, as a choice a reviewer has to make
+	— Accept stays disabled until every flag has one — recorded onto the
+	clause note `applyProposal` writes. An `invoice` proposal renders
+	number, date, client, lines and totals, read-only, against the
+	excerpt: #87's brief never asks for edits here, only for a reader to
+	see what the model read off the PDF. Confidence and validation both
+	render for real: a low-confidence proposal explains why the model
+	hesitated, and one whose fields the database would reject names the
+	offending field, inline, and cannot be accepted until it is corrected
+	— never a bare failure after the click. A decided proposal renders the
+	same layout read-only; an accepted one links the day, contract or
+	invoice it created.
 -->
 <script lang="ts">
 	import { SvelteSet } from 'svelte/reactivity';
@@ -247,6 +256,33 @@
 				: workUnitValidationField !== null && !editedFields.has(workUnitValidationField)
 	);
 
+	// Why Accept is disabled, said on the same screen as the disabled
+	// button rather than discovered by scrolling the form looking for a
+	// red field (#280). Every branch reuses the message the offending
+	// control already renders inline, so the bar and the field never say
+	// two different things about one problem. Most specific first: a
+	// clause with no reading chosen is a decision the reviewer has not
+	// taken, and it outranks a `validationError` that may well be about
+	// the very field that clause determines.
+	const acceptBlockedReason = $derived(
+		!pending || !acceptBlocked
+			? null
+			: data.proposal.targetType === 'contract' && unresolvedClauseCount > 0
+				? m.proposal_contract_clause_reading_required_error()
+				: data.proposal.targetType === 'contract' &&
+					  clientMode === 'existing' &&
+					  selectedClientId === ''
+					? m.proposal_contract_client_choice_required_error()
+					: data.proposal.validationError
+	);
+
+	// A contract proposal's form is the work; a work_unit's evidence is
+	// (see the file header). `formMajor` is the one switch both the page
+	// width and the two-column weighting read, so the two can never
+	// disagree — a wide page with a narrow form column is the bug this
+	// replaces.
+	const formMajor = $derived(data.proposal.targetType === 'contract');
+
 	// The three fields a Select drives conditionally — mirrors
 	// `ContractForm.svelte`'s own pattern exactly, so a reviewer resolving
 	// an ambiguous field sees the same conditional shape a person creating
@@ -345,6 +381,9 @@
 			{form.decisionError}
 		</p>
 	{/if}
+	{#if acceptBlockedReason}
+		<p class="blocked-reason" role="status">{acceptBlockedReason}</p>
+	{/if}
 	<div class="submit-stack">
 		<Button type="submit" variant="primary" disabled={acceptBlocked}>
 			{acceptSubmitLabel}
@@ -442,6 +481,7 @@
 	crumbs={data.crumbs}
 	title={pageHeading}
 	subtitle={factLine([data.contract?.title, data.contract?.clientLegalName])}
+	width={formMajor ? 'wide' : 'text'}
 >
 	{#snippet actions()}
 		{#if data.proposal.status === 'pending'}
@@ -454,8 +494,9 @@
 		{/if}
 	{/snippet}
 
-	<div class="layout">
-		<!-- Evidence — the heavier column: empty for ~300px before this. -->
+	<div class="layout" class:form-major={formMajor}>
+		<!-- Evidence. Major column for a work_unit proposal, minor and
+		     sticky for a contract one, whose form is the taller half. -->
 		<div class="card evidence">
 			<div class="card-head">
 				<h2>{m.proposal_evidence_heading()}</h2>
@@ -501,7 +542,8 @@
 			<p class="hint">{m.proposal_evidence_document_hint()}</p>
 		</div>
 
-		<!-- Proposed fields — lighter, secondary column -->
+		<!-- Proposed fields. Minor column for a work_unit proposal, major
+		     for a contract one. -->
 		<div class="fields">
 			{#if data.proposal.targetType === 'contract' && data.contractCandidate}
 				{@const candidate = data.contractCandidate}
@@ -920,7 +962,13 @@
 					{/if}
 
 					{#if pending}
-						{@render decisionActions()}
+						<!-- Pinned to the bottom of the viewport for the whole scroll
+						     of the form: the decision used to sit under 3050px of
+						     fieldsets, so a reviewer met the disabled Accept only
+						     after scrolling past everything twice (#280). -->
+						<div class="actions-bar">
+							{@render decisionActions()}
+						</div>
 					{:else if data.proposal.status === 'accepted' && data.proposal.resultId && data.acceptedContractClientId}
 						<Button
 							href={resolve('/clients/[id]/contracts/[contractId]', {
@@ -1190,12 +1238,59 @@
 </Page>
 
 <style>
+	/* Flex, not a grid with a fixed fr ratio, and no viewport breakpoint:
+	   the thing that decides whether two columns fit is the width of the
+	   content area, which the sidebar and the page's own max-width both
+	   shrink well below the window (#280). Each column declares the width
+	   it needs to be usable and `flex-wrap` stacks them the moment both no
+	   longer fit, whatever the viewport is doing. */
 	.layout {
-		display: grid;
-		grid-template-columns: 2fr 1fr;
+		display: flex;
+		flex-wrap: wrap;
 		gap: var(--space-5);
 		margin-top: var(--space-5);
-		align-items: start;
+		align-items: flex-start;
+		container-type: inline-size;
+	}
+	.evidence {
+		flex: 2 1 20rem;
+		min-width: 0;
+	}
+	.fields {
+		flex: 1 1 14rem;
+		min-width: 0;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-3);
+	}
+	/* A contract proposal inverts the weighting: the form is what the
+	   reviewer works in, so it takes the space and the evidence follows
+	   the scroll instead of leaving the screen after the first fieldset.
+	   Both keep `flex-grow`, because grow is per flex line: sharing a line
+	   the 1:100 ratio leaves the evidence at its 20rem basis and hands the
+	   rest to the form, and alone on a wrapped line either one fills the
+	   row instead of sitting at 320px against a 700px page. */
+	.form-major .evidence {
+		flex: 1 1 20rem;
+	}
+	.form-major .fields {
+		flex: 100 1 32rem;
+	}
+	/* Sticky only while the evidence is genuinely beside the form. Once
+	   the two wrap, the evidence sits above it, and a sticky panel there
+	   would pin to the top and cover the fields being filled in. The
+	   threshold is the width both flex bases plus the gap need, said once
+	   — and asked of the layout's own box, since the window is not what
+	   ran out of room (#280). `max-height` plus its own scroll, because a
+	   mail-sourced contract's body can be longer than the window and a
+	   sticky panel taller than the viewport never settles. */
+	@container (min-width: 53.5rem) {
+		.form-major .evidence {
+			position: sticky;
+			top: var(--space-4);
+			max-height: calc(100vh - 2 * var(--space-4));
+			overflow-y: auto;
+		}
 	}
 	.card {
 		border: 1px solid var(--border-hairline);
@@ -1225,15 +1320,15 @@
 		font-weight: var(--weight-medium);
 		color: var(--text-primary);
 	}
+	/* Self-collapsing: `auto-fit` drops to one column when the card it
+	   sits in is narrower than two usable fields, without anyone asking
+	   the viewport — the `@media (max-width: 639px)` this replaces was
+	   querying the window while the narrow box was the column, so a
+	   271px column on a 1280px screen kept two 110px inputs (#280). */
 	.grid-2 {
 		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
 		gap: var(--space-4);
-	}
-	@media (max-width: 639px) {
-		.grid-2 {
-			grid-template-columns: 1fr;
-		}
 	}
 	.pairs {
 		display: grid;
@@ -1280,16 +1375,34 @@
 	.sep {
 		border-top: 1px solid var(--border-hairline);
 	}
-	.fields {
-		display: flex;
-		flex-direction: column;
-		gap: var(--space-3);
-	}
 	.fields-form {
 		align-self: start;
 		display: flex;
 		flex-direction: column;
 		gap: var(--space-4);
+	}
+	.actions-bar {
+		position: sticky;
+		bottom: var(--space-4);
+		z-index: 1;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+		padding: var(--space-3) var(--space-4);
+		border: 1px solid var(--border-hairline);
+		border-radius: var(--radius-md);
+		background: var(--surface-1);
+		box-shadow: var(--shadow-overlay);
+	}
+	.actions-bar .submit-stack {
+		flex-direction: row;
+		flex-wrap: wrap;
+		justify-content: flex-end;
+	}
+	.blocked-reason {
+		margin: 0;
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
 	}
 	.decided-fields {
 		align-items: flex-start;
@@ -1431,10 +1544,5 @@
 		margin: 0;
 		padding-left: var(--space-4);
 		font-size: var(--text-sm);
-	}
-	@media (max-width: 767px) {
-		.layout {
-			grid-template-columns: 1fr;
-		}
 	}
 </style>
