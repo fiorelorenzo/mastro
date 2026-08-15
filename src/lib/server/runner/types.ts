@@ -64,3 +64,19 @@ export type ProposalCandidate = ExtractionResult & {
 	contractId: string | null;
 	targetType: string;
 };
+
+/** One line of `runs/<jobId>.jsonl` (#277) — the runner's only channel for
+ * reporting what the agent is doing, since it has no database write
+ * access to record an `extraction_run_event` itself. The stream reader
+ * in the web app is the sole consumer: it tails the file, persists each
+ * line as a row and deletes the file once the job is drained, so this
+ * type is a transport shape, never the record of truth. `kind` mirrors
+ * `extraction_run_event.kind` exactly, because a line becomes a row
+ * unchanged. */
+export interface RunProgressLine {
+	seq: number;
+	/** ISO 8601, the runner's own clock when it observed the update. */
+	at: string;
+	kind: 'message' | 'thought' | 'tool_call' | 'plan' | 'stop' | 'error';
+	payload: string;
+}

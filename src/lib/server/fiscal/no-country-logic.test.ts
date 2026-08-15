@@ -91,11 +91,20 @@ interface Rule {
 // string" or "any round number", which would misfire constantly.
 /**
  * A handful of literals share the pack-id shape and are demonstrably not
- * pack ids: IANA charset names in a MIME header parser, for one. They are
- * listed rather than pattern-excused, so adding one is a decision somebody
- * reads, and so a real pack id can never hide behind a loosened regex.
+ * pack ids: IANA charset names in a MIME header parser, for one, and the
+ * HTTP cache directives an SSE route has to send, where the collision is
+ * `no` being Norway. They are listed rather than pattern-excused, so
+ * adding one is a decision somebody reads, and so a real pack id can
+ * never hide behind a loosened regex.
  */
-const NOT_PACK_IDS = new Set(["'us-ascii'", '"us-ascii"']);
+const NOT_PACK_IDS = new Set([
+	"'us-ascii'",
+	'"us-ascii"',
+	"'no-cache'",
+	'"no-cache"',
+	"'no-store'",
+	'"no-store"'
+]);
 
 const RULES: readonly Rule[] = [
 	{

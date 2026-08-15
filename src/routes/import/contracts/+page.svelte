@@ -14,6 +14,7 @@
 	 * `agent/enqueue.ts`'s own "propose later, never synchronously"
 	 * boundary — the same one `/invoices/propose` already uses.
 	 */
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { importTabs } from '$lib/nav/import-tabs';
 	import { Banner, Button, Field, DropZone } from '$lib/design';
@@ -29,6 +30,12 @@
 <svelte:head><title>{m.import_contracts_page_title()}</title></svelte:head>
 
 <Page title={m.import_contracts_heading()} width="wide">
+	{#snippet actions()}
+		<Button href={resolve('/import/runs')} variant="secondary" size="sm">
+			{m.import_contracts_runs_link()}
+		</Button>
+	{/snippet}
+
 	<Tabs label={m.import_tabs_label()} {tabs} />
 
 	<p class="intro">{m.import_contracts_intro()}</p>

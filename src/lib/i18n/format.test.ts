@@ -6,6 +6,7 @@ import {
 	formatDate,
 	formatDateTime,
 	formatDays,
+	formatDuration,
 	formatHours,
 	formatMinorUnits,
 	formatNumber,
@@ -125,4 +126,15 @@ test('a byte count picks the largest unit that keeps it readable, decimal steps'
 	expect(formatBytes(432_300_000, 'en')).toBe('432.3 MB');
 	expect(formatBytes(432_300_000, 'it')).toBe('432,3 MB');
 	expect(formatBytes(1_500_000_000, 'en')).toBe('1.5 GB');
+});
+
+test('a duration in seconds picks the largest unit that keeps it readable, 60-based steps', () => {
+	expect(formatDuration(3, 'en')).toBe('3 sec');
+	expect(formatDuration(90, 'en')).toBe('1.5 min');
+	expect(formatDuration(90, 'it')).toBe('1,5 min');
+	expect(formatDuration(5400, 'en')).toBe('1.5 hr');
+});
+
+test('a negative duration never renders below zero', () => {
+	expect(formatDuration(-5, 'en')).toBe('0 sec');
 });

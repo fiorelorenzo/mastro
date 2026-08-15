@@ -130,6 +130,35 @@ test('extractPdfText reads a generated PDF back to recognisable text', async () 
 	expect(text).toContain('Acme SRL');
 });
 
+// pdfjs transfers the ArrayBuffer it is given to its worker, so the
+// caller's view comes back detached and empty. That is not a quirk to
+// note in passing: a caller that extracts before archiving hands
+// `storeDocument` zero bytes, and since `document_size_positive` refuses
+// a zero-byte row, the upload fails outright. It happened to
+// `/import/contracts` the day runs were added, and this test is what
+// makes the behaviour a stated fact rather than a surprise — extract
+// from `bytes.slice()` whenever the original is still needed.
+test('extractPdfText detaches the buffer it is handed', async () => {
+	const pdf = await renderInvoicePdf(['Fattura n. INV-2026-015']);
+	const bytes = new Uint8Array(pdf);
+	expect(bytes.length).toBeGreaterThan(0);
+
+	await extractPdfText(bytes);
+
+	expect(bytes.length).toBe(0);
+	expect(bytes.buffer.detached).toBe(true);
+});
+
+test('a copy keeps the original readable, which is what an archiving caller needs', async () => {
+	const pdf = await renderInvoicePdf(['Fattura n. INV-2026-016']);
+	const bytes = new Uint8Array(pdf);
+
+	const text = await extractPdfText(bytes.slice());
+
+	expect(text).toContain('INV-2026-016');
+	expect(bytes.length).toBe(pdf.length);
+});
+
 test('a well-formed answer writes one pending invoice proposal', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const { contractRow, documentRow } = await seed(tx);

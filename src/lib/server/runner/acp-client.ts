@@ -8,6 +8,7 @@
 import { spawn } from 'node:child_process';
 import { Readable, Writable } from 'node:stream';
 import { client, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk';
+import type { RunProgressLine } from './types.ts';
 
 export interface RunAcpPromptInput {
 	readonly command: string;
@@ -19,15 +20,29 @@ export interface RunAcpPromptInput {
 	readonly prompt: string;
 	readonly timeoutMs: number;
 	readonly cwd?: string;
+	/** Called with every update the agent sends during the prompt turn —
+	 * message and thought chunks, tool calls, plans, and the terminating
+	 * stop — in the order `nextUpdate()` yields them. `cli.ts` is the only
+	 * real caller: it appends each one to `runs/<jobId>.jsonl`, the
+	 * runner's only channel left for reporting what the agent is doing
+	 * (invariant 3 — no database write access). Every other caller, and
+	 * every existing test, omits it and gets exactly the return value
+	 * `readText()` used to produce. */
+	readonly onUpdate?: (update: { kind: RunProgressLine['kind']; payload: string }) => void;
 }
 
 /**
  * Spawns `command`, completes the ACP `initialize` handshake, opens one
  * session, sends `prompt`, and returns the agent's accumulated text
- * response. The client offers the agent no filesystem or terminal
- * capability at all: an extraction agent has no legitimate reason to read
- * or write anything outside the prompt/response exchange itself, so
+ * response — every `agent_message_chunk` it sent, concatenated in order.
+ * The client offers the agent no filesystem or terminal capability at
+ * all: an extraction agent has no legitimate reason to read or write
+ * anything outside the prompt/response exchange itself, so
  * `clientCapabilities` declares none available.
+ *
+ * `input.onUpdate`, when given, also sees every update as it arrives —
+ * thoughts, tool calls, the plan — not only the message chunks the
+ * return value accumulates.
  *
  * Always kills the child before returning, success or failure — this is a
  * one-shot request/response call, not a session this process keeps open.
@@ -82,12 +97,52 @@ export async function runAcpPrompt(input: RunAcpPromptInput): Promise<string> {
 			return ctx.buildSession(input.cwd ?? process.cwd()).withSession(async (session) => {
 				const promptPromise = session.prompt(input.prompt);
 				// The completion is also queued as a stop message for
-				// `readText()` to observe (see `ActiveSession.prompt`'s own
+				// `nextUpdate()` to observe (see `ActiveSession.prompt`'s own
 				// docstring) — this promise is only kept alive here so a
 				// rejection is not reported as an unhandled rejection
-				// alongside whatever `readText()` itself throws.
+				// alongside whatever the loop below itself throws.
 				promptPromise.catch(() => {});
-				return session.readText();
+
+				// `readText()` used to do this accumulation and discard
+				// everything else `nextUpdate()` yields; looping here instead
+				// is what lets `onUpdate` forward the thoughts, tool calls and
+				// plan the agent sends alongside its answer, without changing
+				// what gets accumulated or returned — a caller that never
+				// passes `onUpdate` sees the exact same string `readText()`
+				// produced.
+				let text = '';
+				for (;;) {
+					const message = await session.nextUpdate();
+					if (message.kind === 'stop') {
+						input.onUpdate?.({ kind: 'stop', payload: message.stopReason });
+						return text;
+					}
+					const { update } = message;
+					switch (update.sessionUpdate) {
+						case 'agent_message_chunk':
+							if (update.content.type === 'text') {
+								text += update.content.text;
+								input.onUpdate?.({ kind: 'message', payload: update.content.text });
+							}
+							break;
+						case 'agent_thought_chunk':
+							if (update.content.type === 'text') {
+								input.onUpdate?.({ kind: 'thought', payload: update.content.text });
+							}
+							break;
+						case 'tool_call':
+						case 'tool_call_update':
+							input.onUpdate?.({ kind: 'tool_call', payload: JSON.stringify(update) });
+							break;
+						case 'plan':
+							input.onUpdate?.({ kind: 'plan', payload: JSON.stringify(update) });
+							break;
+						default:
+							// `user_message_chunk` and every other update kind
+							// carries nothing this transcript needs to show.
+							break;
+					}
+				}
 			});
 		});
 

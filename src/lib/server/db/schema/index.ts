@@ -21,6 +21,7 @@ export * from './document';
 export * from './document-mirror';
 export * from './email-template';
 export * from './expense';
+export * from './extraction-run';
 export * from './fiscal';
 export * from './inbound-thread';
 export * from './invoice';

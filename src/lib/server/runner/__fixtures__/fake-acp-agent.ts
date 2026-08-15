@@ -13,6 +13,13 @@
 //   FAKE_AGENT_DELAY_MS   milliseconds to wait before responding (default 0)
 //   FAKE_AGENT_EXIT_CODE  if set, exits with this code before responding —
 //                         simulates a crashed/misbehaving agent
+//   FAKE_AGENT_UPDATES    JSON array of extra `session/update` payloads
+//                         (each a full update object, e.g.
+//                         `{"sessionUpdate":"plan","entries":[]}`) sent, in
+//                         order, before the final agent_message_chunk —
+//                         `acp-client.test.ts`'s only way to exercise
+//                         thought/tool_call/plan updates without a real
+//                         model that actually produces them.
 import { Readable, Writable } from 'node:stream';
 import { agent, ndJsonStream, PROTOCOL_VERSION } from '@agentclientprotocol/sdk';
 
@@ -24,6 +31,9 @@ if (exitCode !== undefined) {
 const response =
 	process.env.FAKE_AGENT_RESPONSE ?? '{"excerpt":"stub","confidence":0.5,"proposedFields":{}}';
 const delayMs = Number(process.env.FAKE_AGENT_DELAY_MS ?? '0');
+const extraUpdates: unknown[] = process.env.FAKE_AGENT_UPDATES
+	? JSON.parse(process.env.FAKE_AGENT_UPDATES)
+	: [];
 
 const stream = ndJsonStream(
 	Writable.toWeb(process.stdout),
@@ -41,6 +51,9 @@ await agent({ name: 'fake-acp-agent' })
 			const { promise, resolve } = Promise.withResolvers<void>();
 			setTimeout(resolve, delayMs);
 			await promise;
+		}
+		for (const update of extraUpdates) {
+			await ctx.client.notify('session/update', { sessionId: ctx.params.sessionId, update });
 		}
 		await ctx.client.notify('session/update', {
 			sessionId: ctx.params.sessionId,

@@ -1,17 +1,22 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { appendFile, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, expect, test } from 'vitest';
 import { env } from '$env/dynamic/private';
 import { client as pool } from '$lib/server/db';
 import {
+	appendRunProgress,
+	deleteRunProgress,
 	enqueueJob,
+	ensureQueueDirs,
 	listPendingJobs,
 	markJobDone,
 	readCompletedJob,
 	markJobFailed,
-	readPendingJob
+	readPendingJob,
+	readRunProgress,
+	runProgressPath
 } from './queue.ts';
 import {
 	deleteCommittedContract,
@@ -93,6 +98,76 @@ test('a failed job is moved out of pending and carries its error', async () => {
 	expect(await listPendingJobs(dir)).toEqual([]);
 	const failedFiles = await readdir(join(dir, 'failed'));
 	expect(failedFiles).toEqual([`${id}.json`]);
+});
+
+test('ensureQueueDirs creates runs/ alongside pending/, done/ and failed/', async () => {
+	const dir = await freshQueueDir();
+	await ensureQueueDirs(dir);
+	expect(await readdir(dir)).toEqual(expect.arrayContaining(['pending', 'done', 'failed', 'runs']));
+});
+
+test('appendRunProgress lines round-trip through readRunProgress, in order', async () => {
+	const dir = await freshQueueDir();
+	const jobId = crypto.randomUUID();
+	const first = {
+		seq: 0,
+		at: '2026-01-01T00:00:00.000Z',
+		kind: 'message' as const,
+		payload: 'hello'
+	};
+	const second = {
+		seq: 1,
+		at: '2026-01-01T00:00:01.000Z',
+		kind: 'stop' as const,
+		payload: 'end_turn'
+	};
+
+	await appendRunProgress(dir, jobId, first);
+	await appendRunProgress(dir, jobId, second);
+
+	expect(runProgressPath(dir, jobId)).toBe(join(dir, 'runs', `${jobId}.jsonl`));
+	expect(await readRunProgress(dir, jobId)).toEqual([first, second]);
+});
+
+test('readRunProgress drops a trailing partial line: a reader racing an in-flight append', async () => {
+	const dir = await freshQueueDir();
+	const jobId = crypto.randomUUID();
+	const complete = {
+		seq: 0,
+		at: '2026-01-01T00:00:00.000Z',
+		kind: 'thought' as const,
+		payload: 'considering the excerpt'
+	};
+	await appendRunProgress(dir, jobId, complete);
+	// What `appendFile` writes for line 1 mid-flight, before the writer's
+	// promise has resolved and before the trailing newline lands — the
+	// exact race `readRunProgress` has to tolerate rather than throw on.
+	await appendFile(
+		runProgressPath(dir, jobId),
+		'{"seq":1,"at":"2026-01-01T00:00:01.000Z","kind":"mess'
+	);
+
+	expect(await readRunProgress(dir, jobId)).toEqual([complete]);
+});
+
+test('readRunProgress on a job with no transcript on disk returns no lines, not an error', async () => {
+	const dir = await freshQueueDir();
+	expect(await readRunProgress(dir, crypto.randomUUID())).toEqual([]);
+});
+
+test('deleteRunProgress removes the transcript, and a second call is not an error', async () => {
+	const dir = await freshQueueDir();
+	const jobId = crypto.randomUUID();
+	await appendRunProgress(dir, jobId, {
+		seq: 0,
+		at: '2026-01-01T00:00:00.000Z',
+		kind: 'message',
+		payload: 'hi'
+	});
+
+	await deleteRunProgress(dir, jobId);
+	expect(await readRunProgress(dir, jobId)).toEqual([]);
+	await expect(deleteRunProgress(dir, jobId)).resolves.toBeUndefined();
 });
 
 // The actual restart-safety proof (#82's acceptance): run the real CLI
