@@ -20,6 +20,7 @@
 // external input — rather than a hand-rolled chain of `typeof` guards.
 
 import { z } from 'zod';
+import { checkVerbatim, normaliseForComparison } from './verbatim';
 import { contractRenewalType, invoicingCadence } from '$lib/server/db/schema/contract';
 import { disbursementPeriod, rateCardKind, rateUnit } from '$lib/server/db/schema/rate-card';
 import { minorUnits } from '$lib/money';
@@ -255,7 +256,8 @@ export function contractExtractionInstructions(): string {
 		'- expensePolicy is one of {"kind":"not_reimbursed"}, {"kind":"reimbursed_at_cost"}, {"kind":"reimbursed_with_cap","capAmount":N} where capAmount is in cents.',
 		'- rateCards is an array because a contract can have more than one rate over time (an addendum changing the fee is a second, adjacent card, never an overwrite of the first \u2014 validTo of the earlier card is the day before validFrom of the next). kind is one of: fixed_recurring, daily, hourly, one_off; unit is one of: hour, day, month, year, lump_sum; amount is the plain decimal rate, never in cents.',
 		'- THE CENTRAL RULE: an ambiguous clause \u2014 one that reads more than one defensible way, or that contradicts another clause in the same document \u2014 is never decided. Leave the field it affects null (or, for a rate card, use your best reading and still flag it) and add one entry to clauseFlags naming the field, the clause reference, the verbatim text the ambiguity rests on (copy it exactly, do not paraphrase), and at least two distinct readings in your own words. A clause you are confident about is not flagged.',
-		'- excerpt is the verbatim span covering the contract\u2019s own identification (the parties and the date) \u2014 copy it exactly, do not paraphrase.',
+		'- excerpt quotes the contract\u2019s own identification: the parties and the date. Those two are usually far apart \u2014 the parties open the document, the date sits in the signature block at the end \u2014 so quote both and write "[...]" between them. Copy each side exactly, do not paraphrase, and never bridge a gap with your own words.',
+		'- The same applies to a clauseFlags verbatimText resting on two clauses that disagree: quote both, separated by "[...]". Every side of a quotation is checked against the document, so a side that is paraphrased, reflowed or stitched together from scattered words is rejected \u2014 and a quotation that elides needs each side to stand on its own, not a stray fragment.',
 		'- confidence is your own, between 0 and 1. Lower it whenever a field you did report is a plausible inference rather than something the document states outright (an inferred VAT rate, a rate card default applied in the absence of any text on point).',
 		'- confidenceReason is a short, specific reason for a lowered confidence. Omit it, or leave it empty, when confidence is high.',
 		'- Never invent a client, a date or a rate the document does not state.'
@@ -286,10 +288,6 @@ export function parseExtractedContract(
 	return result.data;
 }
 
-function normalise(text: string): string {
-	return text.replace(/\s+/g, ' ').trim();
-}
-
 /**
  * Splits the model's clause flags into the ones a human can be shown —
  * genuinely quoted from the document, long enough to read as evidence,
@@ -307,7 +305,6 @@ export function validateClauseFlags(
 ): ValidatedClauseFlags {
 	const accepted: AcceptedClauseFlag[] = [];
 	const rejected: RejectedClauseFlag[] = [];
-	const normalisedContent = normalise(content);
 
 	for (const flag of flags) {
 		// Checks the schema used to make impossible and now deliberately
@@ -330,18 +327,18 @@ export function validateClauseFlags(
 			});
 			continue;
 		}
-		if (flag.verbatimText.length < MINIMUM_CLAUSE_LENGTH) {
+		if (normaliseForComparison(flag.verbatimText).length < MINIMUM_CLAUSE_LENGTH) {
 			rejected.push({
 				flag,
 				reason: `verbatimText ${JSON.stringify(flag.verbatimText)} is too short to be evidence`
 			});
 			continue;
 		}
-		if (!normalisedContent.includes(normalise(flag.verbatimText))) {
-			rejected.push({
-				flag,
-				reason: `verbatimText ${JSON.stringify(flag.verbatimText)} is not verbatim in the document`
-			});
+		// An ambiguity is very often two clauses that disagree, and two
+		// clauses are rarely adjacent, so the quotation may elide (#279).
+		const verbatim = checkVerbatim(flag.verbatimText, content, MINIMUM_CLAUSE_LENGTH);
+		if (!verbatim.ok) {
+			rejected.push({ flag, reason: `verbatimText: ${verbatim.reason}` });
 			continue;
 		}
 		accepted.push({ ...flag, clauseReference });
