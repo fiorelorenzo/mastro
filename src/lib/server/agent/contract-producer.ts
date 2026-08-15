@@ -18,10 +18,12 @@ import type { ProposalCandidate } from '$lib/server/runner/types';
 import {
 	contractConfidence,
 	contractExtractionInstructions,
+	MINIMUM_CLAUSE_LENGTH,
 	parseExtractedContract,
 	validateClauseFlags,
 	type RejectedClauseFlag
 } from './contract-extraction';
+import { checkVerbatim } from './verbatim';
 
 export interface ContractProposalSource {
 	readonly documentId: string;
@@ -56,10 +58,6 @@ export interface ContractProposalOutcome {
 	readonly rejectedFlags: readonly RejectedClauseFlag[];
 }
 
-function normalise(text: string): string {
-	return text.replace(/\s+/g, ' ').trim();
-}
-
 /**
  * Reads `source` with the model and writes one pending proposal for the
  * contract it describes.
@@ -90,10 +88,15 @@ export async function writeContractProposal(
 	candidate: ProposalCandidate,
 	executor?: DbExecutor
 ): Promise<ContractProposalOutcome> {
-	if (!normalise(source.content).includes(normalise(candidate.excerpt))) {
-		throw new Error(
-			`model's top-level excerpt ${JSON.stringify(candidate.excerpt)} is not verbatim in the document`
-		);
+	// A contract's own identification is the parties, at the top of page
+	// one, and the date, in the signature block at the end — so this
+	// quotation is allowed to elide, and every span it rests on is checked
+	// (#279). Still a throw rather than a rejected flag: an extraction
+	// whose evidence cannot be found in the document it read has nothing
+	// a reviewer could sensibly be shown.
+	const verbatim = checkVerbatim(candidate.excerpt, source.content, MINIMUM_CLAUSE_LENGTH);
+	if (!verbatim.ok) {
+		throw new Error(`model's top-level excerpt: ${verbatim.reason}`);
 	}
 
 	const parsed = parseExtractedContract(candidate.proposedFields);
