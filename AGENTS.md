@@ -228,6 +228,19 @@ port already in use fails with `Port <n> is already in use` instead of quietly
 starting on the next one: a server you did not notice moving is a server you will
 later verify the wrong branch on. Postgres is published on `127.0.0.1` only.
 
+**`strictPort` does not protect you from `node build`.** It guards Vite against
+Vite, and nothing else. Measured on this box with both running: `vite dev` holds
+`[::1]:5187` while `adapter-node` holds `0.0.0.0:5187`, which are different
+address families, so neither notices the other and both come up "ready". Which
+one answers then depends on how the client resolves the host — `http://[::1]:5187`
+reaches Vite and `http://127.0.0.1:5187` reaches the bundle, over one URL that
+looks the same in both cases. `/@vite/client` tells them apart in one request:
+200 is the dev server, 404 is the bundle.
+
+So a browser check against a production build proves nothing until you know
+which process answered. `ss -lntH 'sport = :5187'` printing two lines is the
+bug, and stopping the dev server is the fix.
+
 **A second checkout needs its own compose project, not just its own port.**
 `compose.yaml` names the project `mastro`, and that name is what every `pnpm db:*`
 script acts on: a worktree that sets only `POSTGRES_PORT` still shares the one
