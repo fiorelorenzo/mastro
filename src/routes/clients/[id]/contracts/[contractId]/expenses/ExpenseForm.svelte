@@ -69,7 +69,7 @@
 		{#if existingReceipt}
 			<SourceDocument document={existingReceipt} />
 		{:else}
-			<DropZone name="receipt" label={m.expense_form_receipt_button()} />
+			<DropZone name="receipt" />
 			<label class="flex items-center gap-2 text-sm">
 				<input type="checkbox" name="receiptConfidential" />
 				{m.expense_form_receipt_confidential_label()}

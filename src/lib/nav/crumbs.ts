@@ -65,13 +65,6 @@ function trail(...crumbs: Crumb[]): Crumb[] {
 // and serve it to everyone after that.
 
 /** The clients list, the root of the client family. */
-/** The three importers are siblings under one heading (#86's contract
- * lane joined invoices and days), so they share a trail rather than each
- * hanging off wherever it happened to be reachable from. */
-export function importCrumbs(): Crumb[] {
-	return trail({ href: resolve('/import'), label: m.nav_import() });
-}
-
 export function clientsCrumbs(): Crumb[] {
 	return trail({ href: resolve('/clients'), label: m.clients_heading() });
 }

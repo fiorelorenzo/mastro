@@ -8,8 +8,8 @@
 	// importer's: everything this page needs comes from `/import/days/
 	// analyze` and `/import/days/confirm`, and the auth guard
 	// (`hooks.server.ts`) protects the initial navigation regardless.
-	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
+	import { importTabs } from '$lib/nav/import-tabs';
 	import { formatDate, formatNumber } from '$lib/i18n/format';
 	import {
 		Amount,
@@ -71,11 +71,7 @@
 	let review = $state<DayImportReviewResponse | null>(null);
 	let confirmResult = $state<DayImportConfirmResponse | null>(null);
 
-	const tabs = $derived([
-		{ href: resolve('/import'), label: m.import_tab_invoices(), selected: false },
-		{ href: resolve('/import/days'), label: m.import_tab_days(), selected: true },
-		{ href: resolve('/import/contracts'), label: m.import_tab_contracts(), selected: false }
-	]);
+	const tabs = importTabs('days');
 
 	const mapping = $derived<DayImportColumnMapping>({
 		date: mappingIndexes.date === '' ? null : Number(mappingIndexes.date),
@@ -282,11 +278,7 @@
 
 	{#if stage === 'idle'}
 		<Field label={m.import_days_file_label()}>
-			<DropZone
-				label={m.import_days_file_button()}
-				accept=".csv,text/csv"
-				onchange={onFileChange}
-			/>
+			<DropZone accept=".csv,text/csv" onchange={onFileChange} />
 		</Field>
 	{:else if stage === 'error'}
 		<ErrorState status={500} title={m.import_days_error_title()} message={errorText}>

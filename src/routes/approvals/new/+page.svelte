@@ -83,11 +83,7 @@
 			{#if errors.proof}<p class="proof-error" role="alert">{errors.proof}</p>{/if}
 
 			<Field label={m.approval_form_proof_file_label()}>
-				<DropZone
-					name="proofFile"
-					label={m.approval_form_proof_file_button()}
-					accept=".pdf,.eml,.png,.jpg,.jpeg,.txt"
-				/>
+				<DropZone name="proofFile" accept=".pdf,.eml,.png,.jpg,.jpeg,.txt" />
 			</Field>
 
 			<Field label={m.approval_form_proof_text_label()}>

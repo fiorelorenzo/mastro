@@ -42,7 +42,6 @@
 
 	let {
 		files = $bindable<FileList | null>(null),
-		label,
 		size = 'md',
 		id,
 		'aria-invalid': ariaInvalid,
@@ -54,8 +53,6 @@
 		...rest
 	}: Omit<HTMLInputAttributes, 'size' | 'type' | 'files'> & {
 		files?: FileList | null;
-		/** The zone's own words — a drop target with no label says nothing. */
-		label: string;
 		size?: 'md' | 'lg';
 	} = $props();
 
@@ -143,8 +140,9 @@
 		ondragleave={onDragLeave}
 		ondrop={onDrop}
 	>
-		<span class="label">{label}</span>
-		<span class="hint">{m.design_drop_zone_hint()}</span>
+		<span class="prompt"
+			>{multiple ? m.design_drop_zone_prompt_multiple() : m.design_drop_zone_prompt()}</span
+		>
 		<input
 			{...rest}
 			bind:this={inputEl}
@@ -225,21 +223,20 @@
 		background: var(--surface-2);
 		color: var(--text-muted);
 	}
-	.label {
+	/* One line, not a bold pseudo-button over a muted hint: the whole
+	   surface is the target, so a word styled like a button inside it was a
+	   second invitation to the one action, and the eye read it as the only
+	   clickable part. */
+	.prompt {
 		font-family: var(--font-ui);
-		font-size: var(--text-md);
-		font-weight: var(--weight-medium);
-		color: var(--text-primary);
-	}
-	.hint {
 		font-size: var(--text-sm);
 		color: var(--text-muted);
 	}
 	.zone--lg .surface {
 		padding: var(--space-6) var(--space-5);
 	}
-	.zone--lg .label {
-		font-size: var(--text-lg);
+	.zone--lg .prompt {
+		font-size: var(--text-md);
 	}
 	.chosen {
 		list-style: none;
