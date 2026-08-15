@@ -386,7 +386,7 @@
 		</Field>
 		<div class="grid-2">
 			<Field label={m.client_form_tax_id_label()}>
-				<Input name="client.taxId" value={candidate.client.taxId} disabled={!pending} />
+				<Input name="client.taxId" value={candidate.client.taxId ?? ''} disabled={!pending} />
 			</Field>
 			<Field label={m.client_form_vat_id_label()}>
 				<Input name="client.vatId" value={candidate.client.vatId ?? ''} disabled={!pending} />
@@ -397,7 +397,11 @@
 	<fieldset class="card">
 		<legend><h2>{m.client_form_address_legend()}</h2></legend>
 		<Field label={m.client_form_address_line1_label()}>
-			<Input name="client.addressLine1" value={candidate.client.addressLine1} disabled={!pending} />
+			<Input
+				name="client.addressLine1"
+				value={candidate.client.addressLine1 ?? ''}
+				disabled={!pending}
+			/>
 		</Field>
 		<Field label={m.client_form_address_line2_label()}>
 			<Input
@@ -408,12 +412,16 @@
 		</Field>
 		<div class="grid-2">
 			<Field label={m.client_form_city_label()}>
-				<Input name="client.addressCity" value={candidate.client.addressCity} disabled={!pending} />
+				<Input
+					name="client.addressCity"
+					value={candidate.client.addressCity ?? ''}
+					disabled={!pending}
+				/>
 			</Field>
 			<Field label={m.client_form_postal_code_label()}>
 				<Input
 					name="client.addressPostalCode"
-					value={candidate.client.addressPostalCode}
+					value={candidate.client.addressPostalCode ?? ''}
 					disabled={!pending}
 				/>
 			</Field>

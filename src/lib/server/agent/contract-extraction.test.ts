@@ -232,3 +232,46 @@ test('contractConfidence folds the model\u2019s own low confidence with the flag
 		'a rate is a rough inference; 2 clauses read more than one way and need a human choice'
 	);
 });
+
+// A UK counterparty's agreement was read correctly in production on
+// 2026-08-15, reported `taxId: null` exactly as the "never invent" rule
+// asks, and was rejected by this parser with the reviewer told nothing —
+// the client table has demanded only a legal name and a country since
+// migration 0056, and this schema had not followed. Anything the document
+// does not state stays null all the way to the review screen.
+test('a counterparty with no tax id and no address is an ordinary client, not a malformed one', () => {
+	const parsed = parseExtractedContract(
+		validFields({
+			client: {
+				legalName: 'Visum Labs Ltd',
+				taxId: null,
+				vatId: null,
+				country: 'GB',
+				addressLine1: null,
+				addressLine2: null,
+				addressCity: null,
+				addressPostalCode: null,
+				addressRegion: null
+			}
+		})
+	);
+
+	expect(parsed.client.legalName).toBe('Visum Labs Ltd');
+	expect(parsed.client.country).toBe('GB');
+	expect(parsed.client.taxId).toBeNull();
+	expect(parsed.client.addressLine1).toBeNull();
+	expect(parsed.client.addressCity).toBeNull();
+	expect(parsed.client.addressPostalCode).toBeNull();
+});
+
+test('a counterparty with no legal name is still refused', () => {
+	expect(() =>
+		parseExtractedContract(validFields({ client: { legalName: '  ', country: 'IT' } }))
+	).toThrow();
+});
+
+test('a counterparty with no country is still refused', () => {
+	expect(() =>
+		parseExtractedContract(validFields({ client: { legalName: 'Visum Labs Ltd', country: null } }))
+	).toThrow();
+});

@@ -68,16 +68,26 @@ const ExpensePolicySchema = z
  * row, since #86's whole point is that one may not exist yet. Whether it
  * becomes a new row or gets linked to one already on file is a reviewer's
  * explicit choice on the proposal review screen, recorded as a
- * `ClientChoice` (`repositories/proposal.ts`) — never decided here. */
+ * `ClientChoice` (`repositories/proposal.ts`) — never decided here.
+ *
+ * Only `legalName` and `country` are required, because those are the only
+ * two columns `client` still demands (migration 0056). Everything else is
+ * nullable here for the same reason it is nullable there: a contract that
+ * does not state a tax id or a street address is an ordinary contract, not
+ * a malformed one, and a foreign counterparty frequently states neither.
+ * Requiring them cost a real extraction: a UK company's agreement was read
+ * correctly, reported `taxId: null` exactly as the prompt's "never invent"
+ * rule asks, and was then thrown away by this schema with the reviewer
+ * told nothing at all. */
 const ExtractedClientSchema = z.object({
 	legalName: trimmedNonBlank,
-	taxId: trimmedNonBlank,
+	taxId: nullableTrimmed,
 	vatId: nullableTrimmed,
 	country: trimmedNonBlank,
-	addressLine1: trimmedNonBlank,
+	addressLine1: nullableTrimmed,
 	addressLine2: nullableTrimmed,
-	addressCity: trimmedNonBlank,
-	addressPostalCode: trimmedNonBlank,
+	addressCity: nullableTrimmed,
+	addressPostalCode: nullableTrimmed,
 	addressRegion: nullableTrimmed
 });
 export type ExtractedClient = z.infer<typeof ExtractedClientSchema>;
@@ -231,13 +241,14 @@ export function contractExtractionInstructions(): string {
 		// concrete one would both bias the reading toward one jurisdiction and
 		// be a country literal outside a pack (AGENTS.md invariant 1).
 		'{"proposedFields":{' +
-			'"client":{"legalName":"...","taxId":"...","vatId":null,"country":"..","addressLine1":"...","addressLine2":null,"addressCity":"...","addressPostalCode":"...","addressRegion":null},' +
+			'"client":{"legalName":"...","taxId":null,"vatId":null,"country":"..","addressLine1":null,"addressLine2":null,"addressCity":null,"addressPostalCode":null,"addressRegion":null},' +
 			'"contract":{"title":"...","signedDocumentReference":null,"startsOn":"YYYY-MM-DD","endsOn":null,"renewalType":"none","renewalNoticeDays":null,"terminationNoticeDays":30,"paymentTerms":{"kind":"net","days":30},"invoicingCadence":"monthly","currency":"EUR","taxTreatment":"...","requiresPriorApproval":false,"requiresExpensePreAuthorisation":false,"expensePolicy":{"kind":"not_reimbursed"}},' +
 			'"rateCards":[{"validFrom":"YYYY-MM-DD","validTo":null,"kind":"daily","amount":650,"unit":"day","allowedFractions":[1,0.5],"minimumHours":null,"disbursementPeriod":null}],' +
 			'"clauseFlags":[{"field":"contract.renewalType","clauseReference":"Art. 4","verbatimText":"...","readings":["reading one","reading two"]}]' +
 			'},"excerpt":"...","confidence":0.0,"confidenceReason":"..."}',
 		'',
 		'Rules:',
+		'- The client needs only a legal name and a country. Its tax id, VAT id and every line of its address are reported only when the document states them, and are null otherwise \u2014 a foreign counterparty often gives none of them, and that is an ordinary contract, not an incomplete one. Never derive one from the letterhead, the domain or the currency.',
 		'- renewalType is one of: none, explicit, counterparty_option, tacit.',
 		'- paymentTerms is either {"kind":"net","days":N} or {"kind":"day_of_month","day":N}. If the document\u2019s own wording does not map cleanly onto either shape, leave paymentTerms null and flag it \u2014 never force an approximate fit.',
 		'- invoicingCadence is one of: monthly, quarterly, annual, on_completion.',
