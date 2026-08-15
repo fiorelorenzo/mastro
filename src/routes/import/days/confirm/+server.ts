@@ -1,5 +1,5 @@
 // The only endpoint in the day-import pipeline that writes anything
-// (#224, mirroring `routes/import/confirm/+server.ts`'s role for the
+// (#224, mirroring `routes/import/invoices/confirm/+server.ts`'s role for the
 // invoice one). The file and the confirmed column mapping are resent
 // exactly as `/import/days/analyze` last saw them and re-parsed here from
 // scratch (`day-import-request.ts`, shared with the analyze endpoint) —

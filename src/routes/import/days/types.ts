@@ -5,7 +5,7 @@ import type { WorkUnitStateValue } from '$lib/design';
 // `$lib/server/import/day-import.ts`: that lives under `$lib/server`,
 // which SvelteKit refuses to bundle into client code, and a JSON round
 // trip already erases the distinction between the two shapes — same
-// reasoning `routes/import/types.ts` gives for its own duplicate. Every
+// reasoning `routes/import/invoices/types.ts` gives for its own duplicate. Every
 // state name is `WorkUnitStateValue`, imported from `$lib/design` rather
 // than redeclared a third time: that module already exists for exactly
 // this (client-safe, used by the calendar and alerts already).

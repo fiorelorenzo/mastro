@@ -1,5 +1,5 @@
 // Read-only half of the day-import pipeline (#224, mirroring
-// `routes/import/analyze/+server.ts`'s role for the invoice one): parses
+// `routes/import/invoices/analyze/+server.ts`'s role for the invoice one): parses
 // the uploaded file and, once a column mapping is confirmed, computes the
 // dry-run review the client renders. Never inserts, updates or deletes a
 // row — every candidate client/contract, rate card and already-recorded

@@ -88,7 +88,7 @@
 		for (const file of files) {
 			formData.append('file', new Blob([Uint8Array.from(file.content)]), file.path);
 		}
-		const response = await fetch('/import/analyze', { method: 'POST', body: formData });
+		const response = await fetch('/import/invoices/analyze', { method: 'POST', body: formData });
 		if (!response.ok) {
 			// The one refusal that is configuration rather than a broken file:
 			// direction detection cannot tell an outgoing invoice from an
@@ -202,7 +202,7 @@
 			})
 		);
 
-		const response = await fetch('/import/confirm', { method: 'POST', body: formData });
+		const response = await fetch('/import/invoices/confirm', { method: 'POST', body: formData });
 		if (!response.ok) {
 			errorText = await response.text();
 			stage = 'review';

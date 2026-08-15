@@ -15,7 +15,7 @@
 //
 // One row's failure never stops the batch — the shape `publishAllPending`
 // (`server/drive/publish.ts`) already establishes for mirror publishing,
-// and `routes/import/confirm/+server.ts` for an imported invoice. Each row
+// and `routes/import/invoices/confirm/+server.ts` for an imported invoice. Each row
 // commits in its own transaction (or, nested inside a caller's own — a
 // test's rolled-back one — its own savepoint, the same trick
 // `pg-error.ts`'s `rejection` already relies on): a constraint violation
