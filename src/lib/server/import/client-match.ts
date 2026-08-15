@@ -11,7 +11,7 @@ import type { ExpensePolicy, InvoicingCadence, PaymentTerms } from '$lib/server/
 import type { NoticeChannel } from '$lib/server/db/schema/client';
 import { normalizedTaxId } from './direction';
 import { scaleMinorUnits, sumMinorUnits, type MinorUnits } from '$lib/money';
-import type { Invoice, InvoiceParty } from './invoice';
+import type { Invoice } from './invoice';
 
 export interface ClientMatchCandidate {
 	readonly id: string;
@@ -37,12 +37,17 @@ export interface ClientMatchCandidate {
  * client can now be recorded with only a legal name and a country, a naive
  * comparison would find every tax-id-less client equal to every other and
  * file an incoming invoice against whichever came first. "I know nothing
- * about this one" is not evidence of identity. */
+ * about this one" is not evidence of identity.
+ *
+ * The side asking is nullable too, not just the sides being searched: a
+ * contract PDF naming a foreign counterparty often states no tax id at
+ * all, and that proposal still has to reach the review screen and ask a
+ * human which client it is. */
 export function matchClientByTaxId(
-	customer: Pick<InvoiceParty, 'taxId'>,
+	customer: { readonly taxId: string | null },
 	clients: readonly ClientMatchCandidate[]
 ): ClientMatchCandidate | null {
-	const target = normalizedTaxId(customer.taxId);
+	const target = customer.taxId === null ? '' : normalizedTaxId(customer.taxId);
 	if (!target) return null;
 	return (
 		clients.find(
