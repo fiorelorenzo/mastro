@@ -19,6 +19,10 @@ export function importTabs(selected: ImportTab) {
 			selected: selected === 'contracts'
 		},
 		{ href: resolve('/import/days'), label: m.import_tab_days(), selected: selected === 'days' },
-		{ href: resolve('/import'), label: m.import_tab_invoices(), selected: selected === 'invoices' }
+		{
+			href: resolve('/import/invoices'),
+			label: m.import_tab_invoices(),
+			selected: selected === 'invoices'
+		}
 	];
 }

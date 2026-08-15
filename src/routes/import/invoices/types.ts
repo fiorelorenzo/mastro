@@ -1,6 +1,7 @@
 import type { MinorUnits } from '$lib/money';
 
-// Client-side mirror of the JSON `/import/analyze` and `/import/confirm`
+// Client-side mirror of the JSON `/import/invoices/analyze` and
+// `/import/invoices/confirm`
 // responses. Deliberately not imported from `$lib/server/import/review.ts`
 // or `client-match.ts`: those live under `$lib/server`, which SvelteKit
 // refuses to bundle into client code, and a JSON round trip already erases
