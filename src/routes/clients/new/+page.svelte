@@ -32,7 +32,7 @@
 
 <Page crumbs={data.crumbs} title={m.client_new_heading()}>
 	{#snippet actions()}
-		<Button variant="secondary" href={resolve('/clients/new/from-pdf')}>
+		<Button variant="secondary" href={resolve('/import/contracts')}>
 			{m.client_new_from_pdf_link()}
 		</Button>
 	{/snippet}

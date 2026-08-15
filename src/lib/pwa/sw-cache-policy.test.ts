@@ -53,7 +53,7 @@ describe('isSessionInvalidPayload', () => {
 });
 
 describe('dataCacheKey', () => {
-	test('drops the query string, so a repeat __data.json fetch with a different invalidation marker still hits the same entry', () => {
+	test("drops SvelteKit's invalidation marker, so a repeat __data.json fetch still hits the same entry", () => {
 		const first = dataCacheKey('http://localhost/clients/__data.json');
 		const second = dataCacheKey('http://localhost/clients/__data.json?x-sveltekit-invalidated=01');
 		expect(first).toBe(second);

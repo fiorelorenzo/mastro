@@ -27,7 +27,7 @@
 // email approving several days), and #209's contract is one `approval`
 // per document, not one per accepted day.
 
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 import { minorUnits } from '$lib/money';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
@@ -96,6 +96,17 @@ export async function getProposal(id: string, executor: DbExecutor = db) {
  * idempotency check (#85): a job whose document already has proposals has
  * been applied, whatever the queue file says, so a crash between writing
  * the rows and moving the file cannot double a reviewer's work. */
+/** How many proposals are waiting on a human, whatever screen is asking.
+ * A count query rather than loading and grouping the queue: the tab badge
+ * needs the number on every tab, and the queue itself only on one. */
+export async function countPendingProposals(executor: DbExecutor = db): Promise<number> {
+	const [row] = await executor
+		.select({ count: sql<number>`count(*)::int` })
+		.from(proposal)
+		.where(eq(proposal.status, 'pending'));
+	return row?.count ?? 0;
+}
+
 export async function listProposalsForDocument(documentId: string, executor: DbExecutor = db) {
 	return executor.select().from(proposal).where(eq(proposal.documentId, documentId));
 }
