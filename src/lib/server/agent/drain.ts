@@ -13,11 +13,20 @@
 // next drain, so this checks for proposals already carrying that
 // document. That check is the real guard; the move is just tidying.
 
-import type { DbExecutor } from '$lib/server/db';
+import { db, type DbExecutor } from '$lib/server/db';
 import { listProposalsForDocument, type ProposalRow } from '$lib/server/repositories/proposal';
 import { getContract } from '$lib/server/repositories/contract';
 import { getInboundThreadForDocument } from '$lib/server/repositories/inbound-thread';
 import {
+	claimRunForApply,
+	failRun,
+	finishRunApplied,
+	getExtractionRunByJobId,
+	markRunExtracted
+} from '$lib/server/repositories/extraction-run';
+import { persistRunProgress } from './run-progress';
+import {
+	deleteRunProgress,
 	listCompletedJobs,
 	markJobApplied,
 	readCompletedJob,
@@ -54,6 +63,16 @@ export interface DrainOutcome {
  * Turns every completed job into proposals. Returns counts rather than
  * throwing on one bad job, the same "one bad row does not stop the batch"
  * shape the alert engine and the runner's own loop already use.
+ *
+ * A job whose document has an `extraction_run` row (#278: today, every
+ * `'contract'` job — a first-intake PDF upload creates one) takes a
+ * different path than a job with none (`'work_unit'`/`'invoice'` jobs
+ * enqueued before this feature, which have no run to update and drain
+ * exactly as they always have, in the `else` branch below): the run's own
+ * `extracted` → `applied` | `failed` transitions have to happen alongside
+ * the proposal write, guarded against the two drainers that can now reach
+ * the same job — this sweep, and the SSE stream watching it live
+ * (design doc, "The race this creates, and the guard").
  */
 export async function drainCompletedJobs(
 	queueDir: string,
@@ -66,6 +85,85 @@ export async function drainCompletedJobs(
 
 	for (const filename of await listCompletedJobs(queueDir)) {
 		const job = await readCompletedJob(queueDir, filename);
+		const run = await getExtractionRunByJobId(job.id, executor);
+
+		if (run?.status === 'applied') {
+			// Crash recovery: `finishRunApplied` committed on an earlier
+			// attempt, but the rename below never ran. Nothing left to do
+			// against the database — just finish moving the file so the next
+			// sweep stops rediscovering it in `done/`.
+			await markJobApplied(queueDir, filename);
+			skipped += 1;
+			continue;
+		}
+
+		if (run?.status === 'failed') {
+			// A previous sweep already ran the producer and it threw — the run
+			// is `failed` and its reason is already on screen. The file stays
+			// in `done/` on purpose (#278's acceptance: "leaves the job in
+			// done/ for a retry"), so it is reported here on every sweep, the
+			// same as an unassociated job's own failure already is below,
+			// rather than going quiet the moment it is first seen.
+			failed.push({ filename, reason: run.error ?? 'run already failed' });
+			continue;
+		}
+
+		if (run) {
+			try {
+				// Its own statement, committed before the claim below even
+				// starts: this fact — the runner's answer landed — must
+				// survive a producer that throws after it, the same way
+				// `claimRunForApply`'s own doc comment describes a rolled-back
+				// claim leaving the run `extracted`, never further back at
+				// `running`.
+				await markRunExtracted(job.id, executor);
+
+				const runner = executor ?? db;
+				const outcome = await runner.transaction(async (tx) => {
+					const claimedId = await claimRunForApply(job.id, tx);
+					if (claimedId === null) return null;
+
+					const result = await applyCompletedJob(job, tx);
+					const [proposal] = result.proposals;
+					if (!proposal) {
+						throw new Error(
+							`extraction for document ${job.result.documentId} produced no proposal ` +
+								`for run ${run.id}`
+						);
+					}
+					await finishRunApplied(job.id, proposal.id, tx);
+					return result;
+				});
+
+				if (outcome === null) {
+					// Another drainer already claimed this run — it is applying,
+					// or has already applied, it under its own transaction.
+					// Whichever one actually wrote the proposals is also the one
+					// that renames the file out of `done/`; this sweep has
+					// nothing left to do with it.
+					skipped += 1;
+					continue;
+				}
+
+				for (const { reason } of outcome.rejected) {
+					rejectedDays.push({ documentId: job.result.documentId, reason });
+				}
+				await markJobApplied(queueDir, filename);
+				// A run nobody streamed live (the scheduler's own safety net)
+				// never had a poller persisting its transcript as it went —
+				// catch it up before the jsonl file it lived in is deleted for
+				// good.
+				await persistRunProgress(queueDir, run, executor);
+				await deleteRunProgress(queueDir, job.id);
+				applied += 1;
+			} catch (error) {
+				const reason = error instanceof Error ? error.message : String(error);
+				await failRun(job.id, reason, executor);
+				failed.push({ filename, reason });
+			}
+			continue;
+		}
+
 		try {
 			const existing = executor
 				? await listProposalsForDocument(job.result.documentId, executor)

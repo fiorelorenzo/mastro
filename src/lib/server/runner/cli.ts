@@ -16,9 +16,9 @@ import { connectRunnerDb } from './db.ts';
 import { loadRunnerConfig } from './config.ts';
 import { RunnerConfigurationError } from './errors.ts';
 import { processExtractionJob } from './job.ts';
-import type { ExtractionModel } from './model.ts';
-import { AcpAgentModel } from './model.ts';
+import { AcpAgentModel, type ExtractionModel } from './model.ts';
 import {
+	appendRunProgress,
 	enqueueJob,
 	ensureQueueDirs,
 	listPendingJobs,
@@ -26,7 +26,42 @@ import {
 	markJobFailed,
 	readPendingJob
 } from './queue.ts';
-import type { ExtractionRequest } from './types.ts';
+import type { ExtractionRequest, RunProgressLine } from './types.ts';
+
+/** Wraps `model` so its next `call()` carries `onUpdate` — `job.ts`'s
+ * `processExtractionJob` forwards whatever `model` it is handed straight
+ * into `model.call(...)`, so wrapping it here is how a job-scoped sink
+ * reaches `runAcpPrompt` without `job.ts`, or any other `ModelCallInput`
+ * caller, needing to know transcripts exist. */
+function withUpdateSink(
+	model: ExtractionModel,
+	onUpdate: (update: { kind: RunProgressLine['kind']; payload: string }) => void
+): ExtractionModel {
+	return { call: (input) => model.call({ ...input, onUpdate }) };
+}
+
+/** Appends `jobId`'s updates to `runs/<jobId>.jsonl`, `seq` numbered from
+ * 0 up. The ACP loop in `acp-client.ts` does not await `onUpdate`, so
+ * without the chain below two updates arriving close together could have
+ * their writes land on disk out of order; `flush`/`appendError` wait for
+ * that chain, so nothing from this job is still in flight when it is
+ * marked done or failed. */
+function progressSink(queueDir: string, jobId: string) {
+	let seq = 0;
+	let chain = Promise.resolve();
+	const append = (kind: RunProgressLine['kind'], payload: string): Promise<void> => {
+		const line: RunProgressLine = { seq: seq++, at: new Date().toISOString(), kind, payload };
+		chain = chain.then(() => appendRunProgress(queueDir, jobId, line));
+		return chain;
+	};
+	return {
+		onUpdate: (update: { kind: RunProgressLine['kind']; payload: string }) => {
+			void append(update.kind, update.payload);
+		},
+		appendError: (message: string) => append('error', message),
+		flush: () => chain
+	};
+}
 
 /** Processes every job currently in `pending/` once, then returns —
  * `cli.ts`'s `once` subcommand, and the unit `queue.test.ts` and
@@ -46,8 +81,14 @@ export async function runQueueOnce(
 	for (const filename of pending) {
 		const job = await readPendingJob(queueDir, filename);
 		console.log(`[runner] processing ${filename}`);
+		const progress = progressSink(queueDir, job.id);
 		try {
-			const result = await processExtractionJob(sql, model, job.request);
+			const result = await processExtractionJob(
+				sql,
+				withUpdateSink(model, progress.onUpdate),
+				job.request
+			);
+			await progress.flush();
 			// #82's own scope ends here: "its only output is a proposal
 			// object." Writing it into `proposal` (createProposal, #83) is a
 			// producer's job — this process has no write grant to do it even
@@ -62,6 +103,7 @@ export async function runQueueOnce(
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
 			console.error(`[runner] failed ${filename}: ${message}`);
+			await progress.appendError(message);
 			await markJobFailed(queueDir, filename, job, message);
 			failed++;
 		}

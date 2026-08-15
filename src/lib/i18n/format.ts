@@ -224,3 +224,30 @@ export function formatBytes(bytes: number, locale: Locale = getLocale()): string
 		maximumFractionDigits: 1
 	}).format(value);
 }
+
+const DURATION_UNITS = ['second', 'minute', 'hour'] as const;
+
+/**
+ * An elapsed or total duration given in seconds, as the largest unit that
+ * keeps the figure readable, e.g. `32` reads `32 sec` and `5400` reads
+ * `1.5 hr` (extraction runs registry, #278 — a run's own enqueued-to-
+ * finished span). Same "largest unit, decimal steps" algorithm as
+ * `formatBytes` above, 60-based instead of 1000-based, and the same
+ * reason: `Intl`'s own unit formatter pluralizes and abbreviates per
+ * locale, a hand-rolled `Math.floor(seconds / 60)` and string suffix does
+ * not.
+ */
+export function formatDuration(seconds: number, locale: Locale = getLocale()): string {
+	let value = Math.max(0, seconds);
+	let unitIndex = 0;
+	while (value >= 60 && unitIndex < DURATION_UNITS.length - 1) {
+		value /= 60;
+		unitIndex += 1;
+	}
+	return new Intl.NumberFormat(locale, {
+		style: 'unit',
+		unit: DURATION_UNITS[unitIndex],
+		unitDisplay: 'short',
+		maximumFractionDigits: unitIndex === 0 ? 0 : 1
+	}).format(value);
+}

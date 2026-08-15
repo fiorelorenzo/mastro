@@ -4,13 +4,20 @@
 // `RunnerConfigurationError` immediately rather than returning a
 // plausible-looking response.
 
-import { runAcpPrompt } from './acp-client.ts';
+import { runAcpPrompt, type RunAcpPromptInput } from './acp-client.ts';
 import type { AgentCommandConfig } from './config.ts';
 import { RunnerConfigurationError } from './errors.ts';
 
 export interface ModelCallInput {
 	readonly instructions: string;
 	readonly content: string;
+	/** Forwarded straight through to `runAcpPrompt`'s own sink. Optional so
+	 * every existing caller — `job.ts`, and every producer that calls
+	 * through it, none of which know anything about transcripts — keeps
+	 * working unchanged. `cli.ts` is the only caller that sets it, to
+	 * route the agent's updates into `runs/<jobId>.jsonl` (invariant 3:
+	 * this is the only channel the runner has left to report them). */
+	readonly onUpdate?: RunAcpPromptInput['onUpdate'];
 }
 
 export interface ModelCallOutput {
@@ -58,7 +65,8 @@ export class AcpAgentModel implements ExtractionModel {
 			args: this.agent.args,
 			env: this.agent.env,
 			prompt: `${input.instructions}\n\n---\n\n${input.content}`,
-			timeoutMs: this.timeoutMs
+			timeoutMs: this.timeoutMs,
+			onUpdate: input.onUpdate
 		});
 		return { text };
 	}
