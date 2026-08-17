@@ -73,7 +73,6 @@ test('an address outside the allowlist completes account creation and is still r
 		{ emailAndPassword: { enabled: true } },
 		new Set(['someone-else@example.com'])
 	);
-	const accountCountBefore = (await db.select().from(schema.account)).length;
 
 	await expect(
 		testAuth.api.signUpEmail({
@@ -83,8 +82,19 @@ test('an address outside the allowlist completes account creation and is still r
 
 	const userRows = await db.select().from(schema.user).where(eq(schema.user.email, email));
 	expect(userRows).toHaveLength(0);
-	const accountCountAfter = (await db.select().from(schema.account)).length;
-	expect(accountCountAfter).toBe(accountCountBefore);
+	// Scoped to this email's own user, not a count of the whole `account`
+	// table. The table-wide count this used to compare was fragile by the rule
+	// `AGENTS.md` states outright — "a query that ... counts a whole table
+	// sees the seed's rows too: scope every assertion to the ids the test
+	// itself created" — and it broke the moment another test file signed a
+	// user up in a parallel worker, which is a real concurrent insert and not
+	// a flake to retry.
+	const accountRows = await db
+		.select()
+		.from(schema.account)
+		.innerJoin(schema.user, eq(schema.account.userId, schema.user.id))
+		.where(eq(schema.user.email, email));
+	expect(accountRows).toHaveLength(0);
 });
 
 test('an allowlisted address signs up, gets a Secure/HttpOnly/SameSite=Lax cookie in production configuration, and sign-out clears it', async () => {

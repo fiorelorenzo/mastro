@@ -112,9 +112,17 @@ the attacker's, at the cost of every legitimate user having to sign in again.
 
 **What it grants.** Nothing by itself — it is not a credential, it is the list of
 addresses `isAllowedEmail` (`src/lib/server/auth/allowlist.ts`) checks before a
-Google sign-in is allowed to create an account or a session. An empty or unset list
-admits nobody (`parseAllowlist` returns an empty set; `isAllowedEmail` on an empty
-set is always `false`), verified by `auth.test.ts`'s rejection tests.
+Google sign-in is allowed to create an account or a session, and again on every
+request against an already-established one (`src/hooks.server.ts`'s auth guard):
+Better Auth only runs the first two checks when a user or session row is first
+created, and refreshing an existing session does not insert a new row, so the
+per-request check is what makes removing an address (or emptying the list
+entirely) take effect for someone already signed in, not just for new sign-ins.
+A rejection at that point revokes the session server-side, so the next request
+with the same cookie finds nothing. An empty or unset list admits nobody
+(`parseAllowlist` returns an empty set; `isAllowedEmail` on an empty set is
+always `false`), verified by `auth.test.ts`'s and `hooks.server.test.ts`'s
+rejection tests.
 
 **Where it lives.** `.env`/`.env.prod`, plain text, comma-separated.
 

@@ -5,7 +5,8 @@ import { redirect, type Handle } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { getTextDirection } from '$lib/paraglide/runtime';
 import { paraglideMiddleware } from '$lib/paraglide/server';
-import { auth } from '$lib/server/auth';
+import { auth, defaultAllowlist } from '$lib/server/auth';
+import { isAllowedEmail } from '$lib/server/auth/allowlist';
 import { isEndpointRoute, isPublicRoute } from '$lib/server/route-guard';
 
 const handleParaglide: Handle = ({ event, resolve }) =>
@@ -20,28 +21,66 @@ const handleParaglide: Handle = ({ event, resolve }) =>
 		});
 	});
 
-const handleAuth: Handle = async ({ event, resolve }) => {
-	if (isPublicRoute(event.route.id)) {
-		return resolve(event);
-	}
+/**
+ * Builds the auth guard `Handle`. Exported, with `authInstance`/`allowlist`
+ * overrides, so tests can exercise the real revoke-on-reject behaviour
+ * against a real Better Auth instance and an explicit allowlist — the same
+ * way `auth/index.ts`'s `createAuth` is tested — without mutating
+ * `AUTH_ALLOWED_EMAILS` ($env/dynamic/private snapshots it at startup and
+ * would not observe that anyway). Production calls this with no arguments.
+ */
+export function createHandleAuth(
+	authInstance: Pick<typeof auth, 'api'> = auth,
+	allowlist: ReadonlySet<string> = defaultAllowlist
+): Handle {
+	return async ({ event, resolve }) => {
+		if (isPublicRoute(event.route.id)) {
+			return resolve(event);
+		}
 
-	const sessionData = await auth.api.getSession({ headers: event.request.headers });
-	event.locals.session = sessionData?.session ?? null;
-	event.locals.user = sessionData?.user ?? null;
+		let sessionData = await authInstance.api.getSession({ headers: event.request.headers });
 
-	if (sessionData) {
-		return resolve(event);
-	}
+		// Better Auth's allowlist hooks (databaseHooks in auth/index.ts) only
+		// run when a user or session row is first *created*: refreshing an
+		// existing session extends its expiry in place instead of inserting a
+		// new row, so neither hook fires again on refresh. Re-checking here,
+		// on every request that reaches a real session, is what makes removing
+		// an address — or emptying AUTH_ALLOWED_EMAILS entirely — actually take
+		// effect for someone already signed in, not just for new sign-ins
+		// (#299, invariant 6: an empty allowlist means nobody gets in, never
+		// everybody).
+		if (sessionData && !isAllowedEmail(sessionData.user.email, allowlist)) {
+			// Revoke server-side, not just for this request: an unrevoked
+			// session row would let this exact cookie pass again on the very
+			// next request, which is indistinguishable from never having
+			// checked at all.
+			await authInstance.api.signOut({ headers: event.request.headers });
+			sessionData = null;
+		}
 
-	if (isEndpointRoute(event.route.id)) {
-		return new Response(null, { status: 401 });
-	}
+		event.locals.session = sessionData?.session ?? null;
+		event.locals.user = sessionData?.user ?? null;
 
-	redirect(
-		303,
-		`/sign-in?callbackURL=${encodeURIComponent(event.url.pathname + event.url.search)}`
-	);
-};
+		if (sessionData) {
+			return resolve(event);
+		}
+
+		// A rejected-for-allowlist session and an outright missing one take
+		// this identical path with no further branching, so the two are not
+		// distinguishable from the response: neither discloses whether the
+		// account exists or ever had access (allowlist.ts, #53).
+		if (isEndpointRoute(event.route.id)) {
+			return new Response(null, { status: 401 });
+		}
+
+		redirect(
+			303,
+			`/sign-in?callbackURL=${encodeURIComponent(event.url.pathname + event.url.search)}`
+		);
+	};
+}
+
+const handleAuth = createHandleAuth();
 
 // Language first, so a redirect or an error page from the guard is still
 // rendered in the visitor's locale.

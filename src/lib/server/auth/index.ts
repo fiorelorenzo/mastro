@@ -7,10 +7,13 @@
 //
 // The mandatory email allowlist (#53) is enforced in databaseHooks: once
 // before a user row (and so its linked Google account) is ever written, and
-// again before every session is created, so removing an address from the
-// list takes effect on that account's next sign-in even though it already
-// exists. Both hooks throw the same message regardless of why an address
-// was rejected, so the response never discloses whether an account exists.
+// again before every session is created. Neither hook fires on a session
+// refresh (Better Auth extends an existing row's expiry in place instead of
+// inserting a new one), so `hooks.server.ts`'s auth guard re-checks the
+// allowlist against every request too (#299) — that is what makes removing
+// an address take effect immediately for someone already signed in, not
+// only on their next sign-in. All three checks throw or act on the same
+// message, so the response never discloses whether an account exists.
 import { APIError, betterAuth, type BetterAuthOptions } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { dev } from '$app/environment';
@@ -24,7 +27,15 @@ if (!env.BETTER_AUTH_URL) throw new Error('BETTER_AUTH_URL is not set');
 if (!env.GOOGLE_CLIENT_ID) throw new Error('GOOGLE_CLIENT_ID is not set');
 if (!env.GOOGLE_CLIENT_SECRET) throw new Error('GOOGLE_CLIENT_SECRET is not set');
 
-const defaultAllowlist = parseAllowlist(env.AUTH_ALLOWED_EMAILS);
+/**
+ * Parsed once per process, not per request. `hooks.server.ts` reuses this
+ * exact set to re-check an already-established session on every request
+ * (#299): Better Auth's databaseHooks below only run when a user or
+ * session row is first created, so this is the only place that observes an
+ * address being removed from `AUTH_ALLOWED_EMAILS` for someone already
+ * signed in.
+ */
+export const defaultAllowlist = parseAllowlist(env.AUTH_ALLOWED_EMAILS);
 
 /**
  * Builds a Better Auth instance.
