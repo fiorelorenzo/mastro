@@ -3,10 +3,15 @@
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate, formatMinorUnits } from '$lib/i18n/format';
 	import Page from '$lib/layout/Page.svelte';
+	import { Button } from '$lib/design';
+	import { submitting } from '$lib/design/submitting.svelte';
 	import type { MailSendFormValues } from '$lib/server/repositories/mail-send-form';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	const preview = submitting();
+	const send = submitting();
 
 	// `form?.values` is typed loosely by SvelteKit's generated `ActionData`
 	// once a page has more than one named action — both `preview` and
@@ -58,7 +63,12 @@
 			</a>
 		</p>
 	{:else}
-		<form method="POST" action="?/preview" class="mt-6 flex flex-col gap-4">
+		<form
+			method="POST"
+			action="?/preview"
+			class="mt-6 flex flex-col gap-4"
+			onsubmit={preview.onsubmit}
+		>
 			<label class="flex flex-col gap-1 text-sm">
 				{m.mail_send_form_invoice_label()}
 				<select name="invoiceId" class="border px-2 py-1" required>
@@ -81,9 +91,9 @@
 				{#if errors.to}<span class="text-xs font-semibold">{errors.to}</span>{/if}
 			</label>
 
-			<button type="submit" class="w-fit border px-4 py-2 text-sm"
-				>{m.mail_send_preview_button()}</button
-			>
+			<Button type="submit" variant="secondary" size="md" loading={preview.busy}>
+				{m.mail_send_preview_button()}
+			</Button>
 		</form>
 
 		{#if form?.preview}
@@ -113,12 +123,12 @@
 					{/if}
 				</div>
 
-				<form method="POST" action="?/send">
+				<form method="POST" action="?/send" onsubmit={send.onsubmit}>
 					<input type="hidden" name="invoiceId" value={values.invoiceId} />
 					<input type="hidden" name="to" value={values.to} />
-					<button type="submit" class="w-fit border px-4 py-2 text-sm font-semibold">
+					<Button type="submit" variant="primary" size="md" loading={send.busy}>
 						{m.mail_send_confirm_button()}
-					</button>
+					</Button>
 				</form>
 			</section>
 		{/if}

@@ -51,6 +51,12 @@
 		{ key: 'state', required: false }
 	];
 
+	// Every `$state` below is this route's own client-only workflow (upload
+	// → map → preview → review → confirm), never initialised from `data`
+	// or a prop: this route has no `+page.server.ts` (see the file
+	// header), so there is no server `load` for a background
+	// `invalidateAll()` to re-run in the first place. Out of scope for the
+	// data/prop resync concern this app now has elsewhere.
 	let stage = $state<Stage>('idle');
 	let errorText = $state('');
 	// Kept for `previewImport`/`confirmImport`: both need the file's own

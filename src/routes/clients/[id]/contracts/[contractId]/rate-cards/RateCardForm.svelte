@@ -1,5 +1,7 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
+	import { Button } from '$lib/design';
+	import { submitting } from '$lib/design/submitting.svelte';
 	import type { RateCardFormValues } from '$lib/server/repositories/rate-card-form';
 	import {
 		disbursementPeriods,
@@ -20,10 +22,16 @@
 		submitLabel: string;
 	} = $props();
 
+	// Drives which kind-specific fields show below — same select-driven
+	// pattern as `ContractForm.svelte`/`CeilingForm.svelte`, and left alone
+	// by a background `invalidateAll()` for the same reason: it is the
+	// reviewer's own in-progress choice, and this form's own submit (plain
+	// POST, no `use:enhance`) already remounts with fresh `values`.
 	let kind = $state(values.kind);
+	const save = submitting();
 </script>
 
-<form method="POST" class="mt-6 flex flex-col gap-3">
+<form method="POST" class="mt-6 flex flex-col gap-3" onsubmit={save.onsubmit}>
 	<label class="flex flex-col gap-1 text-sm">
 		{m.rate_card_form_valid_from_label()}
 		<input
@@ -109,5 +117,5 @@
 		</label>
 	{/if}
 
-	<button type="submit" class="w-fit border px-4 py-2 text-sm">{submitLabel}</button>
+	<Button type="submit" variant="secondary" size="md" loading={save.busy}>{submitLabel}</Button>
 </form>

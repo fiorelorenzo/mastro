@@ -18,6 +18,7 @@
 	import { Button, DropZone, Field, Input, Select, Textarea } from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
 	import { noticeChannelLabel, type NoticeChannelValue } from '../../clients/notice-channel';
+	import { submitting } from '$lib/design/submitting.svelte';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
@@ -33,6 +34,8 @@
 		}
 	);
 	const errors = $derived(form?.errors ?? {});
+
+	const save = submitting();
 </script>
 
 <svelte:head
@@ -46,7 +49,7 @@
 		</p>
 	{/if}
 
-	<form method="POST" enctype="multipart/form-data" class="form">
+	<form method="POST" enctype="multipart/form-data" class="form" onsubmit={save.onsubmit}>
 		<Field label={m.approval_form_channel_label()} error={errors.channel} required>
 			<Select name="channel" value={values.channel} required>
 				<option value="" disabled selected={values.channel === ''}>
@@ -96,7 +99,7 @@
 			</label>
 		</fieldset>
 
-		<Button type="submit" variant="primary">{m.approval_form_submit()}</Button>
+		<Button type="submit" variant="primary" loading={save.busy}>{m.approval_form_submit()}</Button>
 	</form>
 </Page>
 

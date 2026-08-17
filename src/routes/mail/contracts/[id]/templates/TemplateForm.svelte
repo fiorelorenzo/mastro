@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
-
+	import { Button } from '$lib/design';
+	import { submitting } from '$lib/design/submitting.svelte';
 	let {
 		values,
 		errors = {},
@@ -18,9 +19,11 @@
 		errors?: Record<string, string>;
 		submitLabel: string;
 	} = $props();
+
+	const save = submitting();
 </script>
 
-<form method="POST" class="mt-6 flex flex-col gap-4">
+<form method="POST" class="mt-6 flex flex-col gap-4" onsubmit={save.onsubmit}>
 	{#if errors.placeholders}
 		<p class="border border-current p-2 text-xs font-semibold">{errors.placeholders}</p>
 	{/if}
@@ -122,5 +125,5 @@
 		{#if errors.triggerDays}<span class="text-xs font-semibold">{errors.triggerDays}</span>{/if}
 	</fieldset>
 
-	<button type="submit" class="w-fit border px-4 py-2 text-sm">{submitLabel}</button>
+	<Button type="submit" variant="secondary" size="md" loading={save.busy}>{submitLabel}</Button>
 </form>

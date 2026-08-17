@@ -17,6 +17,7 @@
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { Button, Checkbox, Field, Input, Select, countryOptions } from '$lib/design';
 	import { noticeChannelLabel, noticeChannels } from './notice-channel';
+	import { submitting } from '$lib/design/submitting.svelte';
 
 	type ContactSlot = {
 		name: string;
@@ -59,6 +60,16 @@
 	// (no `use:enhance` in this app), so a failed submission re-mounts this
 	// component with the server's own values — this `$state` initializer is
 	// never stale.
+	//
+	// A background `invalidateAll()` (#61's freshness push, or another open
+	// tab's write landing here through the service worker) is a second,
+	// separate way `contactSlots` could change under a mounted component —
+	// and deliberately does *not* resync `contacts` here. These rows are the
+	// reviewer's own in-progress edits (add a contact, delete one, retype a
+	// name); silently overwriting them from a `contactSlots` that changed
+	// for an unrelated reason would discard work in progress for no
+	// legitimate reason — nothing else on this client changed *because* the
+	// reviewer is adding a contact.
 	let contacts = $state<ContactSlot[]>(
 		contactSlots.length > 0 ? contactSlots : [{ ...emptyContact }]
 	);
@@ -72,9 +83,11 @@
 	}
 
 	const countries = $derived(countryOptions(getLocale()));
+
+	const save = submitting();
 </script>
 
-<form method="POST" class="mt-6 flex flex-col gap-5">
+<form method="POST" class="mt-6 flex flex-col gap-5" onsubmit={save.onsubmit}>
 	<fieldset class="card">
 		<legend><h2>{m.client_form_legal_identity_legend()}</h2></legend>
 		<Field label={m.client_form_legal_name_label()} error={errors.legalName} required>
@@ -197,7 +210,7 @@
 		</Button>
 	</fieldset>
 
-	<Button type="submit" variant="primary">{submitLabel}</Button>
+	<Button type="submit" variant="primary" loading={save.busy}>{submitLabel}</Button>
 </form>
 
 <style>

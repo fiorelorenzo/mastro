@@ -69,6 +69,7 @@
 		proposalQuantityLabel
 	} from '../proposal-status';
 	import { proposalIssueMessage } from '$lib/i18n/proposal-issue';
+	import { submitting } from '$lib/design/submitting.svelte';
 	import { isFieldGroundedInExcerpt, splitOnExcerpt } from './evidence';
 	import type {
 		ExtractedContractCandidate,
@@ -170,6 +171,11 @@
 	// independently of whatever `validationIssue` currently says (that
 	// issue only ever names the *first* thing wrong, which may be
 	// an unrelated NOT NULL field checked earlier in the same switch).
+	//
+	// Left alone by a background `invalidateAll()`: these are the
+	// reviewer's own choices for clauses that do not change once a
+	// proposal exists, so there is nothing for a resync to correct, only
+	// in-progress decisions it could destroy.
 	let clauseReadings = $state<string[]>(
 		(data.contractCandidate?.clauseFlags ?? []).map((flag) => flag.interpretationAdopted ?? '')
 	);
@@ -184,6 +190,11 @@
 	// decision nobody saw. No match — including every client having no
 	// tax id at all, or no clients existing yet — falls back to 'new',
 	// the same default the no-match path always produced before this.
+	//
+	// Also left alone by a background `invalidateAll()`, same reasoning as
+	// `clauseReadings`: a reviewer choosing 'existing' vs 'new' (and which
+	// client) is a decision in progress, not a value that tracks anything
+	// current on the server.
 	let clientMode = $state<'existing' | 'new'>(data.clientMatchId ? 'existing' : 'new');
 	let selectedClientId = $state(data.clientMatchId ?? '');
 	const selectedClient = $derived(
@@ -328,13 +339,12 @@
 
 	// A save announces itself (#207): each action tags its own outcome so
 	// the toast reads correctly regardless of which button was pressed.
-	// SvelteKit progressively enhances a plain `<form method="POST">`
-	// automatically (no `use:enhance` needed) — the action runs over
-	// fetch and `form` updates in place, which can re-run this effect more
-	// than once for the one decision (the accompanying `invalidateAll`
-	// reactivity settling in more than one flush). `announcedDecision`
-	// guards on the decision itself, not on how many times Svelte re-ran
-	// the effect, so a repeat fire is a silent no-op instead of a second toast.
+	// This form has no `use:enhance`, so a submit is a full-page
+	// navigation — a fresh mount, `form` populated from that navigation's
+	// own SSR — and this effect only ever needs to fire once per mount.
+	// `announcedDecision` guards it anyway, defensively, against Svelte
+	// re-running the effect within that one mount; it is not standing in
+	// for a client-side fetch this file does not make.
 	let announcedDecision: string | null = null;
 	$effect(() => {
 		if (!form?.decided) return;
@@ -350,8 +360,28 @@
 
 	// Rejecting asks first: the Reject button opens this instead of
 	// submitting directly, and the dialog's own Reject button — inside the
-	// same <form> — is what actually submits `?/reject` (#207).
+	// same <form> — is what actually submits `?/reject` (#207). A plain UI
+	// toggle, unaffected by a background `invalidateAll()` the same way
+	// every other dialog-open flag on this route is.
 	let rejectDialogOpen = $state(false);
+
+	// One form, two possible actions (default submit = accept, the reject
+	// dialog's own submit carries `formaction="?/reject"`) — `submitting()`
+	// alone can only say "a submission is in flight", not which of the two
+	// buttons it belongs to, so `pressedAction` (read off `event.submitter`,
+	// the only reliable way to know which button actually triggered this
+	// particular submit) carries that half locally. Only one of the three
+	// `<form>` branches below is ever mounted at a time (mutually exclusive
+	// on `data.proposal.targetType`/`pending`), so one shared instance is
+	// correct rather than one per branch.
+	const decision = submitting();
+	let pressedAction = $state<'accept' | 'reject'>('accept');
+
+	function onDecisionSubmit(event: SubmitEvent) {
+		const submitter = event.submitter as HTMLButtonElement | null;
+		pressedAction = submitter?.getAttribute('formaction') === '?/reject' ? 'reject' : 'accept';
+		decision.onsubmit();
+	}
 </script>
 
 {#snippet rejectDialog()}
@@ -361,7 +391,13 @@
 			<Button type="button" variant="tertiary" onclick={() => (rejectDialogOpen = false)}>
 				{m.proposal_reject_confirm_cancel()}
 			</Button>
-			<Button type="submit" formaction="?/reject" variant="danger">
+			<Button
+				type="submit"
+				formaction="?/reject"
+				variant="danger"
+				disabled={decision.busy && pressedAction !== 'reject'}
+				loading={decision.busy && pressedAction === 'reject'}
+			>
 				{m.proposal_reject_confirm_confirm()}
 			</Button>
 		{/snippet}
@@ -379,7 +415,12 @@
 		<p class="blocked-reason" role="status">{acceptBlockedReason}</p>
 	{/if}
 	<div class="submit-stack">
-		<Button type="submit" variant="primary" disabled={acceptBlocked}>
+		<Button
+			type="submit"
+			variant="primary"
+			disabled={acceptBlocked || (decision.busy && pressedAction !== 'accept')}
+			loading={decision.busy && pressedAction === 'accept'}
+		>
 			{acceptSubmitLabel}
 		</Button>
 		<Button type="button" variant="danger" onclick={() => (rejectDialogOpen = true)}>
@@ -541,7 +582,7 @@
 		<div class="fields">
 			{#if data.proposal.targetType === 'contract' && data.contractCandidate}
 				{@const candidate = data.contractCandidate}
-				<form method="POST" action="?/accept" class="fields-form">
+				<form method="POST" action="?/accept" class="fields-form" onsubmit={onDecisionSubmit}>
 					{#if pending}
 						<fieldset class="card">
 							<legend><h2>{m.proposal_contract_client_mode_legend()}</h2></legend>
@@ -1030,7 +1071,7 @@
 					{/if}
 
 					{#if pending}
-						<form method="POST" action="?/accept">
+						<form method="POST" action="?/accept" onsubmit={onDecisionSubmit}>
 							{@render decisionActions()}
 						</form>
 					{:else if data.proposal.status === 'accepted' && data.proposal.resultId}
@@ -1043,7 +1084,7 @@
 					{/if}
 				</div>
 			{:else if pending}
-				<form method="POST" action="?/accept" class="card fields-form">
+				<form method="POST" action="?/accept" class="card fields-form" onsubmit={onDecisionSubmit}>
 					{#each fieldEntries as [field, value] (field)}
 						{@const grounded = isFieldGroundedInExcerpt(value, data.proposal.excerpt)}
 						<Field

@@ -26,6 +26,7 @@
 		countryOptions
 	} from '$lib/design';
 	import { getLocale } from '$lib/paraglide/runtime';
+	import { submitting } from '$lib/design/submitting.svelte';
 	import type { ContractFormValues } from '$lib/server/repositories/contract-form';
 	import {
 		contractRenewalTypes,
@@ -59,6 +60,15 @@
 
 	// Drive which conditional fields show without a round trip — the same
 	// pattern `day/new/+page.svelte` uses for its own select-driven fields.
+	//
+	// These four also stay untouched by a background `invalidateAll()`
+	// (another tab's write, or #61's freshness push): each is the value a
+	// person is actively choosing while filling in *this* contract, same
+	// category as `ClientForm.svelte`'s `contacts` — resyncing from `values`
+	// mid-edit would silently throw away a selection already made, for a
+	// change that has nothing to do with this contract. This form's own
+	// submit still remounts on both success and failure (no `use:enhance`
+	// here), which is what keeps `values` itself from ever going stale.
 	let renewalType = $state(values.renewalType);
 	let paymentTermsKind = $state(values.paymentTermsKind);
 	let expensePolicyKind = $state(values.expensePolicyKind);
@@ -83,9 +93,11 @@
 		countryOptions(getLocale()).find((option) => option.code === client.country)?.name ??
 			client.country
 	);
+
+	const save = submitting();
 </script>
 
-<form method="POST" class="mt-6 flex flex-col gap-5">
+<form method="POST" class="mt-6 flex flex-col gap-5" onsubmit={save.onsubmit}>
 	<fieldset class="card">
 		<legend><h2>{m.contract_form_identity_legend()}</h2></legend>
 		<Field label={m.contract_form_title_label()} error={errors.title} required>
@@ -341,7 +353,7 @@
 		</Field>
 	</fieldset>
 
-	<Button type="submit" variant="primary">{submitLabel}</Button>
+	<Button type="submit" variant="primary" loading={save.busy}>{submitLabel}</Button>
 </form>
 
 <style>

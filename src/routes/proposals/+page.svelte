@@ -17,6 +17,7 @@
 	import ProposalStatusBadge from './ProposalStatusBadge.svelte';
 	import { proposalConfidenceBadge, proposalQuantityLabel } from './proposal-status';
 	import { proposalIssueMessage } from '$lib/i18n/proposal-issue';
+	import { submitting } from '$lib/design/submitting.svelte';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
@@ -72,6 +73,7 @@
 		{:else}
 			{#each data.groups as group (group.documentId)}
 				{@const blocked = group.rows.some((row) => row.validationIssue !== null)}
+				{@const acceptAll = submitting()}
 				<Section title={group.subject ?? m.proposal_queue_no_subject()}>
 					{#snippet actions()}
 						<a href={resolve('/proposals/[id]', { id: group.rows[0].id })} class="open-message">
@@ -82,6 +84,8 @@
 					<ul class="rows">
 						{#each group.rows as row (row.id)}
 							{@const confidence = proposalConfidenceBadge(row.confidence)}
+							{@const accept = submitting()}
+							{@const reject = submitting()}
 							<li class="row">
 								<span class="row-ico" aria-hidden="true">◇</span>
 								<div class="row-main">
@@ -104,20 +108,21 @@
 									>
 										{m.proposal_queue_review()}
 									</Button>
-									<form method="POST" action="?/accept">
+									<form method="POST" action="?/accept" onsubmit={accept.onsubmit}>
 										<input type="hidden" name="id" value={row.id} />
 										<Button
 											type="submit"
 											variant="primary"
 											size="sm"
 											disabled={row.validationIssue !== null}
+											loading={accept.busy}
 										>
 											{m.proposal_detail_accept_submit()}
 										</Button>
 									</form>
-									<form method="POST" action="?/reject">
+									<form method="POST" action="?/reject" onsubmit={reject.onsubmit}>
 										<input type="hidden" name="id" value={row.id} />
-										<Button type="submit" variant="danger" size="sm">
+										<Button type="submit" variant="danger" size="sm" loading={reject.busy}>
 											{m.proposal_detail_reject_submit()}
 										</Button>
 									</form>
@@ -131,9 +136,15 @@
 							{factLine([group.sender, group.contractTitle, group.clientLegalName])}
 						</span>
 						{#if group.rows.length > 1}
-							<form method="POST" action="?/acceptAll">
+							<form method="POST" action="?/acceptAll" onsubmit={acceptAll.onsubmit}>
 								<input type="hidden" name="documentId" value={group.documentId} />
-								<Button type="submit" variant="secondary" size="sm" disabled={blocked}>
+								<Button
+									type="submit"
+									variant="secondary"
+									size="sm"
+									disabled={blocked}
+									loading={acceptAll.busy}
+								>
 									{m.proposal_queue_accept_all({ count: group.rows.length })}
 								</Button>
 							</form>

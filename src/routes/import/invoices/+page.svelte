@@ -40,6 +40,12 @@
 	type EditableLine = InvoiceLineView & { accepted: boolean };
 	type EditableRecognised = Omit<RecognisedFile, 'lines'> & { lines: EditableLine[] };
 
+	// Every `$state` below is this route's own client-only workflow (scan
+	// → analyze → review → confirm), never initialised from `data` or a
+	// prop: this route has no `+page.server.ts` (see the file header), so
+	// there is no server `load` for a background `invalidateAll()` to
+	// re-run in the first place. Out of scope for the data/prop resync
+	// concern this app now has elsewhere.
 	let stage = $state<Stage>('idle');
 	let scanProgress = $state<ScanProgress | null>(null);
 	// Kept for `confirmImport`: writing an invoice needs the file's own

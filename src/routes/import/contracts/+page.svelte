@@ -18,11 +18,14 @@
 	import * as m from '$lib/paraglide/messages';
 	import { importTabs } from '$lib/nav/import-tabs';
 	import { Banner, Button, Field, DropZone } from '$lib/design';
+	import { submitting } from '$lib/design/submitting.svelte';
 	import { Tabs } from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
 	import type { ActionData, PageProps } from './$types';
 
 	let { form }: PageProps & { form: ActionData } = $props();
+
+	const upload = submitting();
 
 	const tabs = importTabs('contracts');
 </script>
@@ -44,12 +47,12 @@
 		<Banner tone="critical">{form.error}</Banner>
 	{/if}
 
-	<form method="POST" enctype="multipart/form-data" class="form">
+	<form method="POST" enctype="multipart/form-data" class="form" onsubmit={upload.onsubmit}>
 		<Field label={m.import_contracts_file_label()} required>
 			<DropZone name="file" accept=".pdf,application/pdf" required />
 		</Field>
 
-		<Button type="submit">{m.import_contracts_submit()}</Button>
+		<Button type="submit" loading={upload.busy}>{m.import_contracts_submit()}</Button>
 	</form>
 </Page>
 

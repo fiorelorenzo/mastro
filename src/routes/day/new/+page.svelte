@@ -58,6 +58,13 @@
 	// Every field below is bound, unlike the pre-#236 form: `date` and
 	// `contractId` now drive the live "Vale" preview (which rate card
 	// applies depends on both), not only `quantity`/`approvalId` as before.
+	//
+	// None of the four resync from `data` on a background `invalidateAll()`
+	// (another tab's write, or #61's freshness push): they are the entry
+	// being actively typed/picked, and `data.defaultDate`/
+	// `data.defaultContractId`/`data.defaultApprovalId` are only ever
+	// meant as the *first* pre-fill for an empty form, not a value to keep
+	// re-imposing over whatever the person has since chosen.
 	let date = $state(form?.values.date ?? data.defaultDate);
 	let quantity = $state(form?.values.quantity ?? '1');
 	let contractId = $state(form?.values.contractId ?? data.defaultContractId);
@@ -76,6 +83,24 @@
 	// queue panel below to make the "pending, not saved" distinction
 	// impossible to miss at the moment it matters most.
 	let justQueued = $state(false);
+
+	// Set true on submit (native `onsubmit`, since `use:enhance`'s own
+	// callback below only fires once SvelteKit is actually dispatching the
+	// request) and cleared once `onSubmit`'s callback settles — either
+	// path it can take (queued offline, or `update()` resolving a
+	// redirect/failure) leaves the component mounted, unlike every plain
+	// form elsewhere in this app, so nothing here can rely on a
+	// navigation to reset it. Two submit buttons share one form (Save vs
+	// "record as proposed"), so `pressedIntent` — not just `saving` alone
+	// — decides which one's spinner lights up.
+	let saving = $state(false);
+	let pressedIntent = $state<'worked' | 'proposed'>('worked');
+
+	function onFormSubmit(event: SubmitEvent) {
+		const submitter = event.submitter as HTMLButtonElement | null;
+		pressedIntent = submitter?.value === 'proposed' ? 'proposed' : 'worked';
+		saving = true;
+	}
 
 	const selectedContract = $derived(data.contracts.find((c) => c.id === contractId));
 
@@ -153,10 +178,16 @@
 				contractId = data.defaultContractId;
 				approvalId = '';
 				workUnitId = crypto.randomUUID();
+				saving = false;
 				return;
 			}
 			justQueued = false;
+			// `update()` navigates away on a redirect (the success path) and
+			// stays put on a validation `fail()` — either way, once it
+			// resolves this component is either gone or needs its spinner
+			// off again, so clearing `saving` after it is correct for both.
 			await update();
+			saving = false;
 		};
 	};
 
@@ -218,7 +249,13 @@
 	{#if data.contracts.length === 0}
 		<p class="empty-hint">{m.day_new_no_contracts()}</p>
 	{:else}
-		<form bind:this={formEl} method="POST" class="day-form" use:enhance={onSubmit}>
+		<form
+			bind:this={formEl}
+			method="POST"
+			class="day-form"
+			use:enhance={onSubmit}
+			onsubmit={onFormSubmit}
+		>
 			<input type="hidden" name="workUnitId" value={workUnitId} />
 			<input type="hidden" name="approvalId" value={approvalId} />
 
@@ -249,7 +286,15 @@
 					<strong>{m.day_form_approval_warning_heading({ date: formatDate(date) })}</strong>
 					{m.day_form_approval_warning_body()}
 					{#snippet actions()}
-						<Button type="submit" name="intent" value="proposed" variant="secondary" size="sm">
+						<Button
+							type="submit"
+							name="intent"
+							value="proposed"
+							variant="secondary"
+							size="sm"
+							disabled={saving}
+							loading={saving && pressedIntent === 'proposed'}
+						>
 							{m.day_form_record_as_proposed()}
 						</Button>
 					{/snippet}
@@ -295,7 +340,15 @@
 
 			<StatTile label={m.day_form_value_label()} value={valueText} sub={valueSub} />
 
-			<Button type="submit" name="intent" value="worked" variant="primary" size="lg">
+			<Button
+				type="submit"
+				name="intent"
+				value="worked"
+				variant="primary"
+				size="lg"
+				disabled={saving}
+				loading={saving && pressedIntent === 'worked'}
+			>
 				{m.day_form_submit()}
 				<KeyboardHint>{m.day_form_save_shortcut()}</KeyboardHint>
 			</Button>

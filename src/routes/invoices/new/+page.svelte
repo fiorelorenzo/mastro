@@ -31,6 +31,7 @@
 	import Field from '$lib/design/Field.svelte';
 	import Input from '$lib/design/Input.svelte';
 	import LegalText from '$lib/legal/LegalText.svelte';
+	import { submitting } from '$lib/design/submitting.svelte';
 	import type { InvoiceFormValues } from '$lib/server/repositories/invoice-form';
 	import type { ActionData, PageData } from './$types';
 
@@ -96,6 +97,19 @@
 	// this form), so a failed resubmission is a fresh component instance —
 	// initialising from `values` on mount is enough, no effect needed to
 	// keep these in sync with a `form` that changes under a live instance.
+	//
+	// A background `invalidateAll()` (another tab's write, or #61's
+	// freshness push) is a second way `data` can change under a mounted
+	// instance, and still needs no effect here. `checkedDayIds`/
+	// `checkedExpenseIds` are the reviewer's own in-progress picks; if a
+	// checked day stops being eligible (invoiced or disputed elsewhere)
+	// while this form is open, `dayTotal`/`expenseTotal` below already
+	// self-correct because they iterate `data.eligibleDays`/
+	// `data.eligibleExpenses`, not the checked-id lists, so a vanished id
+	// silently drops out of both the total and the rendered checkbox
+	// (nothing to uncheck). The create action re-validates every id
+	// server-side regardless (`+page.server.ts`), so the worst case is an
+	// inline error naming the field, never a wrong invoice.
 	let checkedDayIds = $state<string[]>(values.workUnitIds);
 	let checkedExpenseIds = $state<string[]>(values.expenseIds);
 
@@ -103,7 +117,9 @@
 	// read straight off `values`, because picking a different original
 	// invoice needs to *write* new defaults into `manualLineDescription`/
 	// `manualLineAmount` (#213) — the same reason `checkedDayIds` above is
-	// state and not a derived read of `values.workUnitIds`.
+	// state and not a derived read of `values.workUnitIds`. Same
+	// invalidateAll reasoning applies: these are choices being made for an
+	// invoice that does not exist yet, not a mirror of anything committed.
 	let documentType = $state(values.documentType);
 	let correctsInvoiceId = $state(values.correctsInvoiceId);
 	let manualLineDescription = $state(values.manualLineDescription);
@@ -143,6 +159,8 @@
 		)
 	);
 	const runningTotal = $derived(addMinorUnits(dayTotal, expenseTotal));
+
+	const save = submitting();
 </script>
 
 <svelte:head><title>{m.invoice_new_page_title()}</title></svelte:head>
@@ -168,7 +186,7 @@
 	</form>
 
 	{#if selectedContract}
-		<form method="POST" class="mt-6 flex flex-col gap-6">
+		<form method="POST" class="mt-6 flex flex-col gap-6" onsubmit={save.onsubmit}>
 			<input type="hidden" name="contractId" value={selectedContract.id} />
 
 			<fieldset class="flex flex-col gap-3">
@@ -420,7 +438,7 @@
 				{/if}
 			</fieldset>
 
-			<Button type="submit" variant="primary">{m.invoice_form_submit()}</Button>
+			<Button type="submit" variant="primary" loading={save.busy}>{m.invoice_form_submit()}</Button>
 		</form>
 	{/if}
 </Page>

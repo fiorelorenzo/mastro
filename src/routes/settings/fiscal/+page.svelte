@@ -13,6 +13,7 @@
 	import type { CeilingBasis, CeilingMeasure } from '$lib/server/fiscal/pack';
 	import type { LabelBundle } from '$lib/server/fiscal/label';
 	import type { ActionData, PageData } from './$types';
+	import { submitting } from '$lib/design/submitting.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
@@ -26,9 +27,17 @@
 	type HistoryRow = PageData['history'][number];
 
 	const values = $derived(form?.values ?? { packKey: '', validFrom: '', validTo: '' });
+	// The pack the person is choosing for a *new* profile period — not a
+	// mirror of `data.current` (the pack already in force), which stays
+	// read straight off `data` below and needs no `$state` at all. Left
+	// alone by a background `invalidateAll()`: it is the in-progress pick
+	// for a record that does not exist yet, same category as
+	// `ContractForm.svelte`'s conditional selects.
 	let packKey = $state(values.packKey);
 
 	const selectedPack = $derived(data.packs.find((pack) => pack.key === packKey) ?? null);
+
+	const save = submitting();
 
 	function historyValidity(row: HistoryRow): string {
 		const from = formatDate(row.validFrom, locale);
@@ -127,7 +136,7 @@
 			? m.settings_fiscal_form_heading_switch()
 			: m.settings_fiscal_form_heading_initial()}
 	>
-		<form method="POST" class="mt-6 flex flex-col gap-5">
+		<form method="POST" class="mt-6 flex flex-col gap-5" onsubmit={save.onsubmit}>
 			<Field label={m.settings_fiscal_form_pack_label()} error={form?.errors?.packKey} required>
 				<Select name="packKey" bind:value={packKey} required>
 					<option value="" disabled>{m.settings_fiscal_form_pack_placeholder()}</option>
@@ -169,7 +178,9 @@
 				</div>
 			{/if}
 
-			<Button type="submit" variant="primary">{m.settings_fiscal_form_submit()}</Button>
+			<Button type="submit" variant="primary" loading={save.busy}
+				>{m.settings_fiscal_form_submit()}</Button
+			>
 		</form>
 	</Section>
 </Page>

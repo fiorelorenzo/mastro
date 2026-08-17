@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { enhance } from '$app/forms';
+	import type { SubmitFunction } from '@sveltejs/kit';
+	import { Button } from '$lib/design';
 	import * as m from '$lib/paraglide/messages';
 	import Page from '$lib/layout/Page.svelte';
 	import { pushSubscriptionStore } from '$lib/pwa/push.svelte';
@@ -47,6 +49,19 @@
 	async function enablePush() {
 		if (data.vapidPublicKey) await pushSubscriptionStore.subscribe(data.vapidPublicKey);
 	}
+
+	// `use:enhance` (pre-existing here), never `submitting()`: the default
+	// action updates the table in place rather than navigating away, so
+	// nothing ever remounts this component to reset a `busy` flag the way
+	// `submitting()` assumes.
+	let saving = $state(false);
+	const onSave: SubmitFunction = () => {
+		saving = true;
+		return async ({ update }) => {
+			await update();
+			saving = false;
+		};
+	};
 </script>
 
 <svelte:head><title>{m.alerts_settings_page_title()}</title></svelte:head>
@@ -92,7 +107,7 @@
 
 	<section class="mt-8">
 		<h2 class="text-lg font-semibold">{m.alerts_settings_preferences_heading()}</h2>
-		<form method="POST" action="?/savePreferences" use:enhance class="mt-3">
+		<form method="POST" action="?/savePreferences" use:enhance={onSave} class="mt-3">
 			<table class="w-full border-collapse text-sm">
 				<thead>
 					<tr class="border-b text-left">
@@ -123,9 +138,9 @@
 					{/each}
 				</tbody>
 			</table>
-			<button type="submit" class="mt-4 border px-4 py-2 text-sm">
+			<Button type="submit" variant="primary" size="md" loading={saving}>
 				{m.alerts_settings_preferences_save_button()}
-			</button>
+			</Button>
 		</form>
 	</section>
 </Page>
