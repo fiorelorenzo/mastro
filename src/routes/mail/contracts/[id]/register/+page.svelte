@@ -2,6 +2,9 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import Page from '$lib/layout/Page.svelte';
+	import { EmptyState } from '$lib/design';
+	import Table from '$lib/design/Table.svelte';
+	import type { TableColumn } from '$lib/design/table';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -19,11 +22,28 @@
 			id: data.contract.id
 		})
 	);
+
+	type Row = PageData['register']['entries'][number];
+
+	const columns: readonly TableColumn<Row>[] = [
+		{ key: 'date', label: m.register_column_date() },
+		{ key: 'quantity', label: m.register_column_quantity(), align: 'end' },
+		{ key: 'scope', label: m.register_column_scope() },
+		{
+			key: 'approval',
+			label: m.register_column_approval(),
+			format: (row) => `${row.approval.channel} · ${row.approval.sender}`
+		}
+	];
 </script>
 
 <svelte:head
 	><title>{m.register_page_title({ contractTitle: data.contract.title })}</title></svelte:head
 >
+
+{#snippet empty()}
+	<EmptyState icon="🗓" title={m.register_empty_title()} body={m.register_empty()} />
+{/snippet}
 
 <Page crumbs={data.crumbs} title={m.register_heading({ contractTitle: data.contract.title })}>
 	<form method="GET" class="mt-4 flex flex-wrap items-end gap-3 text-sm">
@@ -43,34 +63,27 @@
 		<a class="underline" href={csvHref}>{m.register_download_csv_link()}</a>
 	</div>
 
-	{#if data.register.entries.length === 0}
-		<p class="mt-4 text-sm opacity-70">{m.register_empty()}</p>
-	{:else}
-		<table class="mt-4 w-full border-collapse text-sm">
-			<thead>
-				<tr class="border-b text-left">
-					<th class="py-2 pr-4">{m.register_column_date()}</th>
-					<th class="py-2 pr-4">{m.register_column_quantity()}</th>
-					<th class="py-2 pr-4">{m.register_column_scope()}</th>
-					<th class="py-2">{m.register_column_approval()}</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each data.register.entries as entry (entry.workUnitId)}
-					<tr class="border-b">
-						<td class="py-2 pr-4">{entry.date}</td>
-						<td class="py-2 pr-4">{entry.quantity}</td>
-						<td class="py-2 pr-4">{entry.scope}</td>
-						<td class="py-2">{entry.approval.channel} · {entry.approval.sender}</td>
-					</tr>
-				{/each}
-				<tr class="font-semibold">
-					<td class="py-2 pr-4"></td>
-					<td class="py-2 pr-4">{data.register.totalQuantity}</td>
-					<td class="py-2 pr-4">{m.register_totals_label()}</td>
-					<td class="py-2"></td>
-				</tr>
-			</tbody>
-		</table>
-	{/if}
+	<div class="mt-4">
+		<Table
+			{columns}
+			rows={data.register.entries}
+			caption={m.register_heading({ contractTitle: data.contract.title })}
+			rowKey={(row) => row.workUnitId}
+			{empty}
+		/>
+		{#if data.register.entries.length > 0}
+			<p class="totals">
+				<strong>{m.register_totals_label()}:</strong>
+				{data.register.totalQuantity}
+			</p>
+		{/if}
+	</div>
 </Page>
+
+<style>
+	.totals {
+		margin-top: var(--space-2);
+		font-size: var(--text-sm);
+		text-align: end;
+	}
+</style>
