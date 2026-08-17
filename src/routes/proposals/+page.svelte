@@ -58,7 +58,6 @@
 
 	{#if form?.actionError}
 		<p class="action-error" role="alert">
-			{m.proposal_detail_decision_error_heading()}
 			{form.actionError}
 		</p>
 	{/if}

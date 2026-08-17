@@ -62,6 +62,7 @@ import {
 import { createExpense } from '$lib/server/repositories/expense';
 import { createClauseNote } from '$lib/server/repositories/clause-note';
 import { storeDocument } from '$lib/server/repositories/document';
+import { recordInboundThread } from '$lib/server/repositories/inbound-thread';
 import { createProposal } from '$lib/server/repositories/proposal';
 
 /** The fixed "today" this instance is built around (#226: "Today is 13
@@ -82,7 +83,30 @@ function eur(major: number): MinorUnits {
 	return minorUnitsFromMajor(major, 'EUR');
 }
 
+/**
+ * A fake archived message. `text` must carry real RFC 822 headers —
+ * `From:`, `To:`, `Date:`, `Subject:` — because they are protocol tokens,
+ * not prose: `extractSender` reads `approval.sender` straight off these
+ * bytes when a day proposal is accepted, since the archived message is the
+ * evidence and nothing upstream records the envelope sender.
+ *
+ * They were written in Italian here (`Da:`, `A:`, `Oggetto:`) and the
+ * consequence was not cosmetic: accepting either seeded proposal failed
+ * with "source message has no From header to record as the approval
+ * sender". The body stays Italian, which is what a real message from this
+ * client would look like.
+ */
 function eml(text: string): Uint8Array {
+	// Checked here rather than discovered on the accept screen. `pnpm
+	// seed:demo` runs in CI, so a header written as prose fails the build
+	// instead of shipping a demo instance whose proposals cannot be
+	// accepted — which is exactly what happened, silently, for as long as
+	// these messages carried Italian header names.
+	for (const header of ['From:', 'To:', 'Date:', 'Subject:']) {
+		if (!text.startsWith(header) && !text.includes(`\n${header}`)) {
+			throw new Error(`seeded message is missing its ${header} header: ${text.slice(0, 60)}…`);
+		}
+	}
 	return new TextEncoder().encode(text);
 }
 
@@ -275,10 +299,11 @@ async function seedNordwind() {
 		origin: { kind: 'manual' },
 		document: {
 			bytes: eml(
-				'Da: Elena Marchetti <elena.marchetti@nordwindlogistics.example>\n' +
-					'A: lorenzo@example.com\n' +
-					'Data: 15 lug 2026, 08:40\n' +
-					'Oggetto: Approvazione giornate luglio\n\n' +
+				'From: Elena Marchetti <elena.marchetti@nordwindlogistics.example>\n' +
+					'To: lorenzo@example.com\n' +
+					'Date: Wed, 15 Jul 2026 08:40:00 +0200\n' +
+					'Message-ID: <approvazione-giornate-luglio@nordwindlogistics.example>\n' +
+					'Subject: Approvazione giornate luglio\n\n' +
 					'Ciao Lorenzo,\n' +
 					"confermo le giornate concordate per la formazione del team logistica, l'ottimizzazione delle rotte settimanali, l'audit trimestrale delle scorte e la pianificazione della manutenzione flotta. Procedi pure.\n\n" +
 					'Elena\n'
@@ -490,10 +515,11 @@ async function seedNordwind() {
 	// Two pending proposals from one message — never decided.
 	const proposalsDocument = await storeDocument({
 		bytes: eml(
-			'Da: Elena Marchetti <elena.marchetti@nordwindlogistics.example>\n' +
-				'A: lorenzo@example.com\n' +
-				'Data: 20 ago 2026, 09:05\n' +
-				'Oggetto: Giornate fine agosto\n\n' +
+			'From: Elena Marchetti <elena.marchetti@nordwindlogistics.example>\n' +
+				'To: lorenzo@example.com\n' +
+				'Date: Thu, 20 Aug 2026 09:05:00 +0200\n' +
+				'Message-ID: <giornate-fine-agosto@nordwindlogistics.example>\n' +
+				'Subject: Giornate fine agosto\n\n' +
 				'Ciao Lorenzo, per fine mese ti confermo la revisione dei contratti fornitori il 24 e la chiusura mensile di magazzino il 25. Grazie, Elena\n'
 		),
 		mime: 'message/rfc822',
@@ -503,6 +529,29 @@ async function seedNordwind() {
 		confidential: false,
 		ownerType: 'contract',
 		ownerId: contractRow.id
+	});
+	// The row the app reads that message's envelope from. Without it the
+	// demo instance carried a state real ingestion cannot produce — a
+	// mail-provenance document with no thread — and it showed: the review
+	// queue headed the group "(no subject)" even though the `.eml` above
+	// says `Oggetto: Giornate fine agosto`, the evidence panel had no
+	// sender or date, and **accepting either proposal failed outright**,
+	// because an approval records the message it rests on and
+	// `approvalForDocument` refuses to invent one. A seed whose proposals
+	// cannot be accepted teaches the opposite of what it is for.
+	//
+	// The IMAP coordinates are the shape `mail/poll.ts` writes, not real
+	// ones: a UID validity and a UID are what identify a message inside a
+	// folder, and the demo has no folder.
+	await recordInboundThread({
+		contractId: contractRow.id,
+		documentId: proposalsDocument.id,
+		mailbox: 'INBOX/Nordwind',
+		imapUidValidity: 1,
+		imapUid: 4821,
+		messageId: '<giornate-fine-agosto@nordwindlogistics.example>',
+		subject: 'Giornate fine agosto',
+		receivedAt: new Date('2026-08-20T07:05:00Z')
 	});
 	await createProposal({
 		documentId: proposalsDocument.id,
