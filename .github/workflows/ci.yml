@@ -89,6 +89,18 @@ jobs:
       - name: Migrate
         run: pnpm db:migrate
 
+      # The operational scripts run under plain `node` with **strip-only**
+      # type stripping, which erases annotations and refuses any syntax that
+      # would need emitting. `pnpm check` and `pnpm test` both go through
+      # Vite's full TypeScript pipeline and see none of that, so a
+      # `constructor(readonly x: T)` anywhere in the seed's import graph
+      # ships a broken `pnpm seed:demo` with everything green — measured, on
+      # v0.7.2. This step is the only thing in CI that executes one of them
+      # the way production does. It runs twice deliberately: the second run
+      # proves the idempotence `pnpm seed:demo` promises.
+      - name: Seed a demo instance, twice
+        run: pnpm seed:demo && pnpm seed:demo
+
       # Includes the invariant tests: no country-specific logic outside a
       # jurisdiction pack, and no missing translation key.
       - name: Test

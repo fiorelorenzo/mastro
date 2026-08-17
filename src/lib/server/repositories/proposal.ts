@@ -829,12 +829,23 @@ async function applyProposal(
  * `.message`.
  */
 export class ProposalValidationError extends Error {
-	constructor(
-		readonly proposalId: string,
-		readonly issue: ProposalValidationIssue
-	) {
+	readonly proposalId: string;
+	readonly issue: ProposalValidationIssue;
+
+	// Fields assigned in the body, not declared as constructor parameter
+	// properties. `scripts/seed-demo.ts` and the other operational scripts
+	// run under plain `node` with **strip-only** type stripping, which
+	// erases annotations and refuses anything that would need emitting —
+	// and `constructor(readonly x: T)` is exactly that, since the assignment
+	// is generated rather than written. Writing it that way broke
+	// `pnpm seed:demo` outright (`ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX`) the
+	// moment this file entered its import graph, with `pnpm check` and the
+	// whole suite still green.
+	constructor(proposalId: string, issue: ProposalValidationIssue) {
 		super(`proposal ${proposalId} cannot be accepted as proposed: ${issue.code}`);
 		this.name = 'ProposalValidationError';
+		this.proposalId = proposalId;
+		this.issue = issue;
 	}
 }
 
