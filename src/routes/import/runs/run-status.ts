@@ -18,6 +18,7 @@
 
 import type { BadgeVariant } from '$lib/design';
 import * as m from '$lib/paraglide/messages';
+import type { ExtractionFailureKind } from '$lib/extraction/failure-kind';
 
 export const extractionRunStatuses = [
 	'queued',
@@ -201,4 +202,20 @@ export function coalesceEvents(
 		});
 	}
 	return blocks;
+}
+
+/**
+ * What a failure was, in the reader's own language. Exhaustive over the
+ * union with no `default`, so adding a kind is a compile error here rather
+ * than a run page that silently explains nothing.
+ */
+export function failureSummary(kind: ExtractionFailureKind): string {
+	switch (kind) {
+		case 'agent_failed':
+			return m.extraction_run_failure_agent_failed();
+		case 'write_refused':
+			return m.extraction_run_failure_write_refused();
+		case 'timed_out':
+			return m.extraction_run_failure_timed_out();
+	}
 }

@@ -17,6 +17,7 @@
 // leave callers to remember individually.
 
 import { and, asc, desc, eq, notInArray } from 'drizzle-orm';
+import type { ExtractionFailureKind } from '$lib/extraction/failure-kind';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
 	document,
@@ -246,12 +247,13 @@ export async function finishRunApplied(
  * expected string, received null` on screen"). */
 export async function failRun(
 	jobId: string,
+	failureKind: ExtractionFailureKind,
 	error: string,
 	executor: DbExecutor = db
 ): Promise<void> {
 	await executor
 		.update(extractionRun)
-		.set({ status: 'failed', finishedAt: new Date(), error })
+		.set({ status: 'failed', finishedAt: new Date(), error, failureKind })
 		.where(eq(extractionRun.jobId, jobId));
 }
 

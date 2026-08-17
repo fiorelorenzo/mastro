@@ -1,5 +1,6 @@
 import { relations } from 'drizzle-orm';
 import { integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import type { ExtractionFailureKind } from '$lib/extraction/failure-kind';
 import { id, timestamps } from '../columns';
 import { document } from './document';
 import { proposal, type ProposalTargetType } from './proposal';
@@ -47,7 +48,18 @@ export const extractionRun = pgTable('extraction_run', {
 	// between `enqueuedAt` and this is queue wait, not extraction time.
 	startedAt: timestamp('started_at', { withTimezone: true }),
 	finishedAt: timestamp('finished_at', { withTimezone: true }),
+	// `error` is diagnostic text and stays verbatim: a model's malformed
+	// JSON, a zod issue list, a quotation missing from the document. It is
+	// what makes a failure debuggable, and it is English whatever language
+	// the interface speaks. `failureKind` is the part a reader is shown in
+	// their own words, recorded where the failure happens and never
+	// inferred from `error` afterwards — matching on a diagnostic to work
+	// out what it meant is the mistake `$lib/proposals/validation-issue.ts`
+	// exists to undo. Null on a run that failed before this column
+	// existed; the accompanying custom migration only forbids a kind on a
+	// run that did not fail.
 	error: text('error'),
+	failureKind: text('failure_kind').$type<ExtractionFailureKind>(),
 	proposalId: uuid('proposal_id').references(() => proposal.id, { onDelete: 'restrict' }),
 	...timestamps()
 });

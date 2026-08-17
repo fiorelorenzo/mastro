@@ -421,6 +421,20 @@
       "when": 1786956771819,
       "tag": "0060_proposal_validation_issue_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1786957792315,
+      "tag": "0061_extraction_run_failure_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1786957820153,
+      "tag": "0062_extraction_run_failure_kind_constraints",
+      "breakpoints": true
     }
   ]
 }
