@@ -407,7 +407,6 @@
 {#snippet decisionActions()}
 	{#if form?.decisionError}
 		<p class="decision-error" role="alert">
-			{m.proposal_detail_decision_error_heading()}
 			{form.decisionError}
 		</p>
 	{/if}

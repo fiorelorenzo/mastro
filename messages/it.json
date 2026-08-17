@@ -1189,6 +1189,7 @@
 	"proposal_contract_client_picker_label": "Cliente esistente",
 	"proposal_contract_client_picker_placeholder": "Scegli un cliente",
 	"proposal_contract_field_unresolved_placeholder": "Non indicato — scegline uno",
+	"proposal_decision_unexpected_error": "Non è stato possibile accettarla, e il motivo non è qualcosa che questa schermata possa spiegare. La proposta è rimasta invariata; i dettagli sono nel log del server.",
 	"proposal_detail_accept_submit": "Accetta",
 	"proposal_detail_already_decided": "Questa proposta è già stata decisa.",
 	"proposal_detail_change_row": "{field}: {proposed} → {accepted}",

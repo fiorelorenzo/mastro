@@ -6,6 +6,7 @@
 // nothing to group by message for once the decision is already made.
 import { error, fail } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
+import { isPostgresError } from '$lib/server/db/postgres-error';
 import { parseMessage } from '$lib/server/mail/headers';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
 import { getContractWithClient } from '$lib/server/repositories/contract';
@@ -38,8 +39,22 @@ function errorMessage(err: unknown): string {
  *  accept from the queue reads like the rest of the interface instead of
  *  leaking the English fallback text `.message` carries for logs. */
 function decisionErrorMessage(err: unknown): string {
-	if (err instanceof ProposalValidationError) return proposalIssueMessage(err.issue);
-	return errorMessage(err);
+	if (err instanceof ProposalValidationError) {
+		return `${m.proposal_detail_decision_error_heading()} ${proposalIssueMessage(err.issue)}`;
+	}
+	// The claim is made here, by the only code that knows whether it is
+	// true. Both screens used to prepend "the database rejected this" to
+	// every failed decision and print the raw `.message` after it: accepting
+	// a proposal whose source message had no `inbound_thread` row failed in
+	// application code, and the screen blamed the database and showed a
+	// document UUID. A real refusal keeps that sentence and the database's
+	// own words, which are the useful part; anything else says plainly that
+	// it cannot explain itself and leaves the detail in the log.
+	if (isPostgresError(err)) {
+		return `${m.proposal_detail_decision_error_heading()} ${errorMessage(err)}`;
+	}
+	console.error('proposal decision failed', err);
+	return m.proposal_decision_unexpected_error();
 }
 
 /** The `work_unit` shape every proposal in the seeded pipeline actually

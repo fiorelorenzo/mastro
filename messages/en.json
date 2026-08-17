@@ -1189,6 +1189,7 @@
 	"proposal_contract_client_picker_label": "Existing client",
 	"proposal_contract_client_picker_placeholder": "Choose a client",
 	"proposal_contract_field_unresolved_placeholder": "Not stated — choose one",
+	"proposal_decision_unexpected_error": "This could not be accepted, and the reason is not something the screen can explain. The proposal is untouched; the details are in the server log.",
 	"proposal_detail_accept_submit": "Accept",
 	"proposal_detail_already_decided": "This proposal has already been decided.",
 	"proposal_detail_change_row": "{field}: {proposed} → {accepted}",
