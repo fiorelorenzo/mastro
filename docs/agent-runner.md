@@ -97,14 +97,19 @@ own comments for the exact variables. In short:
   `scripts/migrate.ts` on every migration run, local or in the deployed image.
   Never the same role as `DATABASE_URL`.
 - `RUNNER_QUEUE_DIR` — where the durable job queue lives on disk. Defaults to
-  `./data/runner-queue`; `compose.prod.yaml` mounts a named volume there so it
-  survives a container recreate.
+  `./data/runner-queue`. `compose.prod.yaml` mounts a named volume at exactly
+  that path and does not pass this variable through, so in production the
+  queue directory is fixed by the volume mount, not configurable from
+  `.env.prod` (#298).
 - `RUNNER_AGENT_COMMAND` / `RUNNER_AGENT_ARGS` (JSON array) / `RUNNER_AGENT_ENV`
   (JSON object) — Claude. Claude Code speaks ACP through Zed's adapter, so the
   command is `npx` with `["-y","@zed-industries/claude-code-acp"]`, and the env
   carries a long-lived `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` plus
   the `PATH` and `HOME` the adapter needs. That token is the only credential the
   agent receives.
+- `RUNNER_MODEL_TIMEOUT_MS` — how long one ACP prompt turn may run before the
+  runner gives up on it. Optional, defaults to 120000 (two minutes) when
+  unset.
 
 `RUNNER_AGENT_ENV` is the _only_ environment the spawned agent subprocess gets —
 never this process's own environment. `RUNNER_DATABASE_URL` and everything else
@@ -119,3 +124,15 @@ way `web` does, over the compose network, with its own role. Leaving
 `RUNNER_AGENT_COMMAND` unset is a legitimate way to run the rest of the
 stack without the runner doing anything yet; removing the `runner` service from
 `compose.prod.yaml` entirely works identically.
+
+Unlike `web` and `scheduler`, the `runner` service has no
+`env_file: .env.prod` (#298). Those two services need most of what
+`.env.prod` holds; `runner` needs almost none of it, and it is the one
+process here that spawns an untrusted third-party model binary. Its
+`environment:` block in `compose.prod.yaml` names exactly the five
+variables documented above, each passed through by name
+(`RUNNER_AGENT_COMMAND: ${RUNNER_AGENT_COMMAND:-}`, never a blanket
+`env_file`), so adding a new secret to `.env.prod` later cannot silently
+reach this container. `src/lib/server/runner/compose-env.test.ts` parses
+the compose file directly and fails if `env_file` is reintroduced or an
+environment key outside that list is added.

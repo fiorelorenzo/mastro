@@ -4,10 +4,12 @@
 // that file's own header explains why it never imports
 // `$env/dynamic/private` — it has to run unmodified under plain `node`
 // for the runner process itself (`scripts/runner.ts`), and pulling in a
-// SvelteKit-only virtual module would break that. `web` and `runner`
-// load the same `.env.prod` (`compose.prod.yaml`'s `env_file:` on both
-// services), so the app can safely probe `RUNNER_AGENT_COMMAND` in its
-// own environment — the same convention `mail/config.ts`'s
+// SvelteKit-only virtual module would break that. `web` loads all of
+// `.env.prod` through `env_file` (`compose.prod.yaml`); `runner` no
+// longer does (#298), but it still receives `RUNNER_AGENT_COMMAND` from
+// that same file, passed through by name in its own `environment:`
+// block, so the app can safely probe `RUNNER_AGENT_COMMAND` in its own
+// environment — the same convention `mail/config.ts`'s
 // `isImapConfigured`/`imapConfiguredInEnv` and `drive/config.ts`'s
 // `mirrorConfigFromEnv` already establish for "is the sibling process
 // that actually does the work configured at all".

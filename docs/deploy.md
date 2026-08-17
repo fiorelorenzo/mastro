@@ -62,6 +62,12 @@ Secrets reach the running containers at start, through `env_file: - .env.prod` i
 compose, read once by Docker at container creation, never present in the image
 itself.
 
+One exception: `runner` (docs/agent-runner.md, "Deploying it") has no
+`env_file` at all. It gets an explicit `environment:` block naming only
+the handful of variables that service actually reads, each passed
+through by name, so none of the credentials above ever reach the
+container that spawns the model agent.
+
 ```bash
 cp .env.prod.example .env.prod
 chmod 600 .env.prod
