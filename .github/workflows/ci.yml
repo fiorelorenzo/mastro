@@ -155,6 +155,13 @@ jobs:
       # Placeholders, never real: this container is destroyed with the
       # runner. The app refuses to boot without a value for each, which is
       # the behaviour being exercised here.
+      #
+      # AUTH_ALLOWED_EMAILS carries ci@example.com because the session the
+      # next step plants belongs to that address. It used to be empty, which
+      # worked only because a planted session was never re-checked against the
+      # allowlist once it existed (#299). It is checked on every request now,
+      # and an empty allowlist admits nobody, which is invariant 6 as written.
+      # This job had been asserting the hole.
       - name: Boot it and check /health
         run: |
           set -euo pipefail
@@ -164,7 +171,7 @@ jobs:
             -e BETTER_AUTH_URL=http://localhost:3000 \
             -e GOOGLE_CLIENT_ID=ci-not-a-real-client \
             -e GOOGLE_CLIENT_SECRET=ci-not-a-real-secret \
-            -e AUTH_ALLOWED_EMAILS= \
+            -e AUTH_ALLOWED_EMAILS=ci@example.com \
             -e RUNNER_DB_PASSWORD=ci-not-a-real-password \
             -e ALERT_CRON_TOKEN=ci-not-a-real-token \
             -e IMAP_POLL_CRON_TOKEN=ci-not-a-real-mail-token \
