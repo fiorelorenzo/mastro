@@ -233,7 +233,11 @@
 	// spreads those by hand ───────────────────────────────────────────────
 	let demoInputValue = $state('Studio Nord Srl');
 	let demoTextareaValue = $state('Approved by email, 12 August — see the source document below.');
-	let demoSelectValue = $state('IT');
+	// The demo default is picked from the option list itself, not a
+	// hardcoded ISO code (#325): this is a client-facing country picker
+	// preview, and the country picker treats every country identically
+	// (see $lib/design/country-picker.ts), so the gallery should too.
+	let demoSelectValue = $state(countryOptions(getLocale())[0]?.code ?? '');
 	const selectCountries = $derived(countryOptions(getLocale()));
 	let demoCheckboxDefault = $state(true);
 	let demoCheckboxRequired = $state(false);

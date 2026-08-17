@@ -50,16 +50,16 @@ const EXEMPT_DIR_NAMES: Record<string, true> = {
 	seed: true
 };
 
-// .ts only, not .svelte: template markup is full of hyphenated
-// two-letter-prefixed class names (Tailwind's `sr-only` is exactly
-// `[a-z]{2}-[a-z]+`, and matched here before this line existed), which
-// would swamp the pack-id-shaped and country-code patterns below with
-// false positives. Business logic reaches a template through a .ts
-// loader or domain function first, which is what every route does today
-// (verified by grep) — a literal comparison written directly inside a
-// .svelte <script> block would not be caught, and that is a known,
-// accepted gap, not an oversight.
-const SOURCE_EXTENSIONS = ['.ts'];
+// .ts files are scanned whole, .svelte files only through their <script>
+// block (extractScannableSource, below): template markup is full of
+// hyphenated two-letter-prefixed class names (Tailwind's `sr-only` is
+// exactly `[a-z]{2}-[a-z]+`, and matched here before this line existed),
+// which would swamp the pack-id-shaped and country-code patterns below
+// with false positives. Restricting .svelte to its script content keeps
+// that false-positive reason addressed without leaving a literal
+// comparison written directly inside a route's <script> block unscanned
+// (#325) the way excluding the extension outright used to.
+const SOURCE_EXTENSIONS = ['.ts', '.svelte'];
 
 /** Every non-test source file under `root`, skipping the directories and
  * files this invariant does not apply to. */
@@ -153,6 +153,16 @@ function findViolations(source: string, file: string): Violation[] {
 	return violations;
 }
 
+/** For a `.svelte` file, only the content of its `<script>` block(s) is
+ * scannable — template markup is deliberately excluded (see
+ * SOURCE_EXTENSIONS above). Every `<script>` tag, including a module-context
+ * one, is concatenated; any other file is returned unchanged. */
+function extractScannableSource(source: string, file: string): string {
+	if (!file.endsWith('.svelte')) return source;
+	const blocks = [...source.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
+	return blocks.map((block) => block[1]).join('\n');
+}
+
 describe('the detector itself', () => {
 	test("catches the acceptance example, if (country === 'IT'), verbatim", () => {
 		const violations = findViolations("if (country === 'IT') { applyItalianRules(); }", 'x.ts');
@@ -199,6 +209,30 @@ describe('the detector itself', () => {
 			findViolations('export function total(a: number, b: number) { return a + b; }', 'x.ts')
 		).toEqual([]);
 	});
+
+	test('scans a .svelte file’s <script> block and flags a planted country check there (#325)', () => {
+		const svelteSource = [
+			'<script lang="ts">',
+			"  if (client.country === 'IT') applyItalianRules();",
+			'</script>',
+			'',
+			'<div class="sr-only">note</div>'
+		].join('\n');
+		const violations = findViolations(extractScannableSource(svelteSource, 'x.svelte'), 'x.svelte');
+		expect(violations.map((v) => v.match)).toContain("'IT'");
+	});
+
+	test('does not flag markup-only hyphenated two-letter class names in a .svelte template', () => {
+		const svelteSource = [
+			'<script lang="ts">',
+			'  const upper = a.toUpperCase();',
+			'</script>',
+			'',
+			'<div class="sr-only no-scroll text-sm">note</div>'
+		].join('\n');
+		const violations = findViolations(extractScannableSource(svelteSource, 'x.svelte'), 'x.svelte');
+		expect(violations).toEqual([]);
+	});
 });
 
 describe('the shipped tree', () => {
@@ -214,6 +248,10 @@ describe('the shipped tree', () => {
 		expect(files.some((f) => f.endsWith(join('import', 'importer.ts')))).toBe(true);
 	});
 
+	test('.svelte files are part of the scanned set (#325)', () => {
+		expect(files.some((f) => f.endsWith('.svelte'))).toBe(true);
+	});
+
 	test('the packs themselves do contain the flagged shapes — the rules are not vacuous', () => {
 		const packsDir = join(SRC_ROOT, 'lib', 'server', 'fiscal', 'packs');
 		const packSource = readdirSync(packsDir)
@@ -224,8 +262,10 @@ describe('the shipped tree', () => {
 		expect(violations.length).toBeGreaterThan(0);
 	});
 
-	test('no country identifier, national scheme name or hardcoded statutory figure appears outside a pack or a format adapter', () => {
-		const violations = files.flatMap((file) => findViolations(readFileSync(file, 'utf8'), file));
+	test('no country identifier, national scheme name or hardcoded statutory figure appears outside a pack or a format adapter, in a .ts file or a .svelte <script> block', () => {
+		const violations = files.flatMap((file) =>
+			findViolations(extractScannableSource(readFileSync(file, 'utf8'), file), file)
+		);
 		const report = violations
 			.map(
 				(v) =>
