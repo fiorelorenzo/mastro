@@ -28,6 +28,7 @@
 // per document, not one per accepted day.
 
 import { desc, eq, sql } from 'drizzle-orm';
+import { validationIssue, type ProposalValidationIssue } from '$lib/proposals/validation-issue';
 import { minorUnits } from '$lib/money';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
@@ -70,19 +71,15 @@ export type ProposalInput = {
 /**
  * Writes a proposal, first checking `input.proposedFields` against the
  * same constraints the target table would enforce on an INSERT (#245) and
- * recording what it finds on `validationError` rather than discovering it
+ * recording what it finds on `validationIssue` rather than discovering it
  * later at `acceptProposal` time, after a human has already decided. See
- * `proposalValidationError` below for what "the same constraints" means.
+ * `proposalValidationIssue` below for what "the same constraints" means.
  */
 export async function createProposal(input: ProposalInput, executor: DbExecutor = db) {
-	const validationError = proposalValidationError(
-		input.targetType,
-		input.contractId,
-		input.proposedFields
-	);
+	const issue = proposalValidationIssue(input.targetType, input.contractId, input.proposedFields);
 	const [row] = await executor
 		.insert(proposal)
-		.values({ ...input, validationError })
+		.values({ ...input, validationIssue: issue })
 		.returning();
 	return row;
 }
@@ -242,8 +239,13 @@ function invoiceInputFromFields(fields: Record<string, unknown>): Omit<InvoiceIn
  * than discovered by a failed `applyProposal` after a human has already
  * clicked Accept (#245: the contract-PDF spike's `paymentTerms: {day: 0}`
  * is exactly this failure, on a target type this table does not support
- * yet). Returns what's wrong, naming the field, or null when every field
+ * yet). Returns what's wrong as a `ProposalValidationIssue` — the field,
+ * the reason as a code, and the values that reason needs, never a
+ * rendered sentence (see `$lib/proposals/validation-issue.ts`'s own doc
+ * comment for why a string here was a defect) — or null when every field
  * `applyProposal`'s own switch would read is one the table would accept.
+ * Exported so the review screen's loader can recompute the same issue for
+ * display without duplicating a rule here and a translation there.
  *
  * Deliberately narrower than a full schema: it checks only what the
  * database itself checks — types, `NOT NULL`, and the `CHECK` constraints
@@ -253,11 +255,11 @@ function invoiceInputFromFields(fields: Record<string, unknown>): Omit<InvoiceIn
  * same exhaustive `switch` as `applyProposal`, for the same reason: a new
  * target type without a case here fails to compile.
  */
-function proposalValidationError(
+export function proposalValidationIssue(
 	targetType: ProposalTargetType,
 	contractId: string | null,
 	fields: Record<string, unknown>
-): string | null {
+): ProposalValidationIssue | null {
 	switch (targetType) {
 		case 'work_unit': {
 			// The CHECK constraint `proposal_contract_id_required_unless_
@@ -265,43 +267,56 @@ function proposalValidationError(
 			// for every row already written; this is that same guarantee
 			// re-checked here so a producer bug cannot reach
 			// `workUnitInputFromFields` with nothing to scope the day by.
-			if (contractId === null) return 'a work_unit proposal requires a contract';
+			if (contractId === null) return validationIssue('contract_required');
 			let input: WorkUnitInput;
 			try {
 				input = workUnitInputFromFields({ contractId }, fields);
 			} catch (error) {
-				return error instanceof Error ? error.message : String(error);
+				return validationIssue('parse_failed', {
+					params: { detail: error instanceof Error ? error.message : String(error) }
+				});
 			}
 			// work_unit_quantity_positive
 			if (input.quantity <= 0) {
-				return `quantity ${input.quantity} must be greater than 0`;
+				return validationIssue('must_be_positive', {
+					field: 'quantity',
+					params: { value: input.quantity }
+				});
 			}
 			// numeric(6, 2): four digits before the point, two after.
 			if (!Number.isFinite(input.quantity) || Math.abs(input.quantity) >= 10_000) {
-				return `quantity ${input.quantity} does not fit the work_unit table's numeric(6,2) column`;
+				return validationIssue('too_large_for_column', {
+					field: 'quantity',
+					params: { value: input.quantity }
+				});
 			}
 			// A date `parseExtractedDays`'s regex would accept but is not a
 			// real calendar day, e.g. 2026-02-31.
 			const parsed = new Date(`${input.date}T00:00:00Z`);
 			if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== input.date) {
-				return `date ${input.date} is not a real date`;
+				return validationIssue('not_a_real_date', { field: 'date', params: { value: input.date } });
 			}
 			return null;
 		}
 		case 'invoice': {
-			if (contractId === null) return 'an invoice proposal requires a contract';
+			if (contractId === null) return validationIssue('contract_required');
 			let input: Omit<InvoiceInput, 'contractId'>;
 			try {
 				input = invoiceInputFromFields(fields);
 			} catch (error) {
-				return error instanceof Error ? error.message : String(error);
+				return validationIssue('parse_failed', {
+					params: { detail: error instanceof Error ? error.message : String(error) }
+				});
 			}
 			const issueParsed = new Date(`${input.issueDate}T00:00:00Z`);
 			if (
 				Number.isNaN(issueParsed.getTime()) ||
 				issueParsed.toISOString().slice(0, 10) !== input.issueDate
 			) {
-				return `issueDate ${input.issueDate} is not a real date`;
+				return validationIssue('not_a_real_date', {
+					field: 'issueDate',
+					params: { value: input.issueDate }
+				});
 			}
 			if (input.dueDate !== null) {
 				const dueParsed = new Date(`${input.dueDate}T00:00:00Z`);
@@ -309,29 +324,52 @@ function proposalValidationError(
 					Number.isNaN(dueParsed.getTime()) ||
 					dueParsed.toISOString().slice(0, 10) !== input.dueDate
 				) {
-					return `dueDate ${input.dueDate} is not a real date`;
+					return validationIssue('not_a_real_date', {
+						field: 'dueDate',
+						params: { value: input.dueDate }
+					});
 				}
 			}
 			for (const [index, line] of input.lines.entries()) {
 				// invoice_line_quantity_positive
 				if (line.quantity <= 0) {
-					return `line ${index} quantity ${line.quantity} must be greater than 0`;
+					return validationIssue('must_be_positive', {
+						field: 'quantity',
+						index,
+						params: { value: line.quantity }
+					});
 				}
 				// numeric(6, 2): four digits before the point, two after.
 				if (!Number.isFinite(line.quantity) || Math.abs(line.quantity) >= 10_000) {
-					return `line ${index} quantity ${line.quantity} does not fit the invoice_line table's numeric(6,2) column`;
+					return validationIssue('too_large_for_column', {
+						field: 'quantity',
+						index,
+						params: { value: line.quantity }
+					});
 				}
 				// invoice_line_unit_price_non_negative
 				if (line.unitPrice < 0) {
-					return `line ${index} unitPrice ${line.unitPrice} must not be negative`;
+					return validationIssue('must_not_be_negative', {
+						field: 'unitPrice',
+						index,
+						params: { value: line.unitPrice }
+					});
 				}
 				// invoice_line_amount_non_negative
 				if (line.amount < 0) {
-					return `line ${index} amount ${line.amount} must not be negative`;
+					return validationIssue('must_not_be_negative', {
+						field: 'amount',
+						index,
+						params: { value: line.amount }
+					});
 				}
 				// invoice_line_tax_rate_range
 				if (line.taxRate < 0 || line.taxRate > 100) {
-					return `line ${index} taxRate ${line.taxRate} must be between 0 and 100`;
+					return validationIssue('out_of_range', {
+						field: 'taxRate',
+						index,
+						params: { value: line.taxRate, min: 0, max: 100 }
+					});
 				}
 			}
 			return null;
@@ -341,11 +379,16 @@ function proposalValidationError(
 			try {
 				candidate = parseExtractedContract(fields);
 			} catch (error) {
-				return error instanceof Error ? error.message : String(error);
+				return validationIssue('parse_failed', {
+					params: { detail: error instanceof Error ? error.message : String(error) }
+				});
 			}
 			// client_country_is_alpha2
 			if (!/^[A-Z]{2}$/.test(candidate.client.country)) {
-				return `client.country ${candidate.client.country} must be exactly two uppercase letters`;
+				return validationIssue('must_be_uppercase_letters', {
+					field: 'country',
+					params: { value: candidate.client.country, count: 2 }
+				});
 			}
 			const c = candidate.contract;
 			// Every ambiguity-capable NOT NULL column: this is the actual
@@ -354,38 +397,47 @@ function proposalValidationError(
 			// read two ways stays null, and stays refused, until a
 			// reviewer's own edit resolves it.
 			if (c.renewalType === null) {
-				return 'contract.renewalType is required before this proposal can be accepted';
+				return validationIssue('field_required', { field: 'renewalType' });
 			}
 			if (c.paymentTerms === null) {
-				return 'contract.paymentTerms is required before this proposal can be accepted';
+				return validationIssue('field_required', { field: 'paymentTerms' });
 			}
 			if (c.expensePolicy === null) {
-				return 'contract.expensePolicy is required before this proposal can be accepted';
+				return validationIssue('field_required', { field: 'expensePolicy' });
 			}
 			// Same rule, and the reason the parser is allowed to accept a
 			// null: a contract PDF often states no tax treatment at all, so
 			// the extraction must survive that, and the refusal belongs here
 			// where a human can supply it.
 			if (c.taxTreatment === null) {
-				return 'contract.taxTreatment is required before this proposal can be accepted';
+				return validationIssue('field_required', { field: 'taxTreatment' });
 			}
 			// contract_renewal_notice_days_required
 			if (c.renewalType === 'none' && c.renewalNoticeDays !== null) {
-				return "contract.renewalNoticeDays must be null when renewalType is 'none'";
+				return validationIssue('renewal_notice_not_allowed', { field: 'renewalNoticeDays' });
 			}
 			if (c.renewalType !== 'none' && (c.renewalNoticeDays === null || c.renewalNoticeDays < 0)) {
-				return `contract.renewalNoticeDays is required and must be >= 0 when renewalType is '${c.renewalType}'`;
+				return validationIssue('renewal_notice_required', {
+					field: 'renewalNoticeDays',
+					params: { renewalType: c.renewalType }
+				});
 			}
 			// contract_termination_notice_days_non_negative
 			if (c.terminationNoticeDays < 0) {
-				return `contract.terminationNoticeDays ${c.terminationNoticeDays} must not be negative`;
+				return validationIssue('must_not_be_negative', {
+					field: 'terminationNoticeDays',
+					params: { value: c.terminationNoticeDays }
+				});
 			}
 			const startsOnParsed = new Date(`${c.startsOn}T00:00:00Z`);
 			if (
 				Number.isNaN(startsOnParsed.getTime()) ||
 				startsOnParsed.toISOString().slice(0, 10) !== c.startsOn
 			) {
-				return `contract.startsOn ${c.startsOn} is not a real date`;
+				return validationIssue('not_a_real_date', {
+					field: 'startsOn',
+					params: { value: c.startsOn }
+				});
 			}
 			if (c.endsOn !== null) {
 				const endsOnParsed = new Date(`${c.endsOn}T00:00:00Z`);
@@ -393,47 +445,75 @@ function proposalValidationError(
 					Number.isNaN(endsOnParsed.getTime()) ||
 					endsOnParsed.toISOString().slice(0, 10) !== c.endsOn
 				) {
-					return `contract.endsOn ${c.endsOn} is not a real date`;
+					return validationIssue('not_a_real_date', {
+						field: 'endsOn',
+						params: { value: c.endsOn }
+					});
 				}
 				// contract_ends_on_after_starts_on
 				if (c.endsOn < c.startsOn) {
-					return `contract.endsOn ${c.endsOn} is before contract.startsOn ${c.startsOn}`;
+					return validationIssue('ends_before_starts', {
+						field: 'endsOn',
+						params: { value: c.endsOn, other: c.startsOn }
+					});
 				}
 			}
 			// contract_currency_is_alpha3
 			if (!/^[A-Z]{3}$/.test(c.currency)) {
-				return `contract.currency ${c.currency} must be exactly three uppercase letters`;
+				return validationIssue('must_be_uppercase_letters', {
+					field: 'currency',
+					params: { value: c.currency, count: 3 }
+				});
 			}
 
 			for (const [index, card] of candidate.rateCards.entries()) {
 				// rate_card_amount_positive
 				if (card.amount <= 0) {
-					return `rateCards[${index}].amount ${card.amount} must be greater than 0`;
+					return validationIssue('must_be_positive', {
+						field: 'amount',
+						index,
+						params: { value: card.amount }
+					});
 				}
 				// rate_card_allowed_fractions_present
 				if (card.allowedFractions.length === 0) {
-					return `rateCards[${index}].allowedFractions must not be empty`;
+					return validationIssue('must_not_be_empty', { field: 'allowedFractions', index });
 				}
 				// rate_card_minimum_hours_only_for_hourly
 				if (card.kind !== 'hourly' && card.minimumHours !== null) {
-					return `rateCards[${index}].minimumHours is only allowed for kind 'hourly'`;
+					return validationIssue('only_for_kind', {
+						field: 'minimumHours',
+						index,
+						params: { kind: 'hourly' }
+					});
 				}
 				// rate_card_disbursement_period_matches_kind
 				if (card.kind === 'fixed_recurring' && card.disbursementPeriod === null) {
-					return `rateCards[${index}].disbursementPeriod is required for kind 'fixed_recurring'`;
+					return validationIssue('required_for_kind', {
+						field: 'disbursementPeriod',
+						index,
+						params: { kind: 'fixed_recurring' }
+					});
 				}
 				if (card.kind !== 'fixed_recurring' && card.disbursementPeriod !== null) {
-					return `rateCards[${index}].disbursementPeriod is only allowed for kind 'fixed_recurring'`;
+					return validationIssue('only_for_kind', {
+						field: 'disbursementPeriod',
+						index,
+						params: { kind: 'fixed_recurring' }
+					});
 				}
 				// rate_card_valid_to_after_valid_from
 				if (card.validTo !== null && card.validTo < card.validFrom) {
-					return `rateCards[${index}].validTo is before its own validFrom`;
+					return validationIssue('valid_to_before_valid_from', { field: 'validTo', index });
 				}
 			}
 			// rate_card_no_overlapping_validity, checked among the proposed
 			// cards themselves — the database's own exclusion constraint
 			// would catch a real overlap too, but only after the first
-			// insert already succeeded.
+			// insert already succeeded. Not about one field on one card, so
+			// `field`/`index` stay null the same way `contract_required`'s
+			// missing-contract case does — `params.first`/`params.second`
+			// carry which two cards conflict.
 			const sortedCards = candidate.rateCards
 				.map((card, index) => ({ card, index }))
 				.sort((a, b) => a.card.validFrom.localeCompare(b.card.validFrom));
@@ -441,19 +521,17 @@ function proposalValidationError(
 				const previous = sortedCards[i - 1];
 				const current = sortedCards[i];
 				if (previous.card.validTo === null || previous.card.validTo >= current.card.validFrom) {
-					return (
-						`rateCards[${previous.index}] and rateCards[${current.index}] have ` +
-						'overlapping validity periods'
-					);
+					return validationIssue('overlapping_validity', {
+						params: { first: previous.index, second: current.index }
+					});
 				}
 			}
 
-			for (const [index, flag] of candidate.clauseFlags.entries()) {
+			for (const flag of candidate.clauseFlags) {
 				if (flag.interpretationAdopted === null) {
-					return (
-						`clauseFlags[${index}] (${flag.clauseReference}, affecting ${flag.field}) needs ` +
-						'an interpretation chosen before this proposal can be accepted'
-					);
+					return validationIssue('interpretation_required', {
+						params: { clause: flag.clauseReference ?? '', field: flag.field }
+					});
 				}
 			}
 			return null;
@@ -665,7 +743,7 @@ async function applyProposal(
 			return created.id;
 		}
 		case 'contract': {
-			// `proposalValidationError`'s 'contract' case already refused
+			// `proposalValidationIssue`'s 'contract' case already refused
 			// an accept while `renewalType`/`paymentTerms`/`expensePolicy`
 			// or any `clauseFlags[].interpretationAdopted` was still null —
 			// every `!` below is that guarantee, not a fresh assumption.
@@ -675,7 +753,7 @@ async function applyProposal(
 			// Not a structural fact `fields` itself carries (`clauseFlags`
 			// and the rest come off the document; who the client is comes
 			// off the reviewer) — same reason `work_unit`/`invoice` check
-			// `row.contractId` here rather than in `proposalValidationError`.
+			// `row.contractId` here rather than in `proposalValidationIssue`.
 			if (clientChoice === null) {
 				throw new Error(
 					`proposal ${row.id} has no client choice, which a contract target requires`
@@ -738,6 +816,28 @@ async function applyProposal(
 	}
 }
 
+/**
+ * Thrown by `acceptProposal` when the fields about to be written fail
+ * `proposalValidationIssue`'s own checks — an edit on the review screen
+ * broke a field that was fine as proposed, or the field flagged at
+ * creation was never fixed. Carries the structured `issue` rather than a
+ * rendered English sentence: printing `contract.renewalNoticeDays is
+ * required and must be >= 0 when renewalType is 'explicit'` to an Italian
+ * reviewer was the defect this replaces. `message` stays a plain,
+ * English, log-only fallback — the route catches this by `instanceof`
+ * and renders `.issue` through the interface's own translation, never
+ * `.message`.
+ */
+export class ProposalValidationError extends Error {
+	constructor(
+		readonly proposalId: string,
+		readonly issue: ProposalValidationIssue
+	) {
+		super(`proposal ${proposalId} cannot be accepted as proposed: ${issue.code}`);
+		this.name = 'ProposalValidationError';
+	}
+}
+
 export type AcceptProposalInput = {
 	/** Overrides onto the proposed fields — present only for the fields the
 	 * reviewer actually changed. Merged onto `proposedFields` to produce
@@ -765,12 +865,13 @@ export type AcceptProposalInput = {
  * row nor a false `accepted` record.
  *
  * `proposedFields` merged with `edits` is checked against
- * `proposalValidationError` before `applyProposal` ever runs (#245): a
+ * `proposalValidationIssue` before `applyProposal` ever runs (#245): a
  * field the target table would reject is refused here, by name, instead
  * of surfacing as a raw constraint violation after `approvalForDocument`
- * or `createWorkUnit` already started writing. Checked against
- * `acceptedFields`, not the `validationError` stored on the row at
- * creation — an edit that fixes the offending field must be allowed
+ * or `createWorkUnit` already started writing, and thrown as a
+ * `ProposalValidationError` rather than a rendered sentence. Checked
+ * against `acceptedFields`, not the `validationIssue` stored on the row
+ * at creation — an edit that fixes the offending field must be allowed
  * through.
  */
 export async function acceptProposal(
@@ -787,15 +888,15 @@ export async function acceptProposal(
 
 		const acceptedFields = { ...row.proposedFields, ...(input.edits ?? {}) };
 		// Re-checked against what is about to be written, not the
-		// `validationError` stored at creation (#245): an edit on the review
+		// `validationIssue` stored at creation (#245): an edit on the review
 		// screen that fixes the offending field must be allowed through, the
 		// same way a proposal that was fine as proposed must stay refused if
 		// an edit breaks it. Whichever it is, this runs before `applyProposal`
 		// ever reaches `createWorkUnit`/`approvalForDocument`, so a rejected
 		// accept here never touches either.
-		const validationError = proposalValidationError(row.targetType, row.contractId, acceptedFields);
-		if (validationError !== null) {
-			throw new Error(`proposal ${id} cannot be accepted as proposed: ${validationError}`);
+		const issue = proposalValidationIssue(row.targetType, row.contractId, acceptedFields);
+		if (issue !== null) {
+			throw new ProposalValidationError(id, issue);
 		}
 		const resultId = await applyProposal(row, acceptedFields, executor, input.clientChoice ?? null);
 

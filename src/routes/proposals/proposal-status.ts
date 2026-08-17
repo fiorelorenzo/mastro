@@ -120,23 +120,3 @@ export function proposalConfidenceBadge(confidence: number): {
 			};
 	}
 }
-
-/**
- * Which of `fields` a proposal's `validationError` names, when it names
- * one — `proposalValidationError` in `repositories/proposal.ts` always
- * writes the failing field's own key literally into the message
- * ("quantity -1 must be greater than 0", "date 2026-02-31 is not a real
- * date", "proposal field 'scope' must be a string"), so finding the first
- * known field key mentioned in the text reliably recovers which input to
- * mark invalid. `null` when there is no error, or (defensively) when a
- * future validation message mentions none of the fields this proposal
- * actually carries — the review screen falls back to a form-wide banner
- * in that case rather than guessing.
- */
-export function proposalValidationField(
-	validationError: string | null,
-	fields: readonly string[]
-): string | null {
-	if (!validationError) return null;
-	return fields.find((field) => new RegExp(`\\b${field}\\b`, 'i').test(validationError)) ?? null;
-}

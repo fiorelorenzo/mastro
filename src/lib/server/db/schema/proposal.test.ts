@@ -147,26 +147,36 @@ test('a blank confidence_reason is rejected by the database, but null is fine', 
 	});
 });
 
-test('a blank validation_error is rejected by the database, but null is fine', async () => {
+test('validation_issue stores a structured issue, and null is fine too', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const contractRow = await insertContract(tx);
 		const documentRow = await insertDocument(tx, contractRow.id);
 
-		expect(
-			await rejection(
-				() =>
-					tx
-						.insert(proposal)
-						.values(proposalFields(contractRow.id, documentRow.id, { validationError: '   ' })),
-				tx
-			)
-		).toMatchObject({ code: '23514', constraint_name: 'proposal_validation_error_not_blank' });
-
 		const [row] = await tx
 			.insert(proposal)
-			.values(proposalFields(contractRow.id, documentRow.id, { validationError: null }))
+			.values(
+				proposalFields(contractRow.id, documentRow.id, {
+					validationIssue: {
+						code: 'must_be_positive',
+						field: 'quantity',
+						index: null,
+						params: { value: -1 }
+					}
+				})
+			)
 			.returning();
-		expect(row.validationError).toBeNull();
+		expect(row.validationIssue).toEqual({
+			code: 'must_be_positive',
+			field: 'quantity',
+			index: null,
+			params: { value: -1 }
+		});
+
+		const [nullRow] = await tx
+			.insert(proposal)
+			.values(proposalFields(contractRow.id, documentRow.id, { validationIssue: null }))
+			.returning();
+		expect(nullRow.validationIssue).toBeNull();
 	});
 });
 
@@ -279,7 +289,7 @@ test('the proposed fields, excerpt and confidence cannot change after creation',
 	});
 });
 
-test('confidence_reason and validation_error cannot change after creation either', async () => {
+test('confidence_reason and validation_issue cannot change after creation either', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const contractRow = await insertContract(tx);
 		const documentRow = await insertDocument(tx, contractRow.id);
@@ -307,7 +317,14 @@ test('confidence_reason and validation_error cannot change after creation either
 					() =>
 						tx
 							.update(proposal)
-							.set({ validationError: 'quantity must be greater than 0' })
+							.set({
+								validationIssue: {
+									code: 'must_be_positive',
+									field: 'quantity',
+									index: null,
+									params: { value: -1 }
+								}
+							})
 							.where(eq(proposal.id, row.id)),
 					tx
 				)

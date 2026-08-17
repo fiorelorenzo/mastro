@@ -1,4 +1,4 @@
-// #87's accept dispatcher: `applyProposal`/`proposalValidationError`'s
+// #87's accept dispatcher: `applyProposal`/`proposalValidationIssue`'s
 // `'invoice'` case in `proposal.ts`. Kept in its own file rather than
 // folded into `proposal.test.ts` — that file is shared with #86's own
 // `'contract'` case landing in the same wave, and a second file avoids
@@ -17,7 +17,13 @@ import { client as pool, db } from '$lib/server/db';
 import { client, contract, document, invoice, invoiceLine } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { storeDocument } from './document';
-import { acceptProposal, createProposal, diffProposalFields, getProposal } from './proposal';
+import {
+	acceptProposal,
+	createProposal,
+	diffProposalFields,
+	getProposal,
+	ProposalValidationError
+} from './proposal';
 
 let root: string;
 
@@ -131,7 +137,7 @@ test('createProposal records a pending invoice proposal with no decision yet', a
 		);
 
 		expect(created.status).toBe('pending');
-		expect(created.validationError).toBeNull();
+		expect(created.validationIssue).toBeNull();
 		expect(created.acceptedFields).toBeNull();
 		expect(created.resultId).toBeNull();
 	});
@@ -144,9 +150,9 @@ test('a proposed invoice whose line does not sum to its taxable amount is refuse
 
 		// createProposal itself never checks lines-sum-to-total (that is
 		// `agent/invoice-extraction.ts`'s job, before a proposal is ever
-		// created) — `validationError` here only checks what the database
+		// created) — `validationIssue` here only checks what the database
 		// itself would reject on INSERT, so a negative line quantity is
-		// exactly the shape `proposalValidationError` is meant to catch.
+		// exactly the shape `proposalValidationIssue` is meant to catch.
 		const created = await createProposal(
 			{
 				documentId: documentRow.id,
@@ -161,7 +167,11 @@ test('a proposed invoice whose line does not sum to its taxable amount is refuse
 			tx
 		);
 
-		expect(created.validationError).toMatch(/quantity -1 must be greater than 0/);
+		expect(created.validationIssue).toMatchObject({
+			code: 'must_be_positive',
+			field: 'quantity',
+			index: 0
+		});
 	});
 });
 
@@ -231,8 +241,8 @@ test('an edit that breaks the invoice_line CHECK constraints refuses accept, wri
 			tx
 		);
 
-		await expect(
-			tx.transaction((nested) =>
+		const acceptError: unknown = await tx
+			.transaction((nested) =>
 				acceptProposal(
 					created.id,
 					{
@@ -252,7 +262,14 @@ test('an edit that breaks the invoice_line CHECK constraints refuses accept, wri
 					nested
 				)
 			)
-		).rejects.toThrow(/taxRate 130 must be between 0 and 100/);
+			.catch((error: unknown) => error);
+		expect(acceptError).toBeInstanceOf(ProposalValidationError);
+		expect((acceptError as ProposalValidationError).issue).toMatchObject({
+			code: 'out_of_range',
+			field: 'taxRate',
+			index: 0,
+			params: { value: 130, min: 0, max: 100 }
+		});
 
 		const fetched = await getProposal(created.id, tx);
 		expect(fetched?.status).toBe('pending');

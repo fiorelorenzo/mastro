@@ -16,6 +16,7 @@
 	import Section from '$lib/layout/Section.svelte';
 	import ProposalStatusBadge from './ProposalStatusBadge.svelte';
 	import { proposalConfidenceBadge, proposalQuantityLabel } from './proposal-status';
+	import { proposalIssueMessage } from '$lib/i18n/proposal-issue';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
@@ -70,7 +71,7 @@
 			/>
 		{:else}
 			{#each data.groups as group (group.documentId)}
-				{@const blocked = group.rows.some((row) => row.validationError)}
+				{@const blocked = group.rows.some((row) => row.validationIssue !== null)}
 				<Section title={group.subject ?? m.proposal_queue_no_subject()}>
 					{#snippet actions()}
 						<a href={resolve('/proposals/[id]', { id: group.rows[0].id })} class="open-message">
@@ -90,8 +91,8 @@
 										{#if row.amount !== null}
 											<Amount major={row.amount} currency={group.currency} size="inline" />
 										{/if}
-										{#if row.validationError}
-											<span class="row-flag">{m.proposal_queue_needs_correction()}</span>
+										{#if row.validationIssue}
+											<span class="row-flag">{proposalIssueMessage(row.validationIssue)}</span>
 										{/if}
 									</span>
 								</div>
@@ -109,7 +110,7 @@
 											type="submit"
 											variant="primary"
 											size="sm"
-											disabled={Boolean(row.validationError)}
+											disabled={row.validationIssue !== null}
 										>
 											{m.proposal_detail_accept_submit()}
 										</Button>

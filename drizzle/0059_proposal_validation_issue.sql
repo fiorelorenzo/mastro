@@ -1,0 +1,29 @@
+-- #245's `validation_error` was a rendered English sentence — the exact
+-- defect this migration exists to fix. An Italian review screen showed a
+-- reviewer `contract.renewalNoticeDays is required and must be >= 0 when
+-- renewalType is 'explicit'`, twice, because `proposal-status.ts`'s field
+-- highlighting had to regex-match a field name back out of that prose.
+-- Translating the string was never the fix, since the English text itself
+-- was load-bearing. `validation_issue` is its structured successor: the
+-- code, the field, and the interpolated values, as JSON
+-- (`ProposalValidationIssue` in `$lib/proposals/validation-issue.ts`) —
+-- the interface translates it, the server never renders it.
+--
+-- A drop-and-add, not an in-place cast: the two shapes share no
+-- representation a `USING` clause could bridge (English prose vs.
+-- structured JSON), so there is nothing sensible to carry across a rename.
+-- Nothing of substance is lost doing it this way. `validation_error` was
+-- always a display cache computed fresh by `createProposal`
+-- (`repositories/proposal.ts`), never the gate: `acceptProposal` already
+-- recomputes the check, from the fields actually about to be written,
+-- immediately before it writes anything, and would keep doing so against
+-- `validation_issue` exactly the same way. Measured on the local database
+-- before writing this migration, so the claim is checked rather than
+-- assumed: 1 of 3 `proposal` rows had a non-null `validation_error`. That
+-- row's stored English sentence does not survive the drop, but the same
+-- proposal re-validated at its next accept attempt (or the next time its
+-- review screen loads) produces the equivalent `validation_issue`, same as
+-- it always would have — the column was never anything other than a
+-- cache of a computation the server can always redo.
+ALTER TABLE "proposal" ADD COLUMN "validation_issue" jsonb;--> statement-breakpoint
+ALTER TABLE "proposal" DROP COLUMN "validation_error";

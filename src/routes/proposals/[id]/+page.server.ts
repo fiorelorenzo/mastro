@@ -50,8 +50,10 @@ import {
 	getProposal,
 	listProposalsForDocument,
 	rejectProposal,
+	ProposalValidationError,
 	type ClientChoice
 } from '$lib/server/repositories/proposal';
+import { proposalIssueMessage } from '$lib/i18n/proposal-issue';
 import { listRateCards } from '$lib/server/repositories/rate-card';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -90,6 +92,17 @@ function editedFieldsFromForm(
 
 function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
+}
+
+/** Same fallback `errorMessage` always was, but recognises the one error
+ *  `acceptProposal` throws that must never render its own `.message` — a
+ *  `ProposalValidationError` carries the same `ProposalValidationIssue` the
+ *  review screen itself renders inline, translated the same way, so a
+ *  failed accept reads like the rest of this screen instead of leaking
+ *  the English fallback text `.message` carries for logs. */
+function decisionErrorMessage(err: unknown): string {
+	if (err instanceof ProposalValidationError) return proposalIssueMessage(err.issue);
+	return errorMessage(err);
 }
 
 /** `workUnitFields`'s counterpart in `../+page.server.ts` — kept file-local
@@ -478,7 +491,7 @@ export const load: PageServerLoad = async ({ params }) => {
 			excerpt: row.excerpt,
 			confidence: row.confidence,
 			confidenceReason: row.confidenceReason,
-			validationError: row.validationError,
+			validationIssue: row.validationIssue,
 			status: row.status,
 			proposedFields: row.proposedFields,
 			acceptedFields: row.acceptedFields,
@@ -561,7 +574,7 @@ export const actions: Actions = {
 		try {
 			await acceptProposal(params.id, { edits, decidedBy: locals.user!.email, clientChoice });
 		} catch (err) {
-			return fail(400, { decisionError: errorMessage(err) });
+			return fail(400, { decisionError: decisionErrorMessage(err) });
 		}
 		return { decided: true, action: 'accept' as const };
 	},

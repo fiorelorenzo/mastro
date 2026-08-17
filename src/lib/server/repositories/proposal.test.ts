@@ -25,6 +25,7 @@ import {
 	createProposal,
 	diffProposalFields,
 	getProposal,
+	ProposalValidationError,
 	rejectProposal,
 	type ClientChoice
 } from './proposal';
@@ -195,7 +196,11 @@ async function insertUnclaimedDocument(tx: Parameters<Parameters<typeof db.trans
  * `repositories/proposal.ts`'s accept dispatcher directly, independent of
  * the producer that would normally build this blob from a model call. */
 function validContractFields(
-	overrides: { clauseFlags?: Record<string, unknown>[]; contract?: Record<string, unknown> } = {}
+	overrides: {
+		clauseFlags?: Record<string, unknown>[];
+		contract?: Record<string, unknown>;
+		rateCards?: Record<string, unknown>[];
+	} = {}
 ): Record<string, unknown> {
 	counter += 1;
 	return {
@@ -227,7 +232,7 @@ function validContractFields(
 			expensePolicy: { kind: 'reimbursed_at_cost' },
 			...overrides.contract
 		},
-		rateCards: [
+		rateCards: overrides.rateCards ?? [
 			{
 				validFrom: '2025-09-01',
 				validTo: null,
@@ -545,13 +550,23 @@ test('#245: an invalid quantity is refused by acceptProposal itself, before it e
 			},
 			tx
 		);
-		expect(created.validationError).toMatch(/quantity -1 must be greater than 0/);
+		expect(created.validationIssue).toMatchObject({
+			code: 'must_be_positive',
+			field: 'quantity',
+			params: { value: -1 }
+		});
 
-		await expect(
-			tx.transaction((nested) =>
+		const acceptError: unknown = await tx
+			.transaction((nested) =>
 				acceptProposal(created.id, { decidedBy: 'lorenzo@example.com' }, nested)
 			)
-		).rejects.toThrow(/quantity -1 must be greater than 0/);
+			.catch((error: unknown) => error);
+		expect(acceptError).toBeInstanceOf(ProposalValidationError);
+		expect((acceptError as ProposalValidationError).issue).toMatchObject({
+			code: 'must_be_positive',
+			field: 'quantity',
+			params: { value: -1 }
+		});
 
 		const stillPending = await getProposal(created.id, tx);
 		expect(stillPending?.status).toBe('pending');
@@ -631,8 +646,12 @@ test('#245: a proposal whose fields the database would reject is marked with the
 		);
 
 		expect(created.status).toBe('pending');
-		expect(created.validationError).toMatch(/quantity/);
-		expect(created.validationError).toMatch(/greater than 0/);
+		expect(created.validationIssue).toMatchObject({
+			code: 'must_be_positive',
+			field: 'quantity',
+			index: null,
+			params: { value: 0 }
+		});
 	});
 });
 
@@ -653,7 +672,7 @@ test('#245: a proposal whose fields the database would accept carries no validat
 			tx
 		);
 
-		expect(created.validationError).toBeNull();
+		expect(created.validationIssue).toBeNull();
 	});
 });
 
@@ -707,7 +726,7 @@ test('#245: an edit that fixes the offending field on the review screen is accep
 			},
 			tx
 		);
-		expect(created.validationError).not.toBeNull();
+		expect(created.validationIssue).toMatchObject({ code: 'must_be_positive', field: 'quantity' });
 
 		// The reviewer corrects the field the proposal itself flagged as
 		// broken — the guard has to look at what is actually about to be
@@ -739,7 +758,7 @@ test('#86: a well-formed first-intake contract proposal has no validation error 
 			tx
 		);
 
-		expect(created.validationError).toBeNull();
+		expect(created.validationIssue).toBeNull();
 		expect(created.contractId).toBeNull();
 	});
 });
@@ -774,14 +793,19 @@ test('#86: an ambiguous renewal clause with no interpretation chosen blocks sile
 
 		// Blocked twice, the same "checked at creation, re-checked at
 		// accept" shape #245 already gives work_unit: named at creation...
-		expect(created.validationError).toMatch(/renewalType is required/);
+		expect(created.validationIssue).toMatchObject({ code: 'field_required', field: 'renewalType' });
 
 		// ...and acceptProposal itself refuses it, before any write.
-		await expect(
-			tx.transaction((nested) =>
+		const acceptError: unknown = await tx
+			.transaction((nested) =>
 				acceptProposal(created.id, { decidedBy: 'lorenzo@example.com' }, nested)
 			)
-		).rejects.toThrow(/renewalType is required/);
+			.catch((error: unknown) => error);
+		expect(acceptError).toBeInstanceOf(ProposalValidationError);
+		expect((acceptError as ProposalValidationError).issue).toMatchObject({
+			code: 'field_required',
+			field: 'renewalType'
+		});
 
 		const stillPending = await getProposal(created.id, tx);
 		expect(stillPending?.status).toBe('pending');
@@ -1058,7 +1082,7 @@ test('#86: an ambiguous clause flag whose verbatimText the excerpt does not carr
 		// producer's own edit-free path is unrealistic, but this proves the
 		// gate is exactly "interpretationAdopted present", not tied to
 		// whether contract.renewalType specifically is null.
-		expect(created.validationError).toBeNull();
+		expect(created.validationIssue).toBeNull();
 
 		const accepted = await acceptProposal(
 			created.id,
@@ -1074,6 +1098,163 @@ test('#86: an ambiguous clause flag whose verbatimText the excerpt does not carr
 			.where(eq(clauseNote.contractId, accepted.resultId as string));
 		expect(notes).toHaveLength(1);
 		expect(notes[0].interpretationAdopted).toBe(flag.interpretationAdopted);
+	});
+});
+
+// #245: structured coverage for the shapes review screens depend on
+// most, one per representative code — asserted on `{ code, field, index }`
+// and `params`, never on a rendered sentence, so a translation on the
+// interface side can never again desynchronise from what the server
+// actually found wrong (the Italian-review-screen incident this whole
+// module replaces the string-based version for).
+test('an invoice line with taxRate 120 is out of range, structured by field and index', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
+
+		const created = await createProposal(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				targetType: 'invoice',
+				proposedFields: {
+					number: 'INV-2026-014',
+					issueDate: '2026-03-04',
+					dueDate: '2026-04-03',
+					clientName: 'Acme SRL',
+					currency: 'EUR',
+					lines: [
+						{
+							description: 'Consulenza marzo 2026',
+							quantity: 1,
+							unitPrice: 60000,
+							amount: 60000,
+							taxRate: 120
+						}
+					],
+					taxableAmount: 60000,
+					taxAmount: 0,
+					total: 60000
+				},
+				excerpt: 'Fattura n. INV-2026-014 del 04/03/2026',
+				confidence: 0.7
+			},
+			tx
+		);
+
+		expect(created.validationIssue).toMatchObject({
+			code: 'out_of_range',
+			field: 'taxRate',
+			index: 0,
+			params: { value: 120, min: 0, max: 100 }
+		});
+	});
+});
+
+test('the live incident: renewalType explicit with no renewalNoticeDays names the field structurally', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const documentRow = await insertUnclaimedDocument(tx);
+
+		const created = await createProposal(
+			{
+				documentId: documentRow.id,
+				contractId: null,
+				targetType: 'contract',
+				proposedFields: validContractFields({
+					contract: { renewalType: 'explicit', renewalNoticeDays: null }
+				}),
+				excerpt: 'tra Vetraria del Garda S.p.A. e dott. Elia Fontana',
+				confidence: 0.6
+			},
+			tx
+		);
+
+		expect(created.validationIssue).toMatchObject({
+			code: 'renewal_notice_required',
+			field: 'renewalNoticeDays',
+			index: null,
+			params: { renewalType: 'explicit' }
+		});
+	});
+});
+
+test('two overlapping rate cards are flagged by their own indices, not a rendered sentence', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const documentRow = await insertUnclaimedDocument(tx);
+
+		const created = await createProposal(
+			{
+				documentId: documentRow.id,
+				contractId: null,
+				targetType: 'contract',
+				proposedFields: validContractFields({
+					rateCards: [
+						{
+							validFrom: '2025-01-01',
+							validTo: '2025-12-31',
+							kind: 'daily',
+							amount: 650,
+							unit: 'day',
+							allowedFractions: [1],
+							minimumHours: null,
+							disbursementPeriod: null
+						},
+						{
+							validFrom: '2025-06-01',
+							validTo: null,
+							kind: 'daily',
+							amount: 700,
+							unit: 'day',
+							allowedFractions: [1],
+							minimumHours: null,
+							disbursementPeriod: null
+						}
+					]
+				}),
+				excerpt: 'tra Vetraria del Garda S.p.A. e dott. Elia Fontana',
+				confidence: 0.6
+			},
+			tx
+		);
+
+		expect(created.validationIssue).toMatchObject({
+			code: 'overlapping_validity',
+			field: null,
+			index: null,
+			params: { first: 0, second: 1 }
+		});
+	});
+});
+
+test('a clause flag with no interpretation chosen blocks acceptance on its own, independent of every other field', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const documentRow = await insertUnclaimedDocument(tx);
+		const flag = {
+			field: 'rateCards.0.disbursementPeriod',
+			clauseReference: 'Art. 2',
+			verbatimText: 'un minimo fatturabile di 2 ore per singolo intervento',
+			readings: ['solo ore intere', 'frazioni orarie ammesse'],
+			interpretationAdopted: null
+		};
+
+		const created = await createProposal(
+			{
+				documentId: documentRow.id,
+				contractId: null,
+				targetType: 'contract',
+				proposedFields: validContractFields({ clauseFlags: [flag] }),
+				excerpt: 'tra Vetraria del Garda S.p.A. e dott. Elia Fontana',
+				confidence: 0.7
+			},
+			tx
+		);
+
+		expect(created.validationIssue).toMatchObject({
+			code: 'interpretation_required',
+			field: null,
+			index: null,
+			params: { clause: 'Art. 2', field: 'rateCards.0.disbursementPeriod' }
+		});
 	});
 });
 
