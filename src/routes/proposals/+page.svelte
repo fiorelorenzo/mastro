@@ -18,6 +18,7 @@
 	import { proposalConfidenceBadge, proposalQuantityLabel } from './proposal-status';
 	import { proposalIssueMessage } from '$lib/i18n/proposal-issue';
 	import { submitting } from '$lib/design/submitting.svelte';
+	import type { HistoryRow, QueueRow } from './+page.server';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
@@ -44,9 +45,25 @@
 		}
 	]);
 
-	function rowTitle(date: string | null, quantity: number | null): string {
-		const datePart = date ? formatDate(date) : '—';
-		const quantityPart = quantity !== null ? proposalQuantityLabel(quantity) : '—';
+	/**
+	 * A row says what it proposes, which depends on what kind of thing that
+	 * is. Rendering every proposal as a day produced "— — —" on a contract
+	 * proposal, because a contract has no date and no quantity to put on
+	 * either side of the dash — two placeholders and a separator, and
+	 * nothing else.
+	 */
+	function rowTitle(row: QueueRow | HistoryRow): string {
+		if (row.targetType === 'contract') {
+			return row.contractLabel
+				? m.proposal_queue_row_contract({
+						client: row.contractLabel.clientLegalName,
+						title: row.contractLabel.title
+					})
+				: m.proposal_queue_row_unreadable();
+		}
+		if (row.date === null && row.quantity === null) return m.proposal_queue_row_unreadable();
+		const datePart = row.date ? formatDate(row.date) : '—';
+		const quantityPart = row.quantity !== null ? proposalQuantityLabel(row.quantity) : '—';
 		return `${datePart} — ${quantityPart}`;
 	}
 </script>
@@ -73,10 +90,16 @@
 			{#each data.groups as group (group.documentId)}
 				{@const blocked = group.rows.some((row) => row.validationIssue !== null)}
 				{@const acceptAll = submitting()}
-				<Section title={group.subject ?? m.proposal_queue_no_subject()}>
+				<!-- A group is named by its source. An uploaded contract PDF has no
+				     email subject and never will, so heading it "(no subject)" named
+				     something that does not exist; the document's own file name is
+				     what there is. -->
+				<Section title={group.subject ?? group.documentName ?? m.proposal_queue_no_subject()}>
 					{#snippet actions()}
 						<a href={resolve('/proposals/[id]', { id: group.rows[0].id })} class="open-message">
-							{m.proposal_queue_open_message()}
+							{group.fromMessage
+								? m.proposal_queue_open_message()
+								: m.proposal_queue_open_document()}
 						</a>
 					{/snippet}
 
@@ -88,7 +111,7 @@
 							<li class="row">
 								<span class="row-ico" aria-hidden="true">◇</span>
 								<div class="row-main">
-									<span class="row-title">{rowTitle(row.date, row.quantity)}</span>
+									<span class="row-title">{rowTitle(row)}</span>
 									<span class="row-meta">
 										<Badge variant={confidence.variant} label={confidence.label} size="sm" />
 										{#if row.amount !== null}
@@ -169,7 +192,7 @@
 					<span class="row-ico" aria-hidden="true">{row.status === 'accepted' ? '✓' : '✕'}</span>
 					<div class="row-main">
 						<a class="row-title" href={resolve('/proposals/[id]', { id: row.id })}>
-							{rowTitle(row.date, row.quantity)}
+							{rowTitle(row)}
 						</a>
 						<span class="row-meta">
 							<ProposalStatusBadge status={row.status} />
