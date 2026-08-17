@@ -191,6 +191,11 @@ losing it invalidates every session): real client data, contracts and invoice do
 and test fixtures derived from real documents must be anonymised — names, tax ids and
 amounts changed, structure kept.
 
+**Nothing on GitHub enforces any of that.** `main` carries no branch protection and no
+ruleset, all three merge methods are enabled, and `delete_branch_on_merge` is off, so the
+convention above is the only thing keeping `main` sane: a red PR can still be merged, and a
+merged branch stays on the remote until you delete it (`git push -d origin <branch>`).
+
 ## Local development
 
 Requirements: Node 24 (pinned in `.nvmrc`), pnpm, Docker with the Compose plugin.
@@ -327,6 +332,15 @@ CREATE TRIGGER <table>_set_updated_at BEFORE UPDATE ON "<table>"
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 ```
 
+**Two agents cannot generate a migration at the same time.** `pnpm db:generate` numbers the
+next file sequentially and also writes `drizzle/meta/_journal.json` and a snapshot, so two
+worktrees generating in parallel produce the same number and both edit the journal, which no
+rebase can resolve because both sides are legitimate new content. The one that lands second
+waits for the first, pulls, and regenerates rather than renumbering by hand;
+`pnpm db:generate:custom` is no different. `drizzle/` and `drizzle/meta/` are conflict
+magnets in the same way the two message catalogues are: at most one issue per parallel wave
+may touch each of them.
+
 ### Tests
 
 Vitest, in a node environment, `*.test.ts` next to the code. Database tests use the
@@ -391,3 +405,19 @@ plain http, so an authenticated browser pass against `node build` on localhost i
 not possible with a planted cookie: drive the pages with `curl` against the
 production build (which is what catches a resolved-path 500 on a breadcrumb) and do
 the visual sweep against `pnpm dev`.
+
+### What CI covers, and what does not scope
+
+The `check` job runs `pnpm lint`, `pnpm check`, `pnpm db:migrate`, `pnpm test` and
+`pnpm build` on every push and pull request, and the `image` job builds the runtime and
+runner images, boots them against a real Postgres and POSTs the cron-shaped routes above.
+That is the full gate, so a local pass only has to be good enough to avoid an obviously
+broken push.
+
+**`pnpm lint` and `pnpm check` do not take a path.** Lint is `prettier --check . && eslint .`
+and check is `messages:compile && svelte-kit sync && svelte-check` over the whole project, so
+a stray formatting error or a missing message key anywhere fails both regardless of what you
+touched, and passing a path through `pnpm` changes nothing. For a fast local pass call the
+tools directly (`pnpm exec eslint <files>`, `pnpm exec prettier --check <files>`) and know it
+proves less than the job does; a type check is whole-graph by nature and there is no honest
+way to narrow it. `pnpm test <path>` is the one that does scope, by file or directory.
