@@ -2,38 +2,38 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import Page from '$lib/layout/Page.svelte';
+	import { EmptyState } from '$lib/design';
+	import Table from '$lib/design/Table.svelte';
+	import type { TableColumn } from '$lib/design/table';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	type Row = PageData['contracts'][number];
+
+	const columns: readonly TableColumn<Row>[] = [
+		{ key: 'title', label: m.mail_index_column_contract() },
+		{
+			key: 'client',
+			label: m.mail_index_column_client(),
+			format: (row) => row.client.legalName
+		}
+	];
 </script>
 
 <svelte:head><title>{m.mail_index_page_title()}</title></svelte:head>
 
+{#snippet empty()}
+	<EmptyState icon="✉" title={m.mail_index_heading()} body={m.mail_index_empty()} />
+{/snippet}
+
 <Page title={m.mail_index_heading()}>
-	{#if data.contracts.length === 0}
-		<p class="mt-4 text-sm opacity-70">{m.mail_index_empty()}</p>
-	{:else}
-		<table class="mt-4 w-full border-collapse text-sm">
-			<thead>
-				<tr class="border-b text-left">
-					<th class="py-2 pr-4">{m.mail_index_column_contract()}</th>
-					<th class="py-2 pr-4">{m.mail_index_column_client()}</th>
-					<th class="py-2"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each data.contracts as contract (contract.id)}
-					<tr class="border-b">
-						<td class="py-2 pr-4">{contract.title}</td>
-						<td class="py-2 pr-4">{contract.client.legalName}</td>
-						<td class="py-2">
-							<a href={resolve('/mail/contracts/[id]', { id: contract.id })} class="underline"
-								>{m.mail_index_open_link()}</a
-							>
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	{/if}
+	<Table
+		{columns}
+		rows={data.contracts}
+		caption={m.mail_index_heading()}
+		rowKey={(row) => row.id}
+		rowHref={(row) => resolve('/mail/contracts/[id]', { id: row.id })}
+		{empty}
+	/>
 </Page>

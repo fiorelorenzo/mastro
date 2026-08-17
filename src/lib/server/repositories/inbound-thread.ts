@@ -1,7 +1,8 @@
-import { and, desc, eq, max } from 'drizzle-orm';
+import { and, desc, eq, inArray, max } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import { inboundThread } from '$lib/server/db/schema';
 
+export type InboundThreadRow = typeof inboundThread.$inferSelect;
 export type InboundThreadInput = {
 	contractId: string;
 	documentId: string;
@@ -50,6 +51,23 @@ export async function getInboundThreadForDocument(documentId: string, executor: 
 		.from(inboundThread)
 		.where(eq(inboundThread.documentId, documentId));
 	return row ?? null;
+}
+
+/** Batched `getInboundThreadForDocument` (#307): every thread whose
+ * source document is in `documentIds`, in one query — the review queue's
+ * loaders collect the distinct document ids across a page of proposals
+ * and build a `documentId -> thread` map from this instead of awaiting
+ * one query per row's source document. Empty input skips the round trip
+ * rather than sending `WHERE document_id IN ()`, which Postgres rejects. */
+export async function getInboundThreadsForDocuments(
+	documentIds: readonly string[],
+	executor: DbExecutor = db
+) {
+	if (documentIds.length === 0) return [];
+	return executor
+		.select()
+		.from(inboundThread)
+		.where(inArray(inboundThread.documentId, documentIds));
 }
 
 /** The high-water mark `pollContractFolder` fetches from: every UID at or

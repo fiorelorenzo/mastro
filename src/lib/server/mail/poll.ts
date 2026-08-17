@@ -166,7 +166,15 @@ export async function pollContractFolder(
 					{
 						bytes: source,
 						mime: 'message/rfc822',
-						originalName: messageId ?? `uid-${uid}@${mailbox}`,
+						// Not `messageId`: that header is chosen entirely by the
+						// sender (#300) and `originalName` both feeds a zip
+						// entry path (`dispute-bundle/zip.ts`) and renders
+						// as-is in the proposals queue UI. The verbatim
+						// header still gets recorded, below, in
+						// `inbound_thread.messageId` — that column is the
+						// evidence; this one is only ever a display name
+						// built from fields this process controls.
+						originalName: `uid-${uid}@${mailbox}.eml`,
 						provenance: 'mail',
 						contractId: row.id,
 						confidential: true,

@@ -9,6 +9,7 @@ import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract
 import { storeDocument } from './document';
 import {
 	findByContractAndMessageId,
+	getInboundThreadsForDocuments,
 	listInboundThreadsForContract,
 	maxImapUidForContract,
 	recordInboundThread,
@@ -220,5 +221,34 @@ test("listInboundThreadsForContract returns only this contract's threads, newest
 		expect(rows).toHaveLength(2);
 		expect(rows[0].imapUid).toBe(2);
 		expect(rows[1].imapUid).toBe(1);
+	});
+});
+
+test('getInboundThreadsForDocuments returns one thread per requested document, and nothing for a document never archived as mail or asked for', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentA = await archiveMessage(tx, contractRow.id);
+		const documentB = await archiveMessage(tx, contractRow.id);
+		const documentC = await archiveMessage(tx, contractRow.id);
+
+		await recordInboundThread(
+			threadInput(contractRow.id, documentA.id, { imapUid: 1, messageId: null }),
+			tx
+		);
+		await recordInboundThread(
+			threadInput(contractRow.id, documentB.id, { imapUid: 2, messageId: null }),
+			tx
+		);
+		// documentC is archived but never handed off as a thread — the batch
+		// call for it is exactly the "no row" case a lone `getInboundThreadForDocument`
+		// already returns null for.
+
+		const rows = await getInboundThreadsForDocuments(
+			[documentA.id, documentB.id, documentC.id],
+			tx
+		);
+		expect(rows.map((row) => row.documentId).sort()).toEqual([documentA.id, documentB.id].sort());
+
+		expect(await getInboundThreadsForDocuments([], tx)).toEqual([]);
 	});
 });

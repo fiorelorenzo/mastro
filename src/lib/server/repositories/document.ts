@@ -1,7 +1,9 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { readBlob, writeBlob } from '$lib/server/documents/blob-store';
 import { db, type DbExecutor } from '$lib/server/db';
 import { document, type DocumentOwnerType, type DocumentProvenance } from '$lib/server/db/schema';
+
+export type DocumentRow = typeof document.$inferSelect;
 
 /** Where blobs are written. Read from `process.env` directly, not
  * `$env/dynamic/private`: SvelteKit's dynamic env is a snapshot taken at
@@ -63,6 +65,16 @@ export async function storeDocument(input: DocumentInput, executor: DbExecutor =
 export async function getDocument(id: string, executor: DbExecutor = db) {
 	const [row] = await executor.select().from(document).where(eq(document.id, id));
 	return row;
+}
+
+/** Batched `getDocument` (#307): every document in `ids`, in one query —
+ * the review queue's loaders collect the distinct source document ids
+ * across a page of proposals and build an `id -> document` map from this
+ * instead of awaiting one query per row. Empty input skips the round
+ * trip rather than sending `WHERE id IN ()`, which Postgres rejects. */
+export async function getDocuments(ids: readonly string[], executor: DbExecutor = db) {
+	if (ids.length === 0) return [];
+	return executor.select().from(document).where(inArray(document.id, ids));
 }
 
 /**

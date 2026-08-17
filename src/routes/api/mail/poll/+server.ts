@@ -14,7 +14,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { error, json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
-import { mailConfigFromEnv } from '$lib/server/mail/config';
+import { imapConfiguredInEnv, mailConfigFromEnv } from '$lib/server/mail/config';
 import { pollMailboxesOnce } from '$lib/server/mail/poll';
 import type { RequestHandler } from './$types';
 
@@ -38,6 +38,19 @@ export const POST: RequestHandler = async ({ request }) => {
 			error(503, 'IMAP_POLL_CRON_TOKEN is not set on this instance');
 		}
 		error(401, 'invalid or missing bearer token');
+	}
+
+	// Mail is optional. `mailConfigFromEnv` throws on a half-set or unset
+	// mailbox on purpose, because sending is a deliberate action nobody should
+	// be surprised by the error of — but this route is called by a timer every
+	// few minutes, so an instance that never configured IMAP would answer 500
+	// on every tick forever. That is the exact failure `AGENTS.md` records for
+	// `/api/agent/run`, and it is what the new CI caller for this route caught
+	// on its first run. `imapConfiguredInEnv` is the safe probe this file's
+	// sibling already wrote for the alert engine's "is polling even configured"
+	// gate, reused here rather than duplicated.
+	if (!imapConfiguredInEnv()) {
+		return json({ status: 'skipped', reason: 'mail is not configured', folders: [] });
 	}
 
 	const result = await pollMailboxesOnce(mailConfigFromEnv().imap);

@@ -1,6 +1,7 @@
-import { asc, eq, isNotNull } from 'drizzle-orm';
+import { asc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
+	client,
 	contract,
 	type ContractRenewalType,
 	type ContractStatus,
@@ -10,6 +11,13 @@ import {
 	type PaymentTerms
 } from '$lib/server/db/schema';
 import { listDocumentsForOwner } from './document';
+
+/** The shape `getContractWithClient`/`getContractsWithClient` return: a
+ * contract row with its client eagerly joined, for any screen that shows
+ * the client's name next to the contract rather than its id. */
+export type ContractWithClient = typeof contract.$inferSelect & {
+	client: typeof client.$inferSelect;
+};
 
 export type ContractInput = {
 	clientId: string;
@@ -73,6 +81,20 @@ export async function getContract(id: string, executor: DbExecutor = db) {
 
 export async function getContractWithClient(id: string, executor: DbExecutor = db) {
 	return executor.query.contract.findFirst({ where: eq(contract.id, id), with: { client: true } });
+}
+
+/** Batched `getContractWithClient` (#307): every contract in `ids`, with
+ * its client, in one query — the review queue's loaders collect the
+ * distinct contract ids across a page of proposals and build an
+ * `id -> contract` map from this instead of awaiting one query per row.
+ * Empty input skips the round trip rather than sending `WHERE id IN ()`,
+ * which Postgres rejects. */
+export async function getContractsWithClient(ids: readonly string[], executor: DbExecutor = db) {
+	if (ids.length === 0) return [];
+	return executor.query.contract.findMany({
+		where: inArray(contract.id, ids),
+		with: { client: true }
+	});
 }
 
 /** Every document still owned by the contract itself rather than by one

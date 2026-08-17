@@ -11,9 +11,16 @@ import type { ProposalTargetType } from '$lib/server/db/schema';
 import { isPostgresError } from '$lib/server/db/postgres-error';
 import { parseMessage } from '$lib/server/mail/headers';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
-import { getContractWithClient } from '$lib/server/repositories/contract';
-import { getDocument, readDocumentBytes } from '$lib/server/repositories/document';
-import { getInboundThreadForDocument } from '$lib/server/repositories/inbound-thread';
+import { getContractsWithClient, type ContractWithClient } from '$lib/server/repositories/contract';
+import {
+	getDocuments,
+	readDocumentBytes,
+	type DocumentRow
+} from '$lib/server/repositories/document';
+import {
+	getInboundThreadsForDocuments,
+	type InboundThreadRow
+} from '$lib/server/repositories/inbound-thread';
 import {
 	acceptProposal,
 	countPendingProposals,
@@ -26,7 +33,7 @@ import {
 } from '$lib/server/repositories/proposal';
 import { proposalIssueMessage } from '$lib/i18n/proposal-issue';
 import type { ProposalValidationIssue } from '$lib/proposals/validation-issue';
-import { listRateCards } from '$lib/server/repositories/rate-card';
+import { listRateCardsForContracts, type RateCardRow } from '$lib/server/repositories/rate-card';
 import type { ProposalStatusValue } from './proposal-status';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -76,26 +83,28 @@ function decisionErrorMessage(err: unknown): string {
  * was pointless work on every upload, and pointless work is exactly what
  * should not be able to fail.
  */
-async function readSender(documentId: string): Promise<string | null> {
-	const doc = await getDocument(documentId);
+async function readSender(doc: DocumentRow | undefined): Promise<string | null> {
 	if (!doc || doc.provenance !== 'mail') return null;
 	try {
 		const bytes = await readDocumentBytes(doc);
 		return parseMessage(bytes).headers.get('from') ?? null;
 	} catch (err) {
-		console.error('proposal queue: cannot read the archived message of', documentId, err);
+		console.error('proposal queue: cannot read the archived message of', doc.id, err);
 		return null;
 	}
 }
 
 /** Null only for a first-intake `'contract'` proposal (#86) — there is no
  * contract row yet to summarise, so the queue falls back to a generic
- * label rather than crashing on `getContractWithClient(null)`. */
-async function contractSummary(contractId: string | null) {
+ * label rather than a lookup miss on a null id. */
+function contractSummary(
+	contractId: string | null,
+	contractById: ReadonlyMap<string, ContractWithClient>
+) {
 	if (contractId === null) {
 		return { title: m.proposal_list_new_contract_title(), clientLegalName: '', currency: 'EUR' };
 	}
-	const contract = await getContractWithClient(contractId);
+	const contract = contractById.get(contractId);
 	return {
 		title: contract?.title ?? contractId,
 		clientLegalName: contract?.client.legalName ?? '',
@@ -103,14 +112,63 @@ async function contractSummary(contractId: string | null) {
 	};
 }
 
-async function priceProposal(row: Pick<ProposalRow, 'contractId' | 'proposedFields'>) {
+function priceProposal(
+	row: Pick<ProposalRow, 'contractId' | 'proposedFields'>,
+	rateCardsByContract: ReadonlyMap<string, RateCardRow[]>
+) {
 	const fields = workUnitFields(row.proposedFields);
 	// A 'contract' proposal's proposedFields never match workUnitFields'
 	// shape, so contractId is never null past this point in practice —
 	// still checked, since its type is now nullable (#86).
 	if (!fields || row.contractId === null) return null;
-	const rateCards = await listRateCards(row.contractId);
+	const rateCards = rateCardsByContract.get(row.contractId) ?? [];
 	return priceWorkUnitOnDate(fields, rateCards);
+}
+
+type ProposalContext = {
+	threadByDocument: ReadonlyMap<string, InboundThreadRow>;
+	documentById: ReadonlyMap<string, DocumentRow>;
+	contractById: ReadonlyMap<string, ContractWithClient>;
+	rateCardsByContract: ReadonlyMap<string, RateCardRow[]>;
+};
+
+/**
+ * The distinct-sets-then-join-in-memory half of #307: collects the unique
+ * `documentId`s and `contractId`s a page of proposal rows references,
+ * fetches each source table once with a batch repository function, and
+ * hands back the four maps `loadQueue`/`loadHistory`'s row loops read
+ * from. One query per table, whatever the row count — the four-lookups-
+ * per-source-document loop this replaced was the thing making both
+ * loaders' query count proportional to their row count.
+ */
+async function fetchProposalContext(
+	rows: readonly Pick<ProposalRow, 'documentId' | 'contractId'>[]
+): Promise<ProposalContext> {
+	const documentIds = [...new Set(rows.map((row) => row.documentId))];
+	const contractIds = [
+		...new Set(rows.map((row) => row.contractId).filter((id): id is string => id !== null))
+	];
+
+	const [threads, documents, contracts, rateCards] = await Promise.all([
+		getInboundThreadsForDocuments(documentIds),
+		getDocuments(documentIds),
+		getContractsWithClient(contractIds),
+		listRateCardsForContracts(contractIds)
+	]);
+
+	const rateCardsByContract = new Map<string, RateCardRow[]>();
+	for (const card of rateCards) {
+		const existing = rateCardsByContract.get(card.contractId);
+		if (existing) existing.push(card);
+		else rateCardsByContract.set(card.contractId, [card]);
+	}
+
+	return {
+		threadByDocument: new Map(threads.map((thread) => [thread.documentId, thread])),
+		documentById: new Map(documents.map((document) => [document.id, document])),
+		contractById: new Map(contracts.map((contract) => [contract.id, contract])),
+		rateCardsByContract
+	};
 }
 
 export type QueueRow = {
@@ -158,17 +216,16 @@ export type QueueGroup = {
 
 async function loadQueue(): Promise<QueueGroup[]> {
 	const pending = await listProposals('pending');
+	const context = await fetchProposalContext(pending);
 	const groups = new Map<string, QueueGroup>();
 
 	for (const row of pending) {
 		let group = groups.get(row.documentId);
 		if (!group) {
-			const [thread, sender, contract, document] = await Promise.all([
-				getInboundThreadForDocument(row.documentId),
-				readSender(row.documentId),
-				contractSummary(row.contractId),
-				getDocument(row.documentId)
-			]);
+			const document = context.documentById.get(row.documentId);
+			const thread = context.threadByDocument.get(row.documentId) ?? null;
+			const sender = await readSender(document);
+			const contract = contractSummary(row.contractId, context.contractById);
 			group = {
 				documentId: row.documentId,
 				subject: thread?.subject ?? null,
@@ -195,7 +252,7 @@ async function loadQueue(): Promise<QueueGroup[]> {
 			confidence: row.confidence,
 			confidenceReason: row.confidenceReason,
 			validationIssue: row.validationIssue,
-			amount: await priceProposal(row)
+			amount: priceProposal(row, context.rateCardsByContract)
 		});
 	}
 
@@ -232,16 +289,30 @@ export type HistoryRow = {
 
 async function loadHistory(status: 'accepted' | 'rejected'): Promise<HistoryRow[]> {
 	const rows = await listProposals(status);
+	const context = await fetchProposalContext(rows);
+
+	// Several decided rows can share one source document (one email
+	// approving several days), so the blob is read at most once per
+	// document here too, the same guarantee `loadQueue`'s grouping gives
+	// it for free — a plain per-row `readSender` call would read it once
+	// per row instead.
+	const senderByDocument = new Map<string, Promise<string | null>>();
+	function sender(documentId: string): Promise<string | null> {
+		let pending = senderByDocument.get(documentId);
+		if (!pending) {
+			pending = readSender(context.documentById.get(documentId));
+			senderByDocument.set(documentId, pending);
+		}
+		return pending;
+	}
+
 	return Promise.all(
 		rows.map(async (row) => {
 			const effectiveFields = row.acceptedFields ?? row.proposedFields;
 			const fields = workUnitFields(effectiveFields);
-			const [thread, sender, contract, document] = await Promise.all([
-				getInboundThreadForDocument(row.documentId),
-				readSender(row.documentId),
-				contractSummary(row.contractId),
-				getDocument(row.documentId)
-			]);
+			const thread = context.threadByDocument.get(row.documentId) ?? null;
+			const document = context.documentById.get(row.documentId);
+			const contract = contractSummary(row.contractId, context.contractById);
 			return {
 				id: row.id,
 				targetType: row.targetType,
@@ -254,13 +325,16 @@ async function loadHistory(status: 'accepted' | 'rejected'): Promise<HistoryRow[
 				status: status,
 				contractTitle: contract.title,
 				currency: contract.currency,
-				sender,
+				sender: await sender(row.documentId),
 				receivedAt: thread?.receivedAt.toISOString() ?? null,
 				fromMessage: thread !== null,
 				documentName: document?.originalName ?? null,
 				sourceAt: (thread?.receivedAt ?? document?.createdAt)?.toISOString() ?? null,
 				amount: fields
-					? await priceProposal({ contractId: row.contractId, proposedFields: fields })
+					? priceProposal(
+							{ contractId: row.contractId, proposedFields: fields },
+							context.rateCardsByContract
+						)
 					: null,
 				resultId: row.resultId
 			};

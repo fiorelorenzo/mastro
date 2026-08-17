@@ -227,6 +227,12 @@ test.skipIf(!mailboxAvailable)(
 		expect(archived[0].ownerId).toBe(contractId);
 		expect(archived[0].provenance).toBe('mail');
 		expect(archived[0].confidential).toBe(true);
+		// #300: the archived `originalName` is a display/file name, not the
+		// evidence — the sender-chosen `Message-ID` must not end up there.
+		// The verbatim header lives in `inbound_thread.messageId` (asserted
+		// above) instead.
+		expect(archived[0].originalName).not.toBe(messageIdOne);
+		expect(archived[0].originalName).not.toContain(messageIdOne);
 
 		// "Restart" — a second, fully independent call with nothing new in
 		// the mailbox. Nothing carried in memory between the two calls

@@ -111,13 +111,36 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    env_file:
-      - .env.prod
+    # No env_file here, unlike every other service in this file (#298).
+    # `runner` is the one process that spawns an untrusted third-party
+    # model binary, and the whole point of its own image
+    # (Dockerfile:102-112, target: runner) is that it never receives
+    # POSTGRES_PASSWORD, BETTER_AUTH_SECRET, the cron tokens, the mail
+    # app passwords or VAPID_PRIVATE_KEY, on a network where `db` is
+    # reachable. Every variable below is one this process actually
+    # reads (src/lib/server/runner/config.ts's loadRunnerConfig,
+    # docs/agent-runner.md's "Configuration"), passed through by name
+    # so a new secret added to .env.prod later does not silently reach
+    # this container again. compose-env.test.ts asserts both halves:
+    # no env_file, and no environment key outside this exact list.
     environment:
-      # A distinct, read-only role — never web's DATABASE_URL. See
+      # A distinct, read-only role, never web's DATABASE_URL. See
       # drizzle/0035_acp_runner_role.sql for exactly what mastro_runner
       # can and cannot do.
       RUNNER_DATABASE_URL: postgres://mastro_runner:${RUNNER_DB_PASSWORD}@db:5432/${POSTGRES_DB:-mastro}
+      # The model agent. Leaving RUNNER_AGENT_COMMAND unset is
+      # supported: the runner then fails loudly on the first job
+      # instead of fabricating a proposal (model.ts's
+      # RunnerConfigurationError).
+      RUNNER_AGENT_COMMAND: ${RUNNER_AGENT_COMMAND:-}
+      RUNNER_AGENT_ARGS: ${RUNNER_AGENT_ARGS:-}
+      # A JSON object: the spawned agent subprocess's entire
+      # environment, never anything this process itself holds
+      # (acp-client.ts).
+      RUNNER_AGENT_ENV: ${RUNNER_AGENT_ENV:-}
+      # How long one ACP prompt turn may run before the runner gives
+      # up. Optional; defaults to 120000ms when unset.
+      RUNNER_MODEL_TIMEOUT_MS: ${RUNNER_MODEL_TIMEOUT_MS:-}
     volumes:
       - runner_queue:/app/data/runner-queue
 

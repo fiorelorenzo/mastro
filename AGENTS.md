@@ -59,7 +59,12 @@ Five invariants. Breaking one is a defect even if the tests pass:
 1. **No country-specific logic outside a jurisdiction pack.** No `if (country ===
 'IT')` in the core, ever. If the engine needs to branch, the pack interface is
    missing a capability — extend the interface. Acceptance test: with the `generic`
-   pack selected, the entire product still works, minus ceilings.
+   pack selected, the entire product still works, minus ceilings. Enforced by
+   `src/lib/server/fiscal/no-country-logic.test.ts`, which scans every `.ts` file
+   plus the `<script>` block (never the markup) of every `.svelte` file — template
+   markup is full of hyphenated two-letter class names (`sr-only`) that would read
+   as false positives, so it stays unscanned rather than the whole extension being
+   excluded (#325).
 2. **Pack rules follow the money; contract rules follow the counterparty.** A revenue
    ceiling belongs to a pack and disappears when the regime changes. A clause capping
    one client's share of your income belongs to the contract and survives any change
@@ -390,8 +395,11 @@ and never was (#225).
 **A route only a timer calls needs a caller in CI.** `/api/agent/run` answered 500 on
 every scheduler tick for a whole release while `pnpm build`, `pnpm check` and the
 entire suite stayed green, because nothing but the scheduler ever requested it. The
-`image` job now POSTs the three cron-shaped routes against the real runtime image,
-and any route added to `scripts/scheduler.ts` belongs in that list on the same day.
+`image` job now POSTs all four cron-shaped routes against the real runtime image,
+and `scripts/scheduler.test.ts` parses both `scripts/scheduler.ts`'s route list and
+the `image` job's sweep in `.github/workflows/ci.yml`, and fails, naming the route,
+if either one calls a route the other does not. Add a route to the scheduler and
+the test catches an unupdated CI sweep on its own; no manual discipline required.
 
 **A server-only dependency that touches DOM globals must be `ssr.external`.**
 `pdf-parse` wraps pdfjs, whose module body references `DOMMatrix`. Bundled into a

@@ -3,12 +3,17 @@
 	import * as m from '$lib/paraglide/messages';
 	import { factLine } from '$lib/nav/crumbs';
 	import Page from '$lib/layout/Page.svelte';
+	import Section from '$lib/layout/Section.svelte';
 	import { locales, type Locale } from '$lib/paraglide/runtime';
-	import { Button } from '$lib/design';
+	import { Button, Checkbox, EmptyState, Field, Input, Select } from '$lib/design';
+	import Table from '$lib/design/Table.svelte';
+	import type { TableColumn } from '$lib/design/table';
 	import { submitting } from '$lib/design/submitting.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	type TemplateRow = PageData['templates'][number];
 
 	const autoSend = submitting();
 	const templateLanguage = submitting();
@@ -21,7 +26,7 @@
 		return new Intl.DisplayNames([locale], { type: 'language' }).of(locale) ?? locale;
 	}
 
-	function triggerLabel(trigger: (typeof data.templates)[number]['trigger']): string {
+	function triggerLabel(trigger: TemplateRow['trigger']): string {
 		if (trigger.kind === 'manual') return m.mail_trigger_manual();
 		if (trigger.kind === 'on_issue') return m.mail_trigger_on_issue();
 		if (trigger.kind === 'days_after_due')
@@ -34,7 +39,34 @@
 			? m.mail_attachment_day_register_pdf()
 			: m.mail_attachment_day_register_csv();
 	}
+
+	const templateLanguageError = $derived(
+		form && 'templateLanguageError' in form ? form.templateLanguageError : undefined
+	);
+	const mailFolderError = $derived(
+		form && 'mailFolderError' in form ? form.mailFolderError : undefined
+	);
 </script>
+
+{#snippet sendCell(row: TemplateRow)}
+	<a
+		href={resolve('/mail/contracts/[id]/templates/[templateId]/send', {
+			id: data.contract.id,
+			templateId: row.id
+		})}
+		class="underline"
+	>
+		{m.mail_template_send_link()}
+	</a>
+{/snippet}
+
+{#snippet templatesEmpty()}
+	<EmptyState
+		icon="✎"
+		title={m.mail_contract_templates_heading()}
+		body={m.mail_contract_templates_empty()}
+	/>
+{/snippet}
 
 <svelte:head
 	><title>{m.mail_contract_page_title({ contractTitle: data.contract.title })}</title></svelte:head
@@ -59,120 +91,118 @@
 		</a>
 	{/snippet}
 
-	<form
-		method="POST"
-		action="?/autoSend"
-		class="mt-6 flex flex-col gap-2 border p-4"
-		onsubmit={autoSend.onsubmit}
-	>
-		<span class="text-sm font-semibold">{m.mail_contract_auto_send_legend()}</span>
-		<label class="flex items-center gap-2 text-sm">
-			<input type="checkbox" name="autoSendMail" checked={data.contract.autoSendMail} />
-			{m.mail_contract_auto_send_label()}
-		</label>
-		<p class="text-xs opacity-70">{m.mail_contract_auto_send_hint()}</p>
-		<Button type="submit" variant="secondary" size="md" loading={autoSend.busy}>
-			{m.mail_contract_auto_send_save()}
-		</Button>
-	</form>
+	{@const templateColumns = [
+		{ key: 'name', label: m.mail_template_column_name() },
+		{
+			key: 'trigger',
+			label: m.mail_template_column_trigger(),
+			format: (row: TemplateRow) => triggerLabel(row.trigger)
+		},
+		{
+			key: 'attachments',
+			label: m.mail_template_column_attachments(),
+			format: (row: TemplateRow) => row.attachmentKinds.map(attachmentLabel).join(', ')
+		},
+		{ key: 'send', label: m.mail_template_send_link(), cell: sendCell }
+	] satisfies readonly TableColumn<TemplateRow>[]}
 
-	<form
-		method="POST"
-		action="?/templateLanguage"
-		class="mt-6 flex flex-col gap-2 border p-4"
-		onsubmit={templateLanguage.onsubmit}
-	>
-		<span class="text-sm font-semibold">{m.mail_contract_template_language_legend()}</span>
-		<p class="text-xs opacity-70">{m.mail_contract_template_language_hint()}</p>
-		<label class="flex flex-col gap-1 text-sm">
-			<select name="templateLanguage" class="w-fit border px-2 py-1">
-				{#each locales as locale (locale)}
-					<option value={locale} selected={data.contract.templateLanguage === locale}>
-						{autonym(locale)}
-					</option>
-				{/each}
-			</select>
-		</label>
-		{#if form && 'templateLanguageError' in form && form.templateLanguageError}
-			<span class="text-xs font-semibold">{form.templateLanguageError}</span>
-		{/if}
-		<Button type="submit" variant="secondary" size="md" loading={templateLanguage.busy}>
-			{m.mail_contract_template_language_save()}
-		</Button>
-	</form>
+	<Section title={m.mail_contract_templates_heading()}>
+		{#snippet actions()}
+			<a
+				href={resolve('/mail/contracts/[id]/templates/new', { id: data.contract.id })}
+				class="underline"
+			>
+				{m.mail_contract_new_template_link()}
+			</a>
+		{/snippet}
+		<Table
+			columns={templateColumns}
+			rows={data.templates}
+			caption={m.mail_contract_templates_heading()}
+			rowKey={(row) => row.id}
+			rowHref={(row) =>
+				resolve('/mail/contracts/[id]/templates/[templateId]/edit', {
+					id: data.contract.id,
+					templateId: row.id
+				})}
+			empty={templatesEmpty}
+		/>
+	</Section>
 
-	<form
-		method="POST"
-		action="?/mailFolder"
-		class="mt-6 flex flex-col gap-2 border p-4"
-		onsubmit={mailFolder.onsubmit}
-	>
-		<span class="text-sm font-semibold">{m.mail_contract_inbound_folder_legend()}</span>
-		<p class="text-xs opacity-70">{m.mail_contract_inbound_folder_hint()}</p>
-		<label class="flex flex-col gap-1 text-sm">
-			<input
-				type="text"
-				name="mailFolder"
-				value={data.contract.mailFolder ?? ''}
-				placeholder={m.mail_contract_inbound_folder_placeholder()}
-				class="w-fit border px-2 py-1"
-			/>
-		</label>
-		{#if form && 'mailFolderError' in form && form.mailFolderError}
-			<span class="text-xs font-semibold">{form.mailFolderError}</span>
-		{/if}
-		<Button type="submit" variant="secondary" size="md" loading={mailFolder.busy}>
-			{m.mail_contract_inbound_folder_save()}
-		</Button>
-	</form>
+	<Section title={m.mail_contract_settings_heading()}>
+		<div class="settings-forms">
+			<form method="POST" action="?/autoSend" class="card" onsubmit={autoSend.onsubmit}>
+				<Checkbox
+					name="autoSendMail"
+					checked={data.contract.autoSendMail}
+					label={m.mail_contract_auto_send_label()}
+					hint={m.mail_contract_auto_send_hint()}
+				/>
+				<Button type="submit" variant="secondary" size="md" loading={autoSend.busy}>
+					{m.mail_contract_auto_send_save()}
+				</Button>
+			</form>
 
-	<div class="mt-6 flex items-center justify-between">
-		<h2 class="text-lg font-semibold">{m.mail_contract_templates_heading()}</h2>
-		<a
-			href={resolve('/mail/contracts/[id]/templates/new', { id: data.contract.id })}
-			class="text-sm underline"
-		>
-			{m.mail_contract_new_template_link()}
-		</a>
-	</div>
+			<form
+				method="POST"
+				action="?/templateLanguage"
+				class="card"
+				onsubmit={templateLanguage.onsubmit}
+			>
+				<Field
+					label={m.mail_contract_template_language_legend()}
+					hint={m.mail_contract_template_language_hint()}
+					error={templateLanguageError}
+				>
+					<Select name="templateLanguage" value={data.contract.templateLanguage}>
+						{#each locales as locale (locale)}
+							<option value={locale} selected={data.contract.templateLanguage === locale}>
+								{autonym(locale)}
+							</option>
+						{/each}
+					</Select>
+				</Field>
+				<Button type="submit" variant="secondary" size="md" loading={templateLanguage.busy}>
+					{m.mail_contract_template_language_save()}
+				</Button>
+			</form>
 
-	{#if data.templates.length === 0}
-		<p class="mt-2 text-sm opacity-70">{m.mail_contract_templates_empty()}</p>
-	{:else}
-		<table class="mt-2 w-full border-collapse text-sm">
-			<thead>
-				<tr class="border-b text-left">
-					<th class="py-2 pr-4">{m.mail_template_column_name()}</th>
-					<th class="py-2 pr-4">{m.mail_template_column_trigger()}</th>
-					<th class="py-2 pr-4">{m.mail_template_column_attachments()}</th>
-					<th class="py-2"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each data.templates as template (template.id)}
-					<tr class="border-b">
-						<td class="py-2 pr-4">{template.name}</td>
-						<td class="py-2 pr-4">{triggerLabel(template.trigger)}</td>
-						<td class="py-2 pr-4">{template.attachmentKinds.map(attachmentLabel).join(', ')}</td>
-						<td class="py-2 whitespace-nowrap">
-							<a
-								href={resolve('/mail/contracts/[id]/templates/[templateId]/edit', {
-									id: data.contract.id,
-									templateId: template.id
-								})}
-								class="underline">{m.mail_template_edit_link()}</a
-							>
-							<a
-								href={resolve('/mail/contracts/[id]/templates/[templateId]/send', {
-									id: data.contract.id,
-									templateId: template.id
-								})}
-								class="ml-2 underline">{m.mail_template_send_link()}</a
-							>
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	{/if}
+			<form method="POST" action="?/mailFolder" class="card" onsubmit={mailFolder.onsubmit}>
+				<Field
+					label={m.mail_contract_inbound_folder_legend()}
+					hint={m.mail_contract_inbound_folder_hint()}
+					error={mailFolderError}
+				>
+					<Input
+						type="text"
+						name="mailFolder"
+						value={data.contract.mailFolder ?? ''}
+						placeholder={m.mail_contract_inbound_folder_placeholder()}
+					/>
+				</Field>
+				<Button type="submit" variant="secondary" size="md" loading={mailFolder.busy}>
+					{m.mail_contract_inbound_folder_save()}
+				</Button>
+			</form>
+		</div>
+	</Section>
 </Page>
+
+<style>
+	.settings-forms {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-4);
+	}
+	.card {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-4);
+		background: var(--surface-1);
+		border: 1px solid var(--line);
+		border-radius: var(--radius-md);
+		box-shadow: var(--shadow-card);
+		padding: var(--space-5);
+		min-width: 0;
+	}
+</style>

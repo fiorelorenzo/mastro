@@ -155,6 +155,13 @@ jobs:
       # Placeholders, never real: this container is destroyed with the
       # runner. The app refuses to boot without a value for each, which is
       # the behaviour being exercised here.
+      #
+      # AUTH_ALLOWED_EMAILS carries ci@example.com because the session the
+      # next step plants belongs to that address. It used to be empty, which
+      # worked only because a planted session was never re-checked against the
+      # allowlist once it existed (#299). It is checked on every request now,
+      # and an empty allowlist admits nobody, which is invariant 6 as written.
+      # This job had been asserting the hole.
       - name: Boot it and check /health
         run: |
           set -euo pipefail
@@ -164,9 +171,10 @@ jobs:
             -e BETTER_AUTH_URL=http://localhost:3000 \
             -e GOOGLE_CLIENT_ID=ci-not-a-real-client \
             -e GOOGLE_CLIENT_SECRET=ci-not-a-real-secret \
-            -e AUTH_ALLOWED_EMAILS= \
+            -e AUTH_ALLOWED_EMAILS=ci@example.com \
             -e RUNNER_DB_PASSWORD=ci-not-a-real-password \
             -e ALERT_CRON_TOKEN=ci-not-a-real-token \
+            -e IMAP_POLL_CRON_TOKEN=ci-not-a-real-mail-token \
             mastro-runtime:ci
           for attempt in $(seq 1 30); do
             health="$(curl -fsS --max-time 5 http://127.0.0.1:3000/health 2>/dev/null || true)"
@@ -184,10 +192,15 @@ jobs:
                 # imported a PDF library whose module body touches DOM
                 # globals Node has not got: the ingestion loop was dead and
                 # every test, build and page load stayed green. A route that
-                # only a timer ever calls needs a caller here too.
-                for job in agent/run alerts/run/push alerts/run/digest; do
+                # only a timer ever calls needs a caller here too. This list
+                # and scripts/scheduler.ts's own route list are kept in step
+                # by scripts/scheduler.test.ts, which parses both files
+                # rather than trusting a fourth hand-maintained copy.
+                for job in mail/poll agent/run alerts/run/push alerts/run/digest; do
+                  token=ci-not-a-real-token
+                  [ "$job" = 'mail/poll' ] && token=ci-not-a-real-mail-token
                   code="$(curl -s -o /dev/null -w '%{http_code}' -X POST \
-                    -H 'Authorization: Bearer ci-not-a-real-token' \
+                    -H "Authorization: Bearer $token" \
                     "http://127.0.0.1:3000/api/$job")"
                   echo "POST /api/$job: $code"
                   [ "$code" = 200 ] || {

@@ -8,6 +8,7 @@ import { client, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import {
 	getDocument,
+	getDocuments,
 	listDocumentsForOwner,
 	readDocumentBytes,
 	setDocumentRemoteFileId,
@@ -159,5 +160,42 @@ test('setDocumentRemoteFileId records the mirror id without touching anything el
 		expect(updated.remoteFileId).toBe('Contracts/Acme/doc.pdf');
 		expect(updated.originalName).toBe(stored.originalName);
 		expect(updated.hash).toBe(stored.hash);
+	});
+});
+
+test('getDocuments returns every requested document regardless of owner, and nothing for an id never stored', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const first = await storeDocument(
+			{
+				bytes: new TextEncoder().encode('first'),
+				mime: 'application/pdf',
+				originalName: 'first.pdf',
+				provenance: 'upload',
+				contractId: contractRow.id,
+				confidential: false,
+				ownerType: 'contract',
+				ownerId: contractRow.id
+			},
+			tx
+		);
+		const second = await storeDocument(
+			{
+				bytes: new TextEncoder().encode('second'),
+				mime: 'application/pdf',
+				originalName: 'second.pdf',
+				provenance: 'upload',
+				contractId: contractRow.id,
+				confidential: false,
+				ownerType: 'contract',
+				ownerId: contractRow.id
+			},
+			tx
+		);
+
+		const rows = await getDocuments([first.id, second.id, crypto.randomUUID()], tx);
+		expect(rows.map((row) => row.id).sort()).toEqual([first.id, second.id].sort());
+
+		expect(await getDocuments([], tx)).toEqual([]);
 	});
 });
