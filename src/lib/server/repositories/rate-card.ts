@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
 	rateCard,
@@ -6,6 +6,8 @@ import {
 	type RateCardKind,
 	type RateUnit
 } from '$lib/server/db/schema';
+
+export type RateCardRow = typeof rateCard.$inferSelect;
 
 export type RateCardInput = {
 	contractId: string;
@@ -22,6 +24,25 @@ export type RateCardInput = {
 export async function listRateCards(contractId: string, executor: DbExecutor = db) {
 	return executor.query.rateCard.findMany({
 		where: eq(rateCard.contractId, contractId),
+		orderBy: asc(rateCard.validFrom)
+	});
+}
+
+/** Batched `listRateCards` (#307): every rate card for any of
+ * `contractIds`, in one query — the review queue's loaders collect the
+ * distinct contract ids across a page of proposals, group this by
+ * `contractId` into a map, and let `priceWorkUnitOnDate` read from it
+ * instead of a `listRateCards` call per row. Empty input skips the round
+ * trip rather than sending `WHERE contract_id IN ()`, which Postgres
+ * rejects. Ordered the same as `listRateCards`, oldest validity first
+ * within each contract, since callers group without re-sorting. */
+export async function listRateCardsForContracts(
+	contractIds: readonly string[],
+	executor: DbExecutor = db
+) {
+	if (contractIds.length === 0) return [];
+	return executor.query.rateCard.findMany({
+		where: inArray(rateCard.contractId, contractIds),
 		orderBy: asc(rateCard.validFrom)
 	});
 }

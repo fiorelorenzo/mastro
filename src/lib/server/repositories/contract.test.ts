@@ -3,7 +3,7 @@ import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract, document } from '$lib/server/db/schema';
 import type { PaymentTerms } from '$lib/server/db/schema/contract';
-import { getContractDocuments } from './contract';
+import { getContractDocuments, getContractsWithClient } from './contract';
 
 // Needs a migrated database: `pnpm db:up && pnpm db:migrate`. Postgres work
 // happens inside a transaction that is always rolled back, same pattern as
@@ -81,5 +81,24 @@ test('#215: a document still owned by the contract itself is reachable, and a co
 		// polymorphic link's `ownerId`.
 		const otherContract = await insertContract(tx);
 		expect(await getContractDocuments(otherContract.id, tx)).toEqual([]);
+	});
+});
+
+test('getContractsWithClient returns every requested contract with its client eagerly joined, and nothing for an id never inserted', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractA = await insertContract(tx);
+		const contractB = await insertContract(tx);
+
+		const rows = await getContractsWithClient(
+			[contractA.id, contractB.id, crypto.randomUUID()],
+			tx
+		);
+		expect(rows.map((row) => row.id).sort()).toEqual([contractA.id, contractB.id].sort());
+
+		const foundA = rows.find((row) => row.id === contractA.id);
+		expect(foundA?.client.id).toBe(contractA.clientId);
+		expect(foundA?.client.legalName).toBeTruthy();
+
+		expect(await getContractsWithClient([], tx)).toEqual([]);
 	});
 });
