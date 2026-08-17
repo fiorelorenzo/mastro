@@ -289,7 +289,14 @@ configured: `tr '\0' '\n' < /proc/<pid>/environ | grep DATABASE_URL`.
 `pnpm build` regenerate it automatically through the Vite plugin in
 `vite.config.ts`; `pnpm check` and `pnpm messages:compile` regenerate it explicitly
 first, because `svelte-check` does not go through Vite. Reference a message key
-that is not in both catalogues and `pnpm check` fails. `LegalText`
+that is in **no** catalogue and `pnpm check` fails, so a typo in `m.someKey()` is
+caught. A key that is in `en.json` and missing from `it.json` does **not** fail:
+Paraglide compiles the absent locale to an alias of the one that exists
+(`const it_key = en_key`), so English ships to an Italian reader with everything
+green. That is the easiest way to ship an untranslated string, and it is why
+`src/lib/i18n/catalogues.test.ts` asserts the two key sets are identical, that
+every value is a string, and that any message reading the same in both languages
+is on an explicit list of ones that should. `LegalText`
 (`src/lib/legal/legal-text.ts`) is the type for statutory citations, tax
 treatment codes and mandatory invoice annotations (invariant 5): it carries the
 language the law requires them in and has no dependency on the i18n layer or on

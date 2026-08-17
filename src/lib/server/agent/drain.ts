@@ -158,7 +158,10 @@ export async function drainCompletedJobs(
 				applied += 1;
 			} catch (error) {
 				const reason = error instanceof Error ? error.message : String(error);
-				await failRun(job.id, reason, executor);
+				// The model answered; the answer was refused on its way to the
+				// ledger. That is `write_refused`, and it is the gap between
+				// `extracted` and `applied` the run states exist to name.
+				await failRun(job.id, 'write_refused', reason, executor);
 				failed.push({ filename, reason });
 			}
 			continue;

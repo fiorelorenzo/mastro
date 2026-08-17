@@ -18,6 +18,7 @@
 	import Page from '$lib/layout/Page.svelte';
 	import {
 		coalesceEvents,
+		failureSummary,
 		isTerminalRunStatus,
 		runDurationSeconds,
 		runEventKindBadge,
@@ -74,6 +75,7 @@
 	let events = $state<LiveEvent[]>(data.events.map(toLiveEvent));
 	let status = $state<ExtractionRunStatusValue>(data.run.status);
 	let error = $state<string | null>(data.run.error);
+	let failureKind = $state(data.run.failureKind);
 	let proposalId = $state<string | null>(data.proposalId);
 	let finishedAt = $state<Date | null>(data.run.finishedAt);
 
@@ -84,6 +86,7 @@
 		events = data.events.map(toLiveEvent);
 		status = data.run.status;
 		error = data.run.error;
+		failureKind = data.run.failureKind;
 		proposalId = data.proposalId;
 		finishedAt = data.run.finishedAt;
 	});
@@ -180,7 +183,18 @@
 	{:else if status === 'failed'}
 		<Banner tone="critical">
 			<strong>{m.extraction_run_detail_outcome_failed_heading()}</strong>
+			<!-- The kind first, in the reader's own language, and the run's own
+			     diagnostic under it. That diagnostic is what made #283 findable
+			     in twenty-seven seconds, so it stays verbatim and visible — but
+			     it is a model's English, not a sentence anybody should be asked
+			     to interpret unaided. A run that failed before `failureKind`
+			     existed has none, and then the diagnostic alone is exactly what
+			     this screen showed before. -->
+			{#if failureKind}
+				<p>{failureSummary(failureKind)}</p>
+			{/if}
 			{#if error}
+				<p class="error-label">{m.extraction_run_failure_detail_heading()}</p>
 				<p class="error-detail">{error}</p>
 			{/if}
 		</Banner>

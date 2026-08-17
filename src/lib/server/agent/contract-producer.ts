@@ -53,7 +53,7 @@ export interface ContractProposalOutcome {
 	 * kept here for visibility rather than silently dropped, the same
 	 * shape `DayProposalOutcome.rejected` gives day extraction's own
 	 * refusals. A dropped flag leaves the field it would have explained
-	 * `null`; `proposalValidationError` still refuses to accept that
+	 * `null`; `proposalValidationIssue` still refuses to accept that
 	 * field with no flag left to justify it. */
 	readonly rejectedFlags: readonly RejectedClauseFlag[];
 }

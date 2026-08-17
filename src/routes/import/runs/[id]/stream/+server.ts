@@ -128,7 +128,7 @@ export const GET: RequestHandler = async ({ params, request }) => {
 							});
 						} else {
 							const reason = `the runner did not finish within ${absoluteCapMs}ms of this run being watched`;
-							await failRun(run.jobId, reason);
+							await failRun(run.jobId, 'timed_out', reason);
 							send({ type: 'status', status: 'failed', error: reason, proposalId: null });
 						}
 						break;
@@ -153,7 +153,7 @@ export const GET: RequestHandler = async ({ params, request }) => {
 
 					const failureReason = await readFailedJobReason(queueDir, run.jobId);
 					if (failureReason !== null) {
-						await failRun(run.jobId, failureReason);
+						await failRun(run.jobId, 'agent_failed', failureReason);
 						send({ type: 'status', status: 'failed', error: failureReason, proposalId: null });
 						break;
 					}
@@ -174,7 +174,11 @@ export const GET: RequestHandler = async ({ params, request }) => {
 						try {
 							await drainCompletedJobs(queueDir);
 						} catch (err) {
-							await failRun(run.jobId, err instanceof Error ? err.message : String(err));
+							await failRun(
+								run.jobId,
+								'write_refused',
+								err instanceof Error ? err.message : String(err)
+							);
 						}
 						const finalRun = await getExtractionRunByJobId(run.jobId);
 						if (finalRun?.status === 'applied') {

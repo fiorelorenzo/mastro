@@ -224,7 +224,7 @@ export function invoiceExcerptRejectionReason(excerpt: string, content: string):
  * (`0015_invoice_constraints.sql`'s `invoice_check_totals`): the lines
  * sum to `taxableAmount`, and `taxableAmount + taxAmount` equals `total`.
  * Finding either mismatch here, rather than only at `INSERT`, is the same
- * restraint `proposalValidationError` already applies to `work_unit` —
+ * restraint `proposalValidationIssue` already applies to `work_unit` —
  * #245's own lesson, that a proposal a human can never actually accept is
  * worse than one refused up front.
  *

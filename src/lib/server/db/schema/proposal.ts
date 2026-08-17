@@ -3,6 +3,7 @@ import { check, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid } from 'd
 import { id, timestamps } from '../columns';
 import { contract } from './contract';
 import { document } from './document';
+import type { ProposalValidationIssue } from '$lib/proposals/validation-issue';
 
 export const proposalStatus = pgEnum('proposal_status', ['pending', 'accepted', 'rejected']);
 export type ProposalStatus = (typeof proposalStatus.enumValues)[number];
@@ -53,15 +54,20 @@ export type ProposalTargetType = 'work_unit' | 'contract' | 'invoice';
  * (`YEAR_ROLLOVER_CONFIDENCE_CAP` in `agent/day-extraction.ts`). Null means
  * there was nothing to explain, not that the field went unset.
  *
- * `validationError` is set once, at creation, by `createProposal` itself
- * (#245): the first field `proposedFields` carries that the target table's
- * own constraints would reject, found out here rather than by a failed
- * `applyProposal` INSERT after a human already clicked Accept — the
- * contract-PDF spike's `paymentTerms: {day: 0}` is exactly this failure.
- * Null means every field the target's own dispatcher reads is one the
- * table would actually accept; non-null names what would fail and why, so
- * the review screen can show "needs correction" instead of an Accept
- * button that fails.
+ * `validationIssue` is set once, at creation, by `createProposal` itself
+ * (#245): the first field `proposedFields` carries
+ * that the target table's own constraints would reject, found out here
+ * rather than by a failed `applyProposal` INSERT after a human already
+ * clicked Accept — the contract-PDF spike's `paymentTerms: {day: 0}` is
+ * exactly this failure. Null means every field the target's own
+ * dispatcher reads is one the table would actually accept; non-null
+ * names what would fail, as structured data (`ProposalValidationIssue`
+ * from `$lib/proposals/validation-issue`) rather than a rendered English
+ * sentence, so the review screen can translate it and still highlight
+ * the right input — see that module's own doc comment for why a string
+ * here was a defect, not a style choice. A value read back is a display
+ * cache, never the gate: `acceptProposal` recomputes the issue against
+ * the fields actually about to be written before it writes anything.
  *
  * `acceptedFields`, `resultId`, `decidedBy` and `decidedAt` are all null
  * until the proposal is decided, and populated together, exactly once, by
@@ -86,7 +92,7 @@ export const proposal = pgTable(
 		excerpt: text('excerpt').notNull(),
 		confidence: numeric('confidence', { precision: 3, scale: 2, mode: 'number' }).notNull(),
 		confidenceReason: text('confidence_reason'),
-		validationError: text('validation_error'),
+		validationIssue: jsonb('validation_issue').$type<ProposalValidationIssue>(),
 		status: proposalStatus('status').notNull().default('pending'),
 		acceptedFields: jsonb('accepted_fields').$type<Record<string, unknown>>(),
 		// The id of the row the accepted proposal produced. Not a foreign key:

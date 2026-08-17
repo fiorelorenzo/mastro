@@ -66,9 +66,9 @@
 	import {
 		proposalConfidenceBadge,
 		proposalFieldLabel,
-		proposalQuantityLabel,
-		proposalValidationField
+		proposalQuantityLabel
 	} from '../proposal-status';
+	import { proposalIssueMessage } from '$lib/i18n/proposal-issue';
 	import { isFieldGroundedInExcerpt, splitOnExcerpt } from './evidence';
 	import type {
 		ExtractedContractCandidate,
@@ -99,10 +99,11 @@
 	const confidence = $derived(proposalConfidenceBadge(data.proposal.confidence));
 	const messageSplit = $derived(splitOnExcerpt(data.message.body, data.proposal.excerpt));
 
-	// A validationError blocks Accept until the reviewer has touched the
-	// offending field at least once — the true re-check is server-side, in
-	// `acceptProposal` itself (its own doc comment explains why); this only
-	// stops resubmitting the exact values already known to fail.
+	// A pending proposal's own validation issue blocks Accept until the
+	// reviewer has touched the offending field at least once — the true
+	// re-check is server-side, in `acceptProposal` itself (its own doc
+	// comment explains why); this only stops resubmitting the exact values
+	// already known to fail.
 	// `SvelteSet`, not `$state(new Set())`: `$state` proxies plain objects and
 	// arrays, never a Set, so `.add()` on one mutates without notifying and
 	// nothing that reads it ever re-renders. The gate below therefore never
@@ -145,40 +146,29 @@
 				: m.proposal_review_accept_submit()
 	);
 
-	// `proposalValidationError`'s own field vocabulary for a 'contract'
-	// proposal (`repositories/proposal.ts`), most-specific-first so a
-	// message naming two fields at once ("...renewalNoticeDays... when
-	// renewalType is...") blames the one it is actually about.
-	const CONTRACT_VALIDATION_FIELDS = [
-		'country',
-		'renewalNoticeDays',
-		'renewalType',
-		'terminationNoticeDays',
-		'endsOn',
-		'startsOn',
-		'currency',
-		'taxTreatment',
-		'paymentTerms',
-		'expensePolicy'
-	] as const;
-	const contractValidationField = $derived(
-		data.proposal.targetType === 'contract' && pending
-			? proposalValidationField(data.proposal.validationError, CONTRACT_VALIDATION_FIELDS)
-			: null
+	// The one issue the database would raise against this proposal exactly
+	// as proposed (`row.validationIssue`, computed once at creation and
+	// re-checked by `acceptProposal` before every accept) — translated once
+	// here so every per-field error, both Banners below and the work_unit
+	// field loop all read the same value and can never disagree about what
+	// is wrong. Only meaningful while pending: a decided proposal's fields
+	// render read-only, so nothing is ever marked invalid again.
+	const validationIssue = $derived(pending ? data.proposal.validationIssue : null);
+	const validationMessage = $derived(
+		validationIssue ? proposalIssueMessage(validationIssue) : null
 	);
-	const workUnitValidationField = $derived(
-		data.proposal.targetType === 'work_unit'
-			? proposalValidationField(
-					data.proposal.validationError,
-					fieldEntries.map(([field]) => field)
-				)
-			: null
-	);
+	/** Whether `field` is the one input `validationIssue` names — `null`
+	 *  when the issue is not about a single field (a missing contract, two
+	 *  overlapping rate cards), in which case no input is marked invalid
+	 *  and the Banner carries the whole story instead. */
+	function fieldError(field: string): string | undefined {
+		return validationIssue?.field === field ? (validationMessage ?? undefined) : undefined;
+	}
 
 	// One chosen reading per flagged clause, required before Accept: #86's
 	// "an ambiguous clause requires an explicit choice", enforced here
-	// independently of whatever `proposal.validationError` currently says
-	// (that message only ever names the *first* thing wrong, which may be
+	// independently of whatever `validationIssue` currently says (that
+	// issue only ever names the *first* thing wrong, which may be
 	// an unrelated NOT NULL field checked earlier in the same switch).
 	let clauseReadings = $state<string[]>(
 		(data.contractCandidate?.clauseFlags ?? []).map((flag) => flag.interpretationAdopted ?? '')
@@ -248,12 +238,16 @@
 	// is exactly the doomed click the field-level error exists to prevent.
 	const acceptBlocked = $derived(
 		data.proposal.targetType === 'invoice'
-			? data.proposal.validationError !== null
+			? validationIssue !== null
 			: data.proposal.targetType === 'contract'
 				? unresolvedClauseCount > 0 ||
 					(clientMode === 'existing' && selectedClientId === '') ||
-					(contractValidationField !== null && !editedFields.has(contractValidationField))
-				: workUnitValidationField !== null && !editedFields.has(workUnitValidationField)
+					(validationIssue !== null &&
+						validationIssue.field !== null &&
+						!editedFields.has(validationIssue.field))
+				: validationIssue !== null &&
+					validationIssue.field !== null &&
+					!editedFields.has(validationIssue.field)
 	);
 
 	// Why Accept is disabled, said on the same screen as the disabled
@@ -262,7 +256,7 @@
 	// control already renders inline, so the bar and the field never say
 	// two different things about one problem. Most specific first: a
 	// clause with no reading chosen is a decision the reviewer has not
-	// taken, and it outranks a `validationError` that may well be about
+	// taken, and it outranks a `validationIssue` that may well be about
 	// the very field that clause determines.
 	const acceptBlockedReason = $derived(
 		!pending || !acceptBlocked
@@ -273,7 +267,7 @@
 					  clientMode === 'existing' &&
 					  selectedClientId === ''
 					? m.proposal_contract_client_choice_required_error()
-					: data.proposal.validationError
+					: validationMessage
 	);
 
 	// A contract proposal's form is the work; a work_unit's evidence is
@@ -641,12 +635,7 @@
 							/>
 						</Field>
 						<div class="grid-2">
-							<Field
-								label={m.contract_form_starts_on_label()}
-								error={contractValidationField === 'startsOn'
-									? (data.proposal.validationError ?? undefined)
-									: undefined}
-							>
+							<Field label={m.contract_form_starts_on_label()} error={fieldError('startsOn')}>
 								<Input
 									type="date"
 									name="startsOn"
@@ -655,12 +644,7 @@
 									oninput={() => markEdited('startsOn')}
 								/>
 							</Field>
-							<Field
-								label={m.contract_form_ends_on_label()}
-								error={contractValidationField === 'endsOn'
-									? (data.proposal.validationError ?? undefined)
-									: undefined}
-							>
+							<Field label={m.contract_form_ends_on_label()} error={fieldError('endsOn')}>
 								<Input
 									type="date"
 									name="endsOn"
@@ -677,9 +661,7 @@
 						<div class="grid-2">
 							<Field
 								label={m.contract_form_payment_terms_kind_label()}
-								error={contractValidationField === 'paymentTerms'
-									? (data.proposal.validationError ?? undefined)
-									: undefined}
+								error={fieldError('paymentTerms')}
 							>
 								<Select
 									name="paymentTermsKind"
@@ -750,12 +732,7 @@
 									{/each}
 								</Select>
 							</Field>
-							<Field
-								label={m.contract_form_currency_label()}
-								error={contractValidationField === 'currency'
-									? (data.proposal.validationError ?? undefined)
-									: undefined}
-							>
+							<Field label={m.contract_form_currency_label()} error={fieldError('currency')}>
 								<Input
 									name="currency"
 									bind:value={currency}
@@ -769,9 +746,7 @@
 						<Field
 							label={m.contract_form_tax_treatment_label()}
 							hint={m.contract_form_tax_treatment_hint()}
-							error={contractValidationField === 'taxTreatment'
-								? (data.proposal.validationError ?? undefined)
-								: undefined}
+							error={fieldError('taxTreatment')}
 						>
 							<Input
 								name="taxTreatment"
@@ -784,12 +759,7 @@
 
 					<fieldset class="card">
 						<legend><h2>{m.contract_form_renewal_legend()}</h2></legend>
-						<Field
-							label={m.contract_form_renewal_type_label()}
-							error={contractValidationField === 'renewalType'
-								? (data.proposal.validationError ?? undefined)
-								: undefined}
-						>
+						<Field label={m.contract_form_renewal_type_label()} error={fieldError('renewalType')}>
 							<Select
 								name="renewalType"
 								bind:value={renewalType}
@@ -809,9 +779,7 @@
 						{#if renewalType !== '' && renewalType !== 'none'}
 							<Field
 								label={m.contract_form_renewal_notice_days_label()}
-								error={contractValidationField === 'renewalNoticeDays'
-									? (data.proposal.validationError ?? undefined)
-									: undefined}
+								error={fieldError('renewalNoticeDays')}
 							>
 								<Input
 									type="number"
@@ -827,9 +795,7 @@
 						{/if}
 						<Field
 							label={m.contract_form_termination_notice_days_label()}
-							error={contractValidationField === 'terminationNoticeDays'
-								? (data.proposal.validationError ?? undefined)
-								: undefined}
+							error={fieldError('terminationNoticeDays')}
 						>
 							<Input
 								type="number"
@@ -848,9 +814,7 @@
 						<legend><h2>{m.contract_form_expenses_legend()}</h2></legend>
 						<Field
 							label={m.contract_form_expense_policy_kind_label()}
-							error={contractValidationField === 'expensePolicy'
-								? (data.proposal.validationError ?? undefined)
-								: undefined}
+							error={fieldError('expensePolicy')}
 						>
 							<Select
 								name="expensePolicyKind"
@@ -954,10 +918,10 @@
 								.proposal.confidenceReason}
 						</Banner>
 					{/if}
-					{#if pending && data.proposal.validationError}
+					{#if validationMessage}
 						<Banner tone="critical">
 							<strong>{m.proposal_validation_banner_heading()}</strong>
-							{data.proposal.validationError}
+							{validationMessage}
 						</Banner>
 					{/if}
 
@@ -1058,10 +1022,10 @@
 								.proposal.confidenceReason}
 						</Banner>
 					{/if}
-					{#if pending && data.proposal.validationError}
+					{#if validationMessage}
 						<Banner tone="critical">
 							<strong>{m.proposal_validation_banner_heading()}</strong>
-							{data.proposal.validationError}
+							{validationMessage}
 						</Banner>
 					{/if}
 
@@ -1082,13 +1046,12 @@
 				<form method="POST" action="?/accept" class="card fields-form">
 					{#each fieldEntries as [field, value] (field)}
 						{@const grounded = isFieldGroundedInExcerpt(value, data.proposal.excerpt)}
-						{@const invalid = field === workUnitValidationField}
 						<Field
 							label={proposalFieldLabel(field)}
 							hint={grounded
 								? m.proposal_field_hint_grounded()
 								: m.proposal_field_hint_not_grounded()}
-							error={invalid ? (data.proposal.validationError ?? undefined) : undefined}
+							error={fieldError(field)}
 						>
 							{#if inputType(value) === 'number'}
 								<Input
@@ -1133,10 +1096,10 @@
 						</Banner>
 					{/if}
 
-					{#if data.proposal.validationError}
+					{#if validationMessage}
 						<Banner tone="critical">
 							<strong>{m.proposal_validation_banner_heading()}</strong>
-							{data.proposal.validationError}
+							{validationMessage}
 						</Banner>
 					{/if}
 

@@ -164,17 +164,40 @@ test('failRun sets the error, and the CHECK rejects a failed row with a null err
 			tx
 		);
 
-		await failRun(jobId, 'client.taxId: Invalid input: expected string, received null', tx);
+		await failRun(
+			jobId,
+			'write_refused',
+			'client.taxId: Invalid input: expected string, received null',
+			tx
+		);
 		const row = await getExtractionRunByJobId(jobId, tx);
 		expect(row?.status).toBe('failed');
 		expect(row?.error).toBe('client.taxId: Invalid input: expected string, received null');
+		expect(row?.failureKind).toBe('write_refused');
 		expect(row?.finishedAt).not.toBeNull();
 
 		expect(
-			await rejection(() =>
-				tx.update(extractionRun).set({ error: null }).where(eq(extractionRun.jobId, jobId))
+			await rejection(
+				() => tx.update(extractionRun).set({ error: null }).where(eq(extractionRun.jobId, jobId)),
+				tx
 			)
 		).toMatchObject({ code: '23514', constraint_name: 'extraction_run_error_iff_failed' });
+
+		// A kind describes a failure and nothing else: it may not survive a
+		// run being moved back out of `failed`.
+		expect(
+			await rejection(
+				() =>
+					tx
+						.update(extractionRun)
+						.set({ status: 'extracted', error: null })
+						.where(eq(extractionRun.jobId, jobId)),
+				tx
+			)
+		).toMatchObject({
+			code: '23514',
+			constraint_name: 'extraction_run_failure_kind_only_when_failed'
+		});
 	});
 });
 

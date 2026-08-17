@@ -11,7 +11,7 @@
 // come from; `contract.renewalType` (or whichever field is affected)
 // comes back `null`, and stays null — the database's own NOT NULL column
 // refuses the proposal until a human's edit picks a reading
-// (`repositories/proposal.ts`'s `proposalValidationError`, the 'contract'
+// (`repositories/proposal.ts`'s `proposalValidationIssue`, the 'contract'
 // case).
 //
 // `proposedFields` is untrusted model output, so it is parsed once, at
@@ -164,7 +164,7 @@ export type ExtractedRateCard = z.infer<typeof ExtractedRateCardSchema>;
  * `interpretationAdopted` is never set by the model — it starts `null` on
  * every flag a producer writes, and stays that way until a human's own
  * edit on the review screen names which reading actually governs.
- * `proposalValidationError`'s 'contract' case (`repositories/proposal.ts`)
+ * `proposalValidationIssue`'s 'contract' case (`repositories/proposal.ts`)
  * refuses to accept a proposal carrying even one flag still `null` here —
  * the database-shaped mechanism behind "an ambiguous clause blocks silent
  * acceptance and requires an explicit choice." Once accepted, this is
@@ -179,7 +179,7 @@ const ExtractedClauseFlagSchema = z.object({
 	// got every field right. Rejecting a bad flag *with its reason*, and
 	// keeping the rest, is what `validateClauseFlags` is for; a field left
 	// null by a dropped flag is still refused at accept time by
-	// `proposalValidationError`, so nothing unexplained can be accepted.
+	// `proposalValidationIssue`, so nothing unexplained can be accepted.
 	field: z.string().trim(),
 	clauseReference: z.string().trim().nullable().catch(null),
 	verbatimText: z.string().trim().catch(''),
@@ -272,7 +272,7 @@ export function contractExtractionInstructions(): string {
  * its behalf is how a wrong contract reaches a human looking plausible.
  * Individual business fields (`renewalType`, `paymentTerms`,
  * `expensePolicy`) are allowed through as `null` — that is the shape a
- * genuinely ambiguous clause takes, checked by `proposalValidationError`
+ * genuinely ambiguous clause takes, checked by `proposalValidationIssue`
  * against the database's own NOT NULL columns at accept time, not here.
  */
 export function parseExtractedContract(
@@ -296,7 +296,7 @@ export function parseExtractedContract(
  * kept rather than dropped (`drain.ts`'s `DrainOutcome.rejectedDays` is
  * the day-extraction precedent this mirrors). A dropped flag leaves its
  * field's `null` unexplained, which is safe, never silently corrupting:
- * `proposalValidationError` still refuses to accept a null NOT NULL
+ * `proposalValidationIssue` still refuses to accept a null NOT NULL
  * column with no flag left to justify it.
  */
 export function validateClauseFlags(

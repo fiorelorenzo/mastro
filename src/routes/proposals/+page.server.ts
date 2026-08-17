@@ -18,14 +18,28 @@ import {
 	listProposals,
 	listProposalsForDocument,
 	rejectProposal,
+	ProposalValidationError,
 	type ProposalRow
 } from '$lib/server/repositories/proposal';
+import { proposalIssueMessage } from '$lib/i18n/proposal-issue';
+import type { ProposalValidationIssue } from '$lib/proposals/validation-issue';
 import { listRateCards } from '$lib/server/repositories/rate-card';
 import type { ProposalStatusValue } from './proposal-status';
 import type { Actions, PageServerLoad } from './$types';
 
 function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
+}
+
+/** Same fallback `errorMessage` always was, but recognises the one error
+ *  `acceptProposal` throws that must never render its own `.message` — a
+ *  `ProposalValidationError` carries the same `ProposalValidationIssue` the
+ *  detail screen renders inline, translated the same way, so a failed
+ *  accept from the queue reads like the rest of the interface instead of
+ *  leaking the English fallback text `.message` carries for logs. */
+function decisionErrorMessage(err: unknown): string {
+	if (err instanceof ProposalValidationError) return proposalIssueMessage(err.issue);
+	return errorMessage(err);
 }
 
 /** The `work_unit` shape every proposal in the seeded pipeline actually
@@ -87,7 +101,7 @@ export type QueueRow = {
 	scope: string | null;
 	confidence: number;
 	confidenceReason: string | null;
-	validationError: string | null;
+	validationIssue: ProposalValidationIssue | null;
 	amount: number | null;
 };
 
@@ -134,7 +148,7 @@ async function loadQueue(): Promise<QueueGroup[]> {
 			scope: fields?.scope ?? null,
 			confidence: row.confidence,
 			confidenceReason: row.confidenceReason,
-			validationError: row.validationError,
+			validationIssue: row.validationIssue,
 			amount: await priceProposal(row)
 		});
 	}
@@ -216,7 +230,7 @@ export const actions: Actions = {
 		try {
 			await acceptProposal(id, { decidedBy: locals.user!.email });
 		} catch (err) {
-			return fail(400, { actionError: errorMessage(err) });
+			return fail(400, { actionError: decisionErrorMessage(err) });
 		}
 		return { decided: true };
 	},
@@ -243,7 +257,7 @@ export const actions: Actions = {
 			try {
 				await acceptProposal(sibling.id, { decidedBy: locals.user!.email });
 			} catch (err) {
-				failures.push(errorMessage(err));
+				failures.push(decisionErrorMessage(err));
 			}
 		}
 		if (failures.length > 0) {

@@ -2,7 +2,6 @@ import { describe, expect, test } from 'vitest';
 import {
 	proposalConfidenceBadge,
 	proposalConfidenceTier,
-	proposalValidationField,
 	PROPOSAL_CONFIDENCE_HIGH_THRESHOLD,
 	PROPOSAL_CONFIDENCE_LOW_THRESHOLD
 } from './proposal-status';
@@ -33,25 +32,5 @@ describe('proposalConfidenceBadge', () => {
 
 	test('a low-confidence badge is never the same variant Badge uses for "good"', () => {
 		expect(proposalConfidenceBadge(0.1).variant).toBe('critical');
-	});
-});
-
-describe('proposalValidationField', () => {
-	const fields = ['date', 'quantity', 'scope', 'notes'];
-
-	test('finds the field named in a real proposalValidationError message', () => {
-		expect(proposalValidationField('quantity -1 must be greater than 0', fields)).toBe('quantity');
-		expect(proposalValidationField('date 2026-02-31 is not a real date', fields)).toBe('date');
-		expect(proposalValidationField("proposal field 'scope' must be a string", fields)).toBe(
-			'scope'
-		);
-	});
-
-	test('null validationError names no field', () => {
-		expect(proposalValidationField(null, fields)).toBeNull();
-	});
-
-	test('a message naming none of this proposal’s fields names none, rather than guessing', () => {
-		expect(proposalValidationField('something unrelated failed', fields)).toBeNull();
 	});
 });

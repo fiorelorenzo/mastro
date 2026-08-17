@@ -182,7 +182,7 @@ test('a clause flag that paraphrases rather than quotes the document is dropped,
 		expect(fields.clauseFlags).toEqual([]);
 		// The field the dropped flag would have explained stays whatever
 		// the model reported — null here — with nothing left to justify
-		// it; `proposalValidationError` is what refuses to accept that.
+		// it; `proposalValidationIssue` is what refuses to accept that.
 		expect((fields.contract as Record<string, unknown>).renewalType).toBeNull();
 	});
 });
