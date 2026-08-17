@@ -6,7 +6,7 @@
 // nothing to group by message for once the decision is already made.
 import { error, fail } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
-import { contractFields, workUnitFields } from './queue-fields';
+import { proposedContract, workUnitFields, type ProposedContract } from './queue-fields';
 import type { ProposalTargetType } from '$lib/server/db/schema';
 import { isPostgresError } from '$lib/server/db/postgres-error';
 import { parseMessage } from '$lib/server/mail/headers';
@@ -123,8 +123,10 @@ export type QueueRow = {
 	date: string | null;
 	quantity: number | null;
 	scope: string | null;
-	/** Set only for a `'contract'` proposal this could read. */
-	contractLabel: { clientLegalName: string; title: string } | null;
+	/** Set only for a `'contract'` proposal this could read: the
+	 *  counterparty, the terms and the rates. A day proposal describes
+	 *  itself with `date`/`quantity` and leaves this null. */
+	proposedContract: ProposedContract | null;
 	confidence: number;
 	confidenceReason: string | null;
 	validationIssue: ProposalValidationIssue | null;
@@ -143,6 +145,11 @@ export type QueueGroup = {
 	fromMessage: boolean;
 	sender: string | null;
 	receivedAt: string | null;
+	/** When the source arrived, whichever kind it is: the message's own
+	 *  `receivedAt`, or the archived document's `createdAt` for an upload,
+	 *  which has no message and therefore no received time. A card's byline
+	 *  dates itself off this. */
+	sourceAt: string | null;
 	contractTitle: string;
 	clientLegalName: string;
 	currency: string;
@@ -169,6 +176,7 @@ async function loadQueue(): Promise<QueueGroup[]> {
 				fromMessage: thread !== null,
 				sender,
 				receivedAt: thread?.receivedAt.toISOString() ?? null,
+				sourceAt: (thread?.receivedAt ?? document?.createdAt)?.toISOString() ?? null,
 				contractTitle: contract.title,
 				clientLegalName: contract.clientLegalName,
 				currency: contract.currency,
@@ -183,7 +191,7 @@ async function loadQueue(): Promise<QueueGroup[]> {
 			date: fields?.date ?? null,
 			quantity: fields?.quantity ?? null,
 			scope: fields?.scope ?? null,
-			contractLabel: row.targetType === 'contract' ? contractFields(row.proposedFields) : null,
+			proposedContract: row.targetType === 'contract' ? proposedContract(row.proposedFields) : null,
 			confidence: row.confidence,
 			confidenceReason: row.confidenceReason,
 			validationIssue: row.validationIssue,
@@ -202,12 +210,22 @@ export type HistoryRow = {
 	targetType: ProposalTargetType;
 	date: string | null;
 	quantity: number | null;
-	contractLabel: { clientLegalName: string; title: string } | null;
+	proposedContract: ProposedContract | null;
 	status: 'accepted' | 'rejected';
 	contractTitle: string;
 	currency: string;
 	sender: string | null;
 	receivedAt: string | null;
+	/** Whether the source was a message. The history notes used to say
+	 *  "created from a message from …" and "the message stays archived" for
+	 *  every row, including a contract proposal read off an uploaded PDF that
+	 *  never was one. */
+	fromMessage: boolean;
+	documentName: string | null;
+	/** The instant the source arrived: a message's `receivedAt`, or an
+	 *  upload's own `createdAt`. `receivedAt` alone was null for an upload,
+	 *  which rendered "Rejected on ." with the date slot left empty. */
+	sourceAt: string | null;
 	amount: number | null;
 	resultId: string | null;
 };
@@ -218,10 +236,11 @@ async function loadHistory(status: 'accepted' | 'rejected'): Promise<HistoryRow[
 		rows.map(async (row) => {
 			const effectiveFields = row.acceptedFields ?? row.proposedFields;
 			const fields = workUnitFields(effectiveFields);
-			const [thread, sender, contract] = await Promise.all([
+			const [thread, sender, contract, document] = await Promise.all([
 				getInboundThreadForDocument(row.documentId),
 				readSender(row.documentId),
-				contractSummary(row.contractId)
+				contractSummary(row.contractId),
+				getDocument(row.documentId)
 			]);
 			return {
 				id: row.id,
@@ -231,12 +250,15 @@ async function loadHistory(status: 'accepted' | 'rejected'): Promise<HistoryRow[
 				// Read off what was actually accepted, not what was proposed: a
 				// reviewer who corrected the counterparty's name before accepting
 				// should see the name they accepted.
-				contractLabel: row.targetType === 'contract' ? contractFields(effectiveFields) : null,
+				proposedContract: row.targetType === 'contract' ? proposedContract(effectiveFields) : null,
 				status: status,
 				contractTitle: contract.title,
 				currency: contract.currency,
 				sender,
 				receivedAt: thread?.receivedAt.toISOString() ?? null,
+				fromMessage: thread !== null,
+				documentName: document?.originalName ?? null,
+				sourceAt: (thread?.receivedAt ?? document?.createdAt)?.toISOString() ?? null,
 				amount: fields
 					? await priceProposal({ contractId: row.contractId, proposedFields: fields })
 					: null,

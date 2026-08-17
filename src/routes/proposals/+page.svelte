@@ -9,16 +9,18 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import { formatDate, formatDateTime } from '$lib/i18n/format';
+	import { formatAmount, formatDate, formatDateTime, formatNumber } from '$lib/i18n/format';
 	import { factLine } from '$lib/nav/crumbs';
-	import { Amount, Badge, Button, EmptyState, Tabs } from '$lib/design';
+	import { Amount, Badge, Banner, Button, EmptyState, Tabs } from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
-	import Section from '$lib/layout/Section.svelte';
 	import ProposalStatusBadge from './ProposalStatusBadge.svelte';
 	import { proposalConfidenceBadge, proposalQuantityLabel } from './proposal-status';
 	import { proposalIssueMessage } from '$lib/i18n/proposal-issue';
 	import { submitting } from '$lib/design/submitting.svelte';
-	import type { HistoryRow, QueueRow } from './+page.server';
+	import { paymentTermsKindLabel } from '../clients/[id]/contracts/contract-enums';
+	import { rateUnitLabel } from '../clients/[id]/contracts/[contractId]/rate-cards/rate-card-enums';
+	import type { ProposedContract } from './queue-fields';
+	import type { HistoryRow, QueueGroup, QueueRow } from './+page.server';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
@@ -54,10 +56,10 @@
 	 */
 	function rowTitle(row: QueueRow | HistoryRow): string {
 		if (row.targetType === 'contract') {
-			return row.contractLabel
+			return row.proposedContract
 				? m.proposal_queue_row_contract({
-						client: row.contractLabel.clientLegalName,
-						title: row.contractLabel.title
+						client: row.proposedContract.clientLegalName,
+						title: row.proposedContract.contract.title
 					})
 				: m.proposal_queue_row_unreadable();
 		}
@@ -65,6 +67,101 @@
 		const datePart = row.date ? formatDate(row.date) : '—';
 		const quantityPart = row.quantity !== null ? proposalQuantityLabel(row.quantity) : '—';
 		return `${datePart} — ${quantityPart}`;
+	}
+
+	/**
+	 * Whose decision a card is: the counterparty, and which of their
+	 * contracts it lands on. The old layout kept both in a grey line *under*
+	 * the card, which for a first-intake contract read "Nuovo contratto" and
+	 * nothing else.
+	 *
+	 * Two parts rather than one string, so the client reads first and the
+	 * contract as context. They are separate elements because a contract
+	 * people named after their client ("Consulenza operativa — Nordwind
+	 * Logistics") otherwise stutters against it, and the alternative is
+	 * guessing at when a title already contains a legal name — a string
+	 * heuristic that would be wrong the first time somebody's company shares
+	 * a word with their project.
+	 */
+	function cardHeading(group: QueueGroup): { client: string; contract: string | null } {
+		const proposed = group.rows.find((row) => row.proposedContract)?.proposedContract;
+		// A first-intake contract has no contract row yet: the proposal itself
+		// names the counterparty, and its title is the row's own heading below.
+		if (proposed) return { client: proposed.clientLegalName, contract: null };
+		return {
+			client: group.clientLegalName || group.contractTitle,
+			contract: group.clientLegalName ? group.contractTitle : null
+		};
+	}
+
+	/**
+	 * The byline: where this came from and when. A message names its sender
+	 * and its subject, an upload has neither and names its file instead,
+	 * which is a reference rather than a title and is typeset like one.
+	 *
+	 * Both times go through `formatDateTime`, because both are instants: a
+	 * message's `receivedAt` and a document's `createdAt` are points on the
+	 * timeline, not calendar days. `formatDate` is the other one — it pins to
+	 * UTC on purpose, and feeding it a full ISO timestamp throws
+	 * `Invalid time value`, which is exactly what the first load of this card
+	 * did.
+	 */
+	function sourceLine(group: QueueGroup): string {
+		const when = group.sourceAt
+			? group.fromMessage
+				? formatDateTime(group.sourceAt)
+				: m.proposal_queue_uploaded_on({ when: formatDateTime(group.sourceAt) })
+			: null;
+		return group.fromMessage
+			? factLine([group.sender, group.subject, when])
+			: factLine([group.documentName, when]);
+	}
+
+	/**
+	 * The four terms a first-intake contract is judged on, in the vocabulary
+	 * the contract detail page already uses for the same facts — same keys,
+	 * same value shapes, so the card and the contract it becomes cannot read
+	 * differently. The renewal notice is deliberately absent: when it is the
+	 * unresolved one, the banner below already says so, and when it is not
+	 * it is not what decides this.
+	 */
+	function contractTerms(proposed: ProposedContract): { dt: string; dd: string }[] {
+		const c = proposed.contract;
+		const [rate] = proposed.rateCards;
+		// `paymentTerms` is one of the fields a real contract is allowed to
+		// leave ambiguous, so the extraction may report it as null. An
+		// unresolved term says so in the same words the review screen uses for
+		// it, rather than being quietly omitted from a card whose whole job is
+		// to show what the terms are.
+		const payment =
+			c.paymentTerms === null
+				? m.proposal_contract_field_unresolved_placeholder()
+				: c.paymentTerms.kind === 'net'
+					? `${paymentTermsKindLabel('net')} (${formatNumber(c.paymentTerms.days)})`
+					: `${paymentTermsKindLabel('day_of_month')} (${formatNumber(c.paymentTerms.day)})`;
+		return [
+			{
+				dt: m.proposal_queue_terms_period(),
+				dd: `${formatDate(c.startsOn)} – ${c.endsOn ? formatDate(c.endsOn) : m.contract_ends_on_open()}`
+			},
+			{
+				dt: m.rate_card_column_amount(),
+				dd: rate
+					? `${formatAmount(rate.amount, c.currency)} / ${rateUnitLabel(rate.unit)}${
+							proposed.rateCards.length > 1
+								? ` · ${m.proposal_queue_rates_more({ count: proposed.rateCards.length - 1 })}`
+								: ''
+						}`
+					: m.rate_card_empty()
+			},
+			{ dt: m.contract_form_payment_terms_kind_label(), dd: payment },
+			{
+				dt: m.contract_detail_terms_prior_approval_label(),
+				dd: c.requiresPriorApproval
+					? m.contract_detail_terms_prior_approval_required()
+					: m.contract_form_requires_prior_approval_not_required_option()
+			}
+		];
 	}
 </script>
 
@@ -88,63 +185,106 @@
 			/>
 		{:else}
 			{#each data.groups as group (group.documentId)}
-				{@const blocked = group.rows.some((row) => row.validationIssue !== null)}
 				{@const acceptAll = submitting()}
-				<!-- A group is named by its source. An uploaded contract PDF has no
-				     email subject and never will, so heading it "(no subject)" named
-				     something that does not exist; the document's own file name is
-				     what there is. -->
-				<Section title={group.subject ?? group.documentName ?? m.proposal_queue_no_subject()}>
-					{#snippet actions()}
-						<a href={resolve('/proposals/[id]', { id: group.rows[0].id })} class="open-message">
+				{@const heading = cardHeading(group)}
+				<!--
+					A card per source document, not a page section. `Section` renders
+					an `<h2>` — 18px/600 against this page's own 24px `<h1>` — so
+					heading a group with it gave a PDF's file name, the least
+					actionable fact on the screen, nearly the weight of the page
+					title, while the decision itself sat in a 35px row. The source is
+					a byline now: quiet, dated, with its own link, above the thing
+					being decided.
+				-->
+				<article class="decision">
+					<h3 class="who">
+						{heading.client}
+						{#if heading.contract}<span class="who-contract">{heading.contract}</span>{/if}
+					</h3>
+					<p class="source">
+						<!-- Glyph and facts are one unit: left as siblings of the link in a
+						     wrapping flex row, the glyph took a line of its own on a phone
+						     and the byline became three lines. -->
+						<span class="source-what">
+							<span class="source-ico" aria-hidden="true">{group.fromMessage ? '✉' : '↑'}</span>
+							<span class="source-facts">{sourceLine(group)}</span>
+						</span>
+						<a class="source-link" href={resolve('/proposals/[id]', { id: group.rows[0].id })}>
 							{group.fromMessage
 								? m.proposal_queue_open_message()
 								: m.proposal_queue_open_document()}
 						</a>
-					{/snippet}
+					</p>
 
-					<ul class="rows">
+					<ul class="proposals">
 						{#each group.rows as row (row.id)}
 							{@const confidence = proposalConfidenceBadge(row.confidence)}
 							{@const accept = submitting()}
 							{@const reject = submitting()}
-							<li class="row">
-								<span class="row-ico" aria-hidden="true">◇</span>
-								<div class="row-main">
-									<span class="row-title">{rowTitle(row)}</span>
-									<span class="row-meta">
-										<Badge variant={confidence.variant} label={confidence.label} size="sm" />
-										{#if row.amount !== null}
-											<Amount major={row.amount} currency={group.currency} size="inline" />
-										{/if}
-										{#if row.validationIssue}
-											<span class="row-flag">{proposalIssueMessage(row.validationIssue)}</span>
-										{/if}
-									</span>
+							{@const only = group.rows.length === 1}
+							<li class="proposal">
+								<div class="what">
+									<a class="what-title" href={resolve('/proposals/[id]', { id: row.id })}>
+										{row.proposedContract ? row.proposedContract.contract.title : rowTitle(row)}
+									</a>
+									{#if row.amount !== null}
+										<Amount major={row.amount} currency={group.currency} size="inline" />
+									{/if}
 								</div>
-								<div class="row-actions">
-									<Button
-										href={resolve('/proposals/[id]', { id: row.id })}
-										variant="tertiary"
-										size="sm"
-									>
-										{m.proposal_queue_review()}
-									</Button>
+
+								<!-- What this proposal is, in its own terms. A contract has no
+								     date and no quantity to describe it with, and its terms are
+								     the decision, so they are on the card instead of one click
+								     away behind Review. -->
+								{#if row.proposedContract}
+									<dl class="terms">
+										{#each contractTerms(row.proposedContract) as term (term.dt)}
+											<div class="term">
+												<dt>{term.dt}</dt>
+												<dd>{term.dd}</dd>
+											</div>
+										{/each}
+									</dl>
+								{:else if row.scope}
+									<p class="scope">{row.scope}</p>
+								{/if}
+
+								<p class="judgement">
+									<Badge variant={confidence.variant} label={confidence.label} size="sm" />
+									{#if row.confidenceReason}
+										<span class="reason">{row.confidenceReason}</span>
+									{/if}
+								</p>
+
+								<!-- The blocker sits with the button it blocks. It used to be a
+								     red sentence in the metadata line, three lines of it on a
+								     phone, while Accept was pale for reasons the screen never
+								     stated: the reader had to infer the causal link. -->
+								{#if row.validationIssue}
+									<Banner tone="warning">{proposalIssueMessage(row.validationIssue)}</Banner>
+								{/if}
+
+								<div class="decide" class:decide--only={only}>
 									<form method="POST" action="?/accept" onsubmit={accept.onsubmit}>
 										<input type="hidden" name="id" value={row.id} />
 										<Button
 											type="submit"
-											variant="primary"
-											size="sm"
+											variant={only ? 'primary' : 'secondary'}
+											size={only ? 'md' : 'sm'}
 											disabled={row.validationIssue !== null}
 											loading={accept.busy}
 										>
-											{m.proposal_detail_accept_submit()}
+											{only ? m.proposal_detail_accept_submit() : m.proposal_queue_accept_row()}
 										</Button>
 									</form>
 									<form method="POST" action="?/reject" onsubmit={reject.onsubmit}>
 										<input type="hidden" name="id" value={row.id} />
-										<Button type="submit" variant="danger" size="sm" loading={reject.busy}>
+										<Button
+											type="submit"
+											variant="danger"
+											size={only ? 'md' : 'sm'}
+											loading={reject.busy}
+										>
 											{m.proposal_detail_reject_submit()}
 										</Button>
 									</form>
@@ -153,26 +293,27 @@
 						{/each}
 					</ul>
 
-					<div class="group-footer">
-						<span class="fact-line">
-							{factLine([group.sender, group.contractTitle, group.clientLegalName])}
-						</span>
-						{#if group.rows.length > 1}
+					<!-- One email approving three days is one decision in practice, so
+					     it gets the card's only prominent button; the per-row ones stay
+					     for the reviewer who is sure about Thursday and not about
+					     Friday. A single-row card has no "all" to accept — its own row
+					     carries the primary instead. -->
+					{#if group.rows.length > 1}
+						<div class="group-decide">
 							<form method="POST" action="?/acceptAll" onsubmit={acceptAll.onsubmit}>
 								<input type="hidden" name="documentId" value={group.documentId} />
 								<Button
 									type="submit"
-									variant="secondary"
-									size="sm"
-									disabled={blocked}
+									variant="primary"
+									disabled={group.rows.some((row) => row.validationIssue !== null)}
 									loading={acceptAll.busy}
 								>
 									{m.proposal_queue_accept_all({ count: group.rows.length })}
 								</Button>
 							</form>
-						{/if}
-					</div>
-				</Section>
+						</div>
+					{/if}
+				</article>
 			{/each}
 		{/if}
 	{:else if data.rows.length === 0}
@@ -188,6 +329,7 @@
 	{:else}
 		<ul class="rows history">
 			{#each data.rows as row (row.id)}
+				{@const when = row.sourceAt ? formatDateTime(row.sourceAt) : null}
 				<li class="row">
 					<span class="row-ico" aria-hidden="true">{row.status === 'accepted' ? '✓' : '✕'}</span>
 					<div class="row-main">
@@ -196,23 +338,31 @@
 						</a>
 						<span class="row-meta">
 							<ProposalStatusBadge status={row.status} />
+							<!-- The note names the source it actually had. All three
+							     sentences assumed a message, so a contract proposal read off
+							     an uploaded PDF was described as "created from a message
+							     from …" with an empty date, and its rejection promised that
+							     "the message stays archived" — of a message that never
+							     existed. -->
 							{#if row.status === 'accepted'}
-								{row.sender
-									? m.proposal_history_created_note({
-											sender: row.sender,
-											when: row.receivedAt ? formatDateTime(row.receivedAt) : ''
-										})
-									: m.proposal_history_created_note_no_sender({
-											when: row.receivedAt ? formatDateTime(row.receivedAt) : ''
-										})}
+								{#if !row.fromMessage}
+									{m.proposal_history_created_note_document({
+										name: row.documentName ?? m.proposal_queue_open_document(),
+										when: when ?? ''
+									})}
+								{:else if row.sender}
+									{m.proposal_history_created_note({ sender: row.sender, when: when ?? '' })}
+								{:else}
+									{m.proposal_history_created_note_no_sender({ when: when ?? '' })}
+								{/if}
 								{#if row.amount !== null}
 									·
 									<Amount major={row.amount} currency={row.currency} size="inline" />
 								{/if}
+							{:else if row.fromMessage}
+								{m.proposal_history_rejected_note({ when: when ?? '' })}
 							{:else}
-								{m.proposal_history_rejected_note({
-									when: row.receivedAt ? formatDateTime(row.receivedAt) : ''
-								})}
+								{m.proposal_history_rejected_note_document({ when: when ?? '' })}
 							{/if}
 						</span>
 					</div>
@@ -242,21 +392,172 @@
 		color: var(--color-danger);
 		font-size: var(--text-sm);
 	}
-	.open-message {
+
+	/* One card per source document: a decision, not a row. The hairline and
+	   the page surface, nothing else — the same restraint `Card` holds. */
+	.decision {
+		margin-top: var(--space-5);
+		border: 1px solid var(--border-hairline);
+		border-radius: var(--radius-md);
+		padding: var(--space-4);
+	}
+	.who {
+		margin: 0;
+		font-size: var(--text-md);
+		font-weight: var(--weight-medium);
+		color: var(--text-primary);
+	}
+	/* Which contract, as context rather than a second title. The separator is
+	   CSS so the two facts stay separate elements: joining them into one
+	   string is what made a contract named after its own client stutter. */
+	.who-contract {
+		font-weight: var(--weight-regular);
+		color: var(--text-secondary);
+	}
+	.who-contract::before {
+		content: '·';
+		margin: 0 0.35em;
+		color: var(--text-muted);
+	}
+	/* The byline. A file name is a reference, so it is typeset as one and
+	   truncates instead of wrapping to two bold lines on a phone. */
+	.source {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: var(--space-1) var(--space-3);
+		margin: var(--space-1) 0 0;
 		font-size: var(--text-sm);
+		color: var(--text-muted);
+	}
+	.source-what {
+		display: flex;
+		align-items: baseline;
+		gap: var(--space-2);
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+	.source-ico {
+		flex: none;
+	}
+	.source-facts {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.source-link {
+		flex: none;
 		color: var(--color-primary);
 	}
+
+	.proposals {
+		display: flex;
+		flex-direction: column;
+		margin: var(--space-4) 0 0;
+		padding: 0;
+		list-style: none;
+	}
+	.proposal {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+		padding-top: var(--space-4);
+		border-top: 1px solid var(--border-hairline);
+	}
+	.proposal:first-child {
+		padding-top: 0;
+		border-top: 0;
+	}
+	.proposal + .proposal {
+		margin-top: var(--space-4);
+	}
+	/* What is proposed, and what it costs: the two facts that decide, on one
+	   line with the money at the end where a column of them lines up. */
+	.what {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: var(--space-2) var(--space-4);
+	}
+	.what-title {
+		font-size: var(--text-md);
+		font-weight: var(--weight-medium);
+		color: var(--text-primary);
+		text-decoration: none;
+	}
+	.what-title:hover {
+		text-decoration: underline;
+	}
+	.scope {
+		margin: 0;
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
+	}
+	/* The terms, as a key/value grid that collapses to one column on a
+	   phone rather than squeezing both into 390px. */
+	.terms {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: var(--space-1) var(--space-4);
+		margin: 0;
+		font-size: var(--text-sm);
+	}
+	/* Label then value, adjacent. Pushed to opposite ends of a grid column
+	   they sat 400px apart on a wide card and stopped reading as a pair. */
+	.term {
+		display: grid;
+		grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+		gap: var(--space-3);
+		min-width: 0;
+	}
+	.term dt {
+		color: var(--text-muted);
+	}
+	.term dd {
+		margin: 0;
+		color: var(--text-secondary);
+	}
+	.judgement {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: var(--space-2);
+		margin: 0;
+		font-size: var(--text-sm);
+	}
+	.reason {
+		color: var(--text-muted);
+	}
+	.decide {
+		display: flex;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+	}
+	/* A card with one proposal has no "accept all" below it, so its own row
+	   carries the primary and is spaced like the card's decision. */
+	.decide--only {
+		margin-top: var(--space-2);
+	}
+	.group-decide {
+		display: flex;
+		justify-content: flex-end;
+		margin-top: var(--space-4);
+		padding-top: var(--space-4);
+		border-top: 1px solid var(--border-hairline);
+	}
+
+	/* Decided history stays a row list: once the decision is made the items
+	   are homogeneous and comparable, which is what a row is for. */
 	.rows {
 		display: flex;
 		flex-direction: column;
-		margin: 0;
+		margin: var(--space-4) 0 0;
 		padding: 0;
 		list-style: none;
 		border: 1px solid var(--border-hairline);
 		border-radius: var(--radius-md);
-	}
-	.rows.history {
-		margin-top: var(--space-4);
 	}
 	.row {
 		display: flex;
@@ -296,29 +597,28 @@
 		font-size: var(--text-sm);
 		color: var(--text-secondary);
 	}
-	.row-flag {
-		color: var(--color-danger);
-		font-weight: var(--weight-medium);
-	}
 	.row-actions {
 		flex: none;
 		display: flex;
 		flex-wrap: wrap;
 		gap: var(--space-2);
 	}
-	.group-footer {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: var(--space-2);
-		margin-top: var(--space-3);
-	}
-	.fact-line {
-		font-size: var(--text-sm);
-		color: var(--text-muted);
-	}
+
 	@media (max-width: 639px) {
+		.terms {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		/* One column wide, a term has room to read label-left value-right
+		   without the 11rem label column crushing the value into two lines. */
+		.term {
+			grid-template-columns: none;
+			display: flex;
+			justify-content: space-between;
+			gap: var(--space-3);
+		}
+		.term dd {
+			text-align: right;
+		}
 		.row {
 			flex-wrap: wrap;
 		}
