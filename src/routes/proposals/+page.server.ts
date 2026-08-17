@@ -6,6 +6,8 @@
 // nothing to group by message for once the decision is already made.
 import { error, fail } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
+import { contractFields, workUnitFields } from './queue-fields';
+import type { ProposalTargetType } from '$lib/server/db/schema';
 import { isPostgresError } from '$lib/server/db/postgres-error';
 import { parseMessage } from '$lib/server/mail/headers';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
@@ -57,31 +59,33 @@ function decisionErrorMessage(err: unknown): string {
 	return m.proposal_decision_unexpected_error();
 }
 
-/** The `work_unit` shape every proposal in the seeded pipeline actually
- *  carries, read defensively since `proposedFields`/`acceptedFields` are
- *  untyped JSONB — a row whose fields don't match this shape (a future
- *  target type, or a malformed one) prices as `null` rather than
- *  throwing the whole queue away. */
-function workUnitFields(
-	fields: Record<string, unknown>
-): { date: string; quantity: number; scope: string } | null {
-	const { date, quantity, scope } = fields;
-	if (typeof date !== 'string' || typeof quantity !== 'number' || typeof scope !== 'string') {
-		return null;
-	}
-	return { date, quantity, scope };
-}
-
-/** The archived message's own `From` header, read straight off the raw
- *  bytes rather than trusted from anywhere else — `null` when the
- *  document carries no header block at all (a minimal fixture, or a
- *  future non-mail provenance) rather than throwing: the queue is a read
- *  path, and an unknown sender is shown as absent, never a 500. */
+/**
+ * The archived message's own `From` header, read straight off the raw bytes
+ * rather than trusted from anywhere else — `null` when there is no header
+ * block to read.
+ *
+ * The comment here always promised "an unknown sender is shown as absent,
+ * never a 500", and the code did not keep it: a document whose blob is
+ * missing from the store threw `ENOENT` out of the loader and took the
+ * whole review queue down, every row of it, over one file. Now it is
+ * caught, because a queue that cannot be opened is worse than a row with
+ * no sender shown.
+ *
+ * It also stops reading the bytes at all unless the document came from
+ * mail. A contract PDF has no header block, so parsing it for a `From:`
+ * was pointless work on every upload, and pointless work is exactly what
+ * should not be able to fail.
+ */
 async function readSender(documentId: string): Promise<string | null> {
 	const doc = await getDocument(documentId);
-	if (!doc) return null;
-	const bytes = await readDocumentBytes(doc);
-	return parseMessage(bytes).headers.get('from') ?? null;
+	if (!doc || doc.provenance !== 'mail') return null;
+	try {
+		const bytes = await readDocumentBytes(doc);
+		return parseMessage(bytes).headers.get('from') ?? null;
+	} catch (err) {
+		console.error('proposal queue: cannot read the archived message of', documentId, err);
+		return null;
+	}
 }
 
 /** Null only for a first-intake `'contract'` proposal (#86) — there is no
@@ -111,9 +115,16 @@ async function priceProposal(row: Pick<ProposalRow, 'contractId' | 'proposedFiel
 
 export type QueueRow = {
 	id: string;
+	/** What kind of thing this proposes. A queue row cannot be described
+	 *  without it: a day is a date and a quantity, a first-intake contract
+	 *  is a counterparty and a title, and rendering one as the other is how
+	 *  a contract proposal came to read "— — —". */
+	targetType: ProposalTargetType;
 	date: string | null;
 	quantity: number | null;
 	scope: string | null;
+	/** Set only for a `'contract'` proposal this could read. */
+	contractLabel: { clientLegalName: string; title: string } | null;
 	confidence: number;
 	confidenceReason: string | null;
 	validationIssue: ProposalValidationIssue | null;
@@ -123,6 +134,13 @@ export type QueueRow = {
 export type QueueGroup = {
 	documentId: string;
 	subject: string | null;
+	/** The archived document's own file name, which is all there is to name
+	 *  a group by when the source was an upload rather than a message. */
+	documentName: string | null;
+	/** Whether the source really was a message. Drives what the group's own
+	 *  link offers to open: an uploaded contract PDF has no message to open,
+	 *  and no subject to be missing either. */
+	fromMessage: boolean;
 	sender: string | null;
 	receivedAt: string | null;
 	contractTitle: string;
@@ -138,14 +156,17 @@ async function loadQueue(): Promise<QueueGroup[]> {
 	for (const row of pending) {
 		let group = groups.get(row.documentId);
 		if (!group) {
-			const [thread, sender, contract] = await Promise.all([
+			const [thread, sender, contract, document] = await Promise.all([
 				getInboundThreadForDocument(row.documentId),
 				readSender(row.documentId),
-				contractSummary(row.contractId)
+				contractSummary(row.contractId),
+				getDocument(row.documentId)
 			]);
 			group = {
 				documentId: row.documentId,
 				subject: thread?.subject ?? null,
+				documentName: document?.originalName ?? null,
+				fromMessage: thread !== null,
 				sender,
 				receivedAt: thread?.receivedAt.toISOString() ?? null,
 				contractTitle: contract.title,
@@ -158,9 +179,11 @@ async function loadQueue(): Promise<QueueGroup[]> {
 		const fields = workUnitFields(row.proposedFields);
 		group.rows.push({
 			id: row.id,
+			targetType: row.targetType,
 			date: fields?.date ?? null,
 			quantity: fields?.quantity ?? null,
 			scope: fields?.scope ?? null,
+			contractLabel: row.targetType === 'contract' ? contractFields(row.proposedFields) : null,
 			confidence: row.confidence,
 			confidenceReason: row.confidenceReason,
 			validationIssue: row.validationIssue,
@@ -173,8 +196,13 @@ async function loadQueue(): Promise<QueueGroup[]> {
 
 export type HistoryRow = {
 	id: string;
+	/** Same reason `QueueRow` carries it: a decided contract proposal read
+	 *  "— — —" on the Accepted and Rejected tabs too, and it is one row
+	 *  renderer for all three. */
+	targetType: ProposalTargetType;
 	date: string | null;
 	quantity: number | null;
+	contractLabel: { clientLegalName: string; title: string } | null;
 	status: 'accepted' | 'rejected';
 	contractTitle: string;
 	currency: string;
@@ -197,8 +225,13 @@ async function loadHistory(status: 'accepted' | 'rejected'): Promise<HistoryRow[
 			]);
 			return {
 				id: row.id,
+				targetType: row.targetType,
 				date: fields?.date ?? null,
 				quantity: fields?.quantity ?? null,
+				// Read off what was actually accepted, not what was proposed: a
+				// reviewer who corrected the counterparty's name before accepting
+				// should see the name they accepted.
+				contractLabel: row.targetType === 'contract' ? contractFields(effectiveFields) : null,
 				status: status,
 				contractTitle: contract.title,
 				currency: contract.currency,

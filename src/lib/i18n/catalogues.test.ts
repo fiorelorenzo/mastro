@@ -82,6 +82,7 @@ const IDENTICAL_ON_PURPOSE = new Set([
 	'invoice_form_line_days_description_single',
 	'offline_page_title',
 	'proposal_detail_change_row',
+	'proposal_queue_row_contract',
 	'settings_backup_ok_meta',
 	'settings_practice_summary',
 	// The same word in both languages.
