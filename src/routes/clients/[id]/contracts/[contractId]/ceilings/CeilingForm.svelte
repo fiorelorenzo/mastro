@@ -11,6 +11,7 @@
 	import { AmountInput, Button, Field, Input, Select, Textarea } from '$lib/design';
 	import type { CeilingFormValues } from '$lib/server/repositories/ceiling-form';
 	import { ceilingBases, ceilingMeasureLabel, ceilingMeasures } from './ceiling-enums';
+	import { submitting } from '$lib/design/submitting.svelte';
 
 	let {
 		values,
@@ -24,10 +25,18 @@
 		submitLabel: string;
 	} = $props();
 
+	// Drives which of the two amount/percentage fields below shows, the
+	// same select-driven pattern `ContractForm.svelte` uses. A background
+	// `invalidateAll()` deliberately does not resync this: it is the
+	// reviewer's own in-progress choice for the ceiling being edited, and
+	// this form's own submit (plain POST, no `use:enhance`) already
+	// remounts the component with fresh `values` on both success and a
+	// failed validation.
 	let measure = $state(values.measure);
+	const save = submitting();
 </script>
 
-<form method="POST" class="mt-6 flex flex-col gap-5">
+<form method="POST" class="mt-6 flex flex-col gap-5" onsubmit={save.onsubmit}>
 	<Field
 		label={m.ceiling_form_label_label()}
 		hint={m.ceiling_form_label_hint()}
@@ -107,7 +116,7 @@
 		<Textarea name="consequence" value={values.consequence} rows={3} required />
 	</Field>
 
-	<Button type="submit" variant="primary">{submitLabel}</Button>
+	<Button type="submit" variant="primary" loading={save.busy}>{submitLabel}</Button>
 </form>
 
 <style>

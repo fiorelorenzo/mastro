@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
 	dataCacheKey,
+	isCacheInvalidatingWrite,
 	dataCacheName,
 	dayEntryDataUrl,
 	isCacheableDataRequest,
@@ -113,6 +114,36 @@ describe('dayEntryDataUrl', () => {
 	test('respects a configured base path', () => {
 		expect(dayEntryDataUrl('/mastro', 'http://localhost')).toBe(
 			'http://localhost/mastro/day/new/__data.json'
+		);
+	});
+});
+
+describe('isCacheInvalidatingWrite', () => {
+	const online = { sameOrigin: true, online: true };
+
+	// The defect this exists for, measured on 2026-08-17: reject a proposal,
+	// click back to the queue, and the rejected row is listed again — the
+	// cache held the copy from before the write and had no notion one had
+	// happened.
+	test.each([['POST'], ['PUT'], ['PATCH'], ['DELETE']])('%s invalidates', (method) => {
+		expect(isCacheInvalidatingWrite({ ...online, method })).toBe(true);
+	});
+
+	test('a GET does not: reads are what the cache is for', () => {
+		expect(isCacheInvalidatingWrite({ ...online, method: 'GET' })).toBe(false);
+	});
+
+	test("another origin's write says nothing about this ledger", () => {
+		expect(isCacheInvalidatingWrite({ method: 'POST', sameOrigin: false, online: true })).toBe(
+			false
+		);
+	});
+
+	// Offline, the write is going nowhere and the cache is the only copy of
+	// anything: emptying it would take the app's offline reading with it.
+	test('offline, a write leaves the cache alone', () => {
+		expect(isCacheInvalidatingWrite({ method: 'POST', sameOrigin: true, online: false })).toBe(
+			false
 		);
 	});
 });

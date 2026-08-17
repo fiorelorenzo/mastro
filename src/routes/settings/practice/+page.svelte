@@ -15,9 +15,12 @@
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { Banner, Button, Field, Input, Select, countryOptions } from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
+	import { submitting } from '$lib/design/submitting.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	const save = submitting();
 
 	const errors = $derived(form?.errors ?? {});
 	const values = $derived(
@@ -59,7 +62,7 @@
 		</Banner>
 	{/if}
 
-	<form method="POST" class="mt-6 flex flex-col gap-5">
+	<form method="POST" class="mt-6 flex flex-col gap-5" onsubmit={save.onsubmit}>
 		<fieldset class="card">
 			<legend><h2>{m.settings_practice_legal_identity_legend()}</h2></legend>
 			<Field label={m.settings_practice_legal_name_label()} error={errors.legalName} required>
@@ -112,7 +115,9 @@
 			</Field>
 		</fieldset>
 
-		<Button type="submit" variant="primary">{m.settings_practice_submit_save()}</Button>
+		<Button type="submit" variant="primary" loading={save.busy}
+			>{m.settings_practice_submit_save()}</Button
+		>
 	</form>
 </Page>
 

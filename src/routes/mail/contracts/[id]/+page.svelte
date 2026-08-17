@@ -4,9 +4,15 @@
 	import { factLine } from '$lib/nav/crumbs';
 	import Page from '$lib/layout/Page.svelte';
 	import { locales, type Locale } from '$lib/paraglide/runtime';
+	import { Button } from '$lib/design';
+	import { submitting } from '$lib/design/submitting.svelte';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
+
+	const autoSend = submitting();
+	const templateLanguage = submitting();
+	const mailFolder = submitting();
 
 	// Each language names itself, never translated (AGENTS.md invariant
 	// 5's spirit applied to a language name — the same helper
@@ -53,19 +59,29 @@
 		</a>
 	{/snippet}
 
-	<form method="POST" action="?/autoSend" class="mt-6 flex flex-col gap-2 border p-4">
+	<form
+		method="POST"
+		action="?/autoSend"
+		class="mt-6 flex flex-col gap-2 border p-4"
+		onsubmit={autoSend.onsubmit}
+	>
 		<span class="text-sm font-semibold">{m.mail_contract_auto_send_legend()}</span>
 		<label class="flex items-center gap-2 text-sm">
 			<input type="checkbox" name="autoSendMail" checked={data.contract.autoSendMail} />
 			{m.mail_contract_auto_send_label()}
 		</label>
 		<p class="text-xs opacity-70">{m.mail_contract_auto_send_hint()}</p>
-		<button type="submit" class="w-fit border px-4 py-2 text-sm"
-			>{m.mail_contract_auto_send_save()}</button
-		>
+		<Button type="submit" variant="secondary" size="md" loading={autoSend.busy}>
+			{m.mail_contract_auto_send_save()}
+		</Button>
 	</form>
 
-	<form method="POST" action="?/templateLanguage" class="mt-6 flex flex-col gap-2 border p-4">
+	<form
+		method="POST"
+		action="?/templateLanguage"
+		class="mt-6 flex flex-col gap-2 border p-4"
+		onsubmit={templateLanguage.onsubmit}
+	>
 		<span class="text-sm font-semibold">{m.mail_contract_template_language_legend()}</span>
 		<p class="text-xs opacity-70">{m.mail_contract_template_language_hint()}</p>
 		<label class="flex flex-col gap-1 text-sm">
@@ -80,12 +96,17 @@
 		{#if form && 'templateLanguageError' in form && form.templateLanguageError}
 			<span class="text-xs font-semibold">{form.templateLanguageError}</span>
 		{/if}
-		<button type="submit" class="w-fit border px-4 py-2 text-sm"
-			>{m.mail_contract_template_language_save()}</button
-		>
+		<Button type="submit" variant="secondary" size="md" loading={templateLanguage.busy}>
+			{m.mail_contract_template_language_save()}
+		</Button>
 	</form>
 
-	<form method="POST" action="?/mailFolder" class="mt-6 flex flex-col gap-2 border p-4">
+	<form
+		method="POST"
+		action="?/mailFolder"
+		class="mt-6 flex flex-col gap-2 border p-4"
+		onsubmit={mailFolder.onsubmit}
+	>
 		<span class="text-sm font-semibold">{m.mail_contract_inbound_folder_legend()}</span>
 		<p class="text-xs opacity-70">{m.mail_contract_inbound_folder_hint()}</p>
 		<label class="flex flex-col gap-1 text-sm">
@@ -100,9 +121,9 @@
 		{#if form && 'mailFolderError' in form && form.mailFolderError}
 			<span class="text-xs font-semibold">{form.mailFolderError}</span>
 		{/if}
-		<button type="submit" class="w-fit border px-4 py-2 text-sm"
-			>{m.mail_contract_inbound_folder_save()}</button
-		>
+		<Button type="submit" variant="secondary" size="md" loading={mailFolder.busy}>
+			{m.mail_contract_inbound_folder_save()}
+		</Button>
 	</form>
 
 	<div class="mt-6 flex items-center justify-between">

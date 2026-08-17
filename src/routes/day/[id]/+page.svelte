@@ -23,11 +23,22 @@
 	} from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
 	import Section from '$lib/layout/Section.svelte';
+	import { submitting } from '$lib/design/submitting.svelte';
 	import type { TableColumn } from '$lib/design/charts/types';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
+	const unbillable = submitting();
+	const link = submitting();
+	const dispute = submitting();
+	const resolveDispute = submitting();
+
+	// The link-approval select's current pick — the reviewer's own
+	// in-progress choice among `data.linkableApprovals`, not a mirror to
+	// keep synced. Left alone by a background `invalidateAll()` for the
+	// same reason every dialog/reason state below is: this form's own
+	// submit (plain POST) fully reloads the page regardless.
 	let linkApprovalId = $state('');
 
 	// #228: the day's other exit from the risk state — closing it out as
@@ -36,6 +47,13 @@
 	// has no edge back out of `unbillable`. Pre-filling `open`/`reason`
 	// from `form` on a failed submit (a blank reason) means the dialog
 	// reopens with what was typed rather than silently discarding it.
+	//
+	// All three dialogs below (`unbillable`, `dispute`, `resolveDispute`)
+	// read only from `form`, never from `data` — a background
+	// `invalidateAll()` updates `data`, not `form`, so none of this needs
+	// resyncing on that path. `data.workUnit.state` itself is read live
+	// through `$derived`s (`stateBadge` etc.) below, so the badge and the
+	// dialogs can never disagree about which exit is actually still open.
 	let unbillableDialogOpen = $state(Boolean(form?.unbillableError));
 	let unbillableReason = $state(form?.reason ?? '');
 	let announcedUnbillable = false;
@@ -182,7 +200,7 @@
 			{/snippet}
 		</Banner>
 
-		<form method="POST" action="?/unbillable">
+		<form method="POST" action="?/unbillable" onsubmit={unbillable.onsubmit}>
 			<Dialog
 				bind:open={unbillableDialogOpen}
 				title={m.day_detail_unbillable_confirm_title()}
@@ -202,7 +220,7 @@
 					>
 						{m.day_detail_unbillable_confirm_cancel()}
 					</Button>
-					<Button type="submit" variant="danger">
+					<Button type="submit" variant="danger" loading={unbillable.busy}>
 						{m.day_detail_unbillable_confirm_confirm()}
 					</Button>
 				{/snippet}
@@ -210,7 +228,7 @@
 		</form>
 
 		{#if data.linkableApprovals.length > 0}
-			<form method="POST" action="?/link" class="link-form">
+			<form method="POST" action="?/link" class="link-form" onsubmit={link.onsubmit}>
 				<Field label={m.day_detail_approval_select_label()} error={form?.linkError}>
 					<Select name="approvalId" bind:value={linkApprovalId} required>
 						<option value="" disabled>{m.day_detail_approval_select_placeholder()}</option>
@@ -221,7 +239,9 @@
 						{/each}
 					</Select>
 				</Field>
-				<Button type="submit" variant="secondary">{m.day_detail_approval_link_submit()}</Button>
+				<Button type="submit" variant="secondary" loading={link.busy}
+					>{m.day_detail_approval_link_submit()}</Button
+				>
 			</form>
 		{/if}
 	{/if}
@@ -271,7 +291,7 @@
 						{m.day_detail_dispute_button()}
 					</Button>
 				</div>
-				<form method="POST" action="?/dispute">
+				<form method="POST" action="?/dispute" onsubmit={dispute.onsubmit}>
 					<Dialog
 						bind:open={disputeDialogOpen}
 						title={m.day_detail_dispute_confirm_title()}
@@ -291,7 +311,7 @@
 							>
 								{m.day_detail_dispute_confirm_cancel()}
 							</Button>
-							<Button type="submit" variant="primary">
+							<Button type="submit" variant="primary" loading={dispute.busy}>
 								{m.day_detail_dispute_confirm_confirm()}
 							</Button>
 						{/snippet}
@@ -317,7 +337,7 @@
 						{m.day_detail_evidence_bundle_link()}
 					</Button>
 				</div>
-				<form method="POST" action="?/resolveDispute">
+				<form method="POST" action="?/resolveDispute" onsubmit={resolveDispute.onsubmit}>
 					<Dialog
 						bind:open={resolveDisputeDialogOpen}
 						title={m.day_detail_resolve_dispute_confirm_title()}
@@ -340,7 +360,7 @@
 							>
 								{m.day_detail_resolve_dispute_confirm_cancel()}
 							</Button>
-							<Button type="submit" variant="primary">
+							<Button type="submit" variant="primary" loading={resolveDispute.busy}>
 								{m.day_detail_resolve_dispute_confirm_confirm()}
 							</Button>
 						{/snippet}

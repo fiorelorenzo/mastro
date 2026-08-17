@@ -11,10 +11,13 @@
 	 */
 	import * as m from '$lib/paraglide/messages';
 	import { Banner, Button, Field, DropZone } from '$lib/design';
+	import { submitting } from '$lib/design/submitting.svelte';
 	import Page from '$lib/layout/Page.svelte';
 	import type { ActionData, PageProps } from './$types';
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
+
+	const upload = submitting();
 </script>
 
 <svelte:head
@@ -28,12 +31,12 @@
 		<Banner tone="critical">{form.error}</Banner>
 	{/if}
 
-	<form method="POST" enctype="multipart/form-data" class="form">
+	<form method="POST" enctype="multipart/form-data" class="form" onsubmit={upload.onsubmit}>
 		<Field label={m.invoice_propose_file_label()} required>
 			<DropZone name="file" accept=".pdf,application/pdf" required />
 		</Field>
 
-		<Button type="submit">{m.invoice_propose_submit()}</Button>
+		<Button type="submit" loading={upload.busy}>{m.invoice_propose_submit()}</Button>
 	</form>
 </Page>
 

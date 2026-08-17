@@ -14,6 +14,8 @@
 -->
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import type { SubmitFunction } from '@sveltejs/kit';
+	import { SvelteSet } from 'svelte/reactivity';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDateTime } from '$lib/i18n/format';
@@ -41,6 +43,20 @@
 	// key (rather than one flag per alert) is enough; `alerts_unbillable_
 	// reason_required` on a failed submit reopens the same row instead of
 	// silently discarding what was typed.
+	//
+	// Unlike every other route in this file's family, this form's own
+	// submit uses `use:enhance` and never navigates, so the component can
+	// genuinely stay mounted across a background `invalidateAll()` while
+	// the dialog is open. Left alone anyway: `openUnbillableFor` is which
+	// row a person clicked to open, and `unbillableReason` is what they
+	// are typing — resyncing either from `data` mid-edit would either
+	// close a dialog someone is using or erase a reason being typed, for
+	// a write that has nothing to do with this alert. If the underlying
+	// alert itself vanishes from `data` for the write's own reason (e.g.
+	// resolved from another tab), submitting a now-stale dialog fails the
+	// same way any other race already does — the day/contract state
+	// machine is enforced in the database (AGENTS.md), so the worst case
+	// is a rejected submit, never a corrupted one.
 	let openUnbillableFor = $state<string | null>(
 		form?.unbillableError ? (form.workUnitId ?? null) : null
 	);
@@ -52,6 +68,35 @@
 		announcedUnbillableFor = form.workUnitId;
 		toasts.push('neutral', m.alerts_unbillable_toast());
 	});
+
+	// Neither form here can use the shared `submitting()` helper: both use
+	// `use:enhance` (acknowledging and closing unbillable both update this
+	// list in place, never navigating away), so nothing ever remounts to
+	// reset a `busy` flag the way `submitting()` assumes. Acknowledging is
+	// keyed per alert — `SvelteSet`, not a plain `$state(new Set())`, for
+	// the same reason `proposals/[id]/+page.svelte`'s `editedFields` is one
+	// (a plain `Set` mutated via `$state` never notifies). Unbillable needs
+	// no key: `openUnbillableFor` already guarantees only one row's dialog
+	// is open at a time.
+	const acknowledging = new SvelteSet<string>();
+	function onAcknowledgeSubmit(key: string): SubmitFunction {
+		return () => {
+			acknowledging.add(key);
+			return async ({ update }) => {
+				await update();
+				acknowledging.delete(key);
+			};
+		};
+	}
+
+	let unbillableBusy = $state(false);
+	const onUnbillableSubmit: SubmitFunction = () => {
+		unbillableBusy = true;
+		return async ({ update }) => {
+			await update();
+			unbillableBusy = false;
+		};
+	};
 </script>
 
 <svelte:head><title>{m.alerts_page_title()}</title></svelte:head>
@@ -91,9 +136,18 @@
 								</Button>
 							{/if}
 							{#if !alert.acknowledged}
-								<form method="POST" action="?/acknowledge" use:enhance>
+								<form
+									method="POST"
+									action="?/acknowledge"
+									use:enhance={onAcknowledgeSubmit(alert.key)}
+								>
 									<input type="hidden" name="key" value={alert.key} />
-									<Button type="submit" variant="tertiary" size="sm">
+									<Button
+										type="submit"
+										variant="tertiary"
+										size="sm"
+										loading={acknowledging.has(alert.key)}
+									>
 										{m.alerts_page_acknowledge_button()}
 									</Button>
 								</form>
@@ -115,7 +169,7 @@
 					</div>
 					{#if alert.closeUnbillable}
 						{@const closeUnbillable = alert.closeUnbillable}
-						<form method="POST" action="?/unbillable" use:enhance>
+						<form method="POST" action="?/unbillable" use:enhance={onUnbillableSubmit}>
 							<input type="hidden" name="workUnitId" value={closeUnbillable.workUnitId} />
 							<Dialog
 								bind:open={
@@ -141,7 +195,7 @@
 									>
 										{m.alerts_unbillable_confirm_cancel()}
 									</Button>
-									<Button type="submit" variant="danger">
+									<Button type="submit" variant="danger" loading={unbillableBusy}>
 										{m.alerts_unbillable_confirm_confirm()}
 									</Button>
 								{/snippet}

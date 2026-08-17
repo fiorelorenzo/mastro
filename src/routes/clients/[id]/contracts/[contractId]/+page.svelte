@@ -30,6 +30,7 @@
 	} from '$lib/i18n/format';
 	import { ceilingBasisWords } from '$lib/dashboard/ceiling';
 	import { Amount, Badge, Banner, Button, EmptyState, Select, StatTile } from '$lib/design';
+	import { submitting } from '$lib/design/submitting.svelte';
 	import SourceDocument from '$lib/design/SourceDocument.svelte';
 	import Table from '$lib/design/Table.svelte';
 	import type { TableColumn } from '$lib/design/table';
@@ -276,7 +277,8 @@
 {/snippet}
 {#snippet expenseRebillCell(row: ExpenseRow)}
 	{#if canRebill(row)}
-		<form method="POST" action="?/rebill" class="rebill-form">
+		{@const rebill = submitting()}
+		<form method="POST" action="?/rebill" class="rebill-form" onsubmit={rebill.onsubmit}>
 			<input type="hidden" name="expenseId" value={row.id} />
 			<Select name="invoiceLineId" size="md" aria-label={m.expense_rebill_placeholder()} required>
 				<option value="" disabled selected>{m.expense_rebill_placeholder()}</option>
@@ -284,7 +286,9 @@
 					<option value={line.id}>{line.invoiceNumber} — {line.description}</option>
 				{/each}
 			</Select>
-			<Button type="submit" variant="secondary" size="sm">{m.expense_rebill_submit()}</Button>
+			<Button type="submit" variant="secondary" size="sm" loading={rebill.busy}>
+				{m.expense_rebill_submit()}
+			</Button>
 		</form>
 	{/if}
 {/snippet}

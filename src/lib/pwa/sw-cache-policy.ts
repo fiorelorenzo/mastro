@@ -40,6 +40,35 @@ export function isCacheableDataRequest(request: {
 }
 
 /**
+ * Whether a request is a write that invalidates every cached read.
+ *
+ * Measured before it was written: rejecting a proposal and clicking back to
+ * the queue showed the rejected row again and kept showing it. The database
+ * had nothing pending, the server rendered nothing pending, and the data
+ * cache held the copy from before the rejection with no notion that
+ * anything had happened. Stale-while-revalidate is right for reads and
+ * indefensible immediately after a write.
+ *
+ * Any same-origin non-GET counts, which covers a native form POST, an
+ * `?/action` submission and a `fetch` to a `+server.ts` endpoint alike, and
+ * covers a mutation added later without anybody remembering to. `/api/auth/`
+ * is included on purpose: signing out is exactly when nothing cached under
+ * the old session may survive.
+ *
+ * `online` is a parameter rather than read from the worker's own
+ * `navigator`, so this stays a pure decision the test suite can drive.
+ * While offline the write is going nowhere, the offline queue owns that
+ * case, and the cache is precisely what should still be there to read from.
+ */
+export function isCacheInvalidatingWrite(request: {
+	readonly method: string;
+	readonly sameOrigin: boolean;
+	readonly online: boolean;
+}): boolean {
+	return request.method !== 'GET' && request.sameOrigin && request.online;
+}
+
+/**
  * The Cache Storage key for a data request: same origin and pathname as
  * `url`, with SvelteKit's own bookkeeping parameters removed and every
  * other one kept, in a stable order.

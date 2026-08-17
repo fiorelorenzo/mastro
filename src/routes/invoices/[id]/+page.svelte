@@ -31,6 +31,7 @@
 	import Page from '$lib/layout/Page.svelte';
 	import Section from '$lib/layout/Section.svelte';
 	import ChaseHistory from './ChaseHistory.svelte';
+	import { submitting } from '$lib/design/submitting.svelte';
 	import { invoiceStatus, transmissionStatusBadge } from '../status';
 	import type { ActionData, PageData } from './$types';
 
@@ -61,6 +62,13 @@
 	// on success (matching every other action on this page), so there is
 	// no success toast to wire up — only a failed submit's `form?.…Error`
 	// reopens the dialog with what was typed.
+	//
+	// All four read only from `form`; a background `invalidateAll()`
+	// updates `data`, never `form`, so there is nothing here for it to
+	// make stale. `invoice.lines[].days[].state`, which decides whether a
+	// row even offers a dispute/resolve button, is read live off `data`
+	// through the `invoice`/`expenseRows` `$derived`s above, not cached
+	// in `$state`.
 	let disputeDialogFor = $state<string | null>(
 		form?.disputeError ? (form.workUnitId ?? null) : null
 	);
@@ -69,6 +77,14 @@
 		form?.resolveDisputeError ? (form.workUnitId ?? null) : null
 	);
 	let resolveDisputeReason = $state(form?.reason ?? '');
+
+	const dispute = submitting();
+	const resolveDispute = submitting();
+	const pay = submitting();
+	const generateFattura = submitting();
+	const markTransmitted = submitting();
+	const acceptReceipt = submitting();
+	const rejectReceipt = submitting();
 </script>
 
 <svelte:head><title>{m.invoice_detail_page_title({ number: invoice.number })}</title></svelte:head>
@@ -245,7 +261,7 @@
 				</table>
 			</div>
 
-			<form method="POST" action="?/dispute">
+			<form method="POST" action="?/dispute" onsubmit={dispute.onsubmit}>
 				<input type="hidden" name="workUnitId" value={disputeDialogFor ?? ''} />
 				<Dialog
 					bind:open={
@@ -271,14 +287,14 @@
 						>
 							{m.invoice_detail_dispute_confirm_cancel()}
 						</Button>
-						<Button type="submit" variant="primary">
+						<Button type="submit" variant="primary" loading={dispute.busy}>
 							{m.invoice_detail_dispute_confirm_confirm()}
 						</Button>
 					{/snippet}
 				</Dialog>
 			</form>
 
-			<form method="POST" action="?/resolveDispute">
+			<form method="POST" action="?/resolveDispute" onsubmit={resolveDispute.onsubmit}>
 				<input type="hidden" name="workUnitId" value={resolveDisputeDialogFor ?? ''} />
 				<Dialog
 					bind:open={
@@ -307,7 +323,7 @@
 						>
 							{m.invoice_detail_resolve_dispute_confirm_cancel()}
 						</Button>
-						<Button type="submit" variant="primary">
+						<Button type="submit" variant="primary" loading={resolveDispute.busy}>
 							{m.invoice_detail_resolve_dispute_confirm_confirm()}
 						</Button>
 					{/snippet}
@@ -386,7 +402,13 @@
 							</dd>
 						{/if}
 					</dl>
-					<form id="invoice-pay-form" method="POST" action="?/pay" class="pay-form">
+					<form
+						id="invoice-pay-form"
+						method="POST"
+						action="?/pay"
+						class="pay-form"
+						onsubmit={pay.onsubmit}
+					>
 						<Field label={m.invoice_payment_amount_label()} required>
 							<Input
 								type="number"
@@ -407,7 +429,7 @@
 						<Field label={m.invoice_payment_reference_label()}>
 							<Input type="text" name="reference" />
 						</Field>
-						<Button type="submit" variant="tertiary" size="sm">
+						<Button type="submit" variant="tertiary" size="sm" loading={pay.busy}>
 							{m.invoice_record_payment_submit()}
 						</Button>
 						{#if form?.payError}<p class="error">{form.payError}</p>{/if}
@@ -460,12 +482,18 @@
 				<SourceDocument document={null} />
 			{/each}
 			{#if data.routing}
-				<form method="POST" action="?/generateFattura" class="fattura-form">
+				<form
+					method="POST"
+					action="?/generateFattura"
+					class="fattura-form"
+					onsubmit={generateFattura.onsubmit}
+				>
 					<Button
 						type="submit"
 						variant="tertiary"
 						size="sm"
 						disabled={data.invoicingGaps.length > 0}
+						loading={generateFattura.busy}
 					>
 						{m.invoice_detail_fattura_generate_button()}
 					</Button>
@@ -503,11 +531,16 @@
 				{/if}
 
 				{#if invoice.transmissionStatus === 'generated' || invoice.transmissionStatus === 'rejected'}
-					<form method="POST" action="?/markTransmitted" class="fattura-form">
+					<form
+						method="POST"
+						action="?/markTransmitted"
+						class="fattura-form"
+						onsubmit={markTransmitted.onsubmit}
+					>
 						<Field label={m.invoice_form_transmission_id_label()} required>
 							<Input type="text" name="transmissionId" required />
 						</Field>
-						<Button type="submit" variant="tertiary" size="sm">
+						<Button type="submit" variant="tertiary" size="sm" loading={markTransmitted.busy}>
 							{invoice.transmissionStatus === 'rejected'
 								? m.invoice_detail_transmission_resubmit_button()
 								: m.invoice_detail_transmit_button()}
@@ -520,11 +553,12 @@
 						action="?/acceptReceipt"
 						enctype="multipart/form-data"
 						class="fattura-form"
+						onsubmit={acceptReceipt.onsubmit}
 					>
 						<Field label={m.invoice_detail_transmission_accept_file_label()} required>
 							<DropZone name="file" required />
 						</Field>
-						<Button type="submit" variant="tertiary" size="sm">
+						<Button type="submit" variant="tertiary" size="sm" loading={acceptReceipt.busy}>
 							{m.invoice_detail_transmission_accept_button()}
 						</Button>
 					</form>
@@ -533,11 +567,12 @@
 						action="?/rejectReceipt"
 						enctype="multipart/form-data"
 						class="fattura-form"
+						onsubmit={rejectReceipt.onsubmit}
 					>
 						<Field label={m.invoice_detail_transmission_reject_file_label()} required>
 							<DropZone name="file" required />
 						</Field>
-						<Button type="submit" variant="danger" size="sm">
+						<Button type="submit" variant="danger" size="sm" loading={rejectReceipt.busy}>
 							{m.invoice_detail_transmission_reject_button()}
 						</Button>
 					</form>

@@ -8,6 +8,7 @@
 // this file is purely DOM/Svelte wiring, mirroring the install.svelte.ts /
 // install-logic.ts split next to it.
 import { browser } from '$app/environment';
+import { invalidateAll } from '$app/navigation';
 import {
 	EMPTY_FRESHNESS_STATE,
 	oldestStaleAt,
@@ -57,6 +58,20 @@ class ServiceWorkerClient {
 				);
 			} else if (message.type === 'mastro:data-fresh' && message.url) {
 				this.#entries = recordRevalidated(this.#entries, message.url);
+				// The half that was missing. Stale-while-revalidate served the
+				// stale half and then told nobody the fresh half had arrived:
+				// the banner came down and the screen kept the old rows. Now
+				// the revalidated payload is read, so a page corrects itself
+				// instead of waiting for somebody to press reload.
+				void invalidateAll();
+			} else if (message.type === 'mastro:data-written') {
+				// A write emptied the cache (`dropDataCacheAfterWrite`). Every
+				// tab re-reads, which is what makes a second tab agree with the
+				// one the write happened in — and in the tab that did write, it
+				// is what updates a sidebar count the mutated page's own load
+				// never touches.
+				this.#entries = EMPTY_FRESHNESS_STATE;
+				void invalidateAll();
 			} else if (message.type === 'mastro:session-invalid') {
 				this.#entries = recordSessionInvalid();
 			}

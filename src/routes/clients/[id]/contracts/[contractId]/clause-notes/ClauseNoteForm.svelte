@@ -1,5 +1,7 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
+	import { Button } from '$lib/design';
+	import { submitting } from '$lib/design/submitting.svelte';
 	import type { ClauseNoteFormValues } from '$lib/server/repositories/clause-note-form';
 
 	let {
@@ -11,9 +13,11 @@
 		errors?: Record<string, string>;
 		submitLabel: string;
 	} = $props();
+
+	const save = submitting();
 </script>
 
-<form method="POST" class="mt-6 flex flex-col gap-3">
+<form method="POST" class="mt-6 flex flex-col gap-3" onsubmit={save.onsubmit}>
 	<label class="flex flex-col gap-1 text-sm">
 		{m.clause_note_form_clause_reference_label()}
 		<input
@@ -46,5 +50,5 @@
 		<textarea name="notes" rows="2" class="border px-2 py-1">{values.notes}</textarea>
 	</label>
 
-	<button type="submit" class="w-fit border px-4 py-2 text-sm">{submitLabel}</button>
+	<Button type="submit" variant="secondary" size="md" loading={save.busy}>{submitLabel}</Button>
 </form>

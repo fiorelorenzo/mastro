@@ -62,6 +62,7 @@ import { base, build, files, prerendered, version } from '$service-worker';
 import {
 	dataCacheKey,
 	dataCacheName,
+	isCacheInvalidatingWrite,
 	dayEntryDataUrl,
 	isCacheableDataRequest,
 	isOfflineDocumentRequest,
@@ -125,6 +126,33 @@ sw.addEventListener('activate', (event) => {
 
 sw.addEventListener('fetch', (event) => {
 	const { request } = event;
+
+	// A write invalidates every cached read. Measured before it was written:
+	// rejecting a proposal, then clicking back to the queue, showed the
+	// rejected row again and kept showing it — the database said nothing was
+	// pending, the server rendered nothing pending, and this cache held the
+	// copy from before the rejection with no notion that anything had
+	// happened. Stale-while-revalidate is right for reads and indefensible
+	// straight after a write.
+	//
+	// Done here, in the one place that sees every request, rather than by
+	// having each page announce its own writes: a mutation added later is
+	// covered without anybody remembering to, and it works the same for a
+	// native form POST and a `fetch`. Deliberately blunt — the whole data
+	// cache goes, not the routes we guess were affected, because accepting
+	// one proposal changes a list, a badge, a client's exposure and a
+	// dashboard figure, and a cache that keeps the ones it thought were
+	// unrelated is the same defect with extra steps.
+	if (
+		isCacheInvalidatingWrite({
+			method: request.method,
+			sameOrigin: new URL(request.url).origin === sw.location.origin,
+			online: sw.navigator.onLine
+		})
+	) {
+		event.waitUntil(dropDataCacheAfterWrite(request));
+		return;
+	}
 	if (request.method !== 'GET') return;
 
 	const url = new URL(request.url);
@@ -379,6 +407,28 @@ async function processNetworkDataResponse(cacheKey: string, response: Response):
 	);
 	notifyClients({ type: 'mastro:data-fresh', url: cacheKey });
 	return response;
+}
+
+/**
+ * Empties the data cache when a write leaves this origin, and tells every
+ * open tab so it can re-read rather than sit on what it rendered.
+ *
+ * It does not look at the response, and that is deliberate. Seeing the
+ * outcome would mean either `respondWith`-ing every non-GET request —
+ * which puts this worker in charge of redirect handling for native form
+ * navigations, the one thing in the app that must keep working exactly as
+ * the browser does it — or issuing a second `fetch` of the same request,
+ * which would run every mutation twice. Neither is worth knowing whether
+ * a form was rejected. The cost of dropping on a write that then failed is
+ * one network read instead of one cache hit.
+ *
+ * Skipped while offline: the write is going nowhere, the offline queue in
+ * `$lib/pwa` owns that case, and the cache is precisely what should still
+ * be there to read from.
+ */
+async function dropDataCacheAfterWrite(request: Request): Promise<void> {
+	await caches.delete(DATA_CACHE);
+	notifyClients({ type: 'mastro:data-written', url: request.url });
 }
 
 async function notifyClients(message: Record<string, unknown>): Promise<void> {
