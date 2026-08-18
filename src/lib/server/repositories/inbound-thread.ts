@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, isNull, max } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
-import { inboundThread, proposal } from '$lib/server/db/schema';
+import { inboundThread, proposal, type InboundThreadSkipReason } from '$lib/server/db/schema';
 
 export type InboundThreadRow = typeof inboundThread.$inferSelect;
 export type InboundThreadInput = {
@@ -33,6 +33,44 @@ export async function recordInboundThread(input: InboundThreadInput, executor: D
 	return row ?? null;
 }
 
+/** The fields `poll.ts` records for a message it chose *not* to buffer
+ * whole (#306: `message.size` from the IMAP listing exceeded
+ * `IMAP_MAX_MESSAGE_BYTES`, checked before `source` was ever fetched).
+ * No `documentId` — nothing was archived — which is exactly what
+ * `inbound_thread_archived_shape` (the table's own `check()`) requires
+ * alongside a non-null `skipReason`/`messageSize`. */
+export type InboundThreadSkipInput = {
+	contractId: string;
+	mailbox: string;
+	imapUidValidity: number;
+	imapUid: number;
+	messageId: string | null;
+	subject: string | null;
+	receivedAt: Date;
+	skipReason: InboundThreadSkipReason;
+	messageSize: number;
+};
+
+/** `recordInboundThread`'s counterpart for a skipped message (#306):
+ * invariant 4 means the arrival is still recorded even though the bytes
+ * are not, so this writes the same row shape minus `documentId`, which
+ * stays null. Same `onConflictDoNothing` safety net, same reasoning —
+ * `pollContractFolder` still checks the UID high-water mark and
+ * `findByContractAndMessageId` first; either unique index firing here
+ * means a concurrent or repeated pass raced this one, not a bug in the
+ * caller's own bookkeeping. */
+export async function recordSkippedInboundThread(
+	input: InboundThreadSkipInput,
+	executor: DbExecutor = db
+) {
+	const [row] = await executor
+		.insert(inboundThread)
+		.values({ ...input, documentId: null, archived: false })
+		.onConflictDoNothing()
+		.returning();
+	return row ?? null;
+}
+
 /** #308: the extraction enqueuer's own query, bounded so one scheduler
  * tick costs one query regardless of backlog size instead of "every row
  * the table has ever accumulated". "Awaiting" is a left join against
@@ -52,18 +90,28 @@ export async function recordInboundThread(input: InboundThreadInput, executor: D
  * replacement for the check that decides what gets enqueued. */
 export const DEFAULT_EXTRACTION_BATCH_LIMIT = 200;
 
+/** `listInboundThreadsAwaitingExtraction`'s own narrower row: every row it
+ * returns is `archived = true` by construction — the query below filters
+ * on it — and `inbound_thread_archived_shape` (the table's own `check()`)
+ * guarantees `documentId` is never null for such a row. Narrowed once, at
+ * the query boundary, rather than asking every reader (`enqueue.ts`) to
+ * re-assert a fact the database already enforces. */
+export type ArchivedInboundThreadRow = InboundThreadRow & { documentId: string };
+
 export async function listInboundThreadsAwaitingExtraction(
 	limit = DEFAULT_EXTRACTION_BATCH_LIMIT,
 	executor: DbExecutor = db
-) {
+): Promise<ArchivedInboundThreadRow[]> {
 	const rows = await executor
 		.select({ thread: inboundThread })
 		.from(inboundThread)
 		.leftJoin(proposal, eq(proposal.documentId, inboundThread.documentId))
-		.where(isNull(proposal.id))
+		.where(and(eq(inboundThread.archived, true), isNull(proposal.id)))
 		.orderBy(inboundThread.receivedAt)
 		.limit(limit);
-	return rows.map((row) => row.thread);
+	// `inbound_thread_archived_shape` is what actually guarantees this,
+	// not a runtime check here — see the type's own doc comment.
+	return rows.map((row) => row.thread as ArchivedInboundThreadRow);
 }
 
 /** The thread one archived message belongs to (#85). The drain needs its
@@ -145,4 +193,26 @@ export async function listInboundThreadsForContract(contractId: string, executor
 		.from(inboundThread)
 		.where(eq(inboundThread.contractId, contractId))
 		.orderBy(desc(inboundThread.receivedAt));
+}
+
+/** Recent skipped messages for one contract (#306), newest first — the
+ * mail UI's own read: an operator scanning `/mail/contracts/[id]` for
+ * "did we lose something" needs the ones this contract's poll chose not
+ * to archive, each carrying `skipReason`/`messageSize` so the page can
+ * render a reason a human can act on. Bounded the same way
+ * `listInboundThreadsAwaitingExtraction` is — a settings page, not an
+ * unbounded audit log. */
+export const DEFAULT_SKIPPED_INBOUND_LIMIT = 50;
+
+export async function listSkippedInboundThreadsForContract(
+	contractId: string,
+	limit = DEFAULT_SKIPPED_INBOUND_LIMIT,
+	executor: DbExecutor = db
+) {
+	return executor
+		.select()
+		.from(inboundThread)
+		.where(and(eq(inboundThread.contractId, contractId), eq(inboundThread.archived, false)))
+		.orderBy(desc(inboundThread.receivedAt))
+		.limit(limit);
 }

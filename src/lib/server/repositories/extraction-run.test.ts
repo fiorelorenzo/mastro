@@ -7,6 +7,7 @@ import { document, extractionRun, proposal } from '$lib/server/db/schema';
 import {
 	appendRunEvents,
 	claimRunForApply,
+	countExtractionRunsForDocument,
 	createExtractionRun,
 	failRun,
 	finishRunApplied,
@@ -257,5 +258,45 @@ test("listRunEvents returns a run's transcript ordered by seq", async () => {
 		const events = await listRunEvents(run.id, tx);
 		expect(events.map((e) => e.seq)).toEqual([0, 1, 2]);
 		expect(events.map((e) => e.payload)).toEqual(['zeroth', 'first', 'second']);
+	});
+});
+
+test("countExtractionRunsForDocument counts every run the document has had, and none of another document's", () => {
+	return inRolledBackTransaction(async (tx) => {
+		const documentRow = await insertDocument(tx);
+		const otherDocumentRow = await insertDocument(tx);
+
+		expect(await countExtractionRunsForDocument(documentRow.id, tx)).toBe(0);
+
+		await createExtractionRun(
+			{
+				jobId: crypto.randomUUID(),
+				documentId: documentRow.id,
+				targetType: 'contract',
+				enqueuedAt: new Date()
+			},
+			tx
+		);
+		await createExtractionRun(
+			{
+				jobId: crypto.randomUUID(),
+				documentId: documentRow.id,
+				targetType: 'contract',
+				enqueuedAt: new Date()
+			},
+			tx
+		);
+		await createExtractionRun(
+			{
+				jobId: crypto.randomUUID(),
+				documentId: otherDocumentRow.id,
+				targetType: 'contract',
+				enqueuedAt: new Date()
+			},
+			tx
+		);
+
+		expect(await countExtractionRunsForDocument(documentRow.id, tx)).toBe(2);
+		expect(await countExtractionRunsForDocument(otherDocumentRow.id, tx)).toBe(1);
 	});
 });

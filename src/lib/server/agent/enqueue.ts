@@ -10,7 +10,7 @@
 import { listProposalsForDocuments } from '$lib/server/repositories/proposal';
 import {
 	listInboundThreadsAwaitingExtraction,
-	type InboundThreadRow
+	type ArchivedInboundThreadRow
 } from '$lib/server/repositories/inbound-thread';
 import { getContractsWithClient } from '$lib/server/repositories/contract';
 import { readDocumentBytes, getDocuments } from '$lib/server/repositories/document';
@@ -48,7 +48,10 @@ export async function enqueueDayExtractions(
 	let enqueued = 0;
 	let alreadyProposed = 0;
 
-	const threads: InboundThreadRow[] = await listInboundThreadsAwaitingExtraction(limit, executor);
+	const threads: ArchivedInboundThreadRow[] = await listInboundThreadsAwaitingExtraction(
+		limit,
+		executor
+	);
 	if (threads.length === 0) return { enqueued, alreadyProposed };
 
 	const contractIds = [...new Set(threads.map((thread) => thread.contractId))];

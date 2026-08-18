@@ -11,10 +11,13 @@ import { client, contract, document, invoice, invoiceLine } from '$lib/server/db
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { computeInvoiceBalance } from '$lib/server/domain/invoice';
 import {
+	countInvoicesByTab,
 	createInvoice,
 	getInvoiceBalance,
 	getInvoiceDocuments,
+	getInvoiceListTotals,
 	getInvoiceWithLines,
+	listInvoices,
 	listInvoicesForContract,
 	listPaymentsForInvoice,
 	listUnpaidInvoices,
@@ -1219,5 +1222,179 @@ test('recordInvoiceReceipt moves transmitted -> rejected, and a corrected resubm
 		const resubmitted = await markInvoiceTransmitted(invoiceRow.id, 'SDI-0003-BIS', tx);
 		expect(resubmitted.transmissionStatus).toBe('transmitted');
 		expect(resubmitted.transmissionId).toBe('SDI-0003-BIS');
+	});
+});
+
+// #311: the ageing list's own query pushes its tab filter, its bound and
+// its counts into SQL rather than fetching the whole ledger — every
+// assertion below is scoped to ids this test itself created (`.some`/
+// delta against a captured "before" snapshot), since the shared database
+// also holds demo-seed invoices these queries see too.
+
+async function createTestInvoice(
+	tx: Tx,
+	contractId: string,
+	overrides: { dueDate: string; issueDate?: string; amount?: number }
+) {
+	const amount = minorUnits(overrides.amount ?? 100_000);
+	return createInvoice(
+		{
+			contractId,
+			number: `INV-${crypto.randomUUID()}`,
+			issueDate: overrides.issueDate ?? '2024-01-01',
+			documentType: 'invoice',
+			currency: 'EUR',
+			taxTreatmentCode: null,
+			statutoryReference: null,
+			stampDuty: null,
+			socialCharge: null,
+			dueDate: overrides.dueDate,
+			paymentMethod: null,
+			iban: null,
+			transmissionId: null,
+			lines: [
+				{
+					description: 'Consulting',
+					quantity: 1,
+					unitPrice: amount,
+					amount,
+					taxRate: 0,
+					taxTreatmentCode: null,
+					workUnitIds: []
+				}
+			]
+		} satisfies InvoiceInput,
+		{ kind: 'human', email: 'lorenzo@example.com' },
+		'test fixture',
+		tx
+	);
+}
+
+test('#311: listInvoices pushes the due/overdue/paid filter into the query instead of filtering a full fetch', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const today = new Date('2024-06-15T00:00:00Z');
+
+		const dueSoon = await createTestInvoice(tx, contractRow.id, { dueDate: '2024-07-01' });
+		const overdue = await createTestInvoice(tx, contractRow.id, { dueDate: '2024-01-01' });
+		const paid = await createTestInvoice(tx, contractRow.id, { dueDate: '2024-01-01' });
+		await recordPayment(paid.id, { amount: paid.total, date: '2024-02-01' }, tx);
+
+		const [dueRows, overdueRows, paidRows, allRows] = await Promise.all([
+			listInvoices({ tab: 'due', limit: 1000, today }, tx),
+			listInvoices({ tab: 'overdue', limit: 1000, today }, tx),
+			listInvoices({ tab: 'paid', limit: 1000, today }, tx),
+			listInvoices({ tab: 'all', limit: 1000, today }, tx)
+		]);
+		const idsOf = (rows: { invoice: { id: string } }[]) => rows.map((row) => row.invoice.id);
+
+		expect(idsOf(dueRows)).toEqual(expect.arrayContaining([dueSoon.id, overdue.id]));
+		expect(idsOf(dueRows)).not.toContain(paid.id);
+
+		expect(idsOf(overdueRows)).toContain(overdue.id);
+		expect(idsOf(overdueRows)).not.toContain(dueSoon.id);
+		expect(idsOf(overdueRows)).not.toContain(paid.id);
+
+		expect(idsOf(paidRows)).toContain(paid.id);
+		expect(idsOf(paidRows)).not.toContain(dueSoon.id);
+		expect(idsOf(paidRows)).not.toContain(overdue.id);
+
+		expect(idsOf(allRows)).toEqual(expect.arrayContaining([dueSoon.id, overdue.id, paid.id]));
+	});
+});
+
+test('#311: listInvoices bounds the result with limit/offset, most overdue first', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const today = new Date('2024-06-15T00:00:00Z');
+
+		// Deep-past due dates so these three sort first regardless of any
+		// overdue invoice the demo seed happens to carry.
+		const oldest = await createTestInvoice(tx, contractRow.id, {
+			issueDate: '1901-01-01',
+			dueDate: '1901-01-15'
+		});
+		const middle = await createTestInvoice(tx, contractRow.id, {
+			issueDate: '1901-02-01',
+			dueDate: '1901-02-15'
+		});
+		const newest = await createTestInvoice(tx, contractRow.id, {
+			issueDate: '1901-03-01',
+			dueDate: '1901-03-15'
+		});
+
+		const firstPage = await listInvoices({ tab: 'overdue', limit: 2, offset: 0, today }, tx);
+		expect(firstPage.map((row) => row.invoice.id)).toEqual([oldest.id, middle.id]);
+
+		const secondPage = await listInvoices({ tab: 'overdue', limit: 2, offset: 2, today }, tx);
+		expect(secondPage.map((row) => row.invoice.id)).toEqual([newest.id]);
+	});
+});
+
+test('#311: countInvoicesByTab counts each tab from a single query, not from fetching every invoice', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const today = new Date('2024-06-15T00:00:00Z');
+
+		const before = await countInvoicesByTab(today, tx);
+
+		await createTestInvoice(tx, contractRow.id, { dueDate: '2024-07-01' });
+		await createTestInvoice(tx, contractRow.id, { dueDate: '2024-01-01' });
+		const paid = await createTestInvoice(tx, contractRow.id, { dueDate: '2024-01-01' });
+		await recordPayment(paid.id, { amount: paid.total, date: '2024-02-01' }, tx);
+
+		const after = await countInvoicesByTab(today, tx);
+
+		expect(after.all - before.all).toBe(3);
+		expect(after.due - before.due).toBe(2);
+		expect(after.overdue - before.overdue).toBe(1);
+		expect(after.paid - before.paid).toBe(1);
+	});
+});
+
+test('#311: getInvoiceListTotals sums outstanding/overdue/collected across every matching invoice, not one page of them', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const today = new Date('2024-06-15T00:00:00Z');
+
+		const before = await getInvoiceListTotals(today, tx);
+
+		await createTestInvoice(tx, contractRow.id, {
+			dueDate: '2024-01-01',
+			amount: 100_000
+		});
+		const dueSoonPartial = await createTestInvoice(tx, contractRow.id, {
+			dueDate: '2024-07-01',
+			amount: 50_000
+		});
+		await recordPayment(dueSoonPartial.id, { amount: minorUnits(20_000), date: '2024-05-01' }, tx);
+		const paidThisYear = await createTestInvoice(tx, contractRow.id, {
+			dueDate: '2024-02-01',
+			amount: 80_000
+		});
+		await recordPayment(paidThisYear.id, { amount: minorUnits(80_000), date: '2024-03-01' }, tx);
+
+		const after = await getInvoiceListTotals(today, tx);
+
+		const outstandingBefore = before.totalOutstandingByCurrency.EUR ?? 0;
+		const overdueBefore = before.totalOverdueByCurrency.EUR ?? 0;
+		const collectedBefore = before.totalCollectedThisYearByCurrency.EUR ?? 0;
+
+		expect(after.totalOutstandingByCurrency.EUR - outstandingBefore).toBe(100_000 + 30_000);
+		expect(after.totalOverdueByCurrency.EUR - overdueBefore).toBe(100_000);
+		expect(after.totalCollectedThisYearByCurrency.EUR - collectedBefore).toBe(20_000 + 80_000);
+		expect(after.paidThisYearCount - before.paidThisYearCount).toBe(2);
+	});
+});
+
+test('#311: getInvoiceListTotals reports the oldest overdue due date across the whole ledger', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const today = new Date('2024-06-15T00:00:00Z');
+		await createTestInvoice(tx, contractRow.id, { issueDate: '1901-01-01', dueDate: '1901-01-15' });
+		await createTestInvoice(tx, contractRow.id, { issueDate: '1902-01-01', dueDate: '1902-01-15' });
+
+		const totals = await getInvoiceListTotals(today, tx);
+		expect(totals.oldestOverdueDueDate).toBe('1901-01-15');
 	});
 });

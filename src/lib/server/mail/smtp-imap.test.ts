@@ -10,7 +10,7 @@ import { expect, test } from 'vitest';
 import { appendToSentMailbox } from './imap';
 import { composeMessage } from './message';
 import { sendOverSmtp } from './smtp';
-import type { MailConfig } from './config';
+import { DEFAULT_IMAP_MAX_MESSAGE_BYTES, type MailConfig } from './config';
 
 const config: MailConfig = {
 	smtp: {
@@ -28,7 +28,8 @@ const config: MailConfig = {
 		secure: false,
 		user: 'mastro@mastro.test',
 		password: 'test-app-password',
-		sentMailbox: 'Sent'
+		sentMailbox: 'Sent',
+		maxMessageBytes: DEFAULT_IMAP_MAX_MESSAGE_BYTES
 	}
 };
 

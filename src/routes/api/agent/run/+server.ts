@@ -12,8 +12,12 @@
 // write.
 //
 // Public on `route-guard.ts`'s list for the same reason the alert jobs
-// are: the caller is cron, with no browser session to present, and the
-// bearer check below is the actual protection.
+// are: the caller is cron, with no browser session to present.
+// Authorization is `authorizeCronRequest` (`$lib/server/auth/cron-token.ts`,
+// #304), reusing `ALERT_CRON_TOKEN` — not a separate agent-run
+// credential, just the one bearer token this route happens to have been
+// given (`scripts/scheduler.ts`'s own comment says the same of its call
+// to this route).
 //
 // Every call records its outcome into `agent_run` (#222), the same
 // run-record shape `backup_run`/`mailbox_poll_run` already established —
@@ -26,32 +30,16 @@
 // content review, not a run-health problem, and is left out of the
 // status on purpose.
 
-import { timingSafeEqual } from 'node:crypto';
-import { error, json } from '@sveltejs/kit';
+import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { drainCompletedJobs } from '$lib/server/agent/drain';
 import { enqueueDayExtractions } from '$lib/server/agent/enqueue';
+import { authorizeCronRequest } from '$lib/server/auth/cron-token';
 import { recordAgentRun } from '$lib/server/repositories/agent-run';
 import type { RequestHandler } from './$types';
 
-function isAuthorized(request: Request): boolean {
-	const token = (env.ALERT_CRON_TOKEN ?? '').trim();
-	if (!token) return false;
-
-	const header = request.headers.get('authorization') ?? '';
-	const presented = header.startsWith('Bearer ') ? header.slice('Bearer '.length) : '';
-	const expected = Buffer.from(token);
-	const given = Buffer.from(presented);
-	return expected.length === given.length && timingSafeEqual(expected, given);
-}
-
 export const POST: RequestHandler = async ({ request }) => {
-	if (!isAuthorized(request)) {
-		if (!(env.ALERT_CRON_TOKEN ?? '').trim()) {
-			error(503, 'ALERT_CRON_TOKEN is not set on this instance');
-		}
-		error(401, 'invalid or missing bearer token');
-	}
+	authorizeCronRequest(request, env.ALERT_CRON_TOKEN, 'ALERT_CRON_TOKEN');
 
 	const queueDir = env.RUNNER_QUEUE_DIR ?? './data/runner-queue';
 	try {

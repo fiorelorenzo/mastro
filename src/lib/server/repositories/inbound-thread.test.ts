@@ -13,9 +13,12 @@ import {
 	getInboundThreadsForDocuments,
 	listInboundThreadsAwaitingExtraction,
 	listInboundThreadsForContract,
+	listSkippedInboundThreadsForContract,
 	maxImapUidForContract,
 	recordInboundThread,
-	type InboundThreadInput
+	recordSkippedInboundThread,
+	type InboundThreadInput,
+	type InboundThreadSkipInput
 } from './inbound-thread';
 
 // Needs a migrated database: `pnpm db:up && pnpm db:migrate`. Same
@@ -104,6 +107,24 @@ function threadInput(
 		messageId: `<${crypto.randomUUID()}@example.com>`,
 		subject: 'Re: approval for next week',
 		receivedAt: new Date('2026-08-01T09:00:00.000Z'),
+		...overrides
+	};
+}
+
+function skippedInput(
+	contractId: string,
+	overrides: Partial<InboundThreadSkipInput> = {}
+): InboundThreadSkipInput {
+	return {
+		contractId,
+		mailbox: 'Acme Corp',
+		imapUidValidity: 1700000000,
+		imapUid: 1,
+		messageId: `<${crypto.randomUUID()}@example.com>`,
+		subject: 'A message too large to archive',
+		receivedAt: new Date('2026-08-01T09:00:00.000Z'),
+		skipReason: 'oversized',
+		messageSize: 42_000_000,
 		...overrides
 	};
 }
@@ -344,5 +365,85 @@ test('listInboundThreadsAwaitingExtraction excludes a document that already has 
 
 		const secondTick = await listInboundThreadsAwaitingExtraction(2, tx);
 		expect(secondTick.map((row) => row.documentId)).toEqual([documentB.id, documentC.id]);
+	});
+});
+
+test('recordSkippedInboundThread inserts a row with no document, returns it, and never reaches listInboundThreadsAwaitingExtraction', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentA = await archiveMessage(tx, contractRow.id);
+
+		await recordInboundThread(
+			threadInput(contractRow.id, documentA.id, { imapUid: 1, messageId: null }),
+			tx
+		);
+		const skipped = await recordSkippedInboundThread(
+			skippedInput(contractRow.id, { imapUid: 2, messageId: null }),
+			tx
+		);
+
+		expect(skipped).not.toBeNull();
+		expect(skipped?.documentId).toBeNull();
+		expect(skipped?.skipReason).toBe('oversized');
+		expect(skipped?.messageSize).toBe(42_000_000);
+
+		// The extraction enqueuer has nothing to extract from a skipped
+		// message — no document, no bytes — so it must never see this row,
+		// only the one that was actually archived.
+		const awaitingExtraction = await listInboundThreadsAwaitingExtraction(10, tx);
+		expect(awaitingExtraction.map((row) => row.documentId)).toEqual([documentA.id]);
+	});
+});
+
+test('recordSkippedInboundThread returns null instead of throwing on a duplicate UID, the same safety net recordInboundThread has', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+
+		await recordSkippedInboundThread(
+			skippedInput(contractRow.id, { imapUid: 7, messageId: null }),
+			tx
+		);
+		const conflicting = await recordSkippedInboundThread(
+			skippedInput(contractRow.id, { imapUid: 7, messageId: null }),
+			tx
+		);
+		expect(conflicting).toBeNull();
+	});
+});
+
+test("listSkippedInboundThreadsForContract returns only this contract's skipped threads, newest received first, never an archived one", async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractA = await insertContract(tx);
+		const contractB = await insertContract(tx);
+		const documentA = await archiveMessage(tx, contractA.id);
+
+		await recordInboundThread(
+			threadInput(contractA.id, documentA.id, { imapUid: 1, messageId: null }),
+			tx
+		);
+		await recordSkippedInboundThread(
+			skippedInput(contractA.id, {
+				imapUid: 2,
+				messageId: null,
+				receivedAt: new Date('2026-08-01T09:00:00.000Z')
+			}),
+			tx
+		);
+		await recordSkippedInboundThread(
+			skippedInput(contractA.id, {
+				imapUid: 3,
+				messageId: null,
+				receivedAt: new Date('2026-08-02T09:00:00.000Z')
+			}),
+			tx
+		);
+		await recordSkippedInboundThread(
+			skippedInput(contractB.id, { imapUid: 1, messageId: null }),
+			tx
+		);
+
+		const rows = await listSkippedInboundThreadsForContract(contractA.id, 10, tx);
+		expect(rows.every((row) => row.archived === false)).toBe(true);
+		expect(rows.map((row) => row.imapUid)).toEqual([3, 2]);
 	});
 });

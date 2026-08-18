@@ -7,7 +7,34 @@ import { getTextDirection } from '$lib/paraglide/runtime';
 import { paraglideMiddleware } from '$lib/paraglide/server';
 import { auth, defaultAllowlist } from '$lib/server/auth';
 import { isAllowedEmail } from '$lib/server/auth/allowlist';
+import { CSP_DIRECTIVES, formatCspHeader } from '$lib/server/security/csp';
 import { isEndpointRoute, isPublicRoute } from '$lib/server/route-guard';
+
+// `kit.csp` (vite.config.ts) only ever sets a `Content-Security-Policy`
+// header on a rendered HTML page — never on a `+server.ts` endpoint, which
+// has no inline script/style for a nonce to protect. Computed once, at
+// module load, and reused for every response this handle sees that does
+// not already carry one.
+const STATIC_CSP_HEADER = formatCspHeader(CSP_DIRECTIVES);
+
+/**
+ * Adds the two headers every response needs regardless of route (#303):
+ * `X-Content-Type-Options: nosniff`, so a browser never second-guesses a
+ * response's declared `Content-Type` (the exact behaviour that made
+ * serving an uploaded `text/html` document dangerous in the first place),
+ * and a `Content-Security-Policy` for whatever `kit.csp` did not already
+ * add one for. Placed first in `sequence` below so it wraps every other
+ * handle: any response `handleAuth` or the real render pipeline returns
+ * passes back through here before reaching the client.
+ */
+export const handleSecurityHeaders: Handle = async ({ event, resolve }) => {
+	const response = await resolve(event);
+	response.headers.set('x-content-type-options', 'nosniff');
+	if (!response.headers.has('content-security-policy')) {
+		response.headers.set('content-security-policy', STATIC_CSP_HEADER);
+	}
+	return response;
+};
 
 const handleParaglide: Handle = ({ event, resolve }) =>
 	paraglideMiddleware(event.request, ({ request, locale }) => {
@@ -82,6 +109,12 @@ export function createHandleAuth(
 
 const handleAuth = createHandleAuth();
 
-// Language first, so a redirect or an error page from the guard is still
-// rendered in the visitor's locale.
-export const handle: Handle = sequence(handleParaglide, handleAuth);
+// Security headers first, so they wrap every other handle's return value —
+// including the bare 401 the guard returns for a rejected endpoint call.
+// The one gap: a *thrown* `redirect()` (the guard's page-route case, just
+// below) unwinds past every handle's own `resolve()` call before
+// SvelteKit turns it into a response, so this can't attach headers to it;
+// a redirect has no body for CSP or nosniff to protect anyway. Language
+// next, so a redirect or an error page from the guard is still rendered
+// in the visitor's locale.
+export const handle: Handle = sequence(handleSecurityHeaders, handleParaglide, handleAuth);

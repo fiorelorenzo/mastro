@@ -5,6 +5,7 @@ import {
 	dataCacheName,
 	dayEntryDataUrl,
 	isCacheableDataRequest,
+	isCacheableDataResponse,
 	isOfflineDocumentRequest,
 	isSessionInvalidPayload,
 	offlineFallbackUrl,
@@ -34,6 +35,28 @@ describe('isCacheableDataRequest', () => {
 		expect(
 			isCacheableDataRequest({ method: 'GET', mode: 'cors', pathname: '/api/auth/get-session' })
 		).toBe(false);
+	});
+});
+
+describe('isCacheableDataResponse', () => {
+	test('a JSON response with Cache-Control: no-store is not cached', () => {
+		expect(isCacheableDataResponse({ cacheControl: 'private, no-store' })).toBe(false);
+	});
+
+	test('the same response without no-store is cached', () => {
+		expect(isCacheableDataResponse({ cacheControl: 'private, max-age=0' })).toBe(true);
+	});
+
+	test("a private response without no-store keeps today's behaviour", () => {
+		expect(isCacheableDataResponse({ cacheControl: 'private' })).toBe(true);
+	});
+
+	test('no Cache-Control header at all is cached, as before this change', () => {
+		expect(isCacheableDataResponse({ cacheControl: null })).toBe(true);
+	});
+
+	test('no-store is recognised standing alone, with no other directives', () => {
+		expect(isCacheableDataResponse({ cacheControl: 'no-store' })).toBe(false);
 	});
 });
 

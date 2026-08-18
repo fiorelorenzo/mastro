@@ -65,6 +65,7 @@ import {
 	isCacheInvalidatingWrite,
 	dayEntryDataUrl,
 	isCacheableDataRequest,
+	isCacheableDataResponse,
 	isOfflineDocumentRequest,
 	isSessionInvalidPayload,
 	offlineFallbackUrl,
@@ -377,10 +378,16 @@ function handleDataRequest(event: FetchEvent): Promise<Response> {
  * file). Never caches an error response or anything that is not JSON —
  * that also skips SvelteKit's chunked `text/sveltekit-data` deferred-data
  * responses, which stream and so are not safely re-servable from a single
- * cached copy; those simply fall back to the network every time.
+ * cached copy; those simply fall back to the network every time. Checked
+ * before content-type, not after: `Cache-Control: no-store` (#305) rules a
+ * response out of Cache Storage whatever it claims to contain, and a
+ * future content-type branch added to this function must not be able to
+ * skip past it.
  */
 async function processNetworkDataResponse(cacheKey: string, response: Response): Promise<Response> {
 	if (!response.ok) return response;
+	if (!isCacheableDataResponse({ cacheControl: response.headers.get('cache-control') }))
+		return response;
 	if (!(response.headers.get('content-type') ?? '').includes('application/json')) return response;
 
 	const payload: unknown = await response

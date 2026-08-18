@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
@@ -12,7 +12,8 @@ import {
 	listDocumentsForOwner,
 	readDocumentBytes,
 	setDocumentRemoteFileId,
-	storeDocument
+	storeDocument,
+	DocumentTooLargeError
 } from './document';
 
 // Needs a migrated database: `pnpm db:up && pnpm db:migrate`. Postgres work
@@ -198,4 +199,45 @@ test('getDocuments returns every requested document regardless of owner, and not
 
 		expect(await getDocuments([], tx)).toEqual([]);
 	});
+});
+
+// #306: the blob store's own ceiling, independent of every caller —
+// `mail/poll.ts` already checks `IMAP_MAX_MESSAGE_BYTES` before ever
+// fetching a message's source, but this proves `storeDocument` refuses
+// an oversized write on its own, without relying on that upstream check.
+test('storeDocument refuses bytes over DOCUMENT_MAX_BYTES, never writing to disk or Postgres', async () => {
+	process.env.DOCUMENT_MAX_BYTES = '10';
+	try {
+		await inRolledBackTransaction(async (tx) => {
+			const contractRow = await insertContract(tx);
+			const bytes = new TextEncoder().encode('this message body is well over ten bytes long');
+
+			await expect(
+				storeDocument(
+					{
+						bytes,
+						mime: 'message/rfc822',
+						originalName: 'oversized.eml',
+						provenance: 'mail',
+						contractId: contractRow.id,
+						confidential: true,
+						ownerType: 'contract',
+						ownerId: contractRow.id
+					},
+					tx
+				)
+			).rejects.toThrow(DocumentTooLargeError);
+
+			const references = await listDocumentsForOwner('contract', contractRow.id, tx);
+			expect(references).toHaveLength(0);
+		});
+
+		// Never touched the blob store either — `writeBlob` is only ever
+		// reached after the size check, so a rejected call leaves the
+		// throwaway root exactly as empty as `beforeEach` made it.
+		const written = await readdir(root, { recursive: true });
+		expect(written).toHaveLength(0);
+	} finally {
+		delete process.env.DOCUMENT_MAX_BYTES;
+	}
 });

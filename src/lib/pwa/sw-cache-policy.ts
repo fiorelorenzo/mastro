@@ -40,6 +40,29 @@ export function isCacheableDataRequest(request: {
 }
 
 /**
+ * The response half of the caching decision (#305): `Cache-Control:
+ * no-store` means exactly what it says, regardless of content-type,
+ * request method or origin — the server is telling every cache, including
+ * this worker's Cache Storage, not to keep a copy at all. Nothing upstream
+ * of `isCacheableDataRequest` can see the response, so this is a second,
+ * independent gate the write site cannot skip: a request being cacheable
+ * says nothing about whether the response that comes back consents to it.
+ *
+ * `private` alone does not disqualify a response: it means "do not share
+ * this across users on a shared cache", which is moot for a browser's own
+ * Cache Storage, so a response marked merely `private` keeps being cached
+ * exactly as before this change.
+ */
+export function isCacheableDataResponse(response: {
+	readonly cacheControl: string | null;
+}): boolean {
+	const directives = (response.cacheControl ?? '')
+		.split(',')
+		.map((directive) => directive.trim().split('=', 1)[0]?.toLowerCase());
+	return !directives.includes('no-store');
+}
+
+/**
  * Whether a request is a write that invalidates every cached read.
  *
  * Measured before it was written: rejecting a proposal and clicking back to

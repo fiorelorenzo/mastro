@@ -14,7 +14,7 @@ import { afterAll, expect, test } from 'vitest';
 import { auth, createAuth } from '$lib/server/auth';
 import { client, db } from '$lib/server/db';
 import * as schema from '$lib/server/db/schema';
-import { createHandleAuth } from './hooks.server';
+import { createHandleAuth, handleSecurityHeaders } from './hooks.server';
 
 const startedAt = new Date();
 const createdEmails: string[] = [];
@@ -160,4 +160,44 @@ test('a rejected session on a page route redirects to sign-in instead of returni
 	await expect(handleAuth({ event, resolve })).rejects.toSatisfy(
 		(error) => isRedirect(error) && error.status === 303 && error.location.startsWith('/sign-in')
 	);
+});
+
+test('handleSecurityHeaders adds nosniff and a Content-Security-Policy to a response that has neither', async () => {
+	const event = requestEvent('/', new Headers());
+	const plainResolve: HandleInput['resolve'] = async () => new Response('body', { status: 200 });
+
+	const response = await handleSecurityHeaders({ event, resolve: plainResolve });
+
+	expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+	const csp = response.headers.get('content-security-policy');
+	expect(csp).toContain("default-src 'self'");
+	expect(csp).toContain("object-src 'none'");
+	expect(csp).toContain("frame-ancestors 'none'");
+});
+
+test('handleSecurityHeaders adds nosniff but never overwrites a Content-Security-Policy the response already carries', async () => {
+	const event = requestEvent('/', new Headers());
+	const pageResolve: HandleInput['resolve'] = async () =>
+		new Response('<html></html>', {
+			status: 200,
+			headers: { 'content-security-policy': "default-src 'self'; script-src 'nonce-abc123'" }
+		});
+
+	const response = await handleSecurityHeaders({ event, resolve: pageResolve });
+
+	expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+	expect(response.headers.get('content-security-policy')).toBe(
+		"default-src 'self'; script-src 'nonce-abc123'"
+	);
+});
+
+test('handleSecurityHeaders adds its headers to a non-2xx response too, e.g. the guard-rejected 401', async () => {
+	const event = requestEvent('/api/whatever', new Headers());
+	const rejectResolve: HandleInput['resolve'] = async () => new Response(null, { status: 401 });
+
+	const response = await handleSecurityHeaders({ event, resolve: rejectResolve });
+
+	expect(response.status).toBe(401);
+	expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+	expect(response.headers.get('content-security-policy')).not.toBeNull();
 });

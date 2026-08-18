@@ -50,3 +50,26 @@ export function isExtractionFailureKind(value: unknown): value is ExtractionFail
 		typeof value === 'string' && (EXTRACTION_FAILURE_KINDS as readonly string[]).includes(value)
 	);
 }
+
+/**
+ * Whether a retry can plausibly change the outcome (#315). `timed_out`
+ * and `agent_failed` are both about the runner never producing a usable
+ * answer at all — a spawn failure, a wedged process, a raw response that
+ * was not even the JSON shape the job asked for — none of which says
+ * anything about whether this document can be extracted, so a second
+ * attempt is a fair thing to offer. `write_refused` is different in
+ * kind: the model already answered, against this exact document, and the
+ * app's own validation rejected that answer. A retry reads the same
+ * document with the same instructions, so it is not a fresh chance so
+ * much as a repeat of a question already asked and already answered —
+ * not offered here, and the run page says why.
+ */
+export function canRetryFailure(kind: ExtractionFailureKind): boolean {
+	switch (kind) {
+		case 'agent_failed':
+		case 'timed_out':
+			return true;
+		case 'write_refused':
+			return false;
+	}
+}

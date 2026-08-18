@@ -421,41 +421,238 @@ export interface InvoiceListRow {
 	payments: readonly { readonly date: string; readonly amount: MinorUnits }[];
 }
 
+export type InvoiceListTab = 'all' | 'due' | 'overdue' | 'paid';
+
+export interface ListInvoicesOptions {
+	/** Which slice of the ledger to fetch — pushed into the query's
+	 *  `WHERE` rather than filtered from a full fetch in application code
+	 *  (#311). Defaults to `'all'`. */
+	readonly tab?: InvoiceListTab;
+	/** Row cap. Omitted — what `listUnpaidInvoices` below relies on —
+	 *  means "no `LIMIT`": every caller that must see the *entire* unpaid
+	 *  set to stay correct (the dashboard's counts, the overdue alert)
+	 *  keeps doing so. Only the ageing list's own loader ever passes
+	 *  one. */
+	readonly limit?: number;
+	readonly offset?: number;
+	/** "Today" for the `overdue` filter/ordering — the caller's own
+	 *  clock, so a fixed value keeps a test deterministic. */
+	readonly today?: Date;
+}
+
+function invoiceListDateOnly(date: Date): string {
+	return date.toISOString().slice(0, 10);
+}
+
+/** Each invoice's own running total of payments recorded against it,
+ *  correlated by id — the one SQL-side stand-in for
+ *  {@link computeInvoiceBalance}'s `paid` figure that a `WHERE`/`COUNT`
+ *  needs without ever fetching a row per payment. */
+function invoicePaidTotalExpr() {
+	return sql<number>`coalesce((select sum(${payment.amount}) from ${payment} where ${payment.invoiceId} = ${invoice.id}), 0)`;
+}
+
+function invoiceListTabWhere(tab: InvoiceListTab, todayIso: string) {
+	const paidTotal = invoicePaidTotalExpr();
+	if (tab === 'all') return sql`true`;
+	if (tab === 'due') return sql`${paidTotal} < ${invoice.total}`;
+	if (tab === 'overdue') {
+		return sql`${paidTotal} < ${invoice.total} and ${invoice.dueDate} < ${todayIso}`;
+	}
+	return sql`${paidTotal} >= ${invoice.total}`; // 'paid'
+}
+
+function invoiceListOrderBy(tab: InvoiceListTab) {
+	if (tab === 'due' || tab === 'overdue') {
+		// Most overdue first — daysLate desc is dueDate asc for a fixed
+		// "today", the ageing list's own ordering since #238.
+		return [asc(invoice.dueDate), desc(invoice.issueDate)];
+	}
+	if (tab === 'paid') {
+		return [
+			desc(
+				sql`(select max(${payment.date}) from ${payment} where ${payment.invoiceId} = ${invoice.id})`
+			),
+			desc(invoice.issueDate)
+		];
+	}
+	return [desc(invoice.issueDate), desc(invoice.createdAt)];
+}
+
 /**
  * Every invoice on record, paid or not, with its contract's title and
  * client for display, and the count of days it bills for the "days it
  * bills" link (#238's "every invoice in the instance is reachable from the
  * interface" — `listUnpaidInvoices` used to be the only query this page
- * ran, so a paid invoice was reachable only by typing its URL). Ordering
- * is the caller's job (`routes/invoices/+page.server.ts`), not this
- * query's: `daysLate` is a plain function over `dueDate`, not a column
- * this query could `ORDER BY` without duplicating that arithmetic in SQL.
+ * ran, so a paid invoice was reachable only by typing its URL).
+ *
+ * #311: `tab` and `limit` push the ageing list's slice and its bound into
+ * the query itself — the caller no longer fetches the whole ledger and
+ * filters/truncates it in memory. Payments are still a second, batched
+ * query (`listInvoicesForContract`'s own shape) rather than a second join
+ * alongside `workUnit`: joining both here would multiply every row
+ * through the cross product of an invoice's own lines' payments and its
+ * lines' work units. Every other caller — `listUnpaidInvoices` and,
+ * through it, the dashboard and the overdue alert — keeps calling this
+ * with no `tab`/`limit`, so it keeps seeing the entire ledger exactly as
+ * before; pagination is opt-in per caller, never a default this function
+ * imposes.
  */
-export async function listInvoices(executor: DbExecutor = db): Promise<InvoiceListRow[]> {
-	const [rows, paymentsByInvoiceId] = await Promise.all([
-		executor
-			.select({
-				invoice,
-				contractTitle: contract.title,
-				clientLegalName: client.legalName,
-				dayCount: sql<number>`count(${workUnit.id})`.mapWith(Number)
-			})
-			.from(invoice)
-			.innerJoin(contract, eq(contract.id, invoice.contractId))
-			.innerJoin(client, eq(client.id, contract.clientId))
-			.leftJoin(invoiceLine, eq(invoiceLine.invoiceId, invoice.id))
-			.leftJoin(workUnit, eq(workUnit.invoiceLineId, invoiceLine.id))
-			.groupBy(invoice.id, contract.id, client.id),
-		listPaymentsByInvoiceId(executor)
-	]);
+export async function listInvoices(
+	options: ListInvoicesOptions = {},
+	executor: DbExecutor = db
+): Promise<InvoiceListRow[]> {
+	const { tab = 'all', limit, offset = 0, today = new Date() } = options;
+	const todayIso = invoiceListDateOnly(today);
+
+	let query = executor
+		.select({
+			invoice,
+			contractTitle: contract.title,
+			clientLegalName: client.legalName,
+			dayCount: sql<number>`count(${workUnit.id})`.mapWith(Number)
+		})
+		.from(invoice)
+		.innerJoin(contract, eq(contract.id, invoice.contractId))
+		.innerJoin(client, eq(client.id, contract.clientId))
+		.leftJoin(invoiceLine, eq(invoiceLine.invoiceId, invoice.id))
+		.leftJoin(workUnit, eq(workUnit.invoiceLineId, invoiceLine.id))
+		.where(invoiceListTabWhere(tab, todayIso))
+		.groupBy(invoice.id, contract.id, client.id)
+		.orderBy(...invoiceListOrderBy(tab))
+		.$dynamic();
+	if (limit !== undefined) query = query.limit(limit).offset(offset);
+
+	const rows = await query;
+	if (rows.length === 0) return [];
+
+	const payments = await executor
+		.select()
+		.from(payment)
+		.where(
+			inArray(
+				payment.invoiceId,
+				rows.map((row) => row.invoice.id)
+			)
+		)
+		.orderBy(asc(payment.date), asc(payment.createdAt));
+	const paymentsByInvoiceId = new Map<string, PaymentRow[]>();
+	for (const row of payments) {
+		const existing = paymentsByInvoiceId.get(row.invoiceId) ?? [];
+		existing.push(row);
+		paymentsByInvoiceId.set(row.invoiceId, existing);
+	}
 	return rows.map((row) => {
-		const payments = paymentsByInvoiceId.get(row.invoice.id) ?? [];
+		const rowPayments = paymentsByInvoiceId.get(row.invoice.id) ?? [];
 		return {
 			...row,
-			balance: computeInvoiceBalance(row.invoice.total, payments),
-			payments: payments.map((p) => ({ date: p.date, amount: p.amount }))
+			balance: computeInvoiceBalance(row.invoice.total, rowPayments),
+			payments: rowPayments.map((p) => ({ date: p.date, amount: p.amount }))
 		};
 	});
+}
+
+/** One tab's row count, cheap enough to run on every page load: a single
+ *  `COUNT` with a `FILTER` per tab, never {@link listInvoices} with no
+ *  bound (#311 — the tabs' own badges used to cost fetching every
+ *  invoice just to call `.length` on four arrays). */
+export async function countInvoicesByTab(
+	today: Date = new Date(),
+	executor: DbExecutor = db
+): Promise<Record<InvoiceListTab, number>> {
+	const todayIso = invoiceListDateOnly(today);
+	const paidTotal = invoicePaidTotalExpr();
+	const settled = sql`${paidTotal} >= ${invoice.total}`;
+	const overdue = sql`${paidTotal} < ${invoice.total} and ${invoice.dueDate} < ${todayIso}`;
+	const [row] = await executor
+		.select({
+			all: sql<number>`count(*)`.mapWith(Number),
+			due: sql<number>`count(*) filter (where not (${settled}))`.mapWith(Number),
+			overdue: sql<number>`count(*) filter (where ${overdue})`.mapWith(Number),
+			paid: sql<number>`count(*) filter (where ${settled})`.mapWith(Number)
+		})
+		.from(invoice);
+	return row ?? { all: 0, due: 0, overdue: 0, paid: 0 };
+}
+
+/** One row of {@link getInvoiceListTotals} — the ageing list's stats
+ *  strip (#238/#212), summed in SQL across every matching invoice
+ *  regardless of which page is on screen. {@link listInvoices}'s own
+ *  bound is a display concern only: "to collect" showing just what one
+ *  50-row page happens to add up to would be exactly the kind of
+ *  half-true total #311 exists to remove. */
+export interface InvoiceListTotals {
+	readonly totalOutstandingByCurrency: Record<string, MinorUnits>;
+	readonly totalOverdueByCurrency: Record<string, MinorUnits>;
+	readonly totalCollectedThisYearByCurrency: Record<string, MinorUnits>;
+	readonly paidThisYearCount: number;
+	/** The oldest due date among unpaid, overdue invoices — the caller
+	 *  turns this into "worst days late" through `daysLate`, the one
+	 *  place that arithmetic lives. `null` when nothing is overdue. */
+	readonly oldestOverdueDueDate: string | null;
+}
+
+export async function getInvoiceListTotals(
+	today: Date = new Date(),
+	executor: DbExecutor = db
+): Promise<InvoiceListTotals> {
+	const todayIso = invoiceListDateOnly(today);
+	const currentYear = today.getUTCFullYear();
+	const paidTotal = invoicePaidTotalExpr();
+	const remaining = sql<number>`greatest(${invoice.total} - ${paidTotal}, 0)`;
+	const unsettled = sql`${paidTotal} < ${invoice.total}`;
+	const overdue = sql`${unsettled} and ${invoice.dueDate} < ${todayIso}`;
+
+	const [balanceRows, collectedRows, paidThisYearRows, oldestOverdueRows] = await Promise.all([
+		executor
+			.select({
+				currency: invoice.currency,
+				outstanding:
+					sql<number>`coalesce(sum(${remaining}) filter (where ${unsettled}), 0)`.mapWith(Number),
+				overdue: sql<number>`coalesce(sum(${remaining}) filter (where ${overdue}), 0)`.mapWith(
+					Number
+				)
+			})
+			.from(invoice)
+			.groupBy(invoice.currency),
+		executor
+			.select({
+				currency: invoice.currency,
+				collected: sql<number>`coalesce(sum(${payment.amount}), 0)`.mapWith(Number)
+			})
+			.from(payment)
+			.innerJoin(invoice, eq(invoice.id, payment.invoiceId))
+			.where(sql`extract(year from ${payment.date}) = ${currentYear}`)
+			.groupBy(invoice.currency),
+		executor
+			.select({ count: sql<number>`count(distinct ${payment.invoiceId})`.mapWith(Number) })
+			.from(payment)
+			.where(sql`extract(year from ${payment.date}) = ${currentYear}`),
+		executor
+			.select({ dueDate: invoice.dueDate })
+			.from(invoice)
+			.where(overdue)
+			.orderBy(asc(invoice.dueDate))
+			.limit(1)
+	]);
+
+	return {
+		totalOutstandingByCurrency: Object.fromEntries(
+			balanceRows
+				.filter((row) => row.outstanding > 0)
+				.map((row) => [row.currency, row.outstanding as MinorUnits])
+		),
+		totalOverdueByCurrency: Object.fromEntries(
+			balanceRows
+				.filter((row) => row.overdue > 0)
+				.map((row) => [row.currency, row.overdue as MinorUnits])
+		),
+		totalCollectedThisYearByCurrency: Object.fromEntries(
+			collectedRows.map((row) => [row.currency, row.collected as MinorUnits])
+		),
+		paidThisYearCount: paidThisYearRows[0]?.count ?? 0,
+		oldestOverdueDueDate: oldestOverdueRows[0]?.dueDate ?? null
+	};
 }
 
 /**
@@ -463,10 +660,12 @@ export async function listInvoices(executor: DbExecutor = db): Promise<InvoiceLi
  * filter reapplied in JS rather than a second, near-identical `SELECT`:
  * the two cannot drift apart on the join or the grouping, only on which
  * rows they keep. "Unpaid" (#212) means not fully settled — a partly
- * paid invoice stays here, for whatever it still owes.
+ * paid invoice stays here, for whatever it still owes. Deliberately
+ * unbounded (#311's `tab`/`limit` are opt-in): the dashboard's counts and
+ * the overdue alert must see every unpaid invoice, not one page of them.
  */
 export async function listUnpaidInvoices(executor: DbExecutor = db) {
-	const rows = await listInvoices(executor);
+	const rows = await listInvoices({}, executor);
 	return rows.filter((row) => !row.balance.settled);
 }
 

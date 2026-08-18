@@ -16,10 +16,12 @@
 	import { formatDateTime, formatDuration } from '$lib/i18n/format';
 	import { Badge, Banner, Button } from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
+	import { retryEligibility } from '$lib/extraction/retry-eligibility';
 	import {
 		coalesceEvents,
 		failureSummary,
 		isTerminalRunStatus,
+		retryBlockReasonMessage,
 		runDurationSeconds,
 		runEventKindBadge,
 		runStatusBadge,
@@ -29,7 +31,7 @@
 	} from '../run-status';
 	import type { PageProps } from './$types';
 
-	let { data }: PageProps = $props();
+	let { data, form }: PageProps = $props();
 
 	interface LiveEvent {
 		seq: number;
@@ -134,6 +136,21 @@
 			: m.extraction_run_detail_elapsed_label()
 	);
 
+	// Live, off the same `status`/`failureKind` the SSE listener already
+	// updates (#315) — `data.retryAttemptCount`/`data.retryHasProposals`
+	// stay from load, since neither changes for the lifetime of this run:
+	// only a *different* run (a retry of this one) could move them, and
+	// that lands on its own page. The server action re-checks all four
+	// facts fresh before it acts; this only decides what to render.
+	const retry = $derived(
+		retryEligibility({
+			isFailed: status === 'failed',
+			failureKind,
+			attemptCount: data.retryAttemptCount,
+			hasProposals: data.retryHasProposals
+		})
+	);
+
 	// Long model output stays readable without collapsing the transcript
 	// into a wall of text, and without any JavaScript to drive a
 	// show/hide toggle — `<details>` does that natively. Short payloads
@@ -198,6 +215,16 @@
 				<p class="error-detail">{error}</p>
 			{/if}
 		</Banner>
+		{#if retry.canRetry}
+			<form method="POST" action="?/retry" class="retry-form">
+				<Button type="submit" variant="primary">{m.extraction_run_retry_button()}</Button>
+			</form>
+		{:else if retry.reason}
+			<p class="retry-note">{retryBlockReasonMessage(retry.reason)}</p>
+		{/if}
+		{#if form?.retryError}
+			<p class="error-label">{form.retryError}</p>
+		{/if}
 	{/if}
 
 	<section class="transcript">
@@ -253,6 +280,14 @@
 	}
 	.outcome-success a {
 		color: var(--color-primary);
+	}
+	.retry-form {
+		margin-top: var(--space-4);
+	}
+	.retry-note {
+		margin: var(--space-4) 0 0;
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
 	}
 	.error-detail {
 		margin: 0;

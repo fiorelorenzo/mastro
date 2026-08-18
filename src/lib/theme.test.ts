@@ -33,11 +33,12 @@ describe('themeAttribute', () => {
 	});
 });
 
-// The pre-paint script in app.html cannot import this module — it runs
-// before a module graph exists — so it duplicates THEME_STORAGE_KEY as a
-// string literal. This test is what stops that literal drifting away from
-// the constant every other consumer uses.
-test('the pre-paint script in app.html reads the same storage key theme.svelte.ts writes', () => {
-	const html = readFileSync(new URL('../app.html', import.meta.url), 'utf-8');
-	expect(html).toContain(`localStorage.getItem('${THEME_STORAGE_KEY}')`);
+// The pre-paint script (`static/theme-init.js`, referenced from
+// `src/app.html`, #303) cannot import this module — it runs before a
+// module graph exists — so it duplicates THEME_STORAGE_KEY as a string
+// literal. This test is what stops that literal drifting away from the
+// constant every other consumer uses.
+test('the pre-paint script reads the same storage key theme.svelte.ts writes', () => {
+	const script = readFileSync(new URL('../../static/theme-init.js', import.meta.url), 'utf-8');
+	expect(script).toContain(`localStorage.getItem('${THEME_STORAGE_KEY}')`);
 });

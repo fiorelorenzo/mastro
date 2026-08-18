@@ -96,6 +96,18 @@ password sidesteps that entirely, and works with any mail provider, not only
 Google's. For Gmail specifically: enable 2-Step Verification, then generate an
 app password at myaccount.google.com/apppasswords.
 
+**A single message cannot fill the disk.** `IMAP_MAX_MESSAGE_BYTES` (25 MiB by
+default) is checked against the IMAP listing's own reported size before a
+message is ever fetched, so anything over it is never buffered whole — this is
+a single-host deployment where the documents volume shares a disk with the
+database, and the sender otherwise chooses the size. A skipped message is
+still recorded, with a reason, on `/mail/contracts/[id]`: invariant 4 (AGENTS.md)
+means the bytes may be dropped, but the fact that something arrived may not be.
+`DOCUMENT_MAX_BYTES` (50 MiB by default) is the same idea one layer down — the
+content-addressed document store's own ceiling, checked inside `storeDocument`
+itself so it holds for every caller, mail included, not only for whichever one
+remembered to check first.
+
 ## 5. The Drive mirror: `drive.file`, or skip it entirely
 
 If you never set `DRIVE_MIRROR_LOCAL_ROOT` or `DRIVE_MIRROR_REFRESH_TOKEN`, the

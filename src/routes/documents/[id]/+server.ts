@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
+import { resolveDownloadContentType } from '$lib/server/documents/response-content-type';
 import { getDocument, readDocumentBytes } from '$lib/server/repositories/document';
 import type { RequestHandler } from './$types';
 
@@ -17,6 +18,14 @@ import type { RequestHandler } from './$types';
  * every other route. `Content-Disposition: attachment` because these are
  * arbitrary uploaded bytes and rendering them inline in the app's own
  * origin would let an uploaded HTML file run as this site.
+ *
+ * The stored mime (`doc.mime`) is evidence and stays exactly as uploaded
+ * in the database — never touched here. The response's `content-type`
+ * is a separate, narrower claim: `resolveDownloadContentType` (#303) only
+ * lets a small inline-safe allowlist through unchanged and downgrades
+ * everything else, `text/html` included, to `application/octet-stream`,
+ * so an uploaded page never gets served back as one even if some future
+ * change ever relaxed the attachment disposition above.
  */
 export const GET: RequestHandler = async ({ params }) => {
 	const doc = await getDocument(params.id);
@@ -25,7 +34,7 @@ export const GET: RequestHandler = async ({ params }) => {
 	const bytes = await readDocumentBytes(doc);
 	return new Response(new Uint8Array(bytes), {
 		headers: {
-			'content-type': doc.mime,
+			'content-type': resolveDownloadContentType(doc.mime),
 			'content-length': String(doc.size),
 			'content-disposition': `attachment; filename="${encodeURIComponent(doc.originalName)}"`,
 			// Evidence, behind a session: never in a shared cache, and never

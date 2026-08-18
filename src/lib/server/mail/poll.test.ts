@@ -26,7 +26,7 @@ import {
 	type PaymentTerms
 } from '$lib/server/db/schema';
 import { connectWithRetry, pollMailboxesOnce } from './poll';
-import type { ImapConfig } from './config';
+import { DEFAULT_IMAP_MAX_MESSAGE_BYTES, type ImapConfig } from './config';
 
 const imapConfig: ImapConfig = {
 	host: '127.0.0.1',
@@ -34,7 +34,8 @@ const imapConfig: ImapConfig = {
 	secure: false,
 	user: 'mastro@mastro.test',
 	password: 'test-app-password',
-	sentMailbox: 'Sent'
+	sentMailbox: 'Sent',
+	maxMessageBytes: DEFAULT_IMAP_MAX_MESSAGE_BYTES
 };
 
 function rawClient() {
@@ -161,7 +162,7 @@ function testFolder(label: string): string {
 
 async function appendMessage(
 	folder: string,
-	options: { messageId: string; subject?: string; ensureFolder?: boolean }
+	options: { messageId: string; subject?: string; ensureFolder?: boolean; body?: string }
 ) {
 	const appendClient = rawClient();
 	await appendClient.connect();
@@ -174,7 +175,7 @@ async function appendMessage(
 				`Subject: ${options.subject ?? 'test message'}\r\n` +
 				`From: client@example.com\r\n` +
 				`To: mastro@mastro.test\r\n\r\n` +
-				`body for ${options.messageId}`
+				(options.body ?? `body for ${options.messageId}`)
 		);
 		await appendClient.append(folder, raw, []);
 	} finally {
@@ -184,9 +185,14 @@ async function appendMessage(
 
 /** Calls `pollMailboxesOnce`, then tracks the `mailbox_poll_run` row it
  * just wrote (there is exactly one, or none for a `'skipped'` result) so
- * `afterEach` cleans it up. */
-async function pollOnce(options: Parameters<typeof pollMailboxesOnce>[1] = {}) {
-	const result = await pollMailboxesOnce(imapConfig, options);
+ * `afterEach` cleans it up. `config` defaults to the module's own
+ * `imapConfig`; #306's own test overrides just `maxMessageBytes`, the
+ * same way `unreachableConfig` further down overrides just `port`. */
+async function pollOnce(
+	options: Parameters<typeof pollMailboxesOnce>[1] = {},
+	config: ImapConfig = imapConfig
+) {
+	const result = await pollMailboxesOnce(config, options);
 	if (result.status !== 'skipped') {
 		const [latest] = await db
 			.select({ id: mailboxPollRun.id })
@@ -222,7 +228,9 @@ test.skipIf(!mailboxAvailable)(
 		const archived = await db
 			.select()
 			.from(document)
-			.where(eq(document.id, afterFirst[0].documentId));
+			// This message was archived, not skipped (#306) — its
+			// `documentId` is never null here.
+			.where(eq(document.id, afterFirst[0].documentId!));
 		expect(archived[0].ownerType).toBe('contract');
 		expect(archived[0].ownerId).toBe(contractId);
 		expect(archived[0].provenance).toBe('mail');
@@ -262,6 +270,58 @@ test.skipIf(!mailboxAvailable)(
 		expect(afterThird.map((row) => row.messageId).sort()).toEqual(
 			[messageIdOne, messageIdTwo].sort()
 		);
+	}
+);
+
+test.skipIf(!mailboxAvailable)(
+	'a message over the configured ceiling is never archived, but its arrival is still recorded with a readable reason (#306)',
+	async () => {
+		const contractId = await createTestContract(testFolder('oversized'));
+		const folder = (await db.query.contract.findFirst({ where: eq(contract.id, contractId) }))!
+			.mailFolder!;
+		const messageIdBig = `<big-${crypto.randomUUID()}@example.com>`;
+		const messageIdSmall = `<small-${crypto.randomUUID()}@example.com>`;
+
+		// A tight ceiling so the test proves the comparison against
+		// `message.size`, not a specific byte count — the small message's
+		// own headers plus a short body stay comfortably under it, and the
+		// big one's 2000-byte body pushes it comfortably over.
+		const tightConfig: ImapConfig = { ...imapConfig, maxMessageBytes: 1000 };
+
+		await appendMessage(folder, {
+			messageId: messageIdBig,
+			subject: 'an approval with a large attachment',
+			body: 'x'.repeat(2000)
+		});
+		await appendMessage(folder, { messageId: messageIdSmall, subject: 'a small approval' });
+
+		const result = await pollOnce({}, tightConfig);
+		expect(result.status).toBe('success');
+		// "Handed off" counts documents archived, not every row recorded —
+		// only the small message was ever buffered whole.
+		expect(result.status === 'success' && result.folders[0].handedOff).toBe(1);
+
+		const rows = await db
+			.select()
+			.from(inboundThread)
+			.where(eq(inboundThread.contractId, contractId));
+		expect(rows).toHaveLength(2);
+
+		const skipped = rows.find((row) => row.messageId === messageIdBig);
+		expect(skipped?.archived).toBe(false);
+		expect(skipped?.documentId).toBeNull();
+		expect(skipped?.skipReason).toBe('oversized');
+		expect(skipped?.messageSize).toBeGreaterThan(1000);
+
+		const kept = rows.find((row) => row.messageId === messageIdSmall);
+		expect(kept?.archived).toBe(true);
+		expect(kept?.documentId).not.toBeNull();
+
+		// Never buffered whole, never written to the blob store: exactly
+		// one `document` row exists for this contract, the small message's.
+		const documents = await db.select().from(document).where(eq(document.contractId, contractId));
+		expect(documents).toHaveLength(1);
+		expect(documents[0].id).toBe(kept?.documentId);
 	}
 );
 

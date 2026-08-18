@@ -98,6 +98,27 @@ export async function getExtractionRunByJobId(
 	return row ?? null;
 }
 
+/** How many attempts `documentId` has already had (#315): one row per
+ * `enqueueJob` call this document was ever the subject of, the original
+ * plus every retry (`agent/retry.ts` creates a fresh run row per retry
+ * rather than reusing the failed one, so this never needs to
+ * distinguish the first attempt from a later one). The retry bound
+ * counts against this, not a column of its own — no migration needed,
+ * and no risk of it drifting from what actually happened. Row count in
+ * application code rather than `count(*)` in SQL: a document is bounded
+ * to a handful of attempts by the same limit this feeds, so there is
+ * never a table scan hiding behind the simpler query. */
+export async function countExtractionRunsForDocument(
+	documentId: string,
+	executor: DbExecutor = db
+): Promise<number> {
+	const rows = await executor
+		.select({ id: extractionRun.id })
+		.from(extractionRun)
+		.where(eq(extractionRun.documentId, documentId));
+	return rows.length;
+}
+
 /** Every run, newest first, with its document's name for display — the
  * registry's own query (design doc, "The registry (C)": "the view that
  * makes a failure repeating every five minutes visible"). A `leftJoin`,
