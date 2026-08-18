@@ -412,6 +412,28 @@ bundled copy is not a dependency it can rely on. Check the built output, not the
 source: `grep -rl DOMMatrix build/server` should find nothing, and the chunk should
 still carry its `await import('pdf-parse')` verbatim (#267, #268).
 
+**The CSP is one directive map, and two things break under it that no local
+command catches.** `src/lib/server/security/csp.ts` holds it once, because
+`kit.csp` in `vite.config.ts` needs the structured map (SvelteKit appends its own
+nonce to it) while `hooks.server.ts` needs a header string for every `+server.ts`
+response, which `kit.csp` never touches at all. First trap: `%sveltekit.nonce%` in
+`src/app.html` throws at build time the moment any route is prerendered, and
+`/offline` is, so a hand-written inline script cannot be nonced here — the pre-paint
+theme stamp lives in `static/theme-init.js` as a same-origin external file instead.
+Second trap: Vite inlines `src/lib/assets/favicon.svg` as a `data:` URI, which
+`default-src 'self'` refuses, so the app broke on its very first page load with the
+policy on. Hence `img-src 'self' data:`, scoped to images where a `data:` URI cannot
+execute. Neither shows up in `pnpm check`, `pnpm test` or `pnpm build`: a CSP is only
+observable in a browser, so a change to that directive map is verified by loading the
+real pages and watching the console, not by a passing suite (#303).
+
+**ImapFlow has one connection, so a fetch inside a fetch deadlocks.** `mail/poll.ts`
+reads the listing (envelope, size) in one `for await`, then fetches the sources it
+decided to keep in a second, batched call by UID. Fetching each message individually
+inside the listing loop looks like the obvious shape and hangs forever: a second IMAP
+command cannot run while the first async generator is still open. It hangs rather than
+erroring, which is why it is worth knowing before writing it (#306).
+
 **Two facts about the session cookie, because both cost real time.** Its name
 depends on `useSecureCookies: !dev`, so a production build reads
 `__Secure-better-auth.session_token` and `pnpm dev` reads the plain name — probe
