@@ -27,7 +27,7 @@
 // email approving several days), and #209's contract is one `approval`
 // per document, not one per accepted day.
 
-import { desc, eq, sql } from 'drizzle-orm';
+import { desc, eq, inArray, sql } from 'drizzle-orm';
 import { validationIssue, type ProposalValidationIssue } from '$lib/proposals/validation-issue';
 import { minorUnits } from '$lib/money';
 import { db, type DbExecutor } from '$lib/server/db';
@@ -106,6 +106,25 @@ export async function countPendingProposals(executor: DbExecutor = db): Promise<
 
 export async function listProposalsForDocument(documentId: string, executor: DbExecutor = db) {
 	return executor.select().from(proposal).where(eq(proposal.documentId, documentId));
+}
+
+/** Batched `listProposalsForDocument` (#308): every proposal already
+ * produced from any document in `documentIds`, in one query — the
+ * extraction enqueuer's idempotency check for a whole batch of awaiting
+ * threads at once, instead of one query per message. Group the result by
+ * `documentId` to answer "does this document already have a proposal"
+ * for each message in the batch; that check must still run for every
+ * message even though `listInboundThreadsAwaitingExtraction` already
+ * excludes documents with a proposal, since it is the guarantee that
+ * stops one email producing two sets of proposals, not an optimisation
+ * layered on top of one. Empty input skips the round trip rather than
+ * sending `WHERE document_id IN ()`, which Postgres rejects. */
+export async function listProposalsForDocuments(
+	documentIds: readonly string[],
+	executor: DbExecutor = db
+) {
+	if (documentIds.length === 0) return [];
+	return executor.select().from(proposal).where(inArray(proposal.documentId, documentIds));
 }
 
 /** Every proposal, most recent first, optionally narrowed to one status —

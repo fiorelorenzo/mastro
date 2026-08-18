@@ -25,6 +25,7 @@ import {
 	createProposal,
 	diffProposalFields,
 	getProposal,
+	listProposalsForDocuments,
 	ProposalValidationError,
 	rejectProposal,
 	type ClientChoice
@@ -300,6 +301,61 @@ test('createProposal records a pending proposal with no decision yet', async () 
 			quantity: 1,
 			scope: 'API migration'
 		});
+	});
+});
+
+test('listProposalsForDocuments returns every proposal for any document in the batch, and nothing for a document never proposed against or asked for', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentA = await insertDocument(tx, contractRow.id);
+		const documentB = await insertDocument(tx, contractRow.id);
+		const documentC = await insertDocument(tx, contractRow.id);
+
+		const proposalA = await createProposal(
+			{
+				documentId: documentA.id,
+				contractId: contractRow.id,
+				targetType: 'work_unit',
+				proposedFields: { date: '2024-06-10', quantity: 1, scope: 'API migration' },
+				excerpt: 'ok for Monday',
+				confidence: 0.9
+			},
+			tx
+		);
+		// documentB gets two proposals from the same message — the batch
+		// reader must return both, not collapse them.
+		const proposalB1 = await createProposal(
+			{
+				documentId: documentB.id,
+				contractId: contractRow.id,
+				targetType: 'work_unit',
+				proposedFields: { date: '2024-06-13', quantity: 1, scope: 'Thursday' },
+				excerpt: 'ok for Thursday',
+				confidence: 0.9
+			},
+			tx
+		);
+		const proposalB2 = await createProposal(
+			{
+				documentId: documentB.id,
+				contractId: contractRow.id,
+				targetType: 'work_unit',
+				proposedFields: { date: '2024-06-14', quantity: 0.5, scope: 'Friday' },
+				excerpt: 'and half of Friday',
+				confidence: 0.9
+			},
+			tx
+		);
+		// documentC is archived but never proposed against — the batch
+		// call for it is exactly the "no row" case a lone
+		// `listProposalsForDocument` already returns an empty array for.
+
+		const rows = await listProposalsForDocuments([documentA.id, documentB.id, documentC.id], tx);
+		expect(rows.map((row) => row.id).sort()).toEqual(
+			[proposalA.id, proposalB1.id, proposalB2.id].sort()
+		);
+
+		expect(await listProposalsForDocuments([], tx)).toEqual([]);
 	});
 });
 

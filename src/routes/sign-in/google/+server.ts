@@ -10,12 +10,11 @@
 // posts a form, and a bookmarked link should still work.
 import { error } from '@sveltejs/kit';
 import { auth } from '$lib/server/auth';
+import { resolveCallbackURL } from '$lib/server/auth/callback-url';
 import type { RequestHandler } from './$types';
 
 const start: RequestHandler = async ({ url, request }) => {
-	const requested = url.searchParams.get('callbackURL');
-	const callbackURL =
-		requested && requested.startsWith('/') && !requested.startsWith('//') ? requested : '/';
+	const callbackURL = resolveCallbackURL(url.searchParams.get('callbackURL'), url.origin);
 
 	const response = await auth.api.signInSocial({
 		// `errorCallbackURL` is what sends a refused sign-in back to a page

@@ -1,3 +1,4 @@
+import { resolveCallbackURL } from '$lib/server/auth/callback-url';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -5,10 +6,10 @@ import type { PageServerLoad } from './$types';
  * `route-guard.ts`'s list, so this load runs with no session.
  *
  * `callbackURL` is carried through to the button so a visitor who was sent
- * here from a protected page lands back on it. Only same-origin paths: an
- * absolute URL, or one starting `//`, would turn this into an open
- * redirector, which is worth nothing to the visitor and a great deal to
- * whoever finds it.
+ * here from a protected page lands back on it. `resolveCallbackURL` (#302)
+ * keeps only a same-origin result: an absolute URL, or one starting `//` or
+ * `/\`, would turn this into an open redirector, which is worth nothing to
+ * the visitor and a great deal to whoever finds it.
  *
  * `error` is a flag, never a message from the query string. Anything a
  * caller can put in the URL is text an attacker can put on the page, and
@@ -17,9 +18,7 @@ import type { PageServerLoad } from './$types';
  * reveal whether an address is known (#53).
  */
 export const load: PageServerLoad = ({ url }) => {
-	const requested = url.searchParams.get('callbackURL');
-	const callbackURL =
-		requested && requested.startsWith('/') && !requested.startsWith('//') ? requested : '/';
+	const callbackURL = resolveCallbackURL(url.searchParams.get('callbackURL'), url.origin);
 
 	return { callbackURL, rejected: url.searchParams.has('error') };
 };

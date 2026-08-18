@@ -20,44 +20,13 @@ import {
 	fetchLatestBackupRun,
 	fetchLatestMailboxPollRun
 } from '$lib/server/alerts/repository';
-import type { Alert } from '$lib/server/alerts/types';
+import { classifyRun } from '$lib/server/alerts/run-health';
 import { resolveActiveFiscalPack } from '$lib/server/fiscal/profile';
 import { imapConfiguredInEnv } from '$lib/server/mail/config';
 import { vapidPublicKeyFromEnv } from '$lib/server/push/config';
 import { getPracticeProfile } from '$lib/server/repositories/practice-profile';
 import { runnerConfiguredInEnv } from '$lib/server/runner/status';
 import type { PageServerLoad } from './$types';
-
-type RunRow = {
-	readonly status: 'success' | 'failure';
-	readonly detail: string | null;
-	readonly createdAt: Date;
-};
-
-export type RunHealth =
-	| { readonly kind: 'ok'; readonly lastRunAt: string; readonly detail: string | null }
-	| { readonly kind: 'failure'; readonly lastRunAt: string; readonly detail: string | null }
-	| { readonly kind: 'stale'; readonly lastRunAt: string }
-	| { readonly kind: 'never_run' };
-
-/** Reduces one of #74's own two-part checks — the latest run row plus
- * whichever `detect*Failure` already ran against it — to the shape this
- * page renders. `alerts` is empty exactly when the run is healthy, in
- * which case `latest` cannot be null: the `never_run` case is exactly
- * the one that always produces an alert, on a null `latest`. */
-function classifyRun(latest: RunRow | null, alerts: readonly Alert[]): RunHealth {
-	const detail = alerts[0]?.detail;
-	if (
-		detail &&
-		(detail.type === 'backup_failure' ||
-			detail.type === 'mailbox_poll_failure' ||
-			detail.type === 'agent_run_failure')
-	) {
-		if (detail.reason === 'never_run') return { kind: 'never_run' };
-		return { kind: detail.reason, lastRunAt: detail.lastRunAt ?? '', detail: detail.detail };
-	}
-	return { kind: 'ok', lastRunAt: latest!.createdAt.toISOString(), detail: latest!.detail };
-}
 
 export const load: PageServerLoad = async () => {
 	const today = new Date().toISOString().slice(0, 10);

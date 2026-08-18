@@ -9,11 +9,14 @@ import { eq, sql } from 'drizzle-orm';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract, document, invoice, invoiceLine } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
+import { computeInvoiceBalance } from '$lib/server/domain/invoice';
 import {
 	createInvoice,
 	getInvoiceBalance,
 	getInvoiceDocuments,
 	getInvoiceWithLines,
+	listInvoicesForContract,
+	listPaymentsForInvoice,
 	listUnpaidInvoices,
 	markInvoiceTransmitted,
 	recordInvoiceReceipt,
@@ -920,6 +923,80 @@ test('a partial payment leaves the invoice unpaid with the correct remaining bal
 
 		const unpaid = await listUnpaidInvoices(tx);
 		expect(unpaid.some((row) => row.invoice.id === invoiceRow.id)).toBe(true);
+	});
+});
+
+test('listInvoicesForContract batches payments in one query, with amounts and ordering identical to a per-invoice fetch (#309)', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+
+		async function makeInvoice(number: string, issueDate: string) {
+			return createInvoice(
+				{
+					contractId: contractRow.id,
+					number,
+					issueDate,
+					documentType: 'invoice',
+					currency: 'EUR',
+					taxTreatmentCode: null,
+					statutoryReference: null,
+					stampDuty: null,
+					socialCharge: null,
+					dueDate: '2024-12-31',
+					paymentMethod: null,
+					iban: null,
+					transmissionId: null,
+					lines: [
+						{
+							description: 'Flat fee',
+							quantity: 1,
+							unitPrice: minorUnits(100000),
+							amount: minorUnits(100000),
+							taxRate: 0,
+							taxTreatmentCode: null,
+							workUnitIds: []
+						}
+					]
+				},
+				{ kind: 'human', email: 'lorenzo@example.com' },
+				'invoiced',
+				tx
+			);
+		}
+
+		const invoiceA = await makeInvoice(`INV-${crypto.randomUUID()}`, '2024-01-01');
+		const invoiceB = await makeInvoice(`INV-${crypto.randomUUID()}`, '2024-02-01');
+		const invoiceC = await makeInvoice(`INV-${crypto.randomUUID()}`, '2024-03-01');
+
+		// Payments recorded out of date order, so a wrong grouping (or a
+		// query that dropped the per-invoice ordering) would show up as a
+		// different paid total or settlement date below.
+		await recordPayment(invoiceA.id, { amount: minorUnits(60000), date: '2024-01-20' }, tx);
+		await recordPayment(invoiceA.id, { amount: minorUnits(40000), date: '2024-01-10' }, tx);
+
+		await recordPayment(invoiceB.id, { amount: minorUnits(30000), date: '2024-02-15' }, tx);
+		await recordPayment(invoiceB.id, { amount: minorUnits(30000), date: '2024-02-05' }, tx);
+		await recordPayment(invoiceB.id, { amount: minorUnits(30000), date: '2024-02-10' }, tx);
+
+		await recordPayment(invoiceC.id, { amount: minorUnits(50000), date: '2024-03-05' }, tx);
+
+		// This contract was just created in this transaction, so every row
+		// returned belongs to one of the three invoices above.
+		const rows = await listInvoicesForContract(contractRow.id, tx);
+		expect(rows.map((row) => row.id)).toEqual([invoiceC.id, invoiceB.id, invoiceA.id]);
+
+		for (const invoiceRow of [invoiceA, invoiceB, invoiceC]) {
+			const batchedRow = rows.find((row) => row.id === invoiceRow.id);
+			const paymentsFetchedIndividually = await listPaymentsForInvoice(invoiceRow.id, tx);
+			const expectedBalance = computeInvoiceBalance(invoiceRow.total, paymentsFetchedIndividually);
+			expect(batchedRow?.balance).toEqual(expectedBalance);
+		}
+
+		// Sanity: invoice B's three payments really do sum the way the
+		// balance above claims, proving the batched grouping did not
+		// cross-attach a payment from a different invoice.
+		const balanceB = rows.find((row) => row.id === invoiceB.id)?.balance;
+		expect(balanceB?.paid).toBe(minorUnits(90000));
 	});
 });
 

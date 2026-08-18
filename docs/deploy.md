@@ -284,10 +284,27 @@ rsyncs the tag's source into `/opt/apps/mastro`, builds the image there, brings
 `db`, `web` and `scheduler` up (see "Two host shapes" below for why not
 `proxy`, and "The scheduler service"/"The runner service" for `scheduler`/
 `runner`'s own conditions), and gates the result on two separate facts:
-`/health` answers `{"status":"ok","database":"ok"}`, and the container that
-answered is running the image this run just built. A green `/health` alone
-would pass just as happily against yesterday's container, which is the whole
-reason the second check exists.
+`/health` answers 200, and the container that answered is running the image
+this run just built. A green `/health` alone would pass just as happily
+against yesterday's container, which is the whole reason the second check
+exists.
+
+`/health` itself (#316) makes two checks, each its own key in the body:
+`database` is a real `select 1` round trip; `storage` writes a small probe
+file under `DOCUMENTS_DIR`, reads it back and deletes it — the same
+non-destructive write/read/delete `scripts/check-storage.ts` already does
+once at boot, run again here on every poll so a disk that fills up _after_
+boot still turns this red, not just one that was already full at startup.
+Either check failing answers 503 with `{"status":"error",...}` instead of
+200 with `{"status":"ok","database":"ok","storage":"ok"}`, and
+`scripts/deploy-prod.sh`'s health loop (`curl -fsS`, matching on
+`"status":"ok"`) treats a 503 exactly like no answer at all: it keeps
+polling, then rolls back if the container never turns green. A full disk
+or an unwritable `DOCUMENTS_DIR` breaks document archival — invariant 4's
+entire foundation — as surely as an unreachable database breaks
+everything else, so the deploy gate does not distinguish between them when
+deciding whether to proceed; only the JSON body's `database`/`storage`
+keys say which one it was.
 
 If either check fails after the containers were recreated, the script puts the
 previous image back, brings the stack up on it and exits non-zero. Nothing before

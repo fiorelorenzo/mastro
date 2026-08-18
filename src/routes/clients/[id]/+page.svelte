@@ -163,22 +163,22 @@
 	</Section>
 
 	<Section title={m.client_form_legal_identity_legend()}>
-		<dl class="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-			<dt class="opacity-70">{m.client_form_tax_id_label()}</dt>
+		<dl class="pairs">
+			<dt>{m.client_form_tax_id_label()}</dt>
 			<dd>{data.client.taxId}</dd>
 			{#if data.client.vatId}
-				<dt class="opacity-70">{m.client_form_vat_id_label()}</dt>
+				<dt>{m.client_form_vat_id_label()}</dt>
 				<dd>{data.client.vatId}</dd>
 			{/if}
-			<dt class="opacity-70">{m.client_form_country_label()}</dt>
+			<dt>{m.client_form_country_label()}</dt>
 			<dd>{data.client.country}</dd>
-			<dt class="opacity-70">{m.clients_column_notice_channel()}</dt>
+			<dt>{m.clients_column_notice_channel()}</dt>
 			<dd>
 				{data.client.noticeChannel
 					? noticeChannelLabel(data.client.noticeChannel)
 					: m.client_detail_not_set()}
 			</dd>
-			<dt class="opacity-70">{m.client_form_address_legend()}</dt>
+			<dt>{m.client_form_address_legend()}</dt>
 			<dd>
 				{data.client.addressLine1}{#if data.client.addressLine2}, {data.client.addressLine2}{/if},
 				{data.client.addressCity}
@@ -209,7 +209,7 @@
 		{/snippet}
 
 		{#if data.contracts.length === 0}
-			<p class="text-sm opacity-70">{m.contract_empty()}</p>
+			<EmptyState icon="▤" title={m.contract_detail_empty_title()} body={m.contract_empty()} />
 		{:else}
 			<RecordList
 				columns={contractColumns}
@@ -248,5 +248,28 @@
 		font-size: var(--text-sm);
 		color: var(--text-secondary);
 		max-width: 60ch;
+	}
+	.pairs {
+		display: grid;
+		grid-template-columns: max-content 1fr;
+		gap: var(--space-2) var(--space-4);
+		font-size: var(--text-sm);
+	}
+	.pairs dt {
+		color: var(--text-secondary);
+	}
+	.pairs dd {
+		margin: 0;
+		min-width: 0;
+		overflow-wrap: anywhere;
+		color: var(--text-primary);
+	}
+	@media (max-width: 639px) {
+		.pairs {
+			grid-template-columns: 1fr;
+		}
+		.pairs dt {
+			margin-top: var(--space-2);
+		}
 	}
 </style>

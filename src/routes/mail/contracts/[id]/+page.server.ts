@@ -2,6 +2,8 @@ import { error } from '@sveltejs/kit';
 import { mailCrumbs } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import { isLocale } from '$lib/paraglide/runtime';
+import { mailboxPollHealth } from '$lib/server/alerts/run-health';
+import { db } from '$lib/server/db';
 import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
 import {
 	getContractWithClient,
@@ -15,10 +17,13 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ params }) => {
 	const contract = await getContractWithClient(params.id);
 	if (!contract) error(404, m.mail_contract_not_found());
-	const templates = await listEmailTemplatesForContract(params.id);
+	const [templates, mailPoll] = await Promise.all([
+		listEmailTemplatesForContract(params.id),
+		mailboxPollHealth(db)
+	]);
 
 	const crumbs = mailCrumbs();
-	return { contract, templates, crumbs };
+	return { contract, templates, mailPoll, crumbs };
 };
 
 export const actions: Actions = {
