@@ -92,6 +92,7 @@ const IDENTICAL_ON_PURPOSE = new Set([
 	'contract_boolean_no',
 	'import_column_file',
 	'invoice_form_iban_label',
+	'mail_poll_status_ok_badge',
 	'mail_template_column_trigger',
 	'mail_template_form_trigger_legend',
 	'nav_import',

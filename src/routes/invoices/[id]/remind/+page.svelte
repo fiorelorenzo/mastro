@@ -2,7 +2,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate, formatDateTime, formatDays, formatMinorUnits } from '$lib/i18n/format';
-	import { Button } from '$lib/design';
+	import { Button, EmptyState } from '$lib/design';
 	import { submitting } from '$lib/design/submitting.svelte';
 	import Page from '$lib/layout/Page.svelte';
 	import type { DunningSendFormValues } from '$lib/server/repositories/dunning-form';
@@ -44,15 +44,18 @@
 	{/if}
 
 	{#if data.templates.length === 0}
-		<p class="mt-4 text-sm opacity-70">
-			{m.mail_dunning_no_templates()}
-			<a
-				href={resolve('/mail/contracts/[id]/templates/new', { id: data.invoice.contractId })}
-				class="underline"
-			>
-				{m.mail_contract_new_template_link()}
-			</a>
-		</p>
+		<EmptyState
+			icon="✎"
+			title={m.mail_dunning_no_templates_title()}
+			body={m.mail_dunning_no_templates()}
+		>
+			{#snippet actions()}
+				<a
+					href={resolve('/mail/contracts/[id]/templates/new', { id: data.invoice.contractId })}
+					class="underline">{m.mail_contract_new_template_link()}</a
+				>
+			{/snippet}
+		</EmptyState>
 	{:else}
 		<form
 			method="POST"

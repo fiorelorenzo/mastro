@@ -1,14 +1,20 @@
-import { sql } from 'drizzle-orm';
 import { json } from '@sveltejs/kit';
-import { db } from '$lib/server/db';
+import { checkDatabase, checkDocumentStorage } from '$lib/server/health-checks';
 
-/** Liveness plus a real database round trip, for compose and the reverse proxy. */
+/** Liveness plus two real round trips, for compose, the reverse proxy and
+ * `scripts/deploy-prod.sh`'s deploy gate/rollback trigger. The checks
+ * themselves live in `$lib/server/health-checks` (see its own comment for
+ * why); any failing check answers 503, which `scripts/deploy-prod.sh`'s
+ * existing `curl -fsS` health loop already treats as "not yet healthy"
+ * with no change needed there. The healthy shape
+ * (`{"status":"ok","database":"ok",...}`) is unchanged — CI
+ * (`.github/workflows/ci.yml`) and `docs/deploy.md` both assert on those
+ * exact two keys. */
 export async function GET() {
-	try {
-		await db.execute(sql`select 1`);
-	} catch (error) {
-		console.error('health: database unreachable', error);
-		return json({ status: 'error', database: 'unreachable' }, { status: 503 });
-	}
-	return json({ status: 'ok', database: 'ok' });
+	const [database, storage] = await Promise.all([checkDatabase(), checkDocumentStorage()]);
+	const healthy = database === 'ok' && storage === 'ok';
+	return json(
+		{ status: healthy ? 'ok' : 'error', database, storage },
+		{ status: healthy ? 200 : 503 }
+	);
 }

@@ -11,7 +11,7 @@
 	import * as m from '$lib/paraglide/messages';
 	import { importTabs } from '$lib/nav/import-tabs';
 	import { formatDate, formatMinorUnits, formatNumber } from '$lib/i18n/format';
-	import { Banner, Button, DropZone, Field, Tabs } from '$lib/design';
+	import { Banner, Button, DropZone, EmptyState, Field, Tabs } from '$lib/design';
 	import { appHref } from '$lib/nav/href';
 	import Page from '$lib/layout/Page.svelte';
 	import {
@@ -285,7 +285,11 @@
 			<section>
 				<h2 class="text-lg font-semibold">{m.import_section_recognised_heading()}</h2>
 				{#if recognisedFiles.length === 0}
-					<p class="mt-2 text-sm opacity-70">{m.import_recognised_empty()}</p>
+					<EmptyState
+						icon="▤"
+						title={m.import_recognised_empty_title()}
+						body={m.import_recognised_empty()}
+					/>
 				{:else}
 					<div class="mt-2 flex flex-col gap-4">
 						{#each recognisedFiles as file (file.filename + ':' + file.invoiceIndex)}
@@ -345,7 +349,11 @@
 				<h2 class="text-lg font-semibold">{m.import_section_already_present_heading()}</h2>
 				<p class="mt-1 text-xs opacity-70">{m.import_already_present_hint()}</p>
 				{#if review.alreadyPresent.length === 0}
-					<p class="mt-2 text-sm opacity-70">{m.import_already_present_empty()}</p>
+					<EmptyState
+						icon="✓"
+						title={m.import_already_present_empty_title()}
+						body={m.import_already_present_empty()}
+					/>
 				{:else}
 					<table class="mt-2 w-full border-collapse text-sm">
 						<thead>
@@ -384,7 +392,11 @@
 				<h2 class="text-lg font-semibold">{m.import_section_conflicts_heading()}</h2>
 				<p class="mt-1 text-xs opacity-70">{m.import_conflicts_hint()}</p>
 				{#if review.conflicts.length === 0}
-					<p class="mt-2 text-sm opacity-70">{m.import_conflicts_empty()}</p>
+					<EmptyState
+						icon="✓"
+						title={m.import_conflicts_empty_title()}
+						body={m.import_conflicts_empty()}
+					/>
 				{:else}
 					<table class="mt-2 w-full border-collapse text-sm">
 						<thead>
@@ -417,7 +429,11 @@
 			<section>
 				<h2 class="text-lg font-semibold">{m.import_section_clarify_heading()}</h2>
 				{#if clarifications.length === 0}
-					<p class="mt-2 text-sm opacity-70">{m.import_clarify_empty()}</p>
+					<EmptyState
+						icon="✓"
+						title={m.import_clarify_empty_title()}
+						body={m.import_clarify_empty()}
+					/>
 				{:else}
 					<div class="mt-2 flex flex-col gap-4">
 						{#each clarifications as group (group.groupKey)}
@@ -514,7 +530,11 @@
 			<section>
 				<h2 class="text-lg font-semibold">{m.import_section_skipped_heading()}</h2>
 				{#if review.skipped.length === 0}
-					<p class="mt-2 text-sm opacity-70">{m.import_skipped_empty()}</p>
+					<EmptyState
+						icon="✓"
+						title={m.import_skipped_empty_title()}
+						body={m.import_skipped_empty()}
+					/>
 				{:else}
 					<table class="mt-2 w-full border-collapse text-sm">
 						<thead>

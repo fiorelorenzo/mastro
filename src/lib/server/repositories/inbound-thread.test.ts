@@ -7,9 +7,11 @@ import { client as pool, db } from '$lib/server/db';
 import { client, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { storeDocument } from './document';
+import { createProposal } from './proposal';
 import {
 	findByContractAndMessageId,
 	getInboundThreadsForDocuments,
+	listInboundThreadsAwaitingExtraction,
 	listInboundThreadsForContract,
 	maxImapUidForContract,
 	recordInboundThread,
@@ -250,5 +252,97 @@ test('getInboundThreadsForDocuments returns one thread per requested document, a
 		expect(rows.map((row) => row.documentId).sort()).toEqual([documentA.id, documentB.id].sort());
 
 		expect(await getInboundThreadsForDocuments([], tx)).toEqual([]);
+	});
+});
+
+test('listInboundThreadsAwaitingExtraction bounds to limit, oldest received first', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentA = await archiveMessage(tx, contractRow.id);
+		const documentB = await archiveMessage(tx, contractRow.id);
+		const documentC = await archiveMessage(tx, contractRow.id);
+
+		await recordInboundThread(
+			threadInput(contractRow.id, documentC.id, {
+				imapUid: 1,
+				messageId: null,
+				receivedAt: new Date('2026-08-03T09:00:00.000Z')
+			}),
+			tx
+		);
+		await recordInboundThread(
+			threadInput(contractRow.id, documentA.id, {
+				imapUid: 2,
+				messageId: null,
+				receivedAt: new Date('2026-08-01T09:00:00.000Z')
+			}),
+			tx
+		);
+		await recordInboundThread(
+			threadInput(contractRow.id, documentB.id, {
+				imapUid: 3,
+				messageId: null,
+				receivedAt: new Date('2026-08-02T09:00:00.000Z')
+			}),
+			tx
+		);
+
+		const bounded = await listInboundThreadsAwaitingExtraction(2, tx);
+		expect(bounded.map((row) => row.documentId)).toEqual([documentA.id, documentB.id]);
+	});
+});
+
+test('listInboundThreadsAwaitingExtraction excludes a document that already has a proposal, so the next call surfaces the next messages instead of the same ones', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentA = await archiveMessage(tx, contractRow.id);
+		const documentB = await archiveMessage(tx, contractRow.id);
+		const documentC = await archiveMessage(tx, contractRow.id);
+
+		await recordInboundThread(
+			threadInput(contractRow.id, documentA.id, {
+				imapUid: 1,
+				messageId: null,
+				receivedAt: new Date('2026-08-01T09:00:00.000Z')
+			}),
+			tx
+		);
+		await recordInboundThread(
+			threadInput(contractRow.id, documentB.id, {
+				imapUid: 2,
+				messageId: null,
+				receivedAt: new Date('2026-08-02T09:00:00.000Z')
+			}),
+			tx
+		);
+		await recordInboundThread(
+			threadInput(contractRow.id, documentC.id, {
+				imapUid: 3,
+				messageId: null,
+				receivedAt: new Date('2026-08-03T09:00:00.000Z')
+			}),
+			tx
+		);
+
+		const firstTick = await listInboundThreadsAwaitingExtraction(2, tx);
+		expect(firstTick.map((row) => row.documentId)).toEqual([documentA.id, documentB.id]);
+
+		// Simulates the drain (`/api/agent/run` always drains before it
+		// enqueues) having already turned documentA's job into a proposal
+		// by the next tick.
+		await createProposal(
+			{
+				documentId: documentA.id,
+				contractId: contractRow.id,
+				targetType: 'work_unit',
+				proposedFields: { date: '2026-08-01', quantity: 1, scope: 'test' },
+				excerpt: 'ok',
+				confidence: 0.9
+			},
+			tx
+		);
+
+		const secondTick = await listInboundThreadsAwaitingExtraction(2, tx);
+		expect(secondTick.map((row) => row.documentId)).toEqual([documentB.id, documentC.id]);
 	});
 });

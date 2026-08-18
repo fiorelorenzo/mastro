@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import type { LegalText } from '$lib/legal/legal-text';
 import {
 	computeInvoiceBalance,
@@ -580,10 +580,26 @@ export async function listInvoicesForContract(contractId: string, executor: DbEx
 		.from(invoice)
 		.where(eq(invoice.contractId, contractId))
 		.orderBy(desc(invoice.issueDate), desc(invoice.createdAt));
-	const payments = await Promise.all(rows.map((row) => listPaymentsForInvoice(row.id, executor)));
-	return rows.map((row, index) => ({
+	if (rows.length === 0) return [];
+	const payments = await executor
+		.select()
+		.from(payment)
+		.where(
+			inArray(
+				payment.invoiceId,
+				rows.map((row) => row.id)
+			)
+		)
+		.orderBy(asc(payment.date), asc(payment.createdAt));
+	const paymentsByInvoiceId = new Map<string, PaymentRow[]>();
+	for (const row of payments) {
+		const existing = paymentsByInvoiceId.get(row.invoiceId) ?? [];
+		existing.push(row);
+		paymentsByInvoiceId.set(row.invoiceId, existing);
+	}
+	return rows.map((row) => ({
 		...row,
-		balance: computeInvoiceBalance(row.total, payments[index])
+		balance: computeInvoiceBalance(row.total, paymentsByInvoiceId.get(row.id) ?? [])
 	}));
 }
 

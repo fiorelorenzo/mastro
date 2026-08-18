@@ -1,6 +1,6 @@
-import { and, desc, eq, inArray, max } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, max } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
-import { inboundThread } from '$lib/server/db/schema';
+import { inboundThread, proposal } from '$lib/server/db/schema';
 
 export type InboundThreadRow = typeof inboundThread.$inferSelect;
 export type InboundThreadInput = {
@@ -33,12 +33,37 @@ export async function recordInboundThread(input: InboundThreadInput, executor: D
 	return row ?? null;
 }
 
-/** Every archived message, oldest first. The extraction enqueuer (#85)
- * walks these and skips the ones already proposed from; ordering by
- * arrival means the oldest unread message is queued first, which is the
- * order a person would have read them in. */
-export async function listInboundThreadsAwaitingExtraction(executor: DbExecutor = db) {
-	return executor.select().from(inboundThread).orderBy(inboundThread.receivedAt);
+/** #308: the extraction enqueuer's own query, bounded so one scheduler
+ * tick costs one query regardless of backlog size instead of "every row
+ * the table has ever accumulated". "Awaiting" is a left join against
+ * `proposal` filtered to `proposal.id IS NULL`: a thread whose document
+ * already has at least one proposal has been extracted, whatever the
+ * queue file on disk says, so this excludes it rather than handing the
+ * enqueuer the same already-done row on every future tick. That is also
+ * what makes repeated calls advance: once a tick's batch is drained and
+ * its proposals written (`/api/agent/run` always drains before it
+ * enqueues), the next call's anti-join no longer matches those rows and
+ * surfaces the next oldest ones instead, so nothing behind a large
+ * backlog starves on a fixed-size page. Ordering by arrival means the
+ * oldest unread message is queued first, the order a person would have
+ * read them in. The enqueuer's own idempotency check against
+ * `proposal` (`listProposalsForDocuments`) still runs per batch on top
+ * of this — this filter is a bound on what gets fetched, not a
+ * replacement for the check that decides what gets enqueued. */
+export const DEFAULT_EXTRACTION_BATCH_LIMIT = 200;
+
+export async function listInboundThreadsAwaitingExtraction(
+	limit = DEFAULT_EXTRACTION_BATCH_LIMIT,
+	executor: DbExecutor = db
+) {
+	const rows = await executor
+		.select({ thread: inboundThread })
+		.from(inboundThread)
+		.leftJoin(proposal, eq(proposal.documentId, inboundThread.documentId))
+		.where(isNull(proposal.id))
+		.orderBy(inboundThread.receivedAt)
+		.limit(limit);
+	return rows.map((row) => row.thread);
 }
 
 /** The thread one archived message belongs to (#85). The drain needs its

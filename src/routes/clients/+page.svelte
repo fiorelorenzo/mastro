@@ -89,7 +89,10 @@
 	{#if row.hasContract}
 		<Amount minorUnits={row.exposure.collectedThisYear} currency={CURRENCY} size="md" />
 	{:else}
-		<span class="no-contract" aria-hidden="true">—</span>
+		<span class="no-contract">
+			<span aria-hidden="true">—</span>
+			<span class="sr-only">{m.clients_no_contract()}</span>
+		</span>
 	{/if}
 {/snippet}
 

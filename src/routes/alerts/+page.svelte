@@ -22,6 +22,7 @@
 	import Badge from '$lib/design/Badge.svelte';
 	import Button from '$lib/design/Button.svelte';
 	import Dialog from '$lib/design/Dialog.svelte';
+	import EmptyState from '$lib/design/EmptyState.svelte';
 	import Field from '$lib/design/Field.svelte';
 	import Textarea from '$lib/design/Textarea.svelte';
 	import { toasts } from '$lib/design/toast-store.svelte';
@@ -109,7 +110,7 @@
 	{/snippet}
 
 	{#if data.alerts.length === 0}
-		<p class="mt-4 text-sm opacity-70">{m.alerts_page_empty()}</p>
+		<EmptyState icon="✓" title={m.alerts_page_empty_title()} body={m.alerts_page_empty()} />
 	{:else}
 		<ul class="alert-list">
 			{#each data.alerts as alert (alert.key)}
