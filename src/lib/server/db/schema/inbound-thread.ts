@@ -1,5 +1,14 @@
-import { relations } from 'drizzle-orm';
-import { bigint, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
+import {
+	bigint,
+	boolean,
+	check,
+	integer,
+	pgTable,
+	text,
+	timestamp,
+	uuid
+} from 'drizzle-orm/pg-core';
 import { id, timestamps } from '../columns';
 import { contract } from './contract';
 import { document } from './document';
@@ -51,23 +60,55 @@ import { document } from './document';
  * columns exist purely so a human or a log line can identify a row
  * without reading the blob back off disk, the same role `document.
  * originalName` already plays.
+ *
+ * `archived`/`skipReason`/`messageSize` (#306) are the other shape this
+ * row can take: a message the poller decided not to buffer whole because
+ * `message.size` in the IMAP listing already exceeded
+ * `IMAP_MAX_MESSAGE_BYTES` before `source` was ever fetched. Invariant 4
+ * ("never keep only the extracted fields") cuts the other way here — the
+ * bytes themselves are what gets dropped, on purpose, but the *fact the
+ * message arrived* is not: `documentId` stays null (nothing was archived),
+ * `skipReason` names why in a form the mail UI renders for a human, and
+ * `messageSize` is the envelope-reported size at the moment of the
+ * decision. `inbound_thread_archived_shape` (this file's own `check()`)
+ * enforces the two shapes never mix — `archived = true` always carries a
+ * `documentId` and no skip fields, `archived = false` always carries a
+ * `skipReason`/`messageSize` and no `documentId` — so a caller cannot
+ * half-write either one.
  */
-export const inboundThread = pgTable('inbound_thread', {
-	id: id(),
-	contractId: uuid('contract_id')
-		.notNull()
-		.references(() => contract.id, { onDelete: 'restrict' }),
-	documentId: uuid('document_id')
-		.notNull()
-		.references(() => document.id, { onDelete: 'restrict' }),
-	mailbox: text('mailbox').notNull(),
-	imapUidValidity: bigint('imap_uid_validity', { mode: 'number' }).notNull(),
-	imapUid: integer('imap_uid').notNull(),
-	messageId: text('message_id'),
-	subject: text('subject'),
-	receivedAt: timestamp('received_at', { withTimezone: true }).notNull(),
-	...timestamps()
-});
+export type InboundThreadSkipReason = 'oversized';
+
+export const inboundThread = pgTable(
+	'inbound_thread',
+	{
+		id: id(),
+		contractId: uuid('contract_id')
+			.notNull()
+			.references(() => contract.id, { onDelete: 'restrict' }),
+		documentId: uuid('document_id').references(() => document.id, { onDelete: 'restrict' }),
+		mailbox: text('mailbox').notNull(),
+		imapUidValidity: bigint('imap_uid_validity', { mode: 'number' }).notNull(),
+		imapUid: integer('imap_uid').notNull(),
+		messageId: text('message_id'),
+		subject: text('subject'),
+		receivedAt: timestamp('received_at', { withTimezone: true }).notNull(),
+		archived: boolean('archived').notNull().default(true),
+		skipReason: text('skip_reason').$type<InboundThreadSkipReason>(),
+		messageSize: integer('message_size'),
+		...timestamps()
+	},
+	(table) => [
+		check(
+			'inbound_thread_archived_shape',
+			sql`(${table.archived} = true and ${table.documentId} is not null and ${table.skipReason} is null and ${table.messageSize} is null)
+				or (${table.archived} = false and ${table.documentId} is null and ${table.skipReason} is not null and ${table.messageSize} is not null)`
+		),
+		check(
+			'inbound_thread_skip_reason_known',
+			sql`${table.skipReason} is null or ${table.skipReason} in ('oversized')`
+		)
+	]
+);
 
 export const inboundThreadRelations = relations(inboundThread, ({ one }) => ({
 	contract: one(contract, { fields: [inboundThread.contractId], references: [contract.id] }),

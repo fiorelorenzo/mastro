@@ -24,6 +24,13 @@ export type ImapConfig = {
 	user: string;
 	password: string;
 	sentMailbox: string;
+	// #306: the ceiling on one inbound message's RFC822 size, checked
+	// against `message.size` in the IMAP listing before `source` is ever
+	// fetched — an oversized message is never buffered whole. Optional in
+	// the environment (`IMAP_MAX_MESSAGE_BYTES`, see `readMailConfig`),
+	// never optional here: every caller gets a concrete number, the
+	// documented default when unset.
+	maxMessageBytes: number;
 };
 
 export type MailConfig = { smtp: SmtpConfig; imap: ImapConfig };
@@ -46,6 +53,30 @@ function requiredPort(source: Record<string, string | undefined>, key: string): 
 	return port;
 }
 
+/** `requiredPort`'s optional sibling: unset falls back to `fallback`
+ * rather than throwing — `IMAP_MAX_MESSAGE_BYTES` is a sane-default
+ * ceiling, not a credential a self-hoster must supply. Still validated
+ * once set, the same way a bad port is: a typo becomes a boot-time error,
+ * never a silently-ignored one. */
+function optionalPositiveInt(
+	source: Record<string, string | undefined>,
+	key: string,
+	fallback: number
+): number {
+	const raw = source[key]?.trim();
+	if (!raw) return fallback;
+	const value = Number(raw);
+	if (!Number.isInteger(value) || value <= 0) {
+		throw new Error(`${key} must be a positive integer, got ${raw}.`);
+	}
+	return value;
+}
+
+// 25 MiB (#306): Gmail's own inbound attachment ceiling, a reasonable
+// default for any provider and generous enough that a real approval
+// email with a scanned PDF attached is never the thing that trips it.
+export const DEFAULT_IMAP_MAX_MESSAGE_BYTES = 25 * 1024 * 1024;
+
 /** Parses SMTP/IMAP settings out of a plain env-like object — a pure
  * function so it is exercised directly against fabricated input, the same
  * way `blob-store.ts` takes its storage root explicitly instead of
@@ -67,7 +98,12 @@ export function readMailConfig(source: Record<string, string | undefined>): Mail
 			secure: source.IMAP_SECURE === 'true',
 			user: required(source, 'IMAP_USER'),
 			password: required(source, 'IMAP_APP_PASSWORD'),
-			sentMailbox: source.IMAP_SENT_MAILBOX?.trim() || 'Sent'
+			sentMailbox: source.IMAP_SENT_MAILBOX?.trim() || 'Sent',
+			maxMessageBytes: optionalPositiveInt(
+				source,
+				'IMAP_MAX_MESSAGE_BYTES',
+				DEFAULT_IMAP_MAX_MESSAGE_BYTES
+			)
 		}
 	};
 }

@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'vitest';
+import type { RetryBlockReason } from '$lib/extraction/retry-eligibility';
 import {
 	coalesceEvents,
 	isTerminalRunStatus,
+	retryBlockReasonMessage,
 	runDurationSeconds,
 	runEventKindBadge,
 	runStatusBadge,
@@ -105,4 +107,18 @@ describe('coalesceEvents', () => {
 	test('no events, no blocks', () => {
 		expect(coalesceEvents([])).toEqual([]);
 	});
+});
+
+test('every retry block reason gets its own explicit sentence, not a fallthrough default', () => {
+	const reasons: readonly RetryBlockReason[] = [
+		'not_failed',
+		'kind_unknown',
+		'kind_not_retryable',
+		'attempts_exhausted',
+		'already_has_proposals',
+		'source_missing'
+	];
+	const messages = reasons.map(retryBlockReasonMessage);
+	expect(messages.every((message) => typeof message === 'string' && message.length > 0)).toBe(true);
+	expect(new Set(messages).size).toBe(reasons.length);
 });

@@ -9,36 +9,19 @@
 //
 // This route is on `route-guard.ts`'s public list for the same reason
 // `/api/alerts/run/[job]` is: the caller is cron, with no browser
-// session to present. Authorization is a shared bearer token, compared
-// in constant time.
-import { timingSafeEqual } from 'node:crypto';
-import { error, json } from '@sveltejs/kit';
+// session to present. Authorization is `authorizeCronRequest`
+// (`$lib/server/auth/cron-token.ts`, #304), which throws a bare 401 for
+// a wrong token, a missing token or an unset `IMAP_POLL_CRON_TOKEN`
+// alike — that sameness is the point, see its own comment.
+import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
+import { authorizeCronRequest } from '$lib/server/auth/cron-token';
 import { imapConfiguredInEnv, mailConfigFromEnv } from '$lib/server/mail/config';
 import { pollMailboxesOnce } from '$lib/server/mail/poll';
 import type { RequestHandler } from './$types';
 
-function isAuthorized(request: Request): boolean {
-	const token = (env.IMAP_POLL_CRON_TOKEN ?? '').trim();
-	if (!token) return false;
-
-	const header = request.headers.get('authorization') ?? '';
-	const presented = header.startsWith('Bearer ') ? header.slice('Bearer '.length) : '';
-	const expected = Buffer.from(token);
-	const given = Buffer.from(presented);
-	return expected.length === given.length && timingSafeEqual(expected, given);
-}
-
 export const POST: RequestHandler = async ({ request }) => {
-	if (!isAuthorized(request)) {
-		// `IMAP_POLL_CRON_TOKEN` unset is a misconfiguration (503), a wrong
-		// or missing token is a rejected caller (401) — both fail closed,
-		// the difference is only which one a self-hoster needs to fix.
-		if (!(env.IMAP_POLL_CRON_TOKEN ?? '').trim()) {
-			error(503, 'IMAP_POLL_CRON_TOKEN is not set on this instance');
-		}
-		error(401, 'invalid or missing bearer token');
-	}
+	authorizeCronRequest(request, env.IMAP_POLL_CRON_TOKEN, 'IMAP_POLL_CRON_TOKEN');
 
 	// Mail is optional. `mailConfigFromEnv` throws on a half-set or unset
 	// mailbox on purpose, because sending is a deliberate action nobody should

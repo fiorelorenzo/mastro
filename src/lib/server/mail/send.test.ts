@@ -19,7 +19,7 @@ import {
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { createApproval } from '$lib/server/repositories/approval';
 import { createWorkUnit } from '$lib/server/repositories/work-unit';
-import type { MailConfig } from './config';
+import { DEFAULT_IMAP_MAX_MESSAGE_BYTES, type MailConfig } from './config';
 import { composeForAutomaticTrigger, dispatchEmail, prepareEmail } from './send';
 
 // Same transaction-rollback pattern as the other repository tests, plus
@@ -42,7 +42,8 @@ const realConfig: MailConfig = {
 		secure: false,
 		user: 'mastro@mastro.test',
 		password: 'test-app-password',
-		sentMailbox: 'Sent'
+		sentMailbox: 'Sent',
+		maxMessageBytes: DEFAULT_IMAP_MAX_MESSAGE_BYTES
 	}
 };
 
@@ -61,7 +62,15 @@ const unreachableConfig: MailConfig = {
 		fromAddress: 'x@x.test',
 		fromName: null
 	},
-	imap: { host: '192.0.2.1', port: 1, secure: false, user: 'x', password: 'x', sentMailbox: 'Sent' }
+	imap: {
+		host: '192.0.2.1',
+		port: 1,
+		secure: false,
+		user: 'x',
+		password: 'x',
+		sentMailbox: 'Sent',
+		maxMessageBytes: DEFAULT_IMAP_MAX_MESSAGE_BYTES
+	}
 };
 
 async function probeMailbox(): Promise<boolean> {

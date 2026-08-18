@@ -3,7 +3,7 @@ import { afterAll, expect, test } from 'vitest';
 import { rejection } from '$lib/server/db/pg-error';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
-import { client, contract, document, inboundThread } from './index';
+import { client, contract, document, inboundThread, type InboundThreadSkipReason } from './index';
 import type { ExpensePolicy, PaymentTerms } from './contract';
 
 // Needs a migrated database: `pnpm db:up && pnpm db:migrate`. Real
@@ -79,6 +79,26 @@ function threadFields(
 		messageId: `<${crypto.randomUUID()}@example.com>`,
 		subject: 'Re: approval for next week',
 		receivedAt: new Date('2026-08-01T09:00:00.000Z'),
+		...overrides
+	};
+}
+
+function skippedFields(
+	contractId: string,
+	overrides: Partial<typeof inboundThread.$inferInsert> = {}
+) {
+	return {
+		contractId,
+		documentId: null,
+		mailbox: 'Acme Corp',
+		imapUidValidity: 1700000000,
+		imapUid: 1,
+		messageId: null,
+		subject: 'A message too large to archive',
+		receivedAt: new Date('2026-08-01T09:00:00.000Z'),
+		archived: false,
+		skipReason: 'oversized' as const,
+		messageSize: 42_000_000,
 		...overrides
 	};
 }
@@ -217,5 +237,89 @@ test('updated_at advances on update, same as every other table', async () => {
 		// `db/set-updated-at.test.ts`'s job.
 		expect(updated.subject).toBe('updated subject');
 		expect(updated.updatedAt.getTime()).toBeGreaterThanOrEqual(row.updatedAt.getTime());
+	});
+});
+
+test('a skipped message is recorded with no document, a reason and the reported size (#306)', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow } = await insertContractAndDocument(tx);
+		const [row] = await tx.insert(inboundThread).values(skippedFields(contractRow.id)).returning();
+
+		expect(row.archived).toBe(false);
+		expect(row.documentId).toBeNull();
+		expect(row.skipReason).toBe('oversized');
+		expect(row.messageSize).toBe(42_000_000);
+	});
+});
+
+test('inbound_thread_archived_shape rejects every way the two row shapes can mix (#306)', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await insertContractAndDocument(tx);
+
+		// archived (the default) with no document.
+		const noDocument = await rejection(
+			() =>
+				tx.insert(inboundThread).values(
+					threadFields(contractRow.id, documentRow.id, {
+						documentId: null,
+						messageId: null
+					})
+				),
+			tx
+		);
+		expect(noDocument.code).toBe('23514');
+
+		// Skipped, but a document is attached anyway.
+		const skippedWithDocument = await rejection(
+			() =>
+				tx
+					.insert(inboundThread)
+					.values(skippedFields(contractRow.id, { documentId: documentRow.id, imapUid: 2 })),
+			tx
+		);
+		expect(skippedWithDocument.code).toBe('23514');
+
+		// Skipped, but no reason given.
+		const skippedWithoutReason = await rejection(
+			() =>
+				tx
+					.insert(inboundThread)
+					.values(skippedFields(contractRow.id, { skipReason: null, imapUid: 3 })),
+			tx
+		);
+		expect(skippedWithoutReason.code).toBe('23514');
+
+		// Skipped, but no size given.
+		const skippedWithoutSize = await rejection(
+			() =>
+				tx
+					.insert(inboundThread)
+					.values(skippedFields(contractRow.id, { messageSize: null, imapUid: 4 })),
+			tx
+		);
+		expect(skippedWithoutSize.code).toBe('23514');
+
+		// A well-formed skipped row, for contrast, still goes through.
+		await tx.insert(inboundThread).values(skippedFields(contractRow.id, { imapUid: 5 }));
+	});
+});
+
+test('inbound_thread_skip_reason_known rejects a reason outside the known set (#306)', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const { contractRow } = await insertContractAndDocument(tx);
+
+		const unknownReason = await rejection(
+			() =>
+				tx.insert(inboundThread).values(
+					skippedFields(contractRow.id, {
+						// Deliberately outside `InboundThreadSkipReason` — the
+						// point of this test is that the database rejects it,
+						// not just the type checker.
+						skipReason: 'not-a-real-reason' as unknown as InboundThreadSkipReason
+					})
+				),
+			tx
+		);
+		expect(unknownReason.code).toBe('23514');
 	});
 });

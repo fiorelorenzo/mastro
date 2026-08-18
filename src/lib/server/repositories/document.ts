@@ -13,6 +13,35 @@ function storageRoot(): string {
 	return process.env.DOCUMENT_STORAGE_ROOT ?? 'data/documents';
 }
 
+const DEFAULT_MAX_DOCUMENT_BYTES = 50 * 1024 * 1024; // 50 MiB
+
+/** The blob store's own ceiling (#306), independent of every caller.
+ * `mail/poll.ts` already refuses to buffer an oversized message before
+ * this point (`IMAP_MAX_MESSAGE_BYTES`), but that check lives in one
+ * caller — this one holds regardless of what a future caller forgets to
+ * check first, which is the whole reason step 4 of #306 exists. Read
+ * from `process.env` directly, same reasoning as `storageRoot()` above:
+ * a test overrides it without a server restart. */
+function maxDocumentBytes(): number {
+	const raw = process.env.DOCUMENT_MAX_BYTES;
+	if (!raw) return DEFAULT_MAX_DOCUMENT_BYTES;
+	const value = Number(raw);
+	if (!Number.isFinite(value) || value <= 0) {
+		throw new Error(`DOCUMENT_MAX_BYTES must be a positive number, got: ${raw}`);
+	}
+	return value;
+}
+
+/** Thrown by `storeDocument` when `input.bytes` is over `maxDocumentBytes()`
+ * — checked before `writeBlob` ever hashes or writes anything, so an
+ * oversized call costs one length check, never a disk write. */
+export class DocumentTooLargeError extends Error {
+	constructor(size: number, limit: number) {
+		super(`document is ${size} bytes, over the ${limit}-byte DOCUMENT_MAX_BYTES limit`);
+		this.name = 'DocumentTooLargeError';
+	}
+}
+
 export type DocumentInput = {
 	bytes: Uint8Array;
 	mime: string;
@@ -44,6 +73,10 @@ export type DocumentInput = {
  * pass the `tx` from an ambient `db.transaction` instead.
  */
 export async function storeDocument(input: DocumentInput, executor: DbExecutor = db) {
+	const limit = maxDocumentBytes();
+	if (input.bytes.byteLength > limit) {
+		throw new DocumentTooLargeError(input.bytes.byteLength, limit);
+	}
 	const { hash, size } = await writeBlob(storageRoot(), input.bytes);
 	const [row] = await executor
 		.insert(document)

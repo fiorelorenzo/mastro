@@ -24,10 +24,11 @@ import { storeDocument } from '$lib/server/repositories/document';
 import {
 	findByContractAndMessageId,
 	maxImapUidForContract,
-	recordInboundThread
+	recordInboundThread,
+	recordSkippedInboundThread
 } from '$lib/server/repositories/inbound-thread';
 import { recordMailboxPollRun } from '$lib/server/repositories/mailbox-poll-run';
-import type { ImapConfig } from './config';
+import { DEFAULT_IMAP_MAX_MESSAGE_BYTES, type ImapConfig } from './config';
 
 /** Connection retry/backoff (#84's "a provider outage is retried with
  * backoff"): exponential, capped at `CONNECT_MAX_ATTEMPTS` tries total
@@ -114,11 +115,27 @@ export type ContractFolderResult = {
  * covering the highest-UID message anyway, per RFC 3501's sequence-range
  * rules — is filtered out explicitly below rather than trusted to return
  * nothing.
+ *
+ * Two sequential fetches, deliberately never nested (#306). The first
+ * asks for `envelope`/`size`/`internalDate` only — never `source` — and
+ * decides, per message, whether it is over `maxMessageBytes`; a skipped
+ * message is recorded right there, since that is a Postgres write, not
+ * an IMAP command, and costs nothing to do mid-loop. The kept UIDs are
+ * only fetched with `source` afterwards, in one bulk second FETCH, once
+ * the first has fully finished: `ImapFlow` serializes commands on one
+ * connection, so issuing a second FETCH while still iterating the first
+ * one's `for await` — as an earlier version of this function did, one
+ * `fetchOne` per kept message — deadlocks the connection rather than
+ * queuing behind it, because the outer command never finishes while this
+ * loop is blocked awaiting the inner one. A message that gets skipped is
+ * never in the second fetch's UID list at all, which is what actually
+ * keeps it from ever being buffered whole.
  */
 export async function pollContractFolder(
 	client: ImapFlow,
 	row: { id: string; mailFolder: string },
-	executor: DbExecutor = db
+	executor: DbExecutor = db,
+	maxMessageBytes: number = DEFAULT_IMAP_MAX_MESSAGE_BYTES
 ): Promise<ContractFolderResult> {
 	const mailbox = row.mailFolder;
 	try {
@@ -129,14 +146,15 @@ export async function pollContractFolder(
 		const maxUid = await maxImapUidForContract(row.id, uidValidity, executor);
 		const from = (maxUid ?? 0) + 1;
 
-		let handedOff = 0;
+		type KeptMeta = { messageId: string | null; subject: string | null; internalDate: Date };
+		const kept = new Map<number, KeptMeta>();
+
 		for await (const message of client.fetch(
 			`${from}:*`,
-			{ uid: true, envelope: true, source: true, internalDate: true },
+			{ uid: true, envelope: true, size: true, internalDate: true },
 			{ uid: true }
 		)) {
 			if (message.uid < from) continue; // the "n:*" gotcha, not a new message
-			if (!Buffer.isBuffer(message.source)) continue;
 
 			const messageId = message.envelope?.messageId ?? null;
 			if (messageId) {
@@ -148,61 +166,102 @@ export async function pollContractFolder(
 				if (already) continue;
 			}
 
-			const source = message.source;
 			const internalDate =
 				message.internalDate instanceof Date
 					? message.internalDate
 					: new Date(message.internalDate ?? Date.now());
 			const subject = message.envelope?.subject ?? null;
 			const uid = message.uid;
+			const size = message.size ?? null;
 
-			const run = async (tx: DbExecutor) => {
-				// Owned by the contract itself, not by an `approval` that does
-				// not exist yet — the same starting owner `createApproval`
-				// (`repositories/approval.ts`) gives a freshly archived
-				// original before anything downstream decides what it
-				// evidences.
-				const archived = await storeDocument(
-					{
-						bytes: source,
-						mime: 'message/rfc822',
-						// Not `messageId`: that header is chosen entirely by the
-						// sender (#300) and `originalName` both feeds a zip
-						// entry path (`dispute-bundle/zip.ts`) and renders
-						// as-is in the proposals queue UI. The verbatim
-						// header still gets recorded, below, in
-						// `inbound_thread.messageId` — that column is the
-						// evidence; this one is only ever a display name
-						// built from fields this process controls.
-						originalName: `uid-${uid}@${mailbox}.eml`,
-						provenance: 'mail',
-						contractId: row.id,
-						confidential: true,
-						ownerType: 'contract',
-						ownerId: row.id
-					},
-					tx
+			if (size !== null && size > maxMessageBytes) {
+				// #306, invariant 4: the bytes are what get dropped, on
+				// purpose — this message never enters `kept`, so the second
+				// fetch below never asks for its `source` — but the arrival
+				// itself is still recorded, with the reason and the size
+				// this listing already reported.
+				await executor.transaction((tx) =>
+					recordSkippedInboundThread(
+						{
+							contractId: row.id,
+							mailbox,
+							imapUidValidity: uidValidity,
+							imapUid: uid,
+							messageId,
+							subject,
+							receivedAt: internalDate,
+							skipReason: 'oversized',
+							messageSize: size
+						},
+						tx
+					)
 				);
-				await recordInboundThread(
-					{
-						contractId: row.id,
-						documentId: archived.id,
-						mailbox,
-						imapUidValidity: uidValidity,
-						imapUid: uid,
-						messageId,
-						subject,
-						receivedAt: internalDate
-					},
-					tx
-				);
-			};
-			// `executor` may already be a transaction (a test rolling
-			// everything back): `PgTransaction` exposes `.transaction()` for
-			// exactly this, opening a nested savepoint, so this composes
-			// correctly whether `executor` is the pool or an ambient `tx`.
-			await executor.transaction(run);
-			handedOff += 1;
+				continue;
+			}
+
+			kept.set(uid, { messageId, subject, internalDate });
+		}
+
+		let handedOff = 0;
+		if (kept.size > 0) {
+			for await (const message of client.fetch(
+				[...kept.keys()],
+				{ uid: true, source: true },
+				{ uid: true }
+			)) {
+				const meta = kept.get(message.uid);
+				if (!meta || !Buffer.isBuffer(message.source)) continue;
+				const source = message.source;
+				const uid = message.uid;
+
+				const run = async (tx: DbExecutor) => {
+					// Owned by the contract itself, not by an `approval` that does
+					// not exist yet — the same starting owner `createApproval`
+					// (`repositories/approval.ts`) gives a freshly archived
+					// original before anything downstream decides what it
+					// evidences.
+					const archived = await storeDocument(
+						{
+							bytes: source,
+							mime: 'message/rfc822',
+							// Not `messageId`: that header is chosen entirely by the
+							// sender (#300) and `originalName` both feeds a zip
+							// entry path (`dispute-bundle/zip.ts`) and renders
+							// as-is in the proposals queue UI. The verbatim
+							// header still gets recorded, below, in
+							// `inbound_thread.messageId` — that column is the
+							// evidence; this one is only ever a display name
+							// built from fields this process controls.
+							originalName: `uid-${uid}@${mailbox}.eml`,
+							provenance: 'mail',
+							contractId: row.id,
+							confidential: true,
+							ownerType: 'contract',
+							ownerId: row.id
+						},
+						tx
+					);
+					await recordInboundThread(
+						{
+							contractId: row.id,
+							documentId: archived.id,
+							mailbox,
+							imapUidValidity: uidValidity,
+							imapUid: uid,
+							messageId: meta.messageId,
+							subject: meta.subject,
+							receivedAt: meta.internalDate
+						},
+						tx
+					);
+				};
+				// `executor` may already be a transaction (a test rolling
+				// everything back): `PgTransaction` exposes `.transaction()` for
+				// exactly this, opening a nested savepoint, so this composes
+				// correctly whether `executor` is the pool or an ambient `tx`.
+				await executor.transaction(run);
+				handedOff += 1;
+			}
 		}
 
 		return { contractId: row.id, mailbox, handedOff, error: null };
@@ -255,7 +314,12 @@ export async function pollMailboxesOnce(
 			// filters on it), narrowed here only for TypeScript.
 			if (!target.mailFolder) continue;
 			folders.push(
-				await pollContractFolder(client, { id: target.id, mailFolder: target.mailFolder }, executor)
+				await pollContractFolder(
+					client,
+					{ id: target.id, mailFolder: target.mailFolder },
+					executor,
+					imapConfig.maxMessageBytes
+				)
 			);
 		}
 	} finally {

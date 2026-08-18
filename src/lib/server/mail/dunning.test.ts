@@ -19,7 +19,7 @@ import {
 	recordPayment
 } from '$lib/server/repositories/invoice';
 import { buildDunningContext, InvoiceNotOverdueError } from './dunning';
-import type { MailConfig } from './config';
+import { DEFAULT_IMAP_MAX_MESSAGE_BYTES, type MailConfig } from './config';
 import { appendToSentMailbox } from './imap';
 import { composeMessage } from './message';
 import { renderTemplate } from './render';
@@ -213,7 +213,8 @@ const realConfig: MailConfig = {
 		secure: false,
 		user: 'mastro@mastro.test',
 		password: 'test-app-password',
-		sentMailbox: 'Sent'
+		sentMailbox: 'Sent',
+		maxMessageBytes: DEFAULT_IMAP_MAX_MESSAGE_BYTES
 	}
 };
 

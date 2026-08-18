@@ -12,18 +12,20 @@ import {
 	setContractTemplateLanguage
 } from '$lib/server/repositories/contract';
 import { listEmailTemplatesForContract } from '$lib/server/repositories/email-template';
+import { listSkippedInboundThreadsForContract } from '$lib/server/repositories/inbound-thread';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
 	const contract = await getContractWithClient(params.id);
 	if (!contract) error(404, m.mail_contract_not_found());
-	const [templates, mailPoll] = await Promise.all([
+	const [templates, mailPoll, skippedThreads] = await Promise.all([
 		listEmailTemplatesForContract(params.id),
-		mailboxPollHealth(db)
+		mailboxPollHealth(db),
+		listSkippedInboundThreadsForContract(params.id)
 	]);
 
 	const crumbs = mailCrumbs();
-	return { contract, templates, mailPoll, crumbs };
+	return { contract, templates, mailPoll, skippedThreads, crumbs };
 };
 
 export const actions: Actions = {

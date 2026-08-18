@@ -95,6 +95,12 @@
 	// tab will do, since a real multi-currency instance is the rare case
 	// `totalsLabel` already handles for a non-empty total.
 	const fallbackCurrency = $derived(data.rows[0]?.invoice.currency ?? null);
+
+	// #311: preserves the active tab while walking to another page —
+	// the same query-param shape the tab links already use.
+	function pageHref(page: number): string {
+		return `${resolve('/invoices')}?tab=${data.tab}&page=${page}`;
+	}
 </script>
 
 <svelte:head><title>{m.invoices_page_title()}</title></svelte:head>
@@ -226,6 +232,30 @@
 			empty={bandEmpty}
 		/>
 	{/if}
+
+	{#if data.totalPages > 1}
+		<nav class="pagination" aria-label={m.invoices_pagination_label()}>
+			<p class="pagination-range">
+				{m.invoices_pagination_range({
+					start: formatNumber(data.rangeStart),
+					end: formatNumber(data.rangeEnd),
+					total: formatNumber(data.totalCount)
+				})}
+			</p>
+			<div class="pagination-links">
+				{#if data.page > 1}
+					<Button href={pageHref(data.page - 1)} variant="secondary" size="sm">
+						{m.invoices_pagination_previous()}
+					</Button>
+				{/if}
+				{#if data.page < data.totalPages}
+					<Button href={pageHref(data.page + 1)} variant="secondary" size="sm">
+						{m.invoices_pagination_next()}
+					</Button>
+				{/if}
+			</div>
+		</nav>
+	{/if}
 </Page>
 
 <style>
@@ -267,5 +297,22 @@
 		text-align: right;
 		font-size: var(--text-xs);
 		color: var(--text-muted);
+	}
+	.pagination {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: var(--space-3);
+		margin-top: var(--space-4);
+	}
+	.pagination-range {
+		margin: 0;
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
+	}
+	.pagination-links {
+		display: flex;
+		gap: var(--space-2);
 	}
 </style>

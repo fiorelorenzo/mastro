@@ -19,6 +19,7 @@
 import type { BadgeVariant } from '$lib/design';
 import * as m from '$lib/paraglide/messages';
 import type { ExtractionFailureKind } from '$lib/extraction/failure-kind';
+import type { RetryBlockReason } from '$lib/extraction/retry-eligibility';
 
 export const extractionRunStatuses = [
 	'queued',
@@ -217,5 +218,28 @@ export function failureSummary(kind: ExtractionFailureKind): string {
 			return m.extraction_run_failure_write_refused();
 		case 'timed_out':
 			return m.extraction_run_failure_timed_out();
+	}
+}
+
+/**
+ * Why a retry (#315) was not offered, or was refused when attempted
+ * anyway, in the reader's own language. Exhaustive over
+ * {@link RetryBlockReason} with no `default`, the same discipline
+ * {@link failureSummary} already holds itself to.
+ */
+export function retryBlockReasonMessage(reason: RetryBlockReason): string {
+	switch (reason) {
+		case 'not_failed':
+			return m.extraction_run_retry_blocked_not_failed();
+		case 'kind_unknown':
+			return m.extraction_run_retry_blocked_kind_unknown();
+		case 'kind_not_retryable':
+			return m.extraction_run_retry_blocked_kind();
+		case 'attempts_exhausted':
+			return m.extraction_run_retry_blocked_attempts();
+		case 'already_has_proposals':
+			return m.extraction_run_retry_blocked_has_proposals();
+		case 'source_missing':
+			return m.extraction_run_retry_blocked_source_missing();
 	}
 }

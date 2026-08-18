@@ -5,6 +5,7 @@
 	import Page from '$lib/layout/Page.svelte';
 	import Section from '$lib/layout/Section.svelte';
 	import { getLocale, locales, type Locale } from '$lib/paraglide/runtime';
+	import { formatBytes, formatDateTime } from '$lib/i18n/format';
 	import { Badge, Button, Checkbox, EmptyState, Field, Input, Select } from '$lib/design';
 	import Table from '$lib/design/Table.svelte';
 	import type { TableColumn } from '$lib/design/table';
@@ -15,6 +16,7 @@
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 
 	type TemplateRow = PageData['templates'][number];
+	type SkippedThreadRow = PageData['skippedThreads'][number];
 
 	const autoSend = submitting();
 	const templateLanguage = submitting();
@@ -33,6 +35,17 @@
 		if (trigger.kind === 'days_after_due')
 			return m.mail_trigger_days_after_due({ days: trigger.days });
 		return m.mail_trigger_days_before_due({ days: trigger.days });
+	}
+
+	// Only reason today (#306). `inbound_thread_archived_shape`, the
+	// table's own CHECK constraint, guarantees `messageSize` is set
+	// whenever `skipReason` is, so the fallback below is unreachable, not
+	// a real branch a future reason has to fill in.
+	function skipReasonLabel(row: SkippedThreadRow): string {
+		if (row.skipReason === 'oversized') {
+			return m.mail_skip_reason_oversized({ size: formatBytes(row.messageSize ?? 0) });
+		}
+		return row.skipReason ?? '';
 	}
 
 	function attachmentLabel(kind: string): string {
@@ -70,6 +83,18 @@
 		icon="✎"
 		title={m.mail_contract_templates_heading()}
 		body={m.mail_contract_templates_empty()}
+	/>
+{/snippet}
+
+{#snippet skippedReceivedCell(row: SkippedThreadRow)}
+	{formatDateTime(row.receivedAt)}
+{/snippet}
+
+{#snippet skippedEmpty()}
+	<EmptyState
+		icon="⚠"
+		title={m.mail_contract_skipped_heading()}
+		body={m.mail_contract_skipped_empty()}
 	/>
 {/snippet}
 
@@ -131,6 +156,34 @@
 					templateId: row.id
 				})}
 			empty={templatesEmpty}
+		/>
+	</Section>
+
+	{@const skippedColumns = [
+		{
+			key: 'receivedAt',
+			label: m.mail_contract_skipped_column_received(),
+			cell: skippedReceivedCell
+		},
+		{
+			key: 'subject',
+			label: m.mail_contract_skipped_column_subject(),
+			format: (row: SkippedThreadRow) => row.subject ?? ''
+		},
+		{
+			key: 'reason',
+			label: m.mail_contract_skipped_column_reason(),
+			format: skipReasonLabel
+		}
+	] satisfies readonly TableColumn<SkippedThreadRow>[]}
+
+	<Section title={m.mail_contract_skipped_heading()}>
+		<Table
+			columns={skippedColumns}
+			rows={data.skippedThreads}
+			caption={m.mail_contract_skipped_heading()}
+			rowKey={(row) => row.id}
+			empty={skippedEmpty}
 		/>
 	</Section>
 

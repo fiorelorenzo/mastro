@@ -164,7 +164,19 @@ async function fetchProposalContext(
 	}
 
 	return {
-		threadByDocument: new Map(threads.map((thread) => [thread.documentId, thread])),
+		threadByDocument: new Map(
+			threads
+				// `getInboundThreadsForDocuments` is queried with real
+				// `document.id`s, and `inbound_thread.documentId` is only
+				// ever null for a skipped message (#306), which is never in
+				// that id list — still narrowed explicitly rather than cast,
+				// since the column's type does not know that.
+				.filter(
+					(thread): thread is InboundThreadRow & { documentId: string } =>
+						thread.documentId !== null
+				)
+				.map((thread) => [thread.documentId, thread])
+		),
 		documentById: new Map(documents.map((document) => [document.id, document])),
 		contractById: new Map(contracts.map((contract) => [contract.id, contract])),
 		rateCardsByContract

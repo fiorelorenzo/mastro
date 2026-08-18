@@ -4,6 +4,7 @@ import { defineConfig } from 'vitest/config';
 import { loadEnv } from 'vite';
 import adapter from '@sveltejs/adapter-node';
 import { sveltekit } from '@sveltejs/kit/vite';
+import { CSP_DIRECTIVES } from './src/lib/server/security/csp.ts';
 
 export default defineConfig(({ mode }) => ({
 	// Fixed port so several projects can run side by side on one box, and
@@ -43,6 +44,12 @@ export default defineConfig(({ mode }) => ({
 			// no `paths.base`, so root-relative hrefs are always correct here and
 			// relative ones buy nothing.
 			paths: { relative: false },
+			// See `src/lib/server/security/csp.ts` for what each directive is
+			// for and why `style-src` is the one relaxation (#303).
+			csp: {
+				mode: 'auto',
+				directives: CSP_DIRECTIVES
+			},
 			typescript: {
 				config: (config) => {
 					config.include.push('../drizzle.config.ts', '../scripts/**/*.ts');

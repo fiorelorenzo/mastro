@@ -1,5 +1,10 @@
 import { expect, test } from 'vitest';
-import { isImapConfigured, isSmtpConfigured, readMailConfig } from './config';
+import {
+	DEFAULT_IMAP_MAX_MESSAGE_BYTES,
+	isImapConfigured,
+	isSmtpConfigured,
+	readMailConfig
+} from './config';
 
 // A complete mailbox, as a self-hoster who has finished the setup has it.
 const FULL: Record<string, string> = {
@@ -23,6 +28,20 @@ test('a fully configured mailbox reads back, with the documented defaults', () =
 	expect(config.smtp.fromName).toBeNull();
 	// Nobody has to name the sent mailbox to get the usual one.
 	expect(config.imap.sentMailbox).toBe('Sent');
+	// Nor the inbound message ceiling (#306).
+	expect(config.imap.maxMessageBytes).toBe(DEFAULT_IMAP_MAX_MESSAGE_BYTES);
+});
+
+test('IMAP_MAX_MESSAGE_BYTES overrides the default, and rejects a non-positive value', () => {
+	expect(readMailConfig({ ...FULL, IMAP_MAX_MESSAGE_BYTES: '1000' }).imap.maxMessageBytes).toBe(
+		1000
+	);
+	expect(() => readMailConfig({ ...FULL, IMAP_MAX_MESSAGE_BYTES: '0' })).toThrow(
+		/IMAP_MAX_MESSAGE_BYTES/
+	);
+	expect(() => readMailConfig({ ...FULL, IMAP_MAX_MESSAGE_BYTES: 'not-a-number' })).toThrow(
+		/IMAP_MAX_MESSAGE_BYTES/
+	);
 });
 
 test('reading a half-configured mailbox throws, naming the variable that is missing', () => {
