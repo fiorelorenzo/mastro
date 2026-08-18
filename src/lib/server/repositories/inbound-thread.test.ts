@@ -389,9 +389,14 @@ test('recordSkippedInboundThread inserts a row with no document, returns it, and
 
 		// The extraction enqueuer has nothing to extract from a skipped
 		// message — no document, no bytes — so it must never see this row,
-		// only the one that was actually archived.
-		const awaitingExtraction = await listInboundThreadsAwaitingExtraction(10, tx);
-		expect(awaitingExtraction.map((row) => row.documentId)).toEqual([documentA.id]);
+		// only the one that was actually archived. Asserted as membership
+		// rather than equality: this query is table-wide, and the mail poll
+		// tests write real, committed threads of their own in parallel with
+		// this file, so the exact list is not this test's to predict.
+		const awaitingExtraction = await listInboundThreadsAwaitingExtraction(50, tx);
+		const documentIds = awaitingExtraction.map((row) => row.documentId);
+		expect(documentIds).toContain(documentA.id);
+		expect(awaitingExtraction.map((row) => row.id)).not.toContain(skipped?.id);
 	});
 });
 
