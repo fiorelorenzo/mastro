@@ -210,9 +210,7 @@
 							<span class="source-facts">{sourceLine(group)}</span>
 						</span>
 						<a class="source-link" href={resolve('/proposals/[id]', { id: group.rows[0].id })}>
-							{group.fromMessage
-								? m.proposal_queue_open_message()
-								: m.proposal_queue_open_document()}
+							{m.proposal_queue_review()}
 						</a>
 					</p>
 
@@ -346,10 +344,14 @@
 							     existed. -->
 							{#if row.status === 'accepted'}
 								{#if !row.fromMessage}
-									{m.proposal_history_created_note_document({
-										name: row.documentName ?? m.proposal_queue_open_document(),
-										when: when ?? ''
-									})}
+									{#if row.documentName}
+										{m.proposal_history_created_note_document({
+											name: row.documentName,
+											when: when ?? ''
+										})}
+									{:else}
+										{m.proposal_history_created_note_document_unnamed({ when: when ?? '' })}
+									{/if}
 								{:else if row.sender}
 									{m.proposal_history_created_note({ sender: row.sender, when: when ?? '' })}
 								{:else}

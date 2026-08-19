@@ -6,6 +6,7 @@ import {
 	dayEntryDataUrl,
 	isCacheableDataRequest,
 	isCacheableDataResponse,
+	OFFLINE_CACHE_HEADER,
 	isOfflineDocumentRequest,
 	isSessionInvalidPayload,
 	offlineFallbackUrl,
@@ -39,24 +40,57 @@ describe('isCacheableDataRequest', () => {
 });
 
 describe('isCacheableDataResponse', () => {
-	test('a JSON response with Cache-Control: no-store is not cached', () => {
-		expect(isCacheableDataResponse({ cacheControl: 'private, no-store' })).toBe(false);
+	test('a page-data response the app marked cacheable is cached', () => {
+		expect(isCacheableDataResponse({ offlineMarker: 'allow' })).toBe(true);
 	});
 
-	test('the same response without no-store is cached', () => {
-		expect(isCacheableDataResponse({ cacheControl: 'private, max-age=0' })).toBe(true);
+	test('an unmarked response is never cached, whatever else it carries', () => {
+		expect(isCacheableDataResponse({ offlineMarker: null })).toBe(false);
 	});
 
-	test("a private response without no-store keeps today's behaviour", () => {
-		expect(isCacheableDataResponse({ cacheControl: 'private' })).toBe(true);
+	test('a value other than allow is not a marker', () => {
+		expect(isCacheableDataResponse({ offlineMarker: 'deny' })).toBe(false);
+		expect(isCacheableDataResponse({ offlineMarker: '' })).toBe(false);
 	});
 
-	test('no Cache-Control header at all is cached, as before this change', () => {
-		expect(isCacheableDataResponse({ cacheControl: null })).toBe(true);
+	test('the marker survives the casing and padding a proxy may introduce', () => {
+		expect(isCacheableDataResponse({ offlineMarker: ' Allow ' })).toBe(true);
 	});
 
-	test('no-store is recognised standing alone, with no other directives', () => {
-		expect(isCacheableDataResponse({ cacheControl: 'no-store' })).toBe(false);
+	/*
+	 * The case #341 was filed for, and the one the previous version of this
+	 * suite could not see. It fed the gate hand-written `cache-control`
+	 * literals, so it never noticed that the literal SvelteKit actually
+	 * sends on every `__data.json` is `private, no-store` — which the old
+	 * rule read as "never cache", emptying the data cache completely.
+	 *
+	 * A page-data response therefore carries BOTH headers at once, and the
+	 * marker is what decides. If this ever regresses to reading
+	 * `cache-control` again, this is the test that fails.
+	 */
+	test('page data is cached even though SvelteKit marks it private, no-store', () => {
+		const pageDataHeaders = new Headers({
+			'content-type': 'application/json',
+			'cache-control': 'private, no-store',
+			[OFFLINE_CACHE_HEADER]: 'allow'
+		});
+
+		expect(
+			isCacheableDataResponse({ offlineMarker: pageDataHeaders.get(OFFLINE_CACHE_HEADER) })
+		).toBe(true);
+	});
+
+	/* And the case #305 was right about: a document, whatever its mime. */
+	test('a document response is not cached even when it is served as JSON', () => {
+		const documentHeaders = new Headers({
+			'content-type': 'application/json',
+			'cache-control': 'private, no-store',
+			'content-disposition': 'attachment; filename="evidence.json"'
+		});
+
+		expect(
+			isCacheableDataResponse({ offlineMarker: documentHeaders.get(OFFLINE_CACHE_HEADER) })
+		).toBe(false);
 	});
 });
 

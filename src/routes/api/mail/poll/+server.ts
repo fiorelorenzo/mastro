@@ -16,7 +16,7 @@
 import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { authorizeCronRequest } from '$lib/server/auth/cron-token';
-import { imapConfiguredInEnv, mailConfigFromEnv } from '$lib/server/mail/config';
+import { imapConfigFromEnv, imapConfiguredInEnv } from '$lib/server/mail/config';
 import { pollMailboxesOnce } from '$lib/server/mail/poll';
 import type { RequestHandler } from './$types';
 
@@ -36,6 +36,6 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ status: 'skipped', reason: 'mail is not configured', folders: [] });
 	}
 
-	const result = await pollMailboxesOnce(mailConfigFromEnv().imap);
+	const result = await pollMailboxesOnce(imapConfigFromEnv());
 	return json(result);
 };

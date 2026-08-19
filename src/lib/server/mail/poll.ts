@@ -96,6 +96,11 @@ export type ContractFolderResult = {
 	contractId: string;
 	mailbox: string;
 	handedOff: number;
+	// Oversized messages (#306) recorded but never archived — surfaced
+	// separately from `handedOff` so a caller reporting "N archived, M
+	// skipped" (the mail page's poll-now action, #343) never has to
+	// re-derive it from `inbound_thread` itself.
+	skipped: number;
 	error: string | null;
 };
 
@@ -141,13 +146,15 @@ export async function pollContractFolder(
 	try {
 		const box = await client.mailboxOpen(mailbox);
 		const uidValidity = Number(box.uidValidity);
-		if (box.exists === 0) return { contractId: row.id, mailbox, handedOff: 0, error: null };
+		if (box.exists === 0)
+			return { contractId: row.id, mailbox, handedOff: 0, skipped: 0, error: null };
 
 		const maxUid = await maxImapUidForContract(row.id, uidValidity, executor);
 		const from = (maxUid ?? 0) + 1;
 
 		type KeptMeta = { messageId: string | null; subject: string | null; internalDate: Date };
 		const kept = new Map<number, KeptMeta>();
+		let skipped = 0;
 
 		for await (const message of client.fetch(
 			`${from}:*`,
@@ -196,6 +203,7 @@ export async function pollContractFolder(
 						tx
 					)
 				);
+				skipped += 1;
 				continue;
 			}
 
@@ -264,10 +272,10 @@ export async function pollContractFolder(
 			}
 		}
 
-		return { contractId: row.id, mailbox, handedOff, error: null };
+		return { contractId: row.id, mailbox, handedOff, skipped, error: null };
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error);
-		return { contractId: row.id, mailbox, handedOff: 0, error: detail };
+		return { contractId: row.id, mailbox, handedOff: 0, skipped: 0, error: detail };
 	}
 }
 
