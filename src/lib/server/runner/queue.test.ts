@@ -210,16 +210,45 @@ function spawnRunnerWatch(dir: string, extraEnv: Record<string, string> = {}) {
 
 type RunnerProcess = ReturnType<typeof spawnRunnerWatch>;
 
-function waitForOutput(child: RunnerProcess, pattern: RegExp, timeoutMs = 10_000): Promise<void> {
+/**
+ * Waits for one structured log line whose `msg` and `context.jobId` are
+ * both what this test is watching for. The runner's output became one JSON
+ * object per line in #317, so a substring match on `processing <jobId>`
+ * silently stopped matching: the id moved into `context` and the message
+ * text no longer touches it. Parsing each complete line and checking the
+ * two fields separately is what makes the wait immune to that, and to any
+ * future reordering of the fields inside the object.
+ */
+function waitForLogLine(
+	child: RunnerProcess,
+	msg: string,
+	jobId: string,
+	timeoutMs = 10_000
+): Promise<void> {
 	const { promise, resolve, reject } = Promise.withResolvers<void>();
 	let buffer = '';
 	const timer = setTimeout(
-		() => reject(new Error(`timed out waiting for ${pattern}: saw ${buffer}`)),
+		() => reject(new Error(`timed out waiting for ${msg} on ${jobId}: saw ${buffer}`)),
 		timeoutMs
 	);
+	const matches = (line: string) => {
+		if (!line.startsWith('{')) return false;
+		try {
+			const record: unknown = JSON.parse(line);
+			if (typeof record !== 'object' || record === null) return false;
+			const { msg: loggedMsg, context } = record as { msg?: unknown; context?: unknown };
+			if (loggedMsg !== msg) return false;
+			return (context as { jobId?: unknown } | undefined)?.jobId === jobId;
+		} catch {
+			// A chunk boundary can split a line; the next chunk completes it.
+			return false;
+		}
+	};
 	const onData = (chunk: Buffer) => {
 		buffer += chunk.toString();
-		if (pattern.test(buffer)) {
+		const lines = buffer.split('\n');
+		buffer = lines.pop() ?? '';
+		if (lines.some(matches)) {
 			clearTimeout(timer);
 			child.stdout.off('data', onData);
 			resolve();
@@ -258,7 +287,7 @@ test('killing the runner mid-job loses nothing: the job stays whole in pending, 
 	first.stdout.on('data', (chunk) => (firstOutput += chunk.toString()));
 	first.stderr.on('data', (chunk) => (firstOutput += chunk.toString()));
 
-	await waitForOutput(first, new RegExp(`processing ${jobId}`));
+	await waitForLogLine(first, 'runner: processing', jobId);
 	// The fixture agent is still inside its 1500ms delay here — the job
 	// cannot have finished yet. Kill immediately, hard, no graceful
 	// shutdown at all: this is the crash this acceptance criterion has
@@ -276,7 +305,7 @@ test('killing the runner mid-job loses nothing: the job stays whole in pending, 
 	second.stdout.on('data', (chunk) => (secondOutput += chunk.toString()));
 	second.stderr.on('data', (chunk) => (secondOutput += chunk.toString()));
 	try {
-		await waitForOutput(second, new RegExp(`completed ${jobId}`), 10_000);
+		await waitForLogLine(second, 'runner: completed', jobId, 10_000);
 	} finally {
 		second.kill('SIGTERM');
 		await waitForExit(second).catch(() => {});

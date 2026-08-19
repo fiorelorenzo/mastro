@@ -211,9 +211,17 @@ export function renewalAssumptionContribution(
 
 	const totalDays = daysBetweenIso(assumptionStart, horizonEndExclusive);
 	const overlapDays = daysBetweenIso(overlapStart, overlapEndExclusive);
+	// `probability` is `numeric(5,4)`
+	// (`db/schema/contract-renewal-assumption.ts`), never more precise than
+	// four decimal digits, so basis points round-trip it exactly. Folding
+	// the day overlap into the numerator and `10_000 * totalDays` into the
+	// denominator keeps the whole computation exact integers until
+	// `scaleMinorUnits`'s own single rounding step (#323).
+	const probabilityBasisPoints = Math.round(assumption.probability * 10_000);
 	return scaleMinorUnits(
 		assumption.expectedVolumeMinorUnits,
-		(assumption.probability * overlapDays) / totalDays
+		probabilityBasisPoints * overlapDays,
+		10_000 * totalDays
 	);
 }
 

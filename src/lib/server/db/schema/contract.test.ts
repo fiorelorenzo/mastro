@@ -181,6 +181,7 @@ test('two contracts cannot claim the same mail_folder, but two nulls are both fi
 			tx
 		);
 		expect(conflict.code).toBe('23505');
+		expect(conflict.constraint_name).toBe('contract_mail_folder_key');
 
 		// Two unpolled contracts, both null, are not a conflict.
 		await tx.insert(contract).values(baseContract(clientRow.id)).returning();

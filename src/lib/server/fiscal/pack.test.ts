@@ -59,7 +59,7 @@ const packWithCharges: FiscalPack = {
 		{
 			id: 'surcharge',
 			label: { en: 'Social surcharge', it: 'Contributo previdenziale' },
-			amount: { kind: 'percentage', rate: 0.04, of: 'taxableIncome' },
+			amount: { kind: 'percentage', basisPoints: 400, of: 'taxableIncome' },
 			slot: 'social_charge'
 		}
 	]

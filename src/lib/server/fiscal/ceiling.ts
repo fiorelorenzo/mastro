@@ -124,7 +124,17 @@ export function evaluateCeiling(
 	const limitValue =
 		ceiling.measure === 'absolute_amount'
 			? ceiling.value
-			: scaleMinorUnits(sumLedger(rows, basis, period.from, period.to).amount, ceiling.value);
+			: scaleMinorUnits(
+					sumLedger(rows, basis, period.from, period.to).amount,
+					// `ceiling.value` here is a share such as 0.35 — a pack
+					// literal, or read off `share_ratio numeric(5,4)`
+					// (`db/schema/ceiling.ts`), never more precise than four
+					// decimal digits — so basis points (over 10,000) round-trip
+					// it exactly, with no fractional scalar ever multiplying
+					// the revenue amount itself (#323).
+					Math.round(ceiling.value * 10_000),
+					10_000
+				);
 
 	const usageRatio = limitValue === 0 ? 0 : currentValue / limitValue;
 

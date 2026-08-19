@@ -11,6 +11,7 @@
 // own relative imports are extensionless and only resolve under Vite/
 // svelte-kit's bundler resolution, not under plain node ESM.
 import postgres from 'postgres';
+import { log } from '../src/lib/server/log/logger.ts';
 
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error('DATABASE_URL is not set');
@@ -25,7 +26,7 @@ const client = postgres(url, { max: 1, onnotice: () => {} });
 
 try {
 	await client`insert into backup_run (status, detail) values (${status}, ${detail})`;
-	console.log(`backup run recorded: ${status}${detail ? ` (${detail})` : ''}`);
+	log.info('backup run recorded', { status, detail });
 } finally {
 	await client.end();
 }

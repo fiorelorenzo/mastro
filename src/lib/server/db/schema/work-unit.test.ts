@@ -167,12 +167,13 @@ test('inserting directly into approved is rejected by the database', async () =>
 		const contractRow = await insertContract(tx, false);
 
 		expect(
-			(
-				await rejection(() =>
-					tx.insert(workUnit).values(workUnitFields(contractRow.id, { state: 'approved' }))
-				)
-			).message
-		).toMatch(/cannot be inserted directly into state/);
+			await rejection(() =>
+				tx.insert(workUnit).values(workUnitFields(contractRow.id, { state: 'approved' }))
+			)
+		).toMatchObject({
+			code: 'P0001',
+			message: expect.stringMatching(/cannot be inserted directly into state/)
+		});
 	});
 });
 
@@ -182,12 +183,13 @@ test('approving a day on a contract that requires prior approval without an appr
 		const [row] = await tx.insert(workUnit).values(workUnitFields(contractRow.id)).returning();
 
 		expect(
-			(
-				await rejection(() =>
-					tx.update(workUnit).set({ state: 'approved' }).where(eq(workUnit.id, row.id))
-				)
-			).message
-		).toMatch(/requires prior approval needs an approval_id/);
+			await rejection(() =>
+				tx.update(workUnit).set({ state: 'approved' }).where(eq(workUnit.id, row.id))
+			)
+		).toMatchObject({
+			code: 'P0001',
+			message: expect.stringMatching(/requires prior approval needs an approval_id/)
+		});
 	});
 });
 
@@ -226,15 +228,16 @@ test('an illegal transition, paid straight from proposed, is rejected', async ()
 		const [row] = await tx.insert(workUnit).values(workUnitFields(contractRow.id)).returning();
 
 		expect(
-			(
-				await rejection(() =>
-					tx
-						.update(workUnit)
-						.set({ state: 'paid', invoiceLineId: crypto.randomUUID() })
-						.where(eq(workUnit.id, row.id))
-				)
-			).message
-		).toMatch(/illegal work_unit transition: proposed -> paid/);
+			await rejection(() =>
+				tx
+					.update(workUnit)
+					.set({ state: 'paid', invoiceLineId: crypto.randomUUID() })
+					.where(eq(workUnit.id, row.id))
+			)
+		).toMatchObject({
+			code: 'P0001',
+			message: expect.stringMatching(/illegal work_unit transition: proposed -> paid/)
+		});
 	});
 });
 
@@ -391,5 +394,201 @@ test('a rejected day does not block a new proposal for the same contract and dat
 
 		const [second] = await tx.insert(workUnit).values(workUnitFields(contractRow.id)).returning();
 		expect(second.id).not.toBe(first.id);
+	});
+});
+
+test('proposed to rejected is accepted', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx, false);
+		const [row] = await tx.insert(workUnit).values(workUnitFields(contractRow.id)).returning();
+
+		const [updated] = await tx
+			.update(workUnit)
+			.set({ state: 'rejected' })
+			.where(eq(workUnit.id, row.id))
+			.returning();
+		expect(updated.state).toBe('rejected');
+	});
+});
+
+test('rejected is a dead end: neither approved nor worked is reachable from it', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx, false);
+		const [row] = await tx.insert(workUnit).values(workUnitFields(contractRow.id)).returning();
+		await tx.update(workUnit).set({ state: 'rejected' }).where(eq(workUnit.id, row.id));
+
+		// Two rejections on the same row, in the same test: each needs its
+		// own savepoint (`rejection(fn, tx)`), since the first failed
+		// statement would otherwise abort the whole transaction and turn
+		// the second attempt into "current transaction is aborted" instead
+		// of the illegal-transition error it is supposed to prove.
+		expect(
+			await rejection(
+				() => tx.update(workUnit).set({ state: 'approved' }).where(eq(workUnit.id, row.id)),
+				tx
+			)
+		).toMatchObject({
+			code: 'P0001',
+			message: expect.stringMatching(/illegal work_unit transition: rejected -> approved/)
+		});
+
+		expect(
+			await rejection(
+				() => tx.update(workUnit).set({ state: 'worked' }).where(eq(workUnit.id, row.id)),
+				tx
+			)
+		).toMatchObject({
+			code: 'P0001',
+			message: expect.stringMatching(/illegal work_unit transition: rejected -> worked/)
+		});
+
+		const [stillRejected] = await tx.select().from(workUnit).where(eq(workUnit.id, row.id));
+		expect(stillRejected.state).toBe('rejected');
+	});
+});
+
+test('proposed to revoked is rejected: revoked is only reachable from approved', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx, false);
+		const [row] = await tx.insert(workUnit).values(workUnitFields(contractRow.id)).returning();
+
+		expect(
+			await rejection(() =>
+				tx.update(workUnit).set({ state: 'revoked' }).where(eq(workUnit.id, row.id))
+			)
+		).toMatchObject({
+			code: 'P0001',
+			message: expect.stringMatching(/illegal work_unit transition: proposed -> revoked/)
+		});
+	});
+});
+
+test('approved to revoked is accepted', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx, false);
+		const [row] = await tx.insert(workUnit).values(workUnitFields(contractRow.id)).returning();
+		await tx.update(workUnit).set({ state: 'approved' }).where(eq(workUnit.id, row.id));
+
+		const [updated] = await tx
+			.update(workUnit)
+			.set({ state: 'revoked' })
+			.where(eq(workUnit.id, row.id))
+			.returning();
+		expect(updated.state).toBe('revoked');
+	});
+});
+
+test('worked to disputed is rejected: disputed is only reachable from invoiced', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx, false);
+		const [row] = await tx
+			.insert(workUnit)
+			.values(workUnitFields(contractRow.id, { state: 'worked' }))
+			.returning();
+
+		expect(
+			await rejection(() =>
+				tx.update(workUnit).set({ state: 'disputed' }).where(eq(workUnit.id, row.id))
+			)
+		).toMatchObject({
+			code: 'P0001',
+			message: expect.stringMatching(/illegal work_unit transition: worked -> disputed/)
+		});
+	});
+});
+
+test('invoiced to paid is accepted', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx, false);
+		const lineRow = await insertInvoiceLine(tx, contractRow.id);
+		const [row] = await tx
+			.insert(workUnit)
+			.values(workUnitFields(contractRow.id, { state: 'worked' }))
+			.returning();
+		await tx
+			.update(workUnit)
+			.set({ state: 'invoiced', invoiceLineId: lineRow.id })
+			.where(eq(workUnit.id, row.id));
+
+		const [paid] = await tx
+			.update(workUnit)
+			.set({ state: 'paid' })
+			.where(eq(workUnit.id, row.id))
+			.returning();
+		expect(paid.state).toBe('paid');
+	});
+});
+
+test('invoiced and disputed cycle back and forth: a dispute can be re-invoiced and disputed again', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx, false);
+		const lineRow = await insertInvoiceLine(tx, contractRow.id);
+		const [row] = await tx
+			.insert(workUnit)
+			.values(workUnitFields(contractRow.id, { state: 'worked' }))
+			.returning();
+
+		await tx
+			.update(workUnit)
+			.set({ state: 'invoiced', invoiceLineId: lineRow.id })
+			.where(eq(workUnit.id, row.id));
+		await tx.update(workUnit).set({ state: 'disputed' }).where(eq(workUnit.id, row.id));
+		await tx.update(workUnit).set({ state: 'invoiced' }).where(eq(workUnit.id, row.id));
+		const [final] = await tx
+			.update(workUnit)
+			.set({ state: 'disputed' })
+			.where(eq(workUnit.id, row.id))
+			.returning();
+
+		expect(final.state).toBe('disputed');
+
+		const log = await tx
+			.select()
+			.from(workUnitTransition)
+			.where(eq(workUnitTransition.workUnitId, row.id))
+			.orderBy(workUnitTransition.createdAt);
+		expect(log.map((entry) => [entry.fromState, entry.toState])).toEqual([
+			[null, 'worked'],
+			['worked', 'invoiced'],
+			['invoiced', 'disputed'],
+			['disputed', 'invoiced'],
+			['invoiced', 'disputed']
+		]);
+	});
+});
+
+test('approving with an approval_id that does not exist is rejected by the foreign key, not silently accepted', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx, true);
+		const [row] = await tx.insert(workUnit).values(workUnitFields(contractRow.id)).returning();
+
+		expect(
+			await rejection(() =>
+				tx
+					.update(workUnit)
+					.set({ state: 'approved', approvalId: crypto.randomUUID() })
+					.where(eq(workUnit.id, row.id))
+			)
+		).toMatchObject({ code: '23503', constraint_name: 'work_unit_approval_id_approval_id_fk' });
+	});
+});
+
+test('a fabricated approval_id does not trigger the worked_without_approval redirect, but the foreign key still rejects it', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx, true);
+
+		// The redirect in 0013_worked_without_approval.sql only fires when
+		// approval_id IS NULL, so a non-null value that points at nothing
+		// skips the redirect and reaches the foreign key instead — it must
+		// not be mistaken for a real approval on the way.
+		expect(
+			await rejection(() =>
+				tx
+					.insert(workUnit)
+					.values(
+						workUnitFields(contractRow.id, { state: 'worked', approvalId: crypto.randomUUID() })
+					)
+			)
+		).toMatchObject({ code: '23503', constraint_name: 'work_unit_approval_id_approval_id_fk' });
 	});
 });

@@ -165,6 +165,7 @@ test('the same UID cannot be recorded twice for one contract under the same UIDV
 			tx
 		);
 		expect(conflict.code).toBe('23505');
+		expect(conflict.constraint_name).toBe('inbound_thread_contract_uid_key');
 
 		// A different UID, or the same UID under a new UIDVALIDITY
 		// generation, is not a conflict.
@@ -203,6 +204,7 @@ test('the same message_id cannot be recorded twice for one contract even under a
 			tx
 		);
 		expect(conflict.code).toBe('23505');
+		expect(conflict.constraint_name).toBe('inbound_thread_contract_message_id_key');
 
 		// A null message_id never conflicts with anything, including
 		// another null.
@@ -268,6 +270,7 @@ test('inbound_thread_archived_shape rejects every way the two row shapes can mix
 			tx
 		);
 		expect(noDocument.code).toBe('23514');
+		expect(noDocument.constraint_name).toBe('inbound_thread_archived_shape');
 
 		// Skipped, but a document is attached anyway.
 		const skippedWithDocument = await rejection(
@@ -278,6 +281,7 @@ test('inbound_thread_archived_shape rejects every way the two row shapes can mix
 			tx
 		);
 		expect(skippedWithDocument.code).toBe('23514');
+		expect(skippedWithDocument.constraint_name).toBe('inbound_thread_archived_shape');
 
 		// Skipped, but no reason given.
 		const skippedWithoutReason = await rejection(
@@ -288,6 +292,7 @@ test('inbound_thread_archived_shape rejects every way the two row shapes can mix
 			tx
 		);
 		expect(skippedWithoutReason.code).toBe('23514');
+		expect(skippedWithoutReason.constraint_name).toBe('inbound_thread_archived_shape');
 
 		// Skipped, but no size given.
 		const skippedWithoutSize = await rejection(
@@ -298,6 +303,7 @@ test('inbound_thread_archived_shape rejects every way the two row shapes can mix
 			tx
 		);
 		expect(skippedWithoutSize.code).toBe('23514');
+		expect(skippedWithoutSize.constraint_name).toBe('inbound_thread_archived_shape');
 
 		// A well-formed skipped row, for contrast, still goes through.
 		await tx.insert(inboundThread).values(skippedFields(contractRow.id, { imapUid: 5 }));
@@ -321,5 +327,6 @@ test('inbound_thread_skip_reason_known rejects a reason outside the known set (#
 			tx
 		);
 		expect(unknownReason.code).toBe('23514');
+		expect(unknownReason.constraint_name).toBe('inbound_thread_skip_reason_known');
 	});
 });

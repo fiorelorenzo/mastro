@@ -67,12 +67,16 @@ COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/scripts/migrate.ts ./scripts/migrate.ts
 COPY --from=build /app/scripts/check-storage.ts ./scripts/check-storage.ts
 COPY --from=build /app/scripts/record-backup-run.ts ./scripts/record-backup-run.ts
-# migrate.ts imports this one module to say which database it is about to
-# touch. Node resolves that import at runtime, inside this image, so the
-# file has to be here: without it the container cannot migrate and
-# therefore cannot boot at all. Anything else migrate.ts ever imports from
-# src/ has to be added here too, which is why it imports almost nothing.
+# migrate.ts imports this module to say which database it is about to
+# touch, and, with record-backup-run.ts, imports the structured-logging
+# module (`src/lib/server/log/logger.ts`, #317) both now log through.
+# Node resolves every import at runtime, inside this image, so each file
+# has to be here: without them the container cannot migrate and therefore
+# cannot boot at all. Anything else migrate.ts or record-backup-run.ts
+# ever imports from src/ has to be added here too, which is why between
+# them they import almost nothing.
 COPY --from=build /app/src/lib/server/db/target.ts ./src/lib/server/db/target.ts
+COPY --from=build /app/src/lib/server/log/logger.ts ./src/lib/server/log/logger.ts
 COPY --from=build /app/package.json ./package.json
 # `/app/data/runner-queue` (#222's compose service also mounts this as the
 # named volume `runner_queue`) has to exist, owned by `mastro`, before the
@@ -101,15 +105,17 @@ CMD ["sh", "-c", "node scripts/check-storage.ts && node scripts/migrate.ts && ex
 
 # The ACP runner (#82): a second image built from the same source, on the
 # same base as `runtime`, but a different CMD and a much smaller slice of
-# the tree — `scripts/runner.ts` and `src/lib/server/runner/` are the only
-# files it needs, since that module's own internal imports carry explicit
-# `.ts` extensions and touch nothing else under `src/lib/server/` (see
-# `scripts/runner.ts`'s own comment for why that matters under plain
-# node). No `build/` directory, no SvelteKit, no Better Auth secret, no
-# DATABASE_URL — this container never receives the app's own database
-# credentials, only `RUNNER_DATABASE_URL` for the read-only role
-# `drizzle/0035_acp_runner_role.sql` creates. See docs/agent-runner.md for
-# every variable a self-hoster configures on this service.
+# the tree — `scripts/runner.ts`, `src/lib/server/runner/` and the
+# structured-logging module it logs through (`src/lib/server/log/logger.ts`,
+# #317) are the only files it needs, since `runner/`'s own internal imports
+# carry explicit `.ts` extensions and touch nothing else under
+# `src/lib/server/` (see `scripts/runner.ts`'s own comment for why that
+# matters under plain node). No `build/` directory, no SvelteKit, no
+# Better Auth secret, no DATABASE_URL — this container never receives the
+# app's own database credentials, only `RUNNER_DATABASE_URL` for the
+# read-only role `drizzle/0035_acp_runner_role.sql` creates. See
+# docs/agent-runner.md for every variable a self-hoster configures on this
+# service.
 FROM node:24-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
@@ -117,6 +123,7 @@ RUN addgroup -S mastro && adduser -S mastro -G mastro
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/scripts/runner.ts ./scripts/runner.ts
 COPY --from=build /app/src/lib/server/runner ./src/lib/server/runner
+COPY --from=build /app/src/lib/server/log/logger.ts ./src/lib/server/log/logger.ts
 COPY --from=build /app/package.json ./package.json
 # Same reasoning as `runtime` above: this service writes/reads the same
 # `runner_queue` volume, as the same non-root user.
@@ -128,15 +135,18 @@ CMD ["node", "scripts/runner.ts", "watch"]
 # turns mail polling (#84), the agent drain/enqueue loop (#85) and the
 # alert engine's push/digest runs (#74/#75) — all plain HTTP endpoints
 # that expect a caller — into an actual schedule. The smallest slice of
-# the tree of any stage here: `scripts/scheduler.ts` imports nothing but
-# node builtins (global `fetch`, no schema, no database driver), so this
-# stage needs no `node_modules` at all, not even the runtime dependency
-# set `prod-deps` installs for `runtime`/`runner`. See that file's own
-# comment for the schedule itself and the one gap it cannot close.
+# the tree of any stage here: `scripts/scheduler.ts` imports only node
+# builtins plus the structured-logging module it logs through
+# (`src/lib/server/log/logger.ts`, #317), itself dependency-free, so this
+# stage still needs no `node_modules` at all, not even the runtime
+# dependency set `prod-deps` installs for `runtime`/`runner`. See that
+# file's own comment for the schedule itself and the one gap it cannot
+# close.
 FROM node:24-alpine AS scheduler
 WORKDIR /app
 ENV NODE_ENV=production
 RUN addgroup -S mastro && adduser -S mastro -G mastro
 COPY --from=build /app/scripts/scheduler.ts ./scripts/scheduler.ts
+COPY --from=build /app/src/lib/server/log/logger.ts ./src/lib/server/log/logger.ts
 USER mastro
 CMD ["node", "scripts/scheduler.ts"]

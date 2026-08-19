@@ -41,12 +41,15 @@
 // compose.prod.yaml, and `docker compose logs scheduler`. See
 // docs/deploy.md, "Scheduling", for the honest statement of that gap.
 
-// No value-level import or export otherwise in this file (see the header
-// comment: deliberately no dependency beyond node builtins), so nothing
-// marks it as an ES module rather than a script to the type checker,
-// which then rejects the top-level `await` below. A no-op, compiled away
-// entirely — `tsc`'s own fix for exactly this.
-export {};
+// `log` (`src/lib/server/log/logger.ts`) is the one import in this file —
+// itself dependency-free, like every other module reachable from this
+// script, so it costs nothing toward "plain node, no schema import and no
+// database driver" above. Its own presence is what marks this file as an
+// ES module to the type checker (an `import` does that on its own), which
+// is what lets the top-level `await` below exist at all; nothing else
+// here needs marking as a module, so there is no separate `export {}`.
+import { log } from '../src/lib/server/log/logger.ts';
+
 interface Job {
 	readonly name: string;
 	readonly path: string;
@@ -100,7 +103,7 @@ const jobs: Job[] = [
 
 async function runJob(job: Job): Promise<void> {
 	if (!job.token) {
-		console.warn(`scheduler: ${job.name} skipped, its cron token is not set`);
+		log.warn('scheduler: job skipped, its cron token is not set', { job: job.name });
 		return;
 	}
 	try {
@@ -110,12 +113,16 @@ async function runJob(job: Job): Promise<void> {
 		});
 		const body = await response.text();
 		if (!response.ok) {
-			console.error(`scheduler: ${job.name} responded ${response.status}: ${body}`);
+			log.error('scheduler: job responded with a non-2xx status', {
+				job: job.name,
+				status: response.status,
+				body
+			});
 			return;
 		}
-		console.log(`scheduler: ${job.name} ok: ${body}`);
+		log.info('scheduler: job ok', { job: job.name, body });
 	} catch (error) {
-		console.error(`scheduler: ${job.name} failed:`, error);
+		log.error('scheduler: job failed', { job: job.name, error });
 	}
 }
 
@@ -127,16 +134,15 @@ const lastRunAt: Record<string, number> = Object.fromEntries(jobs.map((job) => [
 let stopping = false;
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
 	process.on(signal, () => {
-		console.log(`scheduler: received ${signal}, stopping after the current tick`);
+		log.info('scheduler: received signal, stopping after the current tick', { signal });
 		stopping = true;
 	});
 }
 
-console.log(
-	`scheduler: starting, base url ${baseUrl}, jobs: ${jobs
-		.map((job) => `${job.name} every ${job.intervalMinutes}m`)
-		.join(', ')}`
-);
+log.info('scheduler: starting', {
+	baseUrl,
+	jobs: jobs.map((job) => ({ job: job.name, intervalMinutes: job.intervalMinutes }))
+});
 
 function sleep(ms: number): Promise<void> {
 	const { promise, resolve } = Promise.withResolvers<void>();

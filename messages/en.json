@@ -562,6 +562,8 @@
 	"day_form_value_label": "Worth",
 	"day_new_heading": "Record a day",
 	"day_new_no_contracts": "No active contract to record against yet.",
+	"day_new_no_contracts_action": "Add a contract",
+	"day_new_no_contracts_title": "No contract yet",
 	"day_new_page_title": "Record a day — mastro",
 	"day_offline_pending_dismiss": "Dismiss",
 	"day_offline_pending_heading": "Waiting to sync",

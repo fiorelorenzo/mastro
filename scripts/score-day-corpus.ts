@@ -26,6 +26,7 @@
 // too), and an exact match can still be flagged.
 
 import { readFileSync } from 'node:fs';
+import { log } from '../src/lib/server/log/logger.ts';
 import {
 	CONFIDENCE_NEEDS_REVIEW_THRESHOLD,
 	dayConfidence,
@@ -93,7 +94,6 @@ for (const testCase of corpus) {
 		const got = JSON.stringify(days);
 		const want = JSON.stringify(testCase.expected);
 		const seconds = ((Date.now() - started) / 1000).toFixed(1);
-		const flag = isFlagged ? `  [FLAGGED conf=${worstConfidence.toFixed(2)}]` : '';
 		if (isFlagged) {
 			flagged += 1;
 			flaggedCases.push(
@@ -103,18 +103,28 @@ for (const testCase of corpus) {
 
 		if (got === want) {
 			passed += 1;
-			console.log(`PASS  ${testCase.name}  (${seconds}s)${flag}`);
+			log.info('day corpus: case passed', {
+				name: testCase.name,
+				seconds,
+				flagged: isFlagged,
+				confidence: worstConfidence
+			});
 		} else {
 			failures.push(`${testCase.name}\n    want ${want}\n    got  ${got}`);
-			console.log(`FAIL  ${testCase.name}  (${seconds}s)${flag}`);
+			log.warn('day corpus: case failed', {
+				name: testCase.name,
+				seconds,
+				want,
+				got,
+				flagged: isFlagged
+			});
 		}
 	} catch (error) {
 		failures.push(`${testCase.name}\n    threw ${(error as Error).message}`);
-		console.log(`ERROR ${testCase.name}`);
+		log.error('day corpus: case errored', { name: testCase.name, error });
 	}
 }
 
-console.log(`\n${passed}/${corpus.length} cases exact`);
-console.log(`${flagged}/${corpus.length} cases flagged for review`);
-if (failures.length > 0) console.log(`\n${failures.join('\n\n')}`);
-if (flaggedCases.length > 0) console.log(`\nFlagged:\n\n${flaggedCases.join('\n\n')}`);
+log.info('day corpus: summary', { passed, total: corpus.length, flagged });
+if (failures.length > 0) log.info('day corpus: failures', { failures });
+if (flaggedCases.length > 0) log.info('day corpus: flagged', { flaggedCases });

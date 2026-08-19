@@ -13,6 +13,7 @@
 import { error, fail } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
 import { isPostgresError } from '$lib/server/db/postgres-error';
+import { log } from '$lib/server/log/logger';
 import { getLocale } from '$lib/paraglide/runtime';
 import { proposalsCrumbs } from '$lib/nav/crumbs';
 import { minorUnits } from '$lib/money';
@@ -116,7 +117,7 @@ function decisionErrorMessage(err: unknown): string {
 	if (isPostgresError(err)) {
 		return `${m.proposal_detail_decision_error_heading()} ${errorMessage(err)}`;
 	}
-	console.error('proposal decision failed', err);
+	log.error('proposal decision failed', { route: '/proposals/[id]', err });
 	return m.proposal_decision_unexpected_error();
 }
 

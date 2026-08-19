@@ -23,6 +23,7 @@
 // operator can see it and a caller cannot.
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { error } from '@sveltejs/kit';
+import { log } from '$lib/server/log/logger';
 
 /**
  * Authorizes a cron-triggered request against one bearer token read from
@@ -39,7 +40,7 @@ export function authorizeCronRequest(
 ): void {
 	const token = (expected ?? '').trim();
 	if (!token) {
-		console.error(`authorizeCronRequest: ${varName} is not set on this instance`);
+		log.error('authorizeCronRequest: cron token is not set on this instance', { varName });
 	}
 
 	const header = request.headers.get('authorization') ?? '';

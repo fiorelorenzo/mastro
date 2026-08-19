@@ -66,7 +66,7 @@ test('a wrong token of a different length fails with the byte-identical status a
 });
 
 test('an unset variable yields the same response as a wrong token, and logs server-side instead of naming the variable to the caller', () => {
-	const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+	const consoleLog = vi.spyOn(console, 'log').mockImplementation(() => {});
 	try {
 		let unsetError: unknown;
 		try {
@@ -86,11 +86,14 @@ test('an unset variable yields the same response as a wrong token, and logs serv
 		expect(unsetError).toEqual(wrongTokenError);
 
 		// The variable name reaches the server log, never the response body.
-		expect(consoleError).toHaveBeenCalledWith(
-			'authorizeCronRequest: ALERT_CRON_TOKEN is not set on this instance'
-		);
+		expect(consoleLog).toHaveBeenCalledTimes(1);
+		const [line] = consoleLog.mock.calls[0] as [string];
+		const logged = JSON.parse(line);
+		expect(logged.level).toBe('error');
+		expect(logged.msg).toBe('authorizeCronRequest: cron token is not set on this instance');
+		expect(logged.context).toEqual({ varName: 'ALERT_CRON_TOKEN' });
 	} finally {
-		consoleError.mockRestore();
+		consoleLog.mockRestore();
 	}
 });
 

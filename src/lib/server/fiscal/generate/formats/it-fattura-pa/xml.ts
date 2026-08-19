@@ -245,7 +245,7 @@ function buildDatiCassaPrevidenziale(
 	}
 	const parts = [
 		el('TipoCassa', SOCIAL_CHARGE_FUND_CODE),
-		el('AlCassa', formatRate(charge.amount.rate * 100)),
+		el('AlCassa', formatRate(charge.amount.basisPoints / 100)),
 		el('ImportoContributoCassa', minorUnitsToDecimalString(invoice.socialCharge, invoice.currency)),
 		el('ImponibileCassa', minorUnitsToDecimalString(invoice.taxableAmount, invoice.currency)),
 		el('AliquotaIVA', formatRate(treatment.taxRate))

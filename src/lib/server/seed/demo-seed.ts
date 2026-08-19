@@ -397,7 +397,7 @@ async function seedNordwind() {
 		[dayLine('Riconciliazione inventario mensile — 20/05/2026', invoicedDay.id, dayRate)]
 	);
 	await recordPayment(partlyPaidInvoice.id, {
-		amount: scaleMinorUnits(partlyPaidInvoice.total, 0.5),
+		amount: scaleMinorUnits(partlyPaidInvoice.total, 1, 2),
 		date: '2026-07-05',
 		method: 'bonifico',
 		reference: 'Acconto — bonifico del 05/07/2026'

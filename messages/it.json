@@ -562,6 +562,8 @@
 	"day_form_value_label": "Vale",
 	"day_new_heading": "Registra una giornata",
 	"day_new_no_contracts": "Nessun contratto attivo su cui registrare ancora.",
+	"day_new_no_contracts_action": "Aggiungi un contratto",
+	"day_new_no_contracts_title": "Ancora nessun contratto",
 	"day_new_page_title": "Registra una giornata — mastro",
 	"day_offline_pending_dismiss": "Ignora",
 	"day_offline_pending_heading": "In attesa di sincronizzazione",

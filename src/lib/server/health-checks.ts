@@ -16,13 +16,14 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
+import { log } from '$lib/server/log/logger';
 
 export async function checkDatabase(): Promise<'ok' | 'unreachable'> {
 	try {
 		await db.execute(sql`select 1`);
 		return 'ok';
 	} catch (error) {
-		console.error('health: database unreachable', error);
+		log.error('health: database unreachable', { error });
 		return 'unreachable';
 	}
 }
@@ -51,7 +52,7 @@ export async function checkDocumentStorage(): Promise<'ok' | 'unwritable'> {
 		if (readBack !== contents) throw new Error('read-back did not match what was written');
 		return 'ok';
 	} catch (error) {
-		console.error('health: document storage unwritable', error);
+		log.error('health: document storage unwritable', { error });
 		return 'unwritable';
 	} finally {
 		// Best-effort: `force: true` only swallows ENOENT (the probe was

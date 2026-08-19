@@ -18,6 +18,7 @@
 // specifier is fixed, but it has to load after the hook is live, and
 // there is no other way to sequence that under plain ESM.
 import { register } from 'node:module';
+import { log } from '../src/lib/server/log/logger.ts';
 
 register('./seed-lib-resolve.ts', import.meta.url);
 
@@ -26,7 +27,7 @@ const { client: pool } = await import('$lib/server/db');
 
 try {
 	const result = await seedDemo();
-	console.log(
+	log.info(
 		result.alreadySeeded
 			? 'demo instance already present (Nordwind Logistics on file) — nothing written'
 			: 'demo instance seeded: Nordwind Logistics, Bellani & Partners, Fermata Digitale'

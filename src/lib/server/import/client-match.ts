@@ -173,7 +173,8 @@ export function buildClientContractProposal(invoices: readonly Invoice[]): Clien
 	const cadence = inferInvoicingCadence(invoices.map((invoice) => invoice.issueDate));
 	const observedRecurringAmount = scaleMinorUnits(
 		sumMinorUnits(invoices.map((invoice) => invoice.total)),
-		1 / invoices.length
+		1,
+		invoices.length
 	);
 
 	return {

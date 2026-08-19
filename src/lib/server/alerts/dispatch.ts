@@ -17,6 +17,7 @@
 import { env } from '$env/dynamic/private';
 import * as m from '$lib/paraglide/messages';
 import { parseAllowlist } from '$lib/server/auth/allowlist';
+import { log } from '$lib/server/log/logger';
 import { mailConfigFromEnv, smtpConfiguredInEnv } from '$lib/server/mail/config';
 import { composeMessage } from '$lib/server/mail/message';
 import { sendOverSmtp } from '$lib/server/mail/smtp';
@@ -116,7 +117,7 @@ export async function runAlertPush(asOfDate: string): Promise<PushRunResult> {
 					await deleteSubscriptionByEndpoint(subscription.endpoint);
 					prunedSubscriptions += 1;
 				} else {
-					console.error(`alerts: push send failed for ${alert.key}`, error);
+					log.error('alerts: push send failed', { alertKey: alert.key, error });
 				}
 			}
 		}
@@ -150,7 +151,7 @@ export async function runAlertDigest(asOfDate: string): Promise<DigestRunResult>
 
 	const recipients = alertRecipients();
 	if (recipients.length === 0) {
-		console.warn('alerts: digest has content but AUTH_ALLOWED_EMAILS is empty; nothing to send to');
+		log.warn('alerts: digest has content but AUTH_ALLOWED_EMAILS is empty; nothing to send to');
 		return { included: alerts.length, sent: false };
 	}
 
@@ -159,7 +160,7 @@ export async function runAlertDigest(asOfDate: string): Promise<DigestRunResult>
 	// configured a mailbox must get a skip it can log, not a 500 it will
 	// alert about every week.
 	if (!smtpConfiguredInEnv()) {
-		console.warn('alerts: digest has content but SMTP is not configured; nothing sent');
+		log.warn('alerts: digest has content but SMTP is not configured; nothing sent');
 		return { included: alerts.length, sent: false };
 	}
 
