@@ -19,8 +19,14 @@ import {
 	type CeilingMeasure,
 	type FiscalYearDefinition
 } from './pack';
-import { scaleMinorUnits, type MinorUnits } from '$lib/money';
-import { sumLedger, type LedgerBasis, type LedgerRow } from './ledger';
+import { NO_MINOR_UNITS, scaleMinorUnits, sumMinorUnits, type MinorUnits } from '$lib/money';
+import {
+	sumLedger,
+	sumLedgerAcrossPeriods,
+	type LedgerBasis,
+	type LedgerPeriod,
+	type LedgerRow
+} from './ledger';
 
 const CALENDAR_YEAR: FiscalYearDefinition = { startMonth: 1, startDay: 1 };
 
@@ -96,6 +102,75 @@ export interface EvaluatedCeiling {
 }
 
 /**
+ * The regime a **pack** ceiling belongs to, when the caller knows it
+ * (`fiscal/ceiling-status.ts` does; a pure unit test evaluating one
+ * declaration in isolation does not, and does not need to).
+ *
+ * A pack ceiling measures only what its own regime recognised (#336,
+ * decided on the #324 spike). Its reset period is a whole fiscal year,
+ * but a `fiscal_profile` boundary can fall inside that year, and the
+ * revenue on the far side of the boundary belonged to a different
+ * regime's cap — a cap that, per AGENTS.md invariant 2, no longer exists.
+ * Summing the whole year regardless would charge this regime for revenue
+ * it never governed.
+ *
+ * `periods` is the resolved sub-periods over the ceiling's own window
+ * (`resolveFiscalPackOverRange`), and `packId` says which of them is
+ * this ceiling's own. Attribution then reuses `sumLedgerAcrossPeriods`
+ * rather than re-deriving it: that function already reads each
+ * sub-period under the pack that governed it and, where the origin pack
+ * declares `unresolvedRevenue: 'carries_forward'`, keeps a payment that
+ * arrives after the boundary attributed to the pack that issued the
+ * invoice. That is exactly what Legge 190/2014 comma 72 requires of the
+ * Italian flat-rate regime, and it is why the fix is a different
+ * summation rather than a date filter: clipping by payment date alone
+ * would hand a pre-boundary invoice's later payment to the new regime.
+ *
+ * A contract ceiling never receives this: a clause capping one client's
+ * share of income follows the counterparty, not the money, and survives
+ * any change of regime (invariant 2).
+ */
+export interface CeilingRegime {
+	readonly packId: string;
+	readonly periods: readonly LedgerPeriod[];
+}
+
+/** `periods` clipped to `[from, to)`, dropping the ones that fall wholly
+ * outside it, so a ceiling's own window is what gets measured rather than
+ * the whole range the periods were resolved over. */
+function clipPeriods(
+	periods: readonly LedgerPeriod[],
+	from: string,
+	to: string
+): readonly LedgerPeriod[] {
+	return periods
+		.filter((period) => period.from < to && period.to > from)
+		.map((period) => ({
+			...period,
+			from: period.from > from ? period.from : from,
+			to: period.to < to ? period.to : to
+		}));
+}
+
+/** What `regime`'s own pack recognised out of `rows` over the ceiling's
+ * window — the sum of every sub-figure `sumLedgerAcrossPeriods` attributed
+ * to that pack, carry-forward figures included, since those carry the
+ * origin pack's id precisely so this reading is possible. */
+function regimeAttributedAmount(
+	rows: readonly LedgerRow[],
+	regime: CeilingRegime,
+	from: string,
+	to: string
+): MinorUnits {
+	const periods = clipPeriods(regime.periods, from, to);
+	if (periods.length === 0) return NO_MINOR_UNITS;
+	const figure = sumLedgerAcrossPeriods(rows, periods);
+	return sumMinorUnits(
+		figure.subFigures.filter((sub) => sub.packId === regime.packId).map((sub) => sub.amount)
+	);
+}
+
+/**
  * `ceiling` evaluated against `rows` as of `asOfDate` — the one function
  * every ceiling, pack or contract, absolute or share, runs through.
  * `contractStartsOn` is only read when `ceiling.basis` is
@@ -106,26 +181,41 @@ export interface EvaluatedCeiling {
  * to have pre-filtered it identically for both origins — that filtering
  * is exactly the part two hand-written evaluators would be most likely to
  * drift apart on.
+ *
+ * `regime` narrows a **pack** ceiling to what its own regime recognised;
+ * see {@link CeilingRegime}. Omitted, or given for a contract ceiling,
+ * the whole period is summed under the ceiling's own basis, which is the
+ * only correct reading for a contract clause and the historical one for
+ * every caller that has no profile to resolve.
  */
 export function evaluateCeiling(
 	ceiling: Ceiling,
 	rows: readonly LedgerRow[],
 	asOfDate: string,
-	contractStartsOn?: string
+	contractStartsOn?: string,
+	regime?: CeilingRegime
 ): EvaluatedCeiling {
 	const period = ceilingPeriod(ceiling.basis, asOfDate, contractStartsOn);
 	const basis = ledgerBasisOf(ceiling.basis);
+	const regimeAware = regime !== undefined && ceiling.origin === 'pack';
 
 	const perimeter = ceiling.perimeter;
 	const perimeterRows =
 		perimeter.kind === 'client' ? rows.filter((row) => row.clientId === perimeter.clientId) : rows;
-	const currentValue = sumLedger(perimeterRows, basis, period.from, period.to).amount;
+	const measure = (subject: readonly LedgerRow[]): MinorUnits =>
+		regimeAware
+			? regimeAttributedAmount(subject, regime, period.from, period.to)
+			: sumLedger(subject, basis, period.from, period.to).amount;
+	const currentValue = measure(perimeterRows);
 
 	const limitValue =
 		ceiling.measure === 'absolute_amount'
 			? ceiling.value
 			: scaleMinorUnits(
-					sumLedger(rows, basis, period.from, period.to).amount,
+					// Denominator and numerator are measured the same way, or
+					// the share would compare one regime's revenue against
+					// every regime's.
+					measure(rows),
 					// `ceiling.value` here is a share such as 0.35 — a pack
 					// literal, or read off `share_ratio numeric(5,4)`
 					// (`db/schema/ceiling.ts`), never more precise than four

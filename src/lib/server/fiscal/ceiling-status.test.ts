@@ -218,3 +218,104 @@ test('a contract ceiling survives a fiscal profile switch with no pack ceilings,
 		expect(ownEvaluated[0].ceiling.origin).toBe('contract');
 	});
 });
+
+/**
+ * #336, decided on the #324 spike: a pack ceiling measures what its own
+ * regime recognised, not everything that happened to land inside its reset
+ * period. Era 1943 here, disjoint from every other test in this file.
+ *
+ * Two regimes inside one calendar year, both cash: pack A through 30 June,
+ * pack B from 1 July, each declaring its own absolute ceiling. Three
+ * payments, placed either side of the boundary on purpose.
+ *
+ * The interesting one is the invoice issued under A and collected under B.
+ * It counts toward **B**, and that is deliberate rather than an oversight
+ * of the carry-forward pass: both regimes recognise on receipt, so the
+ * receipt is the recognition event under either one, and Legge 190/2014
+ * comma 72 does not move a recognition date — it says revenue that has
+ * already contributed is never counted twice, and revenue that has not
+ * becomes relevant in the later period. That revenue had contributed to
+ * nothing under A, since no money had arrived. The carry-forward machinery
+ * (#122) exists for the case where the two regimes disagree about *what*
+ * recognises revenue, cash giving way to accrual, and this is not that.
+ *
+ * What the fix changes is the 1 March payment: A recognised it, A's cap
+ * measured it, and B must not measure it again. Before #336 the whole
+ * calendar year was summed under one basis, so B read all three.
+ */
+test('a pack ceiling counts only the revenue its own regime recognised, not the whole calendar year', async () => {
+	const outcome = await inRolledBackTransaction(async (tx) => {
+		const { contractRow } = await insertContract(tx);
+
+		const underA = await createInvoice(
+			invoiceInput(contractRow.id, { issueDate: '1943-02-01' }),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+		const straddling = await createInvoice(
+			invoiceInput(contractRow.id, { issueDate: '1943-05-01' }),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+		const underB = await createInvoice(
+			invoiceInput(contractRow.id, { issueDate: '1943-08-01' }),
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'test fixture',
+			tx
+		);
+		// Collected inside A's own window.
+		await recordPayment(underA.id, { amount: underA.total, date: '1943-03-01' }, tx);
+		// Issued under A, collected under B: comma 72's case.
+		await recordPayment(straddling.id, { amount: straddling.total, date: '1943-09-01' }, tx);
+		// Wholly B's.
+		await recordPayment(underB.id, { amount: underB.total, date: '1943-09-15' }, tx);
+
+		const packCeiling = (id: string) => ({
+			id,
+			origin: 'pack' as const,
+			label: { en: 'Cap', it: 'Tetto' },
+			measure: 'absolute_amount' as const,
+			value: minorUnits(10_000_000),
+			basis: 'cash_received_calendar_year' as const,
+			perimeter: { kind: 'all_clients' as const },
+			alertLevels: [],
+			consequence: { en: 'x', it: 'x' }
+		});
+		const base = {
+			version: '1',
+			effectiveFrom: '1900-01-01',
+			displayName: { en: 'x', it: 'x' },
+			basis: 'cash' as const,
+			fiscalYear: { startMonth: 1, startDay: 1 },
+			treatments: [],
+			charges: [],
+			formats: [],
+			unresolvedRevenue: 'carries_forward' as const
+		};
+		const packA: FiscalPack = { ...base, id: 'test-regime-a', ceilings: [packCeiling('cap-a')] };
+		const packB: FiscalPack = { ...base, id: 'test-regime-b', ceilings: [packCeiling('cap-b')] };
+		const registry: PackRegistry = buildRegistry([packA, packB]);
+
+		await tx.delete(fiscalProfile);
+		await tx.insert(fiscalProfile).values([
+			{ packId: 'test-regime-a', packVersion: '1', validFrom: '1943-01-01', validTo: '1943-07-01' },
+			{ packId: 'test-regime-b', packVersion: '1', validFrom: '1943-07-01', validTo: '1944-01-01' }
+		]);
+
+		// Evaluated inside B's own window, so B's ceiling is the active one.
+		const evaluated = await evaluateActiveCeilings('1943-10-01', tx, registry);
+		return {
+			b: evaluated.find((entry) => entry.ceiling.id === 'cap-b'),
+			invoiceTotal: underB.total
+		};
+	});
+
+	// B recognised the two September payments, both received inside its own
+	// window. The 1 March one is A's and stays A's: summing the calendar year
+	// under one basis, which is what happened before #336, gave B all three.
+	expect(outcome.b).toBeDefined();
+	expect(outcome.b?.currentValue).toBe(outcome.invoiceTotal * 2);
+	expect(outcome.b?.period).toEqual({ from: '1943-01-01', to: '1944-01-01' });
+});
