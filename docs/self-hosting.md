@@ -82,19 +82,50 @@ AGENTS.md's commit-conventions section calls this out for the same reason: it is
 one of the few things here that is genuinely lost, not merely inconvenient to
 replace, if it goes missing.
 
-## 4. Mail: an app password over IMAP/SMTP, not the Gmail API
+## 4. Mail: an app password over IMAP, and one option for sending
 
-Mailbox access (`SMTP_HOST`/`SMTP_PORT`/... and `IMAP_HOST`/`IMAP_PORT`/... in
-`.env.example`) is a per-provider app password, not OAuth and not the Gmail API.
-The reason is the same Testing-status mechanics as section 1, working against you
-instead of for you: `gmail.readonly` is a **restricted** scope, not merely
-sensitive, so routing mail through the Gmail API would both break weekly in
-Testing (the seven-day refresh-token expiry that section 1 explains you currently
-avoid) and require every self-hoster to pass Google's full verification with a
-security assessment just to keep reading their own inbox. IMAP/SMTP with an app
-password sidesteps that entirely, and works with any mail provider, not only
-Google's. For Gmail specifically: enable 2-Step Verification, then generate an
-app password at myaccount.google.com/apppasswords.
+**Reading is always IMAP with an app password** (`IMAP_HOST`/`IMAP_PORT`/... in
+`.env.example`), and that is not going to change. Google's own restricted-scope
+list settles it: `gmail.readonly`, `gmail.modify`, `gmail.compose` and
+`gmail.metadata` are all **restricted**, and so is `https://mail.google.com/`,
+which that list defines as "includes any usage of IMAP, SMTP, and POP3
+protocols". Restricted means a CASA security assessment, roughly $500 a year,
+re-certified every twelve months or production access is revoked. So reading over
+the API would put that on every self-hoster — and, the part that surprises
+people, doing _IMAP_ over OAuth would need the most restricted scope of all.
+OAuth makes the reading side worse on verification, not better. An app password
+needs no Google Cloud project whatsoever and works with any provider, not only
+Google's. For Gmail: enable 2-Step Verification, then generate an app password
+at myaccount.google.com/apppasswords. Note that IMAP is always on for personal
+`@gmail.com` accounts since 2025 — there is no setting to enable.
+
+**Sending has two options, and SMTP is the default.** `SMTP_HOST`/... over the
+same app password is what most instances want, and the sent message is appended
+to your own Sent folder over IMAP so the thread lives where you expect it.
+
+The second option exists for one reason: **many hosting providers block outbound
+SMTP entirely.** Measured on this project's own production box, every submission
+port — 587, 465, 2525, to Gmail and to two unrelated providers — is refused,
+while 443 answers. No amount of configuration fixes that. Setting
+`GMAIL_SEND_REFRESH_TOKEN` sends over the Gmail API on HTTPS instead, with the
+`gmail.send` scope and nothing else. `gmail.send` is **sensitive, not
+restricted**: brand verification, no security assessment. It reuses the same
+OAuth client as sign-in, like the Drive mirror does, and the refresh token comes
+from the same one-time Playground exchange section 5 walks through — select
+`https://www.googleapis.com/auth/gmail.send` there instead of, or alongside, the
+Drive scope.
+
+One difference from `drive.file` that matters: **`gmail.send` is sensitive, so
+the consent screen must be published.** Under Testing status a project
+requesting a sensitive scope issues refresh tokens that expire after seven days,
+which is the trap section 1 explains you avoid by keeping sign-in to
+non-sensitive scopes. If you want API sending, publish the project. If you would
+rather not, use SMTP.
+
+On the API path the Sent append is skipped, deliberately: Gmail files anything
+sent through its own API into Sent by itself and dedupes by `Message-ID`, so
+appending over IMAP as well would upload the whole message a second time for a
+copy that is already there.
 
 **A single message cannot fill the disk.** `IMAP_MAX_MESSAGE_BYTES` (25 MiB by
 default) is checked against the IMAP listing's own reported size before a

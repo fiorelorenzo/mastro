@@ -1,7 +1,9 @@
-// Sends over SMTP with the configured app password (#72) — never the
-// Gmail API; see AGENTS.md for why (a Google project in Testing status
-// breaks weekly under a restricted-scope API, and IMAP/SMTP works with
-// any provider).
+// Sends over SMTP with the configured app password (#72), and is still the
+// default sender: it works with any provider and needs no Google Cloud
+// project. `gmail-api.ts` is the alternative added in #345, for a host that
+// cannot reach an SMTP port at all; `sender.ts` picks between them. Reading
+// is IMAP either way, for the restricted-scope reasons AGENTS.md and
+// docs/self-hosting.md section 4 both spell out.
 import nodemailer from 'nodemailer';
 import type { SmtpConfig } from './config';
 import type { ComposedMessage } from './message';

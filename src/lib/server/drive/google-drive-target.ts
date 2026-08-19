@@ -29,6 +29,7 @@
 // document bytes even by accident — every response here is read only for
 // an `id`.
 import { randomUUID } from 'node:crypto';
+import { createGoogleAccessTokenCache, type FetchLike } from '$lib/server/google/access-token';
 import type { MirrorPublishInput, MirrorPublishResult, MirrorTarget } from './mirror-target';
 
 export type GoogleDriveTargetConfig = {
@@ -46,37 +47,9 @@ export type GoogleDriveTargetConfig = {
 	readonly refreshToken: string;
 };
 
-type FetchLike = typeof fetch;
-
-const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
 const FILES_ENDPOINT = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD_ENDPOINT = 'https://www.googleapis.com/upload/drive/v3/files';
 const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
-
-type AccessToken = { readonly value: string; readonly expiresAt: number };
-
-async function requestAccessToken(
-	config: GoogleDriveTargetConfig,
-	fetchImpl: FetchLike
-): Promise<AccessToken> {
-	const response = await fetchImpl(TOKEN_ENDPOINT, {
-		method: 'POST',
-		headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-		body: new URLSearchParams({
-			client_id: config.clientId,
-			client_secret: config.clientSecret,
-			refresh_token: config.refreshToken,
-			grant_type: 'refresh_token'
-		})
-	});
-	if (!response.ok) {
-		throw new Error(`Drive token refresh failed: ${response.status} ${await response.text()}`);
-	}
-	const body = (await response.json()) as { access_token: string; expires_in: number };
-	// Refreshed a minute early so a token already in flight never expires
-	// mid-call.
-	return { value: body.access_token, expiresAt: Date.now() + (body.expires_in - 60) * 1000 };
-}
 
 /** Drive's query language treats `'` and `\` specially inside a string
  * literal; a client or folder name containing either would otherwise
@@ -205,14 +178,10 @@ export function createGoogleDriveMirrorTarget(
 	config: GoogleDriveTargetConfig,
 	fetchImpl: FetchLike = fetch
 ): MirrorTarget {
-	let cachedToken: AccessToken | null = null;
-
-	async function getAccessToken(): Promise<string> {
-		if (!cachedToken || cachedToken.expiresAt <= Date.now()) {
-			cachedToken = await requestAccessToken(config, fetchImpl);
-		}
-		return cachedToken.value;
-	}
+	// One shared implementation of the refresh-token exchange, since #345
+	// gave the Gmail sender the same need; see
+	// `server/google/access-token.ts` for why no scope is nameable there.
+	const getAccessToken = createGoogleAccessTokenCache(config, 'Drive', fetchImpl);
 
 	return {
 		async publish(input: MirrorPublishInput): Promise<MirrorPublishResult> {

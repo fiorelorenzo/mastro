@@ -21,6 +21,8 @@ import { log } from '$lib/server/log/logger';
 import { mailConfigFromEnv, smtpConfiguredInEnv } from '$lib/server/mail/config';
 import { composeMessage } from '$lib/server/mail/message';
 import { sendOverSmtp } from '$lib/server/mail/smtp';
+import { sendOverGmailApi } from '$lib/server/mail/gmail-api';
+import { gmailSenderConfigFromEnv } from '$lib/server/mail/sender';
 import { vapidConfigFromEnv } from '$lib/server/push/config';
 import { deleteSubscriptionByEndpoint, listSubscriptions } from '$lib/server/push/repository';
 import { sendWebPush, WebPushGoneError } from '$lib/server/push/send';
@@ -183,7 +185,13 @@ export async function runAlertDigest(asOfDate: string): Promise<DigestRunResult>
 		body,
 		attachments: []
 	});
-	await sendOverSmtp(mailConfig.smtp, message);
+	// The digest never went to Sent even before #345 (it is machinery
+	// writing to its own operator, not correspondence with a client), so
+	// this calls the sender directly rather than through
+	// `sendComposedMessage`, and only the choice of sender is shared.
+	const gmail = gmailSenderConfigFromEnv();
+	if (gmail) await sendOverGmailApi(gmail, message);
+	else await sendOverSmtp(mailConfig.smtp, message);
 
 	await Promise.all(sorted.map((alert) => recordDelivery(alert, 'digest')));
 
