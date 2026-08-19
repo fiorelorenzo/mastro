@@ -5,9 +5,15 @@
 
 import { db, type DbExecutor } from '$lib/server/db';
 import { listCeilingsWithContract } from '$lib/server/repositories/ceiling';
-import { ceilingFromContractRow, evaluateCeiling, type EvaluatedCeiling } from './ceiling';
+import {
+	ceilingFromContractRow,
+	ceilingPeriod,
+	evaluateCeiling,
+	type CeilingRegime,
+	type EvaluatedCeiling
+} from './ceiling';
 import type { Ceiling } from './pack';
-import { resolveActiveFiscalPack } from './profile';
+import { resolveActiveFiscalPack, resolveFiscalPackOverRange } from './profile';
 import { defaultRegistry, type PackRegistry } from './registry';
 import { fetchLedgerRows } from './revenue';
 
@@ -47,7 +53,45 @@ export async function evaluateActiveCeilings(
 		contractStartsOn: row.contract.startsOn
 	}));
 
-	return [...packEntries, ...contractEntries].map(({ ceiling, contractStartsOn }) =>
-		evaluateCeiling(ceiling, rows, asOfDate, contractStartsOn)
-	);
+	// #336: a pack ceiling measures only what its own regime recognised, so
+	// each one needs the sub-periods resolved over its own window — which
+	// differs per ceiling, since a ceiling declares its own reset period.
+	// A contract ceiling gets none of this on purpose (invariant 2: a
+	// clause capping one client's share survives a change of regime), and
+	// resolving nothing for it also keeps the query count at one per
+	// distinct pack-ceiling window rather than one per ceiling.
+	const regimes = new Map<string, CeilingRegime>();
+	for (const { ceiling } of packEntries) {
+		if (resolved === null) break;
+		const period = ceilingPeriod(ceiling.basis, asOfDate);
+		const key = `${period.from}:${period.to}`;
+		if (regimes.has(key)) continue;
+		const periods = await resolveFiscalPackOverRange(executor, period.from, period.to, registry);
+		regimes.set(key, {
+			packId: resolved.pack.id,
+			periods: periods.map((entry) => ({
+				basis: entry.pack.basis,
+				from: entry.from,
+				to: entry.to ?? period.to,
+				packId: entry.pack.id,
+				unresolvedRevenue: entry.pack.unresolvedRevenue
+			}))
+		});
+	}
+
+	return [
+		...packEntries.map(({ ceiling, contractStartsOn }) => {
+			const period = ceilingPeriod(ceiling.basis, asOfDate);
+			return evaluateCeiling(
+				ceiling,
+				rows,
+				asOfDate,
+				contractStartsOn,
+				regimes.get(`${period.from}:${period.to}`)
+			);
+		}),
+		...contractEntries.map(({ ceiling, contractStartsOn }) =>
+			evaluateCeiling(ceiling, rows, asOfDate, contractStartsOn)
+		)
+	];
 }
