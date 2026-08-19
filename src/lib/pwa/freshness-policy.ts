@@ -39,6 +39,26 @@ export function recordRevalidated(state: FreshnessState, url: string): Freshness
 }
 
 /**
+ * Whether the arrival of a fresh copy of `url` should make the page re-read
+ * its data, decided **before** {@link recordRevalidated} clears the entry.
+ *
+ * Only a URL this tab was told was stale needs one. That is the whole fix
+ * for #340: the page used to re-read on every `data-fresh` message, and
+ * since re-reading refetches the same URL, and a successful refetch posts
+ * another `data-fresh`, an open tab never stopped. Measured before it was
+ * written: roughly 30 messages a second, indefinitely, on a page nobody was
+ * touching, with the freshness banner flashing whenever one round trip in
+ * that storm crossed the stale-announce grace period.
+ *
+ * A fresh copy of something never announced stale is the ordinary case —
+ * stale-while-revalidate confirming what is already on screen — and the
+ * page already has that payload, so there is nothing to re-read.
+ */
+export function shouldRefreshAfterRevalidation(state: FreshnessState, url: string): boolean {
+	return state[url]?.stale === true;
+}
+
+/**
  * The service worker detected an invalid session (`sw-cache-policy.ts`'s
  * `isSessionInvalidPayload`) and wiped its data cache: nothing this tab
  * still has an entry for is a ledger figure anyone should keep looking at.

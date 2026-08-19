@@ -15,6 +15,7 @@ import {
 	recordRevalidated,
 	recordSessionInvalid,
 	recordStaleServe,
+	shouldRefreshAfterRevalidation,
 	type FreshnessState
 } from './freshness-policy';
 
@@ -57,13 +58,20 @@ class ServiceWorkerClient {
 					message.cachedAt ?? new Date().toISOString()
 				);
 			} else if (message.type === 'mastro:data-fresh' && message.url) {
+				// Read the decision before recording, since recording clears the
+				// entry it depends on.
+				//
+				// Re-reading here closes the half that was missing: a stale
+				// serve followed by a fresh copy used to take the banner down
+				// and leave the old rows on screen. What it must not do is
+				// re-read on *every* fresh message: a re-read refetches the
+				// same URL, a successful refetch posts another `data-fresh`,
+				// and the tab never stops (#340 — measured at about 30 a
+				// second on an untouched page). So this asks only when this
+				// URL had actually been announced stale.
+				const refresh = shouldRefreshAfterRevalidation(this.#entries, message.url);
 				this.#entries = recordRevalidated(this.#entries, message.url);
-				// The half that was missing. Stale-while-revalidate served the
-				// stale half and then told nobody the fresh half had arrived:
-				// the banner came down and the screen kept the old rows. Now
-				// the revalidated payload is read, so a page corrects itself
-				// instead of waiting for somebody to press reload.
-				void invalidateAll();
+				if (refresh) void invalidateAll();
 			} else if (message.type === 'mastro:data-written') {
 				// A write emptied the cache (`dropDataCacheAfterWrite`). Every
 				// tab re-reads, which is what makes a second tab agree with the

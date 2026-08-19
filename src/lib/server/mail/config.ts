@@ -77,9 +77,38 @@ function optionalPositiveInt(
 // email with a scanned PDF attached is never the thing that trips it.
 export const DEFAULT_IMAP_MAX_MESSAGE_BYTES = 25 * 1024 * 1024;
 
+/**
+ * The IMAP half alone, for the two callers that only ever poll: the cron
+ * route and `/mail`'s poll-now action (#343).
+ *
+ * Polling used to go through `readMailConfig`, which builds both halves and
+ * whose `required` throws on any missing key, so a poll demanded the whole
+ * sending configuration too. That is not hypothetical tidiness: an instance
+ * configured for ingestion only, IMAP set and SMTP not, is a supported
+ * shape — `isImapConfigured` reports it configured, so `/mail` said "mail
+ * is configured, never polled" and its own button then failed with
+ * `SMTP_HOST is not set`. Found by pressing that button against a real
+ * mailbox with only the IMAP keys in `.env`, which is the state credentials
+ * arrive in before anything is known about sending.
+ */
+export function readImapConfig(source: Record<string, string | undefined>): ImapConfig {
+	return {
+		host: required(source, 'IMAP_HOST'),
+		port: requiredPort(source, 'IMAP_PORT'),
+		secure: source.IMAP_SECURE === 'true',
+		user: required(source, 'IMAP_USER'),
+		password: required(source, 'IMAP_APP_PASSWORD'),
+		sentMailbox: source.IMAP_SENT_MAILBOX?.trim() || 'Sent',
+		maxMessageBytes: optionalPositiveInt(
+			source,
+			'IMAP_MAX_MESSAGE_BYTES',
+			DEFAULT_IMAP_MAX_MESSAGE_BYTES
+		)
+	};
+}
+
 /** Parses SMTP/IMAP settings out of a plain env-like object — a pure
- * function so it is exercised directly against fabricated input, the same
- * way `blob-store.ts` takes its storage root explicitly instead of
+ * function over `source`, so a test hands it a literal instead of
  * reading configuration itself. */
 export function readMailConfig(source: Record<string, string | undefined>): MailConfig {
 	return {
@@ -92,19 +121,7 @@ export function readMailConfig(source: Record<string, string | undefined>): Mail
 			fromAddress: required(source, 'MAIL_FROM_ADDRESS'),
 			fromName: source.MAIL_FROM_NAME?.trim() || null
 		},
-		imap: {
-			host: required(source, 'IMAP_HOST'),
-			port: requiredPort(source, 'IMAP_PORT'),
-			secure: source.IMAP_SECURE === 'true',
-			user: required(source, 'IMAP_USER'),
-			password: required(source, 'IMAP_APP_PASSWORD'),
-			sentMailbox: source.IMAP_SENT_MAILBOX?.trim() || 'Sent',
-			maxMessageBytes: optionalPositiveInt(
-				source,
-				'IMAP_MAX_MESSAGE_BYTES',
-				DEFAULT_IMAP_MAX_MESSAGE_BYTES
-			)
-		}
+		imap: readImapConfig(source)
 	};
 }
 
@@ -113,6 +130,11 @@ export function readMailConfig(source: Record<string, string | undefined>): Mail
  * never at import time. */
 export function mailConfigFromEnv(): MailConfig {
 	return readMailConfig(env);
+}
+
+/** The polling half of the same idea, for the callers that never send. */
+export function imapConfigFromEnv(): ImapConfig {
+	return readImapConfig(env);
 }
 
 /** Whether IMAP is configured at all, without throwing — `readMailConfig`

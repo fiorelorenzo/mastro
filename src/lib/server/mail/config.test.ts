@@ -3,6 +3,7 @@ import {
 	DEFAULT_IMAP_MAX_MESSAGE_BYTES,
 	isImapConfigured,
 	isSmtpConfigured,
+	readImapConfig,
 	readMailConfig
 } from './config';
 
@@ -79,4 +80,32 @@ test('SMTP without a from address does not count as configured', () => {
 	const withoutFrom = { ...FULL };
 	delete withoutFrom.MAIL_FROM_ADDRESS;
 	expect(isSmtpConfigured(withoutFrom)).toBe(false);
+});
+
+/*
+ * #343: polling needs IMAP and nothing else. This used to go through
+ * `readMailConfig`, so an ingestion-only instance — IMAP set, SMTP not,
+ * which `isImapConfigured` reports as configured — failed its own poll with
+ * `SMTP_HOST is not set`. Found by pressing the poll-now button against a
+ * real mailbox, not by reading the code.
+ */
+test('readImapConfig reads the IMAP half with no SMTP key set at all', () => {
+	const imapOnly = {
+		IMAP_HOST: 'imap.gmail.com',
+		IMAP_PORT: '993',
+		IMAP_SECURE: 'true',
+		IMAP_USER: 'someone@example.com',
+		IMAP_APP_PASSWORD: 'app-password'
+	};
+
+	expect(readImapConfig(imapOnly)).toEqual({
+		host: 'imap.gmail.com',
+		port: 993,
+		secure: true,
+		user: 'someone@example.com',
+		password: 'app-password',
+		sentMailbox: 'Sent',
+		maxMessageBytes: DEFAULT_IMAP_MAX_MESSAGE_BYTES
+	});
+	expect(() => readMailConfig(imapOnly)).toThrow(/SMTP_HOST/);
 });

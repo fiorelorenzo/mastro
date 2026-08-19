@@ -459,6 +459,15 @@ test('fetchLatestMailboxPollRun returns the most recent row once configured, nul
 	await inRolledBackTransaction(async (tx) => {
 		await insertContract(tx, { mailFolder: 'Acme Corp' });
 
+		// This query reads the whole table, so "no rows yet" is only a fact
+		// this test can assert if it makes it one. Deleting inside the
+		// transaction is safe and rolls back with everything else, and the
+		// alternative — assuming the table is empty — is the trap AGENTS.md
+		// warns about: it held until the poll-now button (#343) was pressed
+		// once against a real mailbox, and then this test failed for a
+		// reason that had nothing to do with what it was testing.
+		await tx.delete(mailboxPollRun);
+
 		expect(await fetchLatestMailboxPollRun(true, tx)).toEqual({
 			pollingConfigured: true,
 			latestRun: null

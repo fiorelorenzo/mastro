@@ -8,6 +8,7 @@ import { paraglideMiddleware } from '$lib/paraglide/server';
 import { auth, defaultAllowlist } from '$lib/server/auth';
 import { isAllowedEmail } from '$lib/server/auth/allowlist';
 import { CSP_DIRECTIVES, formatCspHeader } from '$lib/server/security/csp';
+import { OFFLINE_CACHE_HEADER } from '$lib/pwa/sw-cache-policy';
 import { isEndpointRoute, isPublicRoute } from '$lib/server/route-guard';
 
 // `kit.csp` (vite.config.ts) only ever sets a `Content-Security-Policy`
@@ -26,6 +27,14 @@ const STATIC_CSP_HEADER = formatCspHeader(CSP_DIRECTIVES);
  * add one for. Placed first in `sequence` below so it wraps every other
  * handle: any response `handleAuth` or the real render pipeline returns
  * passes back through here before reaching the client.
+ *
+ * It also marks page data as safe to keep offline (#341). The service
+ * worker caches only responses carrying this marker, so this is the one
+ * place deciding what the PWA may hold in Cache Storage, and it says yes to
+ * exactly one thing: SvelteKit's own `__data.json` for a page load.
+ * `event.isDataRequest` is what tells those apart from an endpoint or a
+ * document, and nothing else is marked, so `/documents/[id]` stays out of
+ * the cache by construction rather than by a guess about its content type.
  */
 export const handleSecurityHeaders: Handle = async ({ event, resolve }) => {
 	const response = await resolve(event);
@@ -33,6 +42,7 @@ export const handleSecurityHeaders: Handle = async ({ event, resolve }) => {
 	if (!response.headers.has('content-security-policy')) {
 		response.headers.set('content-security-policy', STATIC_CSP_HEADER);
 	}
+	if (event.isDataRequest) response.headers.set(OFFLINE_CACHE_HEADER, 'allow');
 	return response;
 };
 

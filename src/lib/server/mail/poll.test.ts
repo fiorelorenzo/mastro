@@ -298,8 +298,11 @@ test.skipIf(!mailboxAvailable)(
 		const result = await pollOnce({}, tightConfig);
 		expect(result.status).toBe('success');
 		// "Handed off" counts documents archived, not every row recorded —
-		// only the small message was ever buffered whole.
+		// only the small message was ever buffered whole. "Skipped" (#343)
+		// is the oversized-arrival counterpart, read by the mail page's
+		// poll-now action to report "N archived, M skipped".
 		expect(result.status === 'success' && result.folders[0].handedOff).toBe(1);
+		expect(result.status === 'success' && result.folders[0].skipped).toBe(1);
 
 		const rows = await db
 			.select()

@@ -40,26 +40,37 @@ export function isCacheableDataRequest(request: {
 }
 
 /**
- * The response half of the caching decision (#305): `Cache-Control:
- * no-store` means exactly what it says, regardless of content-type,
- * request method or origin — the server is telling every cache, including
- * this worker's Cache Storage, not to keep a copy at all. Nothing upstream
- * of `isCacheableDataRequest` can see the response, so this is a second,
- * independent gate the write site cannot skip: a request being cacheable
- * says nothing about whether the response that comes back consents to it.
+ * The name of the private header `hooks.server.ts` stamps on the page-data
+ * responses this worker is allowed to keep offline, and the only thing the
+ * response half of the policy reads.
+ */
+export const OFFLINE_CACHE_HEADER = 'x-mastro-offline';
+
+/**
+ * The response half of the caching decision: allow-only-what-the-app-marks,
+ * deny everything else (#341).
  *
- * `private` alone does not disqualify a response: it means "do not share
- * this across users on a shared cache", which is moot for a browser's own
- * Cache Storage, so a response marked merely `private` keeps being cached
- * exactly as before this change.
+ * This gate used to read `Cache-Control: no-store` (#305). The intent was
+ * right — evidence must never land in Cache Storage, and documents were
+ * being spared only by the accident that a blob's content type is rarely
+ * `application/json` — and the discriminator was wrong. `no-store` is what
+ * a correct server says about *any* private, per-session payload, and
+ * SvelteKit says exactly that on every `__data.json`. Measured: with that
+ * gate in place the data cache held **zero** entries, so the whole PWA had
+ * a cached shell and no data behind it, and nothing in the suite noticed
+ * because the tests fed it hand-written header literals rather than the
+ * header SvelteKit actually sends.
+ *
+ * So the rule is inverted. A response is cached only if the app itself
+ * marked it cacheable, which `/documents/[id]` never is, whatever mime it
+ * carries and even if a document is one day served as JSON. Nothing
+ * upstream of `isCacheableDataRequest` can see the response, so this stays
+ * a second, independent gate the write site cannot skip.
  */
 export function isCacheableDataResponse(response: {
-	readonly cacheControl: string | null;
+	readonly offlineMarker: string | null;
 }): boolean {
-	const directives = (response.cacheControl ?? '')
-		.split(',')
-		.map((directive) => directive.trim().split('=', 1)[0]?.toLowerCase());
-	return !directives.includes('no-store');
+	return response.offlineMarker?.trim().toLowerCase() === 'allow';
 }
 
 /**

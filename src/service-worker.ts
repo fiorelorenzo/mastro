@@ -66,6 +66,7 @@ import {
 	dayEntryDataUrl,
 	isCacheableDataRequest,
 	isCacheableDataResponse,
+	OFFLINE_CACHE_HEADER,
 	isOfflineDocumentRequest,
 	isSessionInvalidPayload,
 	offlineFallbackUrl,
@@ -378,15 +379,17 @@ function handleDataRequest(event: FetchEvent): Promise<Response> {
  * file). Never caches an error response or anything that is not JSON —
  * that also skips SvelteKit's chunked `text/sveltekit-data` deferred-data
  * responses, which stream and so are not safely re-servable from a single
- * cached copy; those simply fall back to the network every time. Checked
- * before content-type, not after: `Cache-Control: no-store` (#305) rules a
- * response out of Cache Storage whatever it claims to contain, and a
+ * cached copy; those simply fall back to the network every time.
+ *
+ * The offline marker is checked before content-type, not after: only a
+ * response the app itself marked cacheable (`OFFLINE_CACHE_HEADER`, set in
+ * `hooks.server.ts`) may be kept, whatever it claims to contain, and a
  * future content-type branch added to this function must not be able to
- * skip past it.
+ * skip past it (#305, corrected in #341).
  */
 async function processNetworkDataResponse(cacheKey: string, response: Response): Promise<Response> {
 	if (!response.ok) return response;
-	if (!isCacheableDataResponse({ cacheControl: response.headers.get('cache-control') }))
+	if (!isCacheableDataResponse({ offlineMarker: response.headers.get(OFFLINE_CACHE_HEADER) }))
 		return response;
 	if (!(response.headers.get('content-type') ?? '').includes('application/json')) return response;
 
