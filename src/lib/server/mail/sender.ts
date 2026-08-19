@@ -13,6 +13,7 @@
 // reason to want it.
 
 import { env } from '$env/dynamic/private';
+import { resolveGoogleApiClient } from '$lib/server/google/oauth-client';
 import { sendOverSmtp } from './smtp';
 import { sendOverGmailApi, type GmailApiConfig } from './gmail-api';
 import { appendToSentMailbox } from './imap';
@@ -40,14 +41,16 @@ export function readGmailSenderConfig(
 	const refreshToken = source.GMAIL_SEND_REFRESH_TOKEN?.trim();
 	if (!refreshToken) return null;
 
-	const clientId = source.GOOGLE_CLIENT_ID?.trim();
-	const clientSecret = source.GOOGLE_CLIENT_SECRET?.trim();
-	if (!clientId || !clientSecret) {
+	// #348: the sign-in client, unless the token was issued by another one
+	// and `GOOGLE_API_CLIENT_*` names it. A refresh token cannot be spent by
+	// a client that did not obtain it.
+	const client = resolveGoogleApiClient(source);
+	if (!client) {
 		throw new Error(
-			'GMAIL_SEND_REFRESH_TOKEN is set but GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET are not — sending over the Gmail API reuses the same OAuth client as sign-in, see docs/self-hosting.md.'
+			'GMAIL_SEND_REFRESH_TOKEN is set but no OAuth client is configured — set GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET, or GOOGLE_API_CLIENT_ID/GOOGLE_API_CLIENT_SECRET if the token belongs to a different client. See docs/self-hosting.md section 4.'
 		);
 	}
-	return { clientId, clientSecret, refreshToken };
+	return { ...client, refreshToken };
 }
 
 export function gmailSenderConfigFromEnv(): GmailApiConfig | null {
