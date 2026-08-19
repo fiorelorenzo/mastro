@@ -164,52 +164,65 @@ async function seedFailedContractRun(
 	return { documentRow, run };
 }
 
-test('a retryable failed run can be retried, and completing the new job produces exactly one proposal', async () => {
-	const outcome = await inRolledBackTransaction(async (tx) => {
-		const { documentRow, run } = await seedFailedContractRun(tx, 'timed_out');
+/*
+ * An explicit timeout, not a sleep: this test renders a real PDF with pdfkit,
+ * reads it back through pdfjs twice (once seeding, once inside the retry), and
+ * drains a job through the queue, all against the real database. It takes
+ * roughly 5s on a loaded CI runner, which is exactly vitest's default, so it
+ * failed there on a docs-only pull request while having passed on every run
+ * before. A test whose duration is dominated by PDF work has no business
+ * relying on that default.
+ */
+test(
+	'a retryable failed run can be retried, and completing the new job produces exactly one proposal',
+	{ timeout: 30_000 },
+	async () => {
+		const outcome = await inRolledBackTransaction(async (tx) => {
+			const { documentRow, run } = await seedFailedContractRun(tx, 'timed_out');
 
-		const retried = await retryFailedRun(run, queueDir, tx);
-		if (!retried.ok) throw new Error(`expected ok, got blocked: ${retried.reason}`);
+			const retried = await retryFailedRun(run, queueDir, tx);
+			if (!retried.ok) throw new Error(`expected ok, got blocked: ${retried.reason}`);
 
-		// The retry itself never writes a proposal — only completing and
-		// draining the new job does (invariant 3: this stays the proposal
-		// path, nothing here reaches a ledger or proposal row on its own).
-		expect(await listProposalsForDocument(documentRow.id, tx)).toHaveLength(0);
-		expect(retried.run.status).toBe('queued');
-		expect(retried.run.id).not.toBe(run.id);
-		expect(retried.run.documentId).toBe(documentRow.id);
+			// The retry itself never writes a proposal — only completing and
+			// draining the new job does (invariant 3: this stays the proposal
+			// path, nothing here reaches a ledger or proposal row on its own).
+			expect(await listProposalsForDocument(documentRow.id, tx)).toHaveLength(0);
+			expect(retried.run.status).toBe('queued');
+			expect(retried.run.id).not.toBe(run.id);
+			expect(retried.run.documentId).toBe(documentRow.id);
 
-		const pendingFilename = `${retried.run.jobId}.json`;
-		expect(await listPendingJobs(queueDir)).toEqual([pendingFilename]);
-		const pendingJob = await readPendingJob(queueDir, pendingFilename);
-		// Rebuilt from the archived PDF, not replayed from the failed
-		// attempt's own (irrelevant) request content.
-		expect(pendingJob.request.content).toContain(CLIENT_LINE);
+			const pendingFilename = `${retried.run.jobId}.json`;
+			expect(await listPendingJobs(queueDir)).toEqual([pendingFilename]);
+			const pendingJob = await readPendingJob(queueDir, pendingFilename);
+			// Rebuilt from the archived PDF, not replayed from the failed
+			// attempt's own (irrelevant) request content.
+			expect(pendingJob.request.content).toContain(CLIENT_LINE);
 
-		// The runner answers, the same scripted two-step `drain.test.ts`
-		// uses for a completed job.
-		const candidate: ProposalCandidate = {
-			documentId: documentRow.id,
-			contractId: null,
-			targetType: 'contract',
-			proposedFields: validContractFields(),
-			excerpt: CLIENT_LINE,
-			confidence: 0.9
-		};
-		await markJobDone(queueDir, pendingFilename, pendingJob, candidate);
+			// The runner answers, the same scripted two-step `drain.test.ts`
+			// uses for a completed job.
+			const candidate: ProposalCandidate = {
+				documentId: documentRow.id,
+				contractId: null,
+				targetType: 'contract',
+				proposedFields: validContractFields(),
+				excerpt: CLIENT_LINE,
+				confidence: 0.9
+			};
+			await markJobDone(queueDir, pendingFilename, pendingJob, candidate);
 
-		const drained = await drainCompletedJobs(queueDir, tx);
-		const proposals = await listProposalsForDocument(documentRow.id, tx);
-		const finishedRun = await getExtractionRunByJobId(retried.run.jobId, tx);
+			const drained = await drainCompletedJobs(queueDir, tx);
+			const proposals = await listProposalsForDocument(documentRow.id, tx);
+			const finishedRun = await getExtractionRunByJobId(retried.run.jobId, tx);
 
-		return { drained, proposals, finishedRun };
-	});
+			return { drained, proposals, finishedRun };
+		});
 
-	expect(outcome.drained).toMatchObject({ applied: 1, skipped: 0, failed: [] });
-	expect(outcome.proposals).toHaveLength(1);
-	expect(outcome.finishedRun?.status).toBe('applied');
-	expect(outcome.finishedRun?.proposalId).toBe(outcome.proposals[0].id);
-});
+		expect(outcome.drained).toMatchObject({ applied: 1, skipped: 0, failed: [] });
+		expect(outcome.proposals).toHaveLength(1);
+		expect(outcome.finishedRun?.status).toBe('applied');
+		expect(outcome.finishedRun?.proposalId).toBe(outcome.proposals[0].id);
+	}
+);
 
 test('write_refused is refused before ever touching the queue — the model already answered', async () => {
 	await inRolledBackTransaction(async (tx) => {
