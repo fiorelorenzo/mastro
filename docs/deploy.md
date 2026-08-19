@@ -403,3 +403,20 @@ it calls and on what interval.
 to do, and a container restarting forever is worse than an absent one: #82's own
 acceptance is that the product degrades to manual entry when the runner is not
 there. Configure the command and the next deploy brings it up.
+
+## Tag only once the trunk's own CI is green
+
+`deploy-prod.yml` refuses a tag whose `ci.yml` run for the same commit is not a
+completed success, and that check is the only automated gate between an untested
+commit and production, so it is deliberately unforgiving. It also catches an
+ordering mistake that looks like a broken pipeline: tagging immediately after a
+squash merge races the trunk's own CI run, so the deploy starts, sees
+`status=in_progress`, and refuses.
+
+Measured, not theorised: `v0.10.1` failed exactly that way, `ci.yml for
+0ba2ba3: status=in_progress conclusion=null`, seconds after the merge. Nothing
+was wrong with the tag or the commit.
+
+So: merge, wait for main's `ci.yml` to finish, then tag. If you already tagged
+and hit this, the tag is fine and needs no replacement — re-run the failed
+`deploy-prod` run once CI is green.
