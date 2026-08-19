@@ -29,7 +29,7 @@ try {
 	const result = await seedDemo();
 	log.info(
 		result.alreadySeeded
-			? 'demo instance already present (Nordwind Logistics on file) — nothing written'
+			? 'demo instance already present (a fiscal profile is on record) — nothing written'
 			: 'demo instance seeded: Nordwind Logistics, Bellani & Partners, Fermata Digitale'
 	);
 } finally {

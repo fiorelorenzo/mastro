@@ -33,13 +33,18 @@
 // contract, then its rate card through the UI would produce three separate
 // commits. This seed follows that shape rather than fighting it.
 //
-// Idempotent: gated on Nordwind Logistics' `tax_id` not already existing.
-// A second run finds the row, reports the instance is already seeded, and
-// writes nothing further.
+// Idempotent, gated on the `fiscal_profile` row this seed writes first
+// rather than on a client's `tax_id` (#332). A tax id is editable from the
+// UI, and the demo instance exists precisely so somebody can click around
+// in it: edit Nordwind's and the old guard stopped matching, so the next
+// run believed the database was empty and died on
+// `fiscal_profile_no_overlap`, an error naming a table two screens away
+// from the cause. Nothing edits a fiscal profile's validity period from
+// the interface, and it is also the row that actually collides, so it is
+// both the stable key and the honest one.
 
-import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { client as clientTable, fiscalProfile } from '$lib/server/db/schema';
+import { fiscalProfile } from '$lib/server/db/schema';
 import type { TransitionActor } from '$lib/server/db/schema/work-unit';
 import { minorUnitsFromMajor, scaleMinorUnits, type MinorUnits } from '$lib/money';
 import {
@@ -795,15 +800,34 @@ export interface SeedResult {
 	alreadySeeded: boolean;
 }
 
-/** Builds the whole demo instance: one fiscal profile, three clients, each
- * with its contract, rate card and the evidence #226 asks for. Gated on
- * Nordwind Logistics' `tax_id` — present means a previous run already
- * built this instance, so nothing further is written. */
+/**
+ * Builds the whole demo instance: one fiscal profile, three clients, each
+ * with its contract, rate card and the evidence #226 asks for.
+ *
+ * Gated on a `fiscal_profile` row existing, which is what this seed writes
+ * first and what no screen can edit (#332). A profile on record means
+ * either that this ran before or that the instance is somebody's real one,
+ * and in both cases writing demo clients into it is wrong. The old guard
+ * keyed on Nordwind's `tax_id`, which the client form edits: one edit and
+ * the seed believed the database was empty and died on
+ * `fiscal_profile_no_overlap`, an error naming a table two screens from the
+ * cause.
+ *
+ * What this deliberately does **not** do is try to spot a seed that was
+ * interrupted between two of its commits. The obvious test, counting how
+ * many of the three demo clients are present, fails on exactly the case
+ * this issue is about: a renamed client reads as a missing one, so an
+ * edited instance would be reported as half-built. Measured, not reasoned
+ * about — that heuristic was written first and the tax-id test caught it.
+ * Detecting it honestly needs the seed to record its own completion
+ * somewhere no screen writes, which is a table, which is a migration. Not
+ * worth one for a demo seed whose recovery is `pnpm db:reset`, so an
+ * interrupted run reports the instance as already present and leaves it to
+ * the operator, who has the failure of the interrupted run on screen.
+ */
 export async function seedDemo(): Promise<SeedResult> {
-	const existing = await db.query.client.findFirst({
-		where: eq(clientTable.taxId, 'IT01234560001')
-	});
-	if (existing) return { alreadySeeded: true };
+	const profile = await db.query.fiscalProfile.findFirst();
+	if (profile) return { alreadySeeded: true };
 
 	await seedFiscalProfile();
 	await seedNordwind();
