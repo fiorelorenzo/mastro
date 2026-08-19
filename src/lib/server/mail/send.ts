@@ -8,10 +8,9 @@ import { db, type DbExecutor } from '$lib/server/db';
 import { sentEmail, type EmailAttachmentKind } from '$lib/server/db/schema';
 import { assembleAttachments, type EmailAttachment } from './attachments';
 import type { MailConfig } from './config';
-import { appendToSentMailbox } from './imap';
 import { composeMessage } from './message';
 import { renderTemplate, type EmailTemplateContext } from './render';
-import { sendOverSmtp } from './smtp';
+import { gmailSenderConfigFromEnv, sendComposedMessage } from './sender';
 
 export type PreparedSend = {
 	contractId: string;
@@ -85,8 +84,15 @@ export async function dispatchEmail(
 		attachments: prepared.attachments
 	});
 
-	await sendOverSmtp(mailConfig.smtp, message);
-	await appendToSentMailbox(mailConfig.imap, message);
+	// #345: the Gmail API when this host cannot reach an SMTP port,
+	// otherwise SMTP. `sendComposedMessage` also owns whether a copy has to
+	// be appended to Sent, because that depends on which sender ran.
+	const gmail = gmailSenderConfigFromEnv();
+	await sendComposedMessage(
+		gmail ? { kind: 'gmail_api', gmail } : { kind: 'smtp', smtp: mailConfig.smtp },
+		mailConfig.imap,
+		message
+	);
 
 	const [row] = await executor
 		.insert(sentEmail)
