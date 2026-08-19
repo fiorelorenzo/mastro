@@ -44,20 +44,50 @@ export function classifyRun(latest: RunRow | null, alerts: readonly Alert[]): Ru
 	return { kind: 'ok', lastRunAt: latest!.createdAt.toISOString(), detail: latest!.detail };
 }
 
-/** The mailbox poller's health, read and classified in one call — the
- * same query `/settings` runs, now shared with `/mail` (#314) and
+/**
+ * The mailbox poller's health, read and classified in one call — the same
+ * query `/settings` runs, shared with `/mail` (#314) and
  * `/mail/contracts/[id]` so neither page can compute "is polling stale"
- * any differently than the alert engine or than each other. `configured`
- * mirrors `detectMailboxPollFailure`'s own gate: false whenever IMAP
- * itself is unset or no contract has a folder mapped yet, in which case
- * there is nothing to classify. */
-export async function mailboxPollHealth(
-	executor: DbExecutor = db
-): Promise<{ configured: boolean; health: RunHealth | null }> {
-	const mailboxPoll = await fetchLatestMailboxPollRun(imapConfiguredInEnv(), executor);
-	if (!mailboxPoll.pollingConfigured) return { configured: false, health: null };
+ * any differently than the alert engine or than each other.
+ *
+ * Three states, not two (#351). `fetchLatestMailboxPollRun` collapses "no
+ * IMAP account" and "an account, but no contract mapped to a folder" into
+ * one `pollingConfigured: false`, which is right for the alert engine — an
+ * instance that never opted into ingestion must not be told its poller
+ * never ran — and wrong for a screen, because the two have different fixes
+ * in different places. The live instance sat for hours with a working
+ * account and no contracts, and `/mail` told its owner IMAP was not
+ * configured, which sent him to check environment variables that were
+ * correct while the scheduler logged the real reason.
+ *
+ * So `accountConfigured` is the env question and `anyFolderMapped` the
+ * ledger one. `configured` is kept, meaning both, so the alert engine and
+ * any caller that only needs the old gate reads exactly what it read
+ * before.
+ */
+export async function mailboxPollHealth(executor: DbExecutor = db): Promise<{
+	configured: boolean;
+	accountConfigured: boolean;
+	anyFolderMapped: boolean;
+	health: RunHealth | null;
+}> {
+	const accountConfigured = imapConfiguredInEnv();
+	const mailboxPoll = await fetchLatestMailboxPollRun(accountConfigured, executor);
+	if (!mailboxPoll.pollingConfigured) {
+		return {
+			configured: false,
+			accountConfigured,
+			// The account is the first gate, so a false there says nothing
+			// about mapping; only when the account is configured does
+			// `pollingConfigured: false` mean "nothing is mapped".
+			anyFolderMapped: false,
+			health: null
+		};
+	}
 	return {
 		configured: true,
+		accountConfigured: true,
+		anyFolderMapped: true,
 		health: classifyRun(
 			mailboxPoll.latestRun,
 			detectMailboxPollFailure(true, mailboxPoll.latestRun, new Date())

@@ -25,15 +25,33 @@
 	];
 
 	const locale = $derived(getLocale());
-	const pollBadge = $derived(mailPollBadge(data.mailPoll.configured, data.mailPoll.health));
-	const pollMeta = $derived(mailPollMeta(data.mailPoll.configured, data.mailPoll.health, locale));
+	const pollBadge = $derived(
+		mailPollBadge(
+			data.mailPoll.accountConfigured,
+			data.mailPoll.anyFolderMapped,
+			data.mailPoll.health
+		)
+	);
+	const pollMeta = $derived(
+		mailPollMeta(
+			data.mailPoll.accountConfigured,
+			data.mailPoll.anyFolderMapped,
+			data.mailPoll.health,
+			locale
+		)
+	);
 
 	// #343: the button next to the status strip disables itself while its
-	// own submit is in flight (a courtesy — the concurrency guarantee
-	// itself lives server-side, `poll-lock.ts`'s own comment says why) and
-	// is disabled outright whenever `data.mailPoll.configured` is false —
-	// the same fact the badge/meta above already render, so a not-configured
-	// instance never gets a button that fails on press.
+	// own submit is in flight (a courtesy — the concurrency guarantee itself
+	// lives server-side, `poll-lock.ts`'s own comment says why) and is
+	// disabled outright only when there is no mail account at all, which is
+	// the one state where a poll cannot even be attempted.
+	//
+	// It stays pressable with an account configured and nothing mapped
+	// (#351). A poll then answers "skipped, no folders configured", which is
+	// the truth and more useful than a disabled control: the previous
+	// version disabled it in that state and its tooltip claimed IMAP was
+	// unconfigured, on an instance where IMAP was configured and working.
 	const pollNow = submitting();
 
 	// Full-page navigation (no `use:enhance`, matching the rest of this
@@ -85,8 +103,10 @@
 					variant="secondary"
 					size="sm"
 					loading={pollNow.busy}
-					disabled={!data.mailPoll.configured}
-					title={!data.mailPoll.configured ? m.mail_poll_status_not_configured_meta() : undefined}
+					disabled={!data.mailPoll.accountConfigured}
+					title={!data.mailPoll.accountConfigured
+						? m.mail_poll_status_not_configured_meta()
+						: undefined}
 				>
 					{m.mail_poll_now_button()}
 				</Button>

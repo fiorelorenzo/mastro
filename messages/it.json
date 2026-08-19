@@ -1121,6 +1121,8 @@
 	"mail_poll_status_never_run_meta": "La posta è configurata ma non è ancora mai stata controllata.",
 	"mail_poll_status_not_configured_badge": "Non configurato",
 	"mail_poll_status_not_configured_meta": "Il controllo IMAP non è configurato per questa istanza.",
+	"mail_poll_status_not_mapped_badge": "Nessuna cartella mappata",
+	"mail_poll_status_not_mapped_meta": "La posta è configurata, ma nessun contratto ha ancora una cartella in ingresso — impostane una su un contratto per iniziare a controllare.",
 	"mail_poll_status_ok_badge": "OK",
 	"mail_poll_status_ok_meta": "Controllato il {date}, nessun errore.",
 	"mail_poll_status_stale_badge": "Non aggiornato",

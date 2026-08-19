@@ -62,8 +62,21 @@
 	);
 
 	const locale = $derived(getLocale());
-	const pollBadge = $derived(mailPollBadge(data.mailPoll.configured, data.mailPoll.health));
-	const pollMeta = $derived(mailPollMeta(data.mailPoll.configured, data.mailPoll.health, locale));
+	const pollBadge = $derived(
+		mailPollBadge(
+			data.mailPoll.accountConfigured,
+			data.mailPoll.anyFolderMapped,
+			data.mailPoll.health
+		)
+	);
+	const pollMeta = $derived(
+		mailPollMeta(
+			data.mailPoll.accountConfigured,
+			data.mailPoll.anyFolderMapped,
+			data.mailPoll.health,
+			locale
+		)
+	);
 </script>
 
 {#snippet sendCell(row: TemplateRow)}

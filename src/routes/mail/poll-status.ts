@@ -20,17 +20,29 @@ export interface PollHealthSnapshot {
 	readonly detail?: string | null;
 }
 
-/** The badge for the mailbox poller's current state — never colour alone
+/**
+ * The badge for the mailbox poller's current state — never colour alone
  * (`BADGE_GLYPH` pairs every variant with its own glyph). `serious` for
  * `stale` mirrors `detectMailboxPollFailure`'s own severity; an explicit
  * failure and "never ran at all" are both `critical`, same as the alert
- * engine fires them. */
+ * engine fires them.
+ *
+ * `accountConfigured` and `anyFolderMapped` are separate arguments because
+ * they are separate problems with separate fixes (#351): the first is an
+ * environment variable, the second is a contract's Inbound mail field. One
+ * boolean for both made `/mail` tell its owner IMAP was not configured on
+ * an instance where it was configured and working.
+ */
 export function mailPollBadge(
-	configured: boolean,
+	accountConfigured: boolean,
+	anyFolderMapped: boolean,
 	health: PollHealthSnapshot | null
 ): { variant: BadgeVariant; label: string } {
-	if (!configured || health === null) {
+	if (!accountConfigured) {
 		return { variant: 'warning', label: m.mail_poll_status_not_configured_badge() };
+	}
+	if (!anyFolderMapped || health === null) {
+		return { variant: 'warning', label: m.mail_poll_status_not_mapped_badge() };
 	}
 	switch (health.kind) {
 		case 'ok':
@@ -45,13 +57,16 @@ export function mailPollBadge(
 }
 
 /** The prose next to {@link mailPollBadge}'s badge: when it last polled,
- * and what happened. */
+ * and what happened — or, before any of that can be true, which of the two
+ * things is missing and where it is fixed. */
 export function mailPollMeta(
-	configured: boolean,
+	accountConfigured: boolean,
+	anyFolderMapped: boolean,
 	health: PollHealthSnapshot | null,
 	locale: Locale
 ): string {
-	if (!configured || health === null) return m.mail_poll_status_not_configured_meta();
+	if (!accountConfigured) return m.mail_poll_status_not_configured_meta();
+	if (!anyFolderMapped || health === null) return m.mail_poll_status_not_mapped_meta();
 	switch (health.kind) {
 		case 'ok':
 			return m.mail_poll_status_ok_meta({ date: formatDateTime(health.lastRunAt!, locale) });
