@@ -15,13 +15,26 @@
 
 	type Row = PageData['contracts'][number];
 
+	// The folder column (#357). This page listed the contract and the
+	// client and not the one fact it exists for: whether that contract has
+	// an inbound folder, and which. The status strip above says "no folder
+	// mapped" correctly, and the table below could not be reconciled with
+	// it - on a screen listing every contract there was no way to tell
+	// which of them was the reason, and every row already links to the
+	// screen that fixes it.
+	//
+	// Unmapped is a badge, not a blank cell: a blank reads as a rendering
+	// gap, and this is a decision nobody has taken yet. Every contract born
+	// from an accepted proposal starts here, since no extraction can invent
+	// which folder a human will file a client's mail under.
 	const columns: readonly TableColumn<Row>[] = [
 		{ key: 'title', label: m.mail_index_column_contract() },
 		{
 			key: 'client',
 			label: m.mail_index_column_client(),
 			format: (row) => row.client.legalName
-		}
+		},
+		{ key: 'folder', label: m.mail_index_column_folder(), cell: folderCell }
 	];
 
 	const locale = $derived(getLocale());
@@ -92,6 +105,14 @@
 	<EmptyState icon="✉" title={m.mail_index_heading()} body={m.mail_index_empty()} />
 {/snippet}
 
+{#snippet folderCell(row: Row)}
+	{#if row.mailFolder}
+		<code class="folder">{row.mailFolder}</code>
+	{:else}
+		<Badge variant="warning" label={m.mail_index_folder_unset_badge()} size="sm" />
+	{/if}
+{/snippet}
+
 <Page title={m.mail_index_heading()}>
 	<Section title={m.mail_poll_status_heading()}>
 		<div class="poll-status">
@@ -135,5 +156,12 @@
 		margin: 0;
 		font-size: var(--text-sm);
 		color: var(--text-secondary);
+	}
+	/* The folder is a literal IMAP path the reader may have to compare
+	   character by character with their mail client's own tree, so it is
+	   set in the mono face rather than the prose face. */
+	.folder {
+		font-family: var(--font-mono);
+		font-size: var(--text-sm);
 	}
 </style>

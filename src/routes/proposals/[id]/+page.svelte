@@ -60,6 +60,15 @@
 		proposalFieldLabel,
 		proposalQuantityLabel
 	} from '../proposal-status';
+	import {
+		acceptedToast,
+		evidenceDocumentHint,
+		evidenceHeading,
+		notGroundedHint,
+		rejectConfirmBody,
+		rejectedToast,
+		siblingPosition
+	} from '../decision-wording';
 	import { proposalIssueMessage } from '$lib/i18n/proposal-issue';
 	import { submitting } from '$lib/design/submitting.svelte';
 	import { isFieldGroundedInExcerpt, splitOnExcerpt } from './evidence';
@@ -342,9 +351,9 @@
 		if (announcedDecision === key) return;
 		announcedDecision = key;
 		if (form.action === 'accept') {
-			toasts.push('success', m.proposal_review_accept_toast());
+			toasts.push('success', acceptedToast(data.proposal.targetType));
 		} else if (form.action === 'reject') {
-			toasts.push('neutral', m.proposal_reject_toast());
+			toasts.push('neutral', rejectedToast(data.fromMessage));
 		}
 	});
 
@@ -376,7 +385,7 @@
 
 {#snippet rejectDialog()}
 	<Dialog bind:open={rejectDialogOpen} title={m.proposal_reject_confirm_title()} role="alertdialog">
-		<p>{m.proposal_reject_confirm_body()}</p>
+		<p>{rejectConfirmBody(data.fromMessage)}</p>
 		{#snippet actions()}
 			<Button type="button" variant="tertiary" onclick={() => (rejectDialogOpen = false)}>
 				{m.proposal_reject_confirm_cancel()}
@@ -523,7 +532,7 @@
 		     sticky for a contract one, whose form is the taller half. -->
 		<div class="card evidence">
 			<div class="card-head">
-				<h2>{m.proposal_evidence_heading()}</h2>
+				<h2>{evidenceHeading(data.fromMessage)}</h2>
 				<Badge variant="info" label={m.proposal_evidence_source_badge()} size="sm" />
 			</div>
 
@@ -563,7 +572,7 @@
 
 			<div class="sep"></div>
 			<SourceDocument document={data.sourceDocument} />
-			<p class="hint">{m.proposal_evidence_document_hint()}</p>
+			<p class="hint">{evidenceDocumentHint(data.proposal.targetType)}</p>
 		</div>
 
 		<!-- Proposed fields. Minor column for a work_unit proposal, major
@@ -1203,9 +1212,7 @@
 						{@const grounded = isFieldGroundedInExcerpt(value, data.proposal.excerpt)}
 						<Field
 							label={proposalFieldLabel(field)}
-							hint={grounded
-								? m.proposal_field_hint_grounded()
-								: m.proposal_field_hint_not_grounded()}
+							hint={grounded ? m.proposal_field_hint_grounded() : notGroundedHint(data.fromMessage)}
 							error={fieldError(field)}
 						>
 							{#if inputType(value) === 'number'}
@@ -1289,7 +1296,7 @@
 	{#if data.siblings.count > 1}
 		<div class="siblings">
 			<span class="muted">
-				{m.proposal_review_sibling_position({
+				{siblingPosition(data.fromMessage, {
 					index: data.siblings.position,
 					count: data.siblings.count
 				})}

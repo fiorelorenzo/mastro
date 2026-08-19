@@ -12,7 +12,11 @@ import { isPostgresError } from '$lib/server/db/postgres-error';
 import { log } from '$lib/server/log/logger';
 import { parseMessage } from '$lib/server/mail/headers';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
-import { getContractsWithClient, type ContractWithClient } from '$lib/server/repositories/contract';
+import {
+	getContract,
+	getContractsWithClient,
+	type ContractWithClient
+} from '$lib/server/repositories/contract';
 import {
 	getDocuments,
 	readDocumentBytes,
@@ -301,8 +305,55 @@ export type HistoryRow = {
 	 *  which rendered "Rejected on ." with the date slot left empty. */
 	sourceAt: string | null;
 	amount: number | null;
-	resultId: string | null;
+	/**
+	 * Where the accepted row's result actually lives. Was `resultId` alone,
+	 * which the template turned into `/day/[id]` for every target type, so
+	 * an accepted contract proposal's only action was a link to
+	 * `/day/<contract-uuid>` — a 404 reading "Day not found" (#356). The
+	 * route belongs here, where the contract's own client id is reachable,
+	 * rather than in a template that can only guess.
+	 *
+	 * Ids rather than a ready-made URL, so the template still builds the
+	 * link through `resolve()`: a raw href string would be exactly the
+	 * unchecked link this replaces.
+	 */
+	result:
+		| { kind: 'work_unit'; id: string }
+		| { kind: 'invoice'; id: string }
+		| { kind: 'contract'; clientId: string; contractId: string }
+		| null;
 };
+
+/**
+ * The route an accepted proposal's result lives at, or null when there is
+ * nothing to link to.
+ *
+ * A contract lives under its client (`/clients/[id]/contracts/[contractId]`),
+ * so this reads the contract to learn which one — the reason the decision
+ * cannot be made in the template, which has the contract id and not the
+ * client's. A contract that has since been deleted resolves to null rather
+ * than to a link that 404s, which is the failure this function exists to
+ * remove.
+ */
+async function resultDestination(
+	targetType: string,
+	resultId: string | null
+): Promise<HistoryRow['result']> {
+	if (resultId === null) return null;
+	switch (targetType) {
+		case 'work_unit':
+			return { kind: 'work_unit', id: resultId };
+		case 'invoice':
+			return { kind: 'invoice', id: resultId };
+		case 'contract': {
+			const contractRow = await getContract(resultId);
+			if (!contractRow) return null;
+			return { kind: 'contract', clientId: contractRow.clientId, contractId: resultId };
+		}
+		default:
+			return null;
+	}
+}
 
 async function loadHistory(status: 'accepted' | 'rejected'): Promise<HistoryRow[]> {
 	const rows = await listProposals(status);
@@ -353,7 +404,7 @@ async function loadHistory(status: 'accepted' | 'rejected'): Promise<HistoryRow[
 							context.rateCardsByContract
 						)
 					: null,
-				resultId: row.resultId
+				result: await resultDestination(row.targetType, row.resultId)
 			};
 		})
 	);

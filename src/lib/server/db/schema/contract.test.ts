@@ -157,13 +157,28 @@ test('mail_folder defaults to null (not polled) and accepts a plain value', asyn
 	});
 });
 
+// Named rather than `.rejects.toThrow()` (#327's pattern): a bare matcher
+// passes on any error, including a NOT NULL violation from an unrelated
+// column, so it would go green while this constraint never fired. It is
+// worth being exact about here because `/mail`'s folder column (#357) reads
+// `mailFolder` for truthiness and the status strip reads it for `IS NOT
+// NULL` - those two agree only as long as a blank is unstorable.
 test('a blank mail_folder is rejected by the database, null is not', async () => {
-	await inRolledBackTransaction(async (tx) => {
+	const blank = await inRolledBackTransaction(async (tx) => {
 		const [clientRow] = await tx.insert(client).values(clientFields()).returning();
-		await expect(
-			tx.insert(contract).values({ ...baseContract(clientRow.id), mailFolder: '   ' })
-		).rejects.toThrow();
+		const failure = await rejection(
+			() => tx.insert(contract).values({ ...baseContract(clientRow.id), mailFolder: '   ' }),
+			tx
+		);
+		const [nullFolder] = await tx
+			.insert(contract)
+			.values({ ...baseContract(clientRow.id), mailFolder: null })
+			.returning();
+		return { failure, nullFolder };
 	});
+
+	expect(blank.failure.constraint_name).toBe('contract_mail_folder_not_blank');
+	expect(blank.nullFolder.mailFolder).toBeNull();
 });
 
 test('two contracts cannot claim the same mail_folder, but two nulls are both fine', async () => {
