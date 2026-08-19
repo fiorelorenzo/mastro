@@ -4,7 +4,7 @@ import { BOTTOM_BAR_HREFS, NAV_GROUPS, isNavItemActive } from './items';
 test('the four groups carry the daily-loop-first IA, in order', () => {
 	expect(NAV_GROUPS.map((g) => g.items.map((i) => i.href))).toEqual([
 		['/', '/proposals', '/day/calendar'],
-		['/clients', '/invoices'],
+		['/clients', '/contracts', '/invoices'],
 		['/mail', '/import'],
 		['/settings']
 	]);
@@ -53,6 +53,21 @@ test('a section is not matched by a route that merely starts with its name', () 
 	expect(isNavItemActive('/day/calendar', '/day/calendar-export')).toBe(false);
 });
 
-test('the bottom bar mirrors the daily loop plus the ledger, five destinations', () => {
+test('the bottom bar carries the daily loop plus two ledger destinations, five in all', () => {
 	expect(BOTTOM_BAR_HREFS).toEqual(['/', '/proposals', '/day/calendar', '/clients', '/invoices']);
+});
+
+test('every bottom bar href is a real nav item, and the rest are reachable behind More', () => {
+	// `BottomBar.svelte` resolves each href with a non-null assertion and
+	// derives "More" from whatever is left, so an href that matches no item
+	// crashes the bar and an item in neither place is unreachable on a phone.
+	const all = NAV_GROUPS.flatMap((group) => group.items).map((item) => item.href);
+
+	for (const href of BOTTOM_BAR_HREFS) expect(all).toContain(href);
+	expect(all.filter((href) => !BOTTOM_BAR_HREFS.includes(href))).toEqual([
+		'/contracts',
+		'/mail',
+		'/import',
+		'/settings'
+	]);
 });

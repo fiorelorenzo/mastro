@@ -50,6 +50,19 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 		title: m.nav_group_ledger,
 		items: [
 			{ href: '/clients', label: m.nav_clients, icon: '◫' },
+			// #361: a contract is what days, invoices, ceilings and rate cards
+			// all hang off, and it had no entry here at all - the only way to
+			// one was to already know its client. Between clients and invoices
+			// because that is where it sits in the domain.
+			//
+			// Note the consequence, which is deliberate: the detail page lives
+			// at `/clients/[id]/contracts/[contractId]`, so following a row
+			// lights up Clients rather than Contracts. That is the same rule
+			// `isNavItemActive`'s own test states for a rate card five levels
+			// down, and the breadcrumb trail says where you actually are. The
+			// alternative - a second canonical detail route - would be two
+			// homes for one object.
+			{ href: '/contracts', label: m.contracts_nav_label, icon: '▤' },
 			{ href: '/invoices', label: m.nav_invoices, icon: '€', badge: 'overdueInvoices' }
 		]
 	},
@@ -66,9 +79,15 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 ];
 
 /**
- * What the bottom bar shows below 900px: the daily loop plus the ledger,
- * five destinations mirroring the sidebar's first two groups exactly.
- * Everything else — Inbox and Settings — lives behind "More".
+ * What the bottom bar shows below 900px: the daily loop plus the two ledger
+ * destinations a phone is actually used for, five in all. Everything else —
+ * Contracts, Inbox and Settings — lives behind "More", which takes whatever
+ * the bar does not carry.
+ *
+ * It stopped being "the sidebar's first two groups exactly" when Contracts
+ * joined the ledger (#361). That is a choice, not drift: this bar exists for
+ * recording a day in under 30 seconds on a phone, and reviewing a contracts
+ * index is desk work. A sixth thumb target would cost the five that matter.
  */
 export const BOTTOM_BAR_HREFS: readonly string[] = [
 	'/',

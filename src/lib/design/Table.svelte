@@ -194,6 +194,25 @@
 		height: var(--row-height);
 		border-bottom: 1px solid var(--line);
 	}
+	/* A row that navigates says so (#359). The anchor this file wraps the
+	   first cell in inherited the body colour with no underline, so on
+	   `/clients`, `/invoices` and `/mail` the only way to discover the
+	   primary navigation of a list was to hover it - and hover does not
+	   exist on the phone this product is meant to be usable from. Underline
+	   rather than a colour, matching `PageHeader.svelte`'s own treatment of
+	   the breadcrumb trail and the back link, so this applies a decision
+	   the app had already taken instead of adding a second one. Both views
+	   below carry the same anchor, so both are covered. */
+	td a,
+	.title a {
+		color: inherit;
+		text-decoration: underline;
+		text-underline-offset: 0.15em;
+	}
+	td a:hover,
+	.title a:hover {
+		text-decoration-thickness: 2px;
+	}
 	tbody tr:hover {
 		background: var(--surface-2);
 	}
