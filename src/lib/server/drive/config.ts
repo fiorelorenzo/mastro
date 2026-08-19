@@ -16,6 +16,7 @@ import { readMirrorFolderConfig, type MirrorFolderConfig } from './folder';
 import { createGoogleDriveMirrorTarget, type GoogleDriveTargetConfig } from './google-drive-target';
 import { createLocalDirectoryMirrorTarget } from './local-target';
 import type { MirrorTarget } from './mirror-target';
+import { resolveGoogleApiClient } from '$lib/server/google/oauth-client';
 
 export type MirrorConfig =
 	| { readonly kind: 'local'; readonly rootDir: string; readonly folder: MirrorFolderConfig }
@@ -48,17 +49,20 @@ export function readMirrorConfig(source: Record<string, string | undefined>): Mi
 	}
 
 	if (refreshToken) {
-		const clientId = source.GOOGLE_CLIENT_ID?.trim();
-		const clientSecret = source.GOOGLE_CLIENT_SECRET?.trim();
-		if (!clientId || !clientSecret) {
+		// #348: the sign-in client by default, or whichever client
+		// `GOOGLE_API_CLIENT_*` names when the token was issued by another
+		// one — a refresh token cannot be spent by a client that did not
+		// obtain it.
+		const client = resolveGoogleApiClient(source);
+		if (!client) {
 			throw new Error(
-				'DRIVE_MIRROR_REFRESH_TOKEN is set but GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET are not — the Drive mirror reuses the same OAuth client as sign-in, see docs/self-hosting.md.'
+				'DRIVE_MIRROR_REFRESH_TOKEN is set but no OAuth client is configured — set GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET, or GOOGLE_API_CLIENT_ID/GOOGLE_API_CLIENT_SECRET if the token belongs to a different client. See docs/self-hosting.md.'
 			);
 		}
 		return {
 			kind: 'google-drive',
-			clientId,
-			clientSecret,
+			clientId: client.clientId,
+			clientSecret: client.clientSecret,
 			refreshToken,
 			folder: readMirrorFolderConfig(source)
 		};

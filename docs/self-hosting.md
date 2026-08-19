@@ -127,6 +127,26 @@ sent through its own API into Sent by itself and dedupes by `Message-ID`, so
 appending over IMAP as well would upload the whole message a second time for a
 copy that is already there.
 
+### Reusing a refresh token you already have
+
+A refresh token is bound to the OAuth client that obtained it. Refreshing one
+issued elsewhere with your sign-in client answers `401 unauthorized_client`, so
+if you already hold a token for this account — obtained by another tool, in the
+same Cloud project — point the API features at the client it belongs to with
+`GOOGLE_API_CLIENT_ID`/`GOOGLE_API_CLIENT_SECRET`. Unset, both features use the
+sign-in client, which is correct when that client also ran the consent.
+
+That saves a consent and costs something worth stating plainly: the token's
+grant is whatever the other tool asked for, which is probably wider than the
+`gmail.send` and `drive.file` this application spends. Nothing here can widen a
+grant — no feature names a scope anywhere, by construction — so the behaviour of
+the app is identical either way. What changes is what a leak of `.env.prod`
+would be worth: a broad grant makes it a mailbox and a whole Drive rather than
+"send mail" and "the files this app created". On a single-user instance that can
+be a reasonable trade, made deliberately. If you would rather not make it, run
+the two-scope consent yourself: it is the same Playground exchange as section 5,
+selecting `gmail.send` and `drive.file` and nothing else.
+
 **A single message cannot fill the disk.** `IMAP_MAX_MESSAGE_BYTES` (25 MiB by
 default) is checked against the IMAP listing's own reported size before a
 message is ever fetched, so anything over it is never buffered whole — this is

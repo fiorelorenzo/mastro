@@ -132,3 +132,23 @@ test('a failing send never reaches the append: nothing lands in Sent that did no
 	).rejects.toThrow(/ECONNREFUSED/);
 	expect(calls).toEqual(['smtp']);
 });
+
+/*
+ * #348: the token may have been issued by a client other than the one
+ * sign-in uses, and a refresh token cannot be spent by a client that did
+ * not obtain it (measured: `401 unauthorized_client`).
+ */
+test('GOOGLE_API_CLIENT_* overrides the sign-in client for the Gmail sender', () => {
+	expect(
+		readGmailSenderConfig({
+			...GOOGLE_CLIENT,
+			GOOGLE_API_CLIENT_ID: 'issuing-id',
+			GOOGLE_API_CLIENT_SECRET: 'issuing-secret',
+			GMAIL_SEND_REFRESH_TOKEN: 'refresh-token'
+		})
+	).toEqual({
+		clientId: 'issuing-id',
+		clientSecret: 'issuing-secret',
+		refreshToken: 'refresh-token'
+	});
+});

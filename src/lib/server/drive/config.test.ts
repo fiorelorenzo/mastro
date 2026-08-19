@@ -76,3 +76,21 @@ test('createMirrorTarget builds a target with a publish method for either kind',
 	});
 	expect(typeof drive.publish).toBe('function');
 });
+
+/* #348: same override, same reason, for the mirror. */
+test('GOOGLE_API_CLIENT_* overrides the sign-in client for the Drive mirror', () => {
+	const config = readMirrorConfig({
+		GOOGLE_CLIENT_ID: 'sign-in-id',
+		GOOGLE_CLIENT_SECRET: 'sign-in-secret',
+		GOOGLE_API_CLIENT_ID: 'issuing-id',
+		GOOGLE_API_CLIENT_SECRET: 'issuing-secret',
+		DRIVE_MIRROR_REFRESH_TOKEN: 'refresh-token'
+	});
+
+	expect(config).toMatchObject({
+		kind: 'google-drive',
+		clientId: 'issuing-id',
+		clientSecret: 'issuing-secret',
+		refreshToken: 'refresh-token'
+	});
+});
