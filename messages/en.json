@@ -1121,6 +1121,8 @@
 	"mail_poll_status_never_run_meta": "Mail is configured but has never been polled yet.",
 	"mail_poll_status_not_configured_badge": "Not configured",
 	"mail_poll_status_not_configured_meta": "IMAP polling is not configured for this instance.",
+	"mail_poll_status_not_mapped_badge": "No folder mapped",
+	"mail_poll_status_not_mapped_meta": "Mail is configured, but no contract has an inbound folder mapped yet — set one on a contract to start polling.",
 	"mail_poll_status_ok_badge": "OK",
 	"mail_poll_status_ok_meta": "Checked {date}, no errors.",
 	"mail_poll_status_stale_badge": "Stale",
