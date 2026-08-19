@@ -196,7 +196,7 @@ export const itFlatRatePack: FiscalPack = {
 			// job. What the pack fixes is the rate and its one statutory
 			// effect that matters here — it counts towards the ceilings
 			// above even though it is not taxable income.
-			amount: { kind: 'percentage', rate: 0.04, of: 'invoiceTotal' },
+			amount: { kind: 'percentage', basisPoints: 400, of: 'invoiceTotal' },
 			slot: 'social_charge'
 		}
 	],

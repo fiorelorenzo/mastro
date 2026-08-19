@@ -32,23 +32,31 @@ async function loadActiveContracts() {
 		)
 	);
 
-	return active.map((contract) => ({
-		id: contract.id,
-		clientName: clientNameById.get(contract.clientId) ?? contract.clientId,
-		title: contract.title,
-		currency: contract.currency,
-		requiresPriorApproval: contract.requiresPriorApproval,
-		rateCards: (rateCardsByContract.get(contract.id) ?? []).map((card): RateCardPreview => ({
-			id: card.id,
-			kind: card.kind,
-			amount: card.amount,
-			unit: card.unit,
-			allowedFractions: card.allowedFractions,
-			disbursementPeriod: card.disbursementPeriod,
-			validFrom: card.validFrom,
-			validTo: card.validTo
-		}))
-	}));
+	return {
+		contracts: active.map((contract) => ({
+			id: contract.id,
+			clientName: clientNameById.get(contract.clientId) ?? contract.clientId,
+			title: contract.title,
+			currency: contract.currency,
+			requiresPriorApproval: contract.requiresPriorApproval,
+			rateCards: (rateCardsByContract.get(contract.id) ?? []).map((card): RateCardPreview => ({
+				id: card.id,
+				kind: card.kind,
+				amount: card.amount,
+				unit: card.unit,
+				allowedFractions: card.allowedFractions,
+				disbursementPeriod: card.disbursementPeriod,
+				validFrom: card.validFrom,
+				validTo: card.validTo
+			}))
+		})),
+		// Only consulted when `contracts` comes back empty: which reason
+		// `+page.svelte`'s empty state shows — no client exists yet at all
+		// (`null`), or the first one (alphabetical, same order `listClients`
+		// returns) has none active, so its contract-new page is where the
+		// fast path actually resumes.
+		firstClientId: clients[0]?.id ?? null
+	};
 }
 
 async function loadApprovalsByContract(contractIds: string[]) {
@@ -69,7 +77,7 @@ async function loadApprovalsByContract(contractIds: string[]) {
 }
 
 export const load: PageServerLoad = async ({ url }) => {
-	const [contracts, mostRecentContractId] = await Promise.all([
+	const [{ contracts, firstClientId }, mostRecentContractId] = await Promise.all([
 		loadActiveContracts(),
 		getMostRecentContractId()
 	]);
@@ -113,7 +121,8 @@ export const load: PageServerLoad = async ({ url }) => {
 		defaultContractId,
 		defaultApprovalId,
 		defaultDate,
-		crumbs
+		crumbs,
+		firstClientId
 	};
 };
 
@@ -121,7 +130,7 @@ export const actions: Actions = {
 	default: async ({ request, locals }) => {
 		const formData = await request.formData();
 
-		const contracts = await loadActiveContracts();
+		const { contracts } = await loadActiveContracts();
 		const validContractIds = new Set(contracts.map((contract) => contract.id));
 		const approvalsByContract = await loadApprovalsByContract(contracts.map((c) => c.id));
 		const approvalIdsByContract = new Map(

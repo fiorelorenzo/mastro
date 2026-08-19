@@ -6,6 +6,7 @@ import { parseEnv } from 'node:util';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
+import { log } from '../src/lib/server/log/logger.ts';
 import { describeDatabaseTarget, describeTargetMismatch } from '../src/lib/server/db/target.ts';
 
 const url = process.env.DATABASE_URL;
@@ -25,18 +26,18 @@ try {
 }
 
 const mismatch = describeTargetMismatch(url, fromEnvFile);
-if (mismatch !== null) console.warn(mismatch);
+if (mismatch !== null) log.warn(mismatch);
 
 // Announced before connecting, so an interrupted or failing run still leaves
 // a record of which database it was pointed at.
 const target = describeDatabaseTarget(url);
-console.log(`migrating ${target}`);
+log.info('migrating', { target });
 
 const client = postgres(url, { max: 1, onnotice: () => {} });
 
 try {
 	await migrate(drizzle(client), { migrationsFolder: 'drizzle' });
-	console.log(`migrations applied to ${target}`);
+	log.info('migrations applied', { target });
 
 	// #82: `mastro_runner` (0035_acp_runner_role.sql) is created without a
 	// password — a committed migration is public, so the password cannot
@@ -61,9 +62,9 @@ try {
 			SELECT format('ALTER ROLE mastro_runner WITH PASSWORD %L', ${runnerPassword}::text) AS stmt
 		`;
 		await client.unsafe(stmt);
-		console.log('mastro_runner password set from RUNNER_DB_PASSWORD');
+		log.info('mastro_runner password set from RUNNER_DB_PASSWORD');
 	} else {
-		console.warn(
+		log.warn(
 			'RUNNER_DB_PASSWORD is not set: mastro_runner has no usable password, so the ACP runner cannot connect. This is fine if the runner is not deployed yet.'
 		);
 	}

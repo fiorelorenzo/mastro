@@ -9,6 +9,7 @@ import * as m from '$lib/paraglide/messages';
 import { proposedContract, workUnitFields, type ProposedContract } from './queue-fields';
 import type { ProposalTargetType } from '$lib/server/db/schema';
 import { isPostgresError } from '$lib/server/db/postgres-error';
+import { log } from '$lib/server/log/logger';
 import { parseMessage } from '$lib/server/mail/headers';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
 import { getContractsWithClient, type ContractWithClient } from '$lib/server/repositories/contract';
@@ -62,7 +63,7 @@ function decisionErrorMessage(err: unknown): string {
 	if (isPostgresError(err)) {
 		return `${m.proposal_detail_decision_error_heading()} ${errorMessage(err)}`;
 	}
-	console.error('proposal decision failed', err);
+	log.error('proposal decision failed', { route: '/proposals', err });
 	return m.proposal_decision_unexpected_error();
 }
 
@@ -89,7 +90,11 @@ async function readSender(doc: DocumentRow | undefined): Promise<string | null> 
 		const bytes = await readDocumentBytes(doc);
 		return parseMessage(bytes).headers.get('from') ?? null;
 	} catch (err) {
-		console.error('proposal queue: cannot read the archived message of', doc.id, err);
+		log.error('proposal queue: cannot read the archived message', {
+			route: '/proposals',
+			documentId: doc.id,
+			err
+		});
 		return null;
 	}
 }

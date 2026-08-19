@@ -108,7 +108,7 @@ export async function createInvoice(
 
 		const taxableAmount = sumMinorUnits(input.lines.map((line) => line.amount));
 		const taxAmount = sumMinorUnits(
-			input.lines.map((line) => scaleMinorUnits(line.amount, line.taxRate / 100))
+			input.lines.map((line) => scaleMinorUnits(line.amount, line.taxRate, 100))
 		);
 		const total = addMinorUnits(
 			taxableAmount,

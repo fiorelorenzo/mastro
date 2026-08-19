@@ -164,6 +164,42 @@ takes every scheduled job down with it — the same failure mode the daemon
 itself already represents for `web` and `db`, not a new one this design
 introduces.
 
+## Reading the logs (#317)
+
+`web`, `scheduler` and the ACP `runner` all write one JSON object per line
+to stdout, through the one logging module every server module and deploy
+script goes through (`src/lib/server/log/logger.ts`):
+`{"time":"2026-08-19T04:02:11.408Z","level":"info","msg":"scheduler: job ok","context":{"job":"mail poll","body":"..."}}`
+— `context` present only when the call site passed one. This is a
+single-host deployment read with `docker compose logs`, not a service with
+anything to aggregate logs for, so JSON lines plus `jq` is the whole
+story: no log aggregator, no vendor SDK, no second thing to run.
+`--no-log-prefix` drops compose's own `service-1  |` prefix so every line
+is exactly the JSON object the process wrote, nothing else on it.
+
+**"What happened at 04:00?"** — every line whose timestamp falls in that
+hour, across every service:
+
+```bash
+docker compose -f compose.prod.yaml logs --no-log-prefix web scheduler runner \
+  | jq -c 'select(.time | startswith("2026-08-19T04"))'
+```
+
+**"What happened to the mail poll at 04:00?"** narrows the same query to
+the job `scheduler` (`scripts/scheduler.ts`) tags every mail-poll outcome
+with, `context.job`:
+
+```bash
+docker compose -f compose.prod.yaml logs --no-log-prefix scheduler \
+  | jq -c 'select(.context.job == "mail poll" and (.time | startswith("2026-08-19T04")))'
+```
+
+Every level writes to stdout, so `docker compose logs` needs no `2>&1` to
+see an `error` line; `jq 'select(.level == "error")'` filters to just
+those. A context value carrying a connection string or a bearer token —
+whatever key it arrives under — is redacted before the line is ever
+written; see `src/lib/server/log/logger.test.ts` for the guarantee.
+
 ## What was proved locally
 
 Run on this box, `MASTRO_SITE_ADDRESS=localhost` and `MASTRO_TLS_ARG=internal`

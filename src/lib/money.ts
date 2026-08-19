@@ -87,12 +87,31 @@ export function negateMinorUnits(value: MinorUnits): MinorUnits {
 }
 
 /**
- * Money times a plain ratio — a tax rate, a share, a fraction of a day —
- * rounded to a whole minor unit, since a fraction of a cent is not a value
- * this codebase is allowed to hold.
+ * Money times an integer ratio `numerator / denominator` — a rate
+ * expressed in basis points over 10,000, a share of one amount over
+ * another, or any other multiply-then-divide-once ratio — rounded to a
+ * whole minor unit, since a fraction of a cent is not a value this
+ * codebase is allowed to hold.
+ *
+ * Takes the ratio as two integers rather than one pre-divided fraction on
+ * purpose: `(amount * numerator) / denominator` keeps every intermediate
+ * exact until the single rounding step below, where `amount * (numerator
+ * / denominator)` would divide first and let a repeating binary fraction
+ * (0.22 is one, in binary) round the ratio itself before the money ever
+ * enters the computation — see #323.
+ *
+ * Rounding direction is a property of this function, not an accident of
+ * `Math.round`: ties round toward positive infinity, `Math.round`'s own
+ * rule (`Math.round(-0.5)` is `0`, not `-1`). Pinned by
+ * `money.test.ts`'s odd-base case, 100,001 at one half, which lands
+ * exactly on 50,000.5.
  */
-export function scaleMinorUnits(amount: MinorUnits, factor: number): MinorUnits {
-	return Math.round(amount * factor) as MinorUnits;
+export function scaleMinorUnits(
+	amount: MinorUnits,
+	numerator: number,
+	denominator: number
+): MinorUnits {
+	return Math.round((amount * numerator) / denominator) as MinorUnits;
 }
 
 /**

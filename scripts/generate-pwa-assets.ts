@@ -16,6 +16,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import sharp from 'sharp';
+import { log } from '../src/lib/server/log/logger.ts';
 import { SURFACE_LIGHT } from '../src/lib/pwa/colors.ts';
 
 const SOURCE_SVG = 'src/lib/assets/favicon.svg';
@@ -57,7 +58,7 @@ async function renderIcon(source: Buffer, { file, size }: IconSpec): Promise<voi
 		.png()
 		.toBuffer();
 	await writeFile(file, png);
-	console.log(`wrote ${file} (${size}x${size})`);
+	log.info('pwa asset written', { file, size });
 }
 
 async function writeManifest(): Promise<void> {
@@ -93,7 +94,7 @@ async function writeManifest(): Promise<void> {
 	};
 	const file = 'static/manifest.webmanifest';
 	await writeFile(file, JSON.stringify(manifest, null, '\t') + '\n');
-	console.log(`wrote ${file}`);
+	log.info('pwa asset written', { file });
 }
 
 const source = await readFile(SOURCE_SVG);

@@ -13,6 +13,7 @@
 // only way in.
 
 import { connectRunnerDb } from './db.ts';
+import { log } from '../log/logger.ts';
 import { loadRunnerConfig } from './config.ts';
 import { RunnerConfigurationError } from './errors.ts';
 import { processExtractionJob } from './job.ts';
@@ -80,7 +81,7 @@ export async function runQueueOnce(
 	let failed = 0;
 	for (const filename of pending) {
 		const job = await readPendingJob(queueDir, filename);
-		console.log(`[runner] processing ${filename}`);
+		log.info('runner: processing', { jobId: job.id, filename });
 		const progress = progressSink(queueDir, job.id);
 		try {
 			const result = await processExtractionJob(
@@ -96,13 +97,13 @@ export async function runQueueOnce(
 			// `done/`, which the app drains (#85's `agent/drain.ts`); the
 			// line on stdout is for a human watching the log, not a seam
 			// anything parses.
-			console.log(JSON.stringify({ kind: 'proposal', jobId: job.id, ...result }));
+			log.info('runner: proposal', { jobId: job.id, ...result });
 			await markJobDone(queueDir, filename, job, result);
-			console.log(`[runner] completed ${filename}`);
+			log.info('runner: completed', { jobId: job.id, filename });
 			processed++;
 		} catch (err) {
 			const message = err instanceof Error ? err.message : String(err);
-			console.error(`[runner] failed ${filename}: ${message}`);
+			log.error('runner: failed', { jobId: job.id, filename, error: err });
 			await progress.appendError(message);
 			await markJobFailed(queueDir, filename, job, message);
 			failed++;
@@ -178,7 +179,7 @@ async function runEnqueueCommand(queueDir: string, argv: string[]): Promise<void
 		instructions: requireFlag(flags, 'instructions')
 	};
 	const id = await enqueueJob(queueDir, request);
-	console.log(`[runner] enqueued ${id}`);
+	log.info('runner: enqueued', { jobId: id });
 }
 
 /** Entry point called by `scripts/runner.ts`. `argv` is `process.argv.slice(2)`. */
@@ -198,7 +199,7 @@ export async function runRunnerCli(argv: string[]): Promise<void> {
 	try {
 		if (command === 'once' || command === undefined) {
 			const { processed, failed } = await runQueueOnce(config.queueDir, sql, model);
-			console.log(`[runner] processed ${processed} job(s), ${failed} failed`);
+			log.info('runner: processed', { processed, failed });
 			return;
 		}
 
@@ -206,10 +207,10 @@ export async function runRunnerCli(argv: string[]): Promise<void> {
 			const controller = new AbortController();
 			process.once('SIGTERM', () => controller.abort());
 			process.once('SIGINT', () => controller.abort());
-			console.log(
-				`[runner] watching ${config.queueDir} ` +
-					`(agent: ${config.agent ? 'configured' : 'not configured'})`
-			);
+			log.info('runner: watching', {
+				queueDir: config.queueDir,
+				agentConfigured: Boolean(config.agent)
+			});
 			await watchQueue(config.queueDir, sql, model, controller.signal);
 			return;
 		}

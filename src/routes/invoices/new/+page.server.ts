@@ -228,7 +228,7 @@ export const actions: Actions = {
 				'entered manually from the issued document'
 			);
 		} catch (error) {
-			if (isPostgresConstraintViolation(error, '23505', 'invoice_contract_number_unique')) {
+			if (isPostgresConstraintViolation(error, '23505', 'invoice_number_unique')) {
 				return fail(400, {
 					errors: { number: m.invoice_validation_number_duplicate() },
 					values

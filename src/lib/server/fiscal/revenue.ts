@@ -97,7 +97,7 @@ export async function fetchLedgerRows(executor: DbExecutor = db): Promise<Ledger
 				? []
 				: grossPayments.map((p) => ({
 						date: p.date,
-						amount: scaleMinorUnits(amount, p.amount / row.total)
+						amount: scaleMinorUnits(amount, p.amount, row.total)
 					}));
 		return {
 			invoiceId: row.invoiceId,

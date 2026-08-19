@@ -124,9 +124,13 @@ export interface TaxTreatment {
 	readonly taxRate: number;
 }
 
+/** `fixed`'s `minorUnits` is a flat charge; `percentage`'s `basisPoints`
+ * is a rate over 10,000 (2200 for 22 %) applied to the named fact —
+ * integer basis points, never a fractional multiplier, so `amountOf`
+ * below never divides before it multiplies (#323). */
 export type ChargeAmount =
 	| { readonly kind: 'fixed'; readonly minorUnits: MinorUnits }
-	| { readonly kind: 'percentage'; readonly rate: number; readonly of: string };
+	| { readonly kind: 'percentage'; readonly basisPoints: number; readonly of: string };
 
 export type RuleComparator = 'lt' | 'lte' | 'gt' | 'gte' | 'eq';
 
@@ -328,7 +332,7 @@ function amountOf(amount: ChargeAmount, facts: Readonly<Record<string, number>>)
 	if (base === undefined) {
 		throw new Error(`fact '${amount.of}' was not supplied`);
 	}
-	return scaleMinorUnits(minorUnits(base), amount.rate);
+	return scaleMinorUnits(minorUnits(base), amount.basisPoints, 10_000);
 }
 
 export interface EvaluatedCharge {

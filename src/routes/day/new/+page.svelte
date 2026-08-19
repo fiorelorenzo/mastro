@@ -23,12 +23,14 @@
 	// common case) — attaching it after the fact is `/day/[id]`'s job.
 	import { onMount } from 'svelte';
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import * as m from '$lib/paraglide/messages';
 	import { formatAmount, formatDate, formatDays, formatHours } from '$lib/i18n/format';
 	import {
 		Banner,
 		Button,
+		EmptyState,
 		Field,
 		Input,
 		KeyboardHint,
@@ -247,7 +249,16 @@
 
 <Page crumbs={data.crumbs} title={m.day_new_heading()}>
 	{#if data.contracts.length === 0}
-		<p class="empty-hint">{m.day_new_no_contracts()}</p>
+		<EmptyState icon="▤" title={m.day_new_no_contracts_title()} body={m.day_new_no_contracts()}>
+			{#snippet actions()}
+				<a
+					href={data.firstClientId
+						? resolve('/clients/[id]/contracts/new', { id: data.firstClientId })
+						: resolve('/clients/new')}
+					class="underline">{m.day_new_no_contracts_action()}</a
+				>
+			{/snippet}
+		</EmptyState>
 	{:else}
 		<form
 			bind:this={formEl}
@@ -370,11 +381,6 @@
 		gap: var(--space-5);
 		margin-top: var(--space-6);
 		max-width: 28rem;
-	}
-	.empty-hint {
-		margin-top: var(--space-4);
-		font-size: var(--text-sm);
-		color: var(--text-secondary);
 	}
 	.queued-notice {
 		margin-top: var(--space-4);
