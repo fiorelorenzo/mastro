@@ -1,13 +1,37 @@
 // The real `MirrorTarget` (#50): Google Drive, over the plain REST API
 // (no `googleapis` dependency — three endpoints, called with `fetch`, do
-// not earn a 6MB client library). Written against Drive v3's documented
-// behaviour; this project has no Google credentials and no way to get
-// any (see AGENTS.md and docs/self-hosting.md), so this module cannot be
-// exercised against the real API. `google-drive-target.test.ts` proves
-// the request shapes — method, URL, body, and, just as importantly, that
-// no request here is ever a read of file content — against a fake
-// `fetch`; nothing here has been run against Drive itself. A human with
-// a Google account is the only thing that can close that gap.
+// not earn a 6MB client library).
+//
+// **This has now run against Drive itself (#346).** It was written against
+// Drive v3's documentation and, for a long time, could not be exercised:
+// there were no credentials to exercise it with, and a request shape a fake
+// `fetch` accepts is not evidence the API does. What a real run against
+// `fiorelorenzo.fl@gmail.com` proved, six publishes across three runs:
+//
+// - The upload works, and returns the id `publishDocument` records.
+// - Find-or-create is genuinely idempotent against the real index. Six
+//   publishes into `['mastro-test-346', "O'Brien & Co / Anno 2026"]` left
+//   exactly one root folder and one subfolder, so the eventual consistency
+//   of `files.list` did not produce a duplicate tree even seconds apart.
+// - `escapeDriveQueryValue` holds against the real query parser: that
+//   folder name contains both an apostrophe and a slash, and came back as
+//   one folder with the name intact rather than a broken query or a nested
+//   path.
+//
+// One thing the same run showed that is worth knowing rather than fixing:
+// publishing the *same* document twice through this target creates two
+// files, because the remote name does not carry `documentId`. That is
+// unreachable through the product — `publish.ts` returns early when
+// `document.remote_file_id` is already set, and that column is immutable
+// once written — so the guard lives at the caller and this target stays
+// free of the name lookup that making it idempotent here would require.
+// Adding one would mean reading Drive back, which is exactly what the
+// paragraph below forbids.
+//
+// `google-drive-target.test.ts` still proves every request shape against a
+// fake `fetch`, including that no request here is ever a read of file
+// content; the real run is what proves those shapes are the ones Drive
+// wanted.
 //
 // **Scope.** Every request in this file authenticates with a token
 // obtained for the `drive.file` scope (AGENTS.md: "neither sensitive nor
