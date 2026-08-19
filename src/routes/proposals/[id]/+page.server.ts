@@ -535,6 +535,13 @@ export const load: PageServerLoad = async ({ params }) => {
 		invoiceFields,
 		acceptedContractClientId: acceptedContract?.client.id ?? null,
 		sourceDocument: document ? toSourceDocumentValue(document) : null,
+		// The same fact the queue derives under the same name (#356): an
+		// inbound thread exists for this document, so there is an archived
+		// message to point at rather than an uploaded or folder-scanned
+		// document. Every string that promises the evidence stays put has to
+		// name which of the two it is, and both screens must name it the
+		// same way or one proposal reads two ways.
+		fromMessage: thread !== null,
 		message: {
 			from: parsedMessage?.headers.get('from') ?? null,
 			to: parsedMessage?.headers.get('to') ?? null,

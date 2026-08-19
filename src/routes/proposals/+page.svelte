@@ -15,6 +15,7 @@
 	import Page from '$lib/layout/Page.svelte';
 	import ProposalStatusBadge from './ProposalStatusBadge.svelte';
 	import { proposalConfidenceBadge, proposalQuantityLabel } from './proposal-status';
+	import { viewResultLabel } from './decision-wording';
 	import { proposalIssueMessage } from '$lib/i18n/proposal-issue';
 	import { submitting } from '$lib/design/submitting.svelte';
 	import { paymentTermsKindLabel } from '../clients/[id]/contracts/contract-enums';
@@ -369,13 +370,27 @@
 						</span>
 					</div>
 					<div class="row-actions">
-						{#if row.status === 'accepted' && row.resultId}
+						{#if row.result}
+							<!--
+								The label and the destination come from one fact (#356).
+								This block used to link `/day/[id]` for every accepted row
+								and label it "View the day", so an accepted contract
+								proposal offered one action and it answered 404 "Day not
+								found" — measured, not supposed.
+							-->
 							<Button
-								href={resolve('/day/[id]', { id: row.resultId })}
+								href={row.result.kind === 'contract'
+									? resolve('/clients/[id]/contracts/[contractId]', {
+											id: row.result.clientId,
+											contractId: row.result.contractId
+										})
+									: row.result.kind === 'invoice'
+										? resolve('/invoices/[id]', { id: row.result.id })
+										: resolve('/day/[id]', { id: row.result.id })}
 								variant="tertiary"
 								size="sm"
 							>
-								{m.proposal_history_view_day()}
+								{viewResultLabel(row.result.kind)}
 							</Button>
 						{/if}
 					</div>
