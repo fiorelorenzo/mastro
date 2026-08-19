@@ -22,8 +22,10 @@ import {
 	type ExtractedClauseFlag,
 	type ExtractedClient,
 	type ExtractedContractCandidate,
-	type ExtractedContractFields
+	type ExtractedContractFields,
+	type ExtractedRateCard
 } from '$lib/server/agent/contract-extraction';
+import { rateCardFromForm } from './rate-card-form';
 import type {
 	InvoiceProposedFields,
 	ValidatedInvoiceLine
@@ -326,6 +328,7 @@ function contractEditsFromForm(
 	client: ExtractedClient;
 	contract: ExtractedContractFields;
 	clauseFlags: ExtractedClauseFlag[];
+	rateCards: ExtractedRateCard[];
 } {
 	const client = extractedClientFromForm(candidate.client, formData);
 
@@ -392,7 +395,11 @@ function contractEditsFromForm(
 			flag.interpretationAdopted
 	}));
 
-	return { client, contract, clauseFlags };
+	const rateCards = candidate.rateCards.map((card, index) =>
+		rateCardFromForm(card, index, formData)
+	);
+
+	return { client, contract, clauseFlags, rateCards };
 }
 
 export const load: PageServerLoad = async ({ params }) => {
