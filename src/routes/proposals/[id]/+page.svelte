@@ -33,13 +33,7 @@
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
-	import {
-		formatAmount,
-		formatDate,
-		formatDateTime,
-		formatNumber,
-		formatPercent
-	} from '$lib/i18n/format';
+	import { formatDate, formatDateTime, formatNumber, formatPercent } from '$lib/i18n/format';
 	import { factLine } from '$lib/nav/crumbs';
 	import { minorUnitsToDecimalString } from '$lib/money';
 	import {
@@ -58,8 +52,6 @@
 		Textarea,
 		toasts
 	} from '$lib/design';
-	import Table from '$lib/design/Table.svelte';
-	import type { TableColumn } from '$lib/design/table';
 	import SourceDocument from '$lib/design/SourceDocument.svelte';
 	import Page from '$lib/layout/Page.svelte';
 	import ProposalStatusBadge from '../ProposalStatusBadge.svelte';
@@ -71,10 +63,7 @@
 	import { proposalIssueMessage } from '$lib/i18n/proposal-issue';
 	import { submitting } from '$lib/design/submitting.svelte';
 	import { isFieldGroundedInExcerpt, splitOnExcerpt } from './evidence';
-	import type {
-		ExtractedContractCandidate,
-		ExtractedRateCard
-	} from '$lib/server/agent/contract-extraction';
+	import type { ExtractedContractCandidate } from '$lib/server/agent/contract-extraction';
 	import {
 		contractRenewalTypes,
 		expensePolicyKinds,
@@ -87,8 +76,11 @@
 	} from '../../clients/[id]/contracts/contract-enums';
 	import {
 		disbursementPeriodLabel,
+		disbursementPeriods as disbursementPeriodOptions,
 		rateCardKindLabel,
-		rateUnitLabel
+		rateCardKinds as rateCardKindOptions,
+		rateUnitLabel,
+		rateUnits as rateUnitOptions
 	} from '../../clients/[id]/contracts/[contractId]/rate-cards/rate-card-enums';
 	import type { ActionData, PageProps } from './$types';
 
@@ -159,11 +151,32 @@
 		validationIssue ? proposalIssueMessage(validationIssue) : null
 	);
 	/** Whether `field` is the one input `validationIssue` names — `null`
-	 *  when the issue is not about a single field (a missing contract, two
-	 *  overlapping rate cards), in which case no input is marked invalid
-	 *  and the Banner carries the whole story instead. */
-	function fieldError(field: string): string | undefined {
-		return validationIssue?.field === field ? (validationMessage ?? undefined) : undefined;
+	 * for every other input, so exactly one renders invalid.
+	 *
+	 * Cleared once the reviewer has edited that input (#354). The issue is
+	 * the server's verdict on the values as *proposed*, so the moment the
+	 * offending value changes it is a verdict about something no longer on
+	 * screen. `acceptBlocked` below already consults `editedFields` for
+	 * exactly this reason, and the message not doing the same is how the
+	 * screen came to show a red field with its error under it and an
+	 * enabled Accept button at the same time, disagreeing about whether
+	 * the same field was still a problem.
+	 *
+	 * `index` distinguishes one row of a list from another: a rate-card
+	 * issue names both a field and which card carries it.
+	 */
+	function fieldError(field: string, index: number | null = null): string | undefined {
+		if (validationIssue?.field !== field) return undefined;
+		if (validationIssue.index !== index) return undefined;
+		if (editedFields.has(rateCardFieldName(field, index))) return undefined;
+		return validationMessage ?? undefined;
+	}
+
+	/** The form field name a rate-card input carries, and the key
+	 * `editedFields` tracks it under, so one card's edit never clears
+	 * another's error. Plain `field` for everything outside a list. */
+	function rateCardFieldName(field: string, index: number | null): string {
+		return index === null ? field : `rateCards.${index}.${field}`;
 	}
 
 	// One chosen reading per flagged clause, required before Accept: #86's
@@ -180,6 +193,16 @@
 		(data.contractCandidate?.clauseFlags ?? []).map((flag) => flag.interpretationAdopted ?? '')
 	);
 	const unresolvedClauseCount = $derived(clauseReadings.filter((reading) => !reading).length);
+
+	// One kind per rate card, driving which kind-specific field renders
+	// below (#354) — the same select-driven pattern `RateCardForm.svelte`
+	// uses, and left alone by a background `invalidateAll()` for the same
+	// reason as `clauseReadings` above: it is the reviewer's own
+	// in-progress choice, and this form's own submit remounts with fresh
+	// values anyway.
+	let rateCardKinds = $state<string[]>(
+		(data.contractCandidate?.rateCards ?? []).map((card) => card.kind)
+	);
 
 	// The client section's own state (design: "the client behind an
 	// extracted contract is always an explicit choice"). Defaults to
@@ -302,39 +325,6 @@
 		data.contractCandidate?.contract.expensePolicy?.kind === 'reimbursed_with_cap'
 			? minorUnitsToDecimalString(data.contractCandidate.contract.expensePolicy.capAmount, currency)
 			: ''
-	);
-
-	// A `{@const}` block cannot be a direct child of `<form>`, only of a
-	// block (`{#if}`, `{#each}`, `{#snippet}`, …) — computed here instead,
-	// same as `ContractForm.svelte`'s own module-scope column definitions
-	// would if that page needed one.
-	const rateCardColumns = $derived(
-		data.contractCandidate
-			? ([
-					{
-						key: 'validity',
-						label: m.rate_card_column_validity(),
-						format: (row: ExtractedRateCard) =>
-							`${formatDate(row.validFrom)} – ${row.validTo ? formatDate(row.validTo) : m.rate_card_valid_to_open()}`
-					},
-					{
-						key: 'kind',
-						label: m.rate_card_column_kind(),
-						format: (row: ExtractedRateCard) => rateCardKindLabel(row.kind)
-					},
-					{
-						key: 'amount',
-						label: m.rate_card_column_amount(),
-						align: 'end' as const,
-						format: (row: ExtractedRateCard) => {
-							const perUnit = `${formatAmount(row.amount, currency)} / ${rateUnitLabel(row.unit)}`;
-							return row.disbursementPeriod
-								? `${perUnit} (${disbursementPeriodLabel(row.disbursementPeriod)})`
-								: perUnit;
-						}
-					}
-				] satisfies readonly TableColumn<ExtractedRateCard>[])
-			: []
 	);
 
 	// A save announces itself (#207): each action tags its own outcome so
@@ -897,15 +887,140 @@
 						/>
 					</fieldset>
 
+					<!--
+						Editable, not a read-only table (#354). `proposalValidationError`
+						refuses six different things about a rate card, and its own doc
+						comment promises every refusal "stays refused until a reviewer's
+						own edit resolves it" — which was true of the contract fields and
+						false of these, because this section rendered three columns and
+						the accept action never read a rate card back from the form. A
+						proposal whose card carried `minimumHours` on a daily kind was
+						unacceptable through the interface at all: the screen named the
+						problem and offered no way to fix it.
+
+						Kind-specific fields follow the kind here the same way
+						`renewalNoticeDays` follows `renewalType` above, so switching a
+						card to hourly does not leave a stale `disbursementPeriod`
+						blocking the next submit.
+					-->
 					<div class="card">
 						<div class="card-head"><h2>{m.rate_card_section_heading()}</h2></div>
-						<Table
-							columns={rateCardColumns}
-							rows={candidate.rateCards}
-							caption={m.rate_card_section_heading()}
-							rowKey={(row) => `${row.validFrom}-${row.kind}-${row.amount}-${row.unit}`}
-							empty={rateCardsEmpty}
-						/>
+						{#if candidate.rateCards.length === 0}
+							{@render rateCardsEmpty()}
+						{:else}
+							{#each candidate.rateCards as card, index (index)}
+								<fieldset class="rate-card">
+									<legend>{rateCardKindLabel(card.kind)}</legend>
+									<Field
+										label={m.rate_card_form_valid_from_label()}
+										error={fieldError('validFrom', index)}
+									>
+										<Input
+											type="date"
+											name="rateCards.{index}.validFrom"
+											value={card.validFrom}
+											disabled={!pending}
+											oninput={() => markEdited(rateCardFieldName('validFrom', index))}
+										/>
+									</Field>
+									<Field
+										label={m.rate_card_form_valid_to_label()}
+										hint={m.rate_card_form_valid_to_hint()}
+										error={fieldError('validTo', index)}
+									>
+										<Input
+											type="date"
+											name="rateCards.{index}.validTo"
+											value={card.validTo ?? ''}
+											disabled={!pending}
+											oninput={() => markEdited(rateCardFieldName('validTo', index))}
+										/>
+									</Field>
+									<Field label={m.rate_card_form_kind_label()} error={fieldError('kind', index)}>
+										<Select
+											name="rateCards.{index}.kind"
+											bind:value={rateCardKinds[index]}
+											disabled={!pending}
+											oninput={() => markEdited(rateCardFieldName('kind', index))}
+										>
+											{#each rateCardKindOptions as option (option)}
+												<option value={option}>{rateCardKindLabel(option)}</option>
+											{/each}
+										</Select>
+									</Field>
+									<Field
+										label={m.rate_card_form_amount_label()}
+										error={fieldError('amount', index)}
+									>
+										<Input
+											numeric
+											name="rateCards.{index}.amount"
+											value={card.amount}
+											disabled={!pending}
+											oninput={() => markEdited(rateCardFieldName('amount', index))}
+										/>
+									</Field>
+									<Field label={m.rate_card_form_unit_label()} error={fieldError('unit', index)}>
+										<Select
+											name="rateCards.{index}.unit"
+											value={card.unit}
+											disabled={!pending}
+											oninput={() => markEdited(rateCardFieldName('unit', index))}
+										>
+											{#each rateUnitOptions as option (option)}
+												<option value={option}>{rateUnitLabel(option)}</option>
+											{/each}
+										</Select>
+									</Field>
+									<Field
+										label={m.rate_card_form_allowed_fractions_label()}
+										hint={m.rate_card_form_allowed_fractions_hint()}
+										error={fieldError('allowedFractions', index)}
+									>
+										<Input
+											name="rateCards.{index}.allowedFractions"
+											value={card.allowedFractions.join(', ')}
+											disabled={!pending}
+											oninput={() => markEdited(rateCardFieldName('allowedFractions', index))}
+										/>
+									</Field>
+									{#if rateCardKinds[index] === 'hourly'}
+										<Field
+											label={m.rate_card_form_minimum_hours_label()}
+											error={fieldError('minimumHours', index)}
+										>
+											<Input
+												numeric
+												name="rateCards.{index}.minimumHours"
+												value={card.minimumHours ?? ''}
+												disabled={!pending}
+												oninput={() => markEdited(rateCardFieldName('minimumHours', index))}
+											/>
+										</Field>
+									{/if}
+									{#if rateCardKinds[index] === 'fixed_recurring'}
+										<Field
+											label={m.rate_card_form_disbursement_period_label()}
+											error={fieldError('disbursementPeriod', index)}
+										>
+											<Select
+												name="rateCards.{index}.disbursementPeriod"
+												value={card.disbursementPeriod ?? ''}
+												disabled={!pending}
+												oninput={() => markEdited(rateCardFieldName('disbursementPeriod', index))}
+											>
+												<option value=""
+													>{m.rate_card_form_disbursement_period_placeholder()}</option
+												>
+												{#each disbursementPeriodOptions as option (option)}
+													<option value={option}>{disbursementPeriodLabel(option)}</option>
+												{/each}
+											</Select>
+										</Field>
+									{/if}
+								</fieldset>
+							{/each}
+						{/if}
 					</div>
 
 					<div class="card">
