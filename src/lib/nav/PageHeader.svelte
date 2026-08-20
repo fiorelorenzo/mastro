@@ -40,14 +40,23 @@
 		</a>
 	{/if}
 	<div class="row">
-		<!-- The `title` attribute is the escape hatch for the two-line clamp
+		<!-- Title and subtitle share one line when they fit (#366). They were
+		     two stacked blocks at every width, which on a phone spent three
+		     rows of a short viewport on "Today" and a date that read as one
+		     phrase. `flex-wrap` on `.titles` keeps the old behaviour for the
+		     long pairs: a record name plus a long subtitle still wraps, it
+		     just no longer wraps when there is room.
+
+		     The `title` attribute is the escape hatch for the two-line clamp
 		     below: a record name long enough to clip still has its full text
 		     one hover/long-press away, and the trail above already carries
 		     whatever ancestor a caller might otherwise have concatenated in. -->
-		<h1 {title}>{title}</h1>
+		<div class="titles">
+			<h1 {title}>{title}</h1>
+			{#if subtitle}<p class="subtitle">{subtitle}</p>{/if}
+		</div>
 		{#if actions}<div class="actions">{@render actions()}</div>{/if}
 	</div>
-	{#if subtitle}<p class="subtitle">{subtitle}</p>{/if}
 </header>
 
 <style>
@@ -86,6 +95,13 @@
 		justify-content: space-between;
 		gap: 0.5rem 1rem;
 	}
+	.titles {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 0.25rem 0.75rem;
+		min-width: 0;
+	}
 	h1 {
 		font-size: 1.5rem;
 		font-weight: 600;
@@ -101,6 +117,7 @@
 		gap: 1rem;
 	}
 	.subtitle {
+		margin: 0;
 		color: var(--text-secondary);
 	}
 	/* The phone shape: one back link, actions under the title. */

@@ -13,9 +13,18 @@ import type { Actions, PageServerLoad } from './$types';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Only contracts still `active` are offered: recording a day against a
+/**
+ * Only contracts still `active` are offered: recording a day against a
  * draft, terminated or expired contract is not a state the database
- * forbids, but it is never what the fast path wants. */
+ * forbids, but it is never what the fast path wants.
+ *
+ * When nothing is offered, this also reports *why* (#365). It used to
+ * report only whether a client existed, so a ledger holding one draft
+ * contract - which is what accepting a contract proposal produced until
+ * today - got "No contract yet" and a button offering to add one, when the
+ * contract already existed and only needed activating. The remedy on
+ * offer created a second contract and left the first one still unusable.
+ */
 async function loadActiveContracts() {
 	const [contracts, clients] = await Promise.all([listContracts(), listClients()]);
 	const clientNameById = new Map(clients.map((client) => [client.id, client.legalName]));
@@ -50,11 +59,20 @@ async function loadActiveContracts() {
 				validTo: card.validTo
 			}))
 		})),
-		// Only consulted when `contracts` comes back empty: which reason
-		// `+page.svelte`'s empty state shows — no client exists yet at all
-		// (`null`), or the first one (alphabetical, same order `listClients`
-		// returns) has none active, so its contract-new page is where the
-		// fast path actually resumes.
+		// Only consulted when `contracts` comes back empty, and it names the
+		// actual cause so the empty state can offer the remedy that matches
+		// it rather than always offering "add a contract":
+		//   'no_client'   — nothing exists yet; start with a client.
+		//   'no_contract' — a client exists with no contract at all.
+		//   'none_active' — contracts exist and every one is draft,
+		//                   terminated or expired. `/contracts` shows each
+		//                   one's status, which is where this is resolved.
+		emptyReason:
+			clients.length === 0
+				? ('no_client' as const)
+				: contracts.length === 0
+					? ('no_contract' as const)
+					: ('none_active' as const),
 		firstClientId: clients[0]?.id ?? null
 	};
 }
@@ -77,7 +95,7 @@ async function loadApprovalsByContract(contractIds: string[]) {
 }
 
 export const load: PageServerLoad = async ({ url }) => {
-	const [{ contracts, firstClientId }, mostRecentContractId] = await Promise.all([
+	const [{ contracts, firstClientId, emptyReason }, mostRecentContractId] = await Promise.all([
 		loadActiveContracts(),
 		getMostRecentContractId()
 	]);
@@ -122,7 +140,8 @@ export const load: PageServerLoad = async ({ url }) => {
 		defaultApprovalId,
 		defaultDate,
 		crumbs,
-		firstClientId
+		firstClientId,
+		emptyReason
 	};
 };
 

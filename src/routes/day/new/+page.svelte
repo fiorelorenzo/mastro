@@ -249,16 +249,42 @@
 
 <Page crumbs={data.crumbs} title={m.day_new_heading()}>
 	{#if data.contracts.length === 0}
-		<EmptyState icon="▤" title={m.day_new_no_contracts_title()} body={m.day_new_no_contracts()}>
-			{#snippet actions()}
-				<a
-					href={data.firstClientId
-						? resolve('/clients/[id]/contracts/new', { id: data.firstClientId })
-						: resolve('/clients/new')}
-					class="underline">{m.day_new_no_contracts_action()}</a
-				>
-			{/snippet}
-		</EmptyState>
+		<!--
+			The remedy has to match the cause (#365). This offered "Add a
+			contract" in all three cases, so a ledger whose only contract was
+			draft - what accepting a contract proposal produced until today -
+			was told to create a second one, which would not have helped
+			either. `/contracts` is the destination for the third case because
+			it is the one screen that shows every contract's status.
+		-->
+		{#if data.emptyReason === 'none_active'}
+			<EmptyState
+				icon="▤"
+				title={m.day_new_none_active_title()}
+				body={m.day_new_none_active_body()}
+			>
+				{#snippet actions()}
+					<a href={resolve('/contracts')} class="underline">{m.day_new_none_active_action()}</a>
+				{/snippet}
+			</EmptyState>
+		{:else if data.emptyReason === 'no_client'}
+			<EmptyState icon="◫" title={m.day_new_no_client_title()} body={m.day_new_no_client_body()}>
+				{#snippet actions()}
+					<a href={resolve('/clients/new')} class="underline">{m.day_new_no_client_action()}</a>
+				{/snippet}
+			</EmptyState>
+		{:else}
+			<EmptyState icon="▤" title={m.day_new_no_contracts_title()} body={m.day_new_no_contracts()}>
+				{#snippet actions()}
+					<a
+						href={data.firstClientId
+							? resolve('/clients/[id]/contracts/new', { id: data.firstClientId })
+							: resolve('/clients/new')}
+						class="underline">{m.day_new_no_contracts_action()}</a
+					>
+				{/snippet}
+			</EmptyState>
+		{/if}
 	{:else}
 		<form
 			bind:this={formEl}

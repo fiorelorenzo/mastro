@@ -928,7 +928,12 @@ test('#86: resolving the ambiguous clause with an edit creates the contract and 
 			.from(contract)
 			.where(eq(contract.id, accepted.resultId as string));
 		expect(contractRow.renewalType).toBe('none');
-		expect(contractRow.status).toBe('draft');
+		// Active, not draft (#365): `/day/new` offers active contracts only,
+		// the day import skips non-active rows, and both contract alerts
+		// query `status = 'active'`, so a draft here meant accepting a real
+		// signed contract produced one no day could be recorded against and
+		// no alert would ever fire for.
+		expect(contractRow.status).toBe('active');
 
 		const [clientRow] = await tx.select().from(client).where(eq(client.id, contractRow.clientId));
 		expect(clientRow.taxId).toEqual((proposedFields.client as Record<string, unknown>).taxId);
