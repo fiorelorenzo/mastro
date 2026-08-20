@@ -71,3 +71,33 @@ test('mapped but never polled is never_run, not the unmapped state', () => {
 		mailPollBadge(true, false, null).label
 	);
 });
+
+// #374: `/settings` rendered its own reading of a conflated boolean and told
+// an instance with working IMAP credentials that IMAP was not configured,
+// while `/mail` said the opposite. Both screens now call these two
+// functions, so the guard worth having is that the answer depends only on
+// the three facts - not on which screen asked.
+test('the configured-but-unmapped state is never reported as an unconfigured account', () => {
+	const badge = mailPollBadge(true, false, null);
+	const meta = mailPollMeta(true, false, null, 'en');
+
+	expect(badge.label).not.toBe(mailPollBadge(false, false, null).label);
+	expect(meta).not.toBe(mailPollMeta(false, false, null, 'en'));
+	expect(meta).toMatch(/configured/i);
+});
+
+test('one set of inputs has exactly one answer, whichever screen asks', () => {
+	const cases = [
+		[false, false, null],
+		[true, false, null],
+		[true, true, null],
+		[true, true, { kind: 'ok', lastRunAt: '2026-08-20T00:00:00.000Z' }]
+	] as const;
+
+	for (const [account, mapped, health] of cases) {
+		expect(mailPollBadge(account, mapped, health)).toEqual(mailPollBadge(account, mapped, health));
+		expect(mailPollMeta(account, mapped, health, 'en')).toBe(
+			mailPollMeta(account, mapped, health, 'en')
+		);
+	}
+});

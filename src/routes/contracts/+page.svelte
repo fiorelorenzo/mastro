@@ -93,7 +93,10 @@
 	</EmptyState>
 {/snippet}
 
-<Page title={m.contracts_heading()}>
+<!-- `wide`, like every other index that carries a table (#373): seven
+     columns in the 48rem default wrapped the contract title onto three
+     lines. `Page`'s own prop doc has the rule. -->
+<Page title={m.contracts_heading()} width="wide">
 	<Table
 		{columns}
 		rows={data.rows}

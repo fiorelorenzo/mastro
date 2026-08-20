@@ -25,6 +25,8 @@
 	import { SegmentedControl } from '$lib/design';
 	import LanguageSwitch from '$lib/components/LanguageSwitch.svelte';
 	import Page from '$lib/layout/Page.svelte';
+	import Section from '$lib/layout/Section.svelte';
+	import { mailPollBadge, mailPollMeta } from '../mail/poll-status';
 	import { pushSubscriptionStore } from '$lib/pwa/push.svelte';
 	import { theme } from '$lib/theme.svelte';
 	import type { ThemePreference } from '$lib/theme';
@@ -78,8 +80,13 @@
 	const fiscalBadge = $derived(configuredBadge(data.fiscalProfile !== null));
 	const practiceBadge = $derived(configuredBadge(data.practiceProfile !== null));
 	const backupBadge = $derived(healthBadge(data.backup.kind));
-	const mailBadge = $derived(
-		data.mail.configured ? healthBadge(data.mail.health!.kind) : configuredBadge(false)
+	// The mail row's badge and its sentence, from the same two functions
+	// `/mail` renders (#374) — never a local reading of the payload.
+	const mailPoll = $derived(
+		mailPollBadge(data.mail.accountConfigured, data.mail.anyFolderMapped, data.mail.health)
+	);
+	const mailMeta = $derived(
+		mailPollMeta(data.mail.accountConfigured, data.mail.anyFolderMapped, data.mail.health, locale)
 	);
 	const runnerBadge = $derived(
 		data.runner.configured ? healthBadge(data.runner.health!.kind) : configuredBadge(false)
@@ -113,257 +120,267 @@
 
 <svelte:head><title>{m.settings_page_title()}</title></svelte:head>
 
+<!--
+	Grouped, required-first (#375). This was one flat list of ten rows in
+	which a mandatory fiscal profile, a read-only backup readout, a
+	developer reference page and a per-device toggle all rendered as the
+	same shape in no particular order, so nothing said which of them a new
+	instance has to fill in before it can work.
+
+	Four groups, in the order a person needs them: what the ledger cannot
+	compute without, then how work arrives, then what is true of the
+	instance, then what belongs to the browser in your hand. The design
+	system row is gone from here entirely - it is developer documentation,
+	not a setting, and `/design` is still there for whoever wants it.
+-->
 <Page title={m.settings_heading()}>
-	<ul class="rows">
-		<!-- ── fiscal profile ─────────────────────────────────────────── -->
-		<li class="row">
-			<div class="row-main">
-				<p class="row-title">{m.settings_fiscal_heading()}</p>
-				<p class="row-meta">
-					{#if data.fiscalProfile}
-						{m.settings_fiscal_active({
-							pack: data.fiscalProfile.displayName[locale],
-							date: formatDate(data.fiscalProfile.validFrom, locale)
-						})}
-					{:else}
-						{m.settings_fiscal_none()}
-					{/if}
-				</p>
-			</div>
-			<div class="row-actions">
-				<Badge variant={fiscalBadge.variant} label={fiscalBadge.label} size="sm" />
-				<Button href={resolve('/settings/fiscal')} variant="tertiary" size="sm">
-					{m.settings_fiscal_manage_link()}
-				</Button>
-			</div>
-		</li>
+	<Section title={m.settings_group_required()}>
+		<p class="group-note">{m.settings_group_required_note()}</p>
+		<ul class="rows">
+			<!-- ── fiscal profile ─────────────────────────────────────────── -->
+			<li class="row">
+				<div class="row-main">
+					<p class="row-title">{m.settings_fiscal_heading()}</p>
+					<p class="row-meta">
+						{#if data.fiscalProfile}
+							{m.settings_fiscal_active({
+								pack: data.fiscalProfile.displayName[locale],
+								date: formatDate(data.fiscalProfile.validFrom, locale)
+							})}
+						{:else}
+							{m.settings_fiscal_none()}
+						{/if}
+					</p>
+				</div>
+				<div class="row-actions">
+					<Badge variant={fiscalBadge.variant} label={fiscalBadge.label} size="sm" />
+					<Button href={resolve('/settings/fiscal')} variant="tertiary" size="sm">
+						{m.settings_fiscal_manage_link()}
+					</Button>
+				</div>
+			</li>
 
-		<!-- ── practice profile ───────────────────────────────────────── -->
-		<li class="row">
-			<div class="row-main">
-				<p class="row-title">{m.settings_practice_heading()}</p>
-				<p class="row-meta">
-					{#if data.practiceProfile}
-						{m.settings_practice_summary({
-							legalName: data.practiceProfile.legalName,
-							taxId: data.practiceProfile.taxId
-						})}
-					{:else}
-						{m.settings_practice_empty_notice()}
-					{/if}
-				</p>
-			</div>
-			<div class="row-actions">
-				<Badge variant={practiceBadge.variant} label={practiceBadge.label} size="sm" />
-				<Button href={resolve('/settings/practice')} variant="tertiary" size="sm">
-					{m.settings_practice_manage_link()}
-				</Button>
-			</div>
-		</li>
+			<!-- ── practice profile ───────────────────────────────────────── -->
+			<li class="row">
+				<div class="row-main">
+					<p class="row-title">{m.settings_practice_heading()}</p>
+					<p class="row-meta">
+						{#if data.practiceProfile}
+							{m.settings_practice_summary({
+								legalName: data.practiceProfile.legalName,
+								taxId: data.practiceProfile.taxId
+							})}
+						{:else}
+							{m.settings_practice_empty_notice()}
+						{/if}
+					</p>
+				</div>
+				<div class="row-actions">
+					<Badge variant={practiceBadge.variant} label={practiceBadge.label} size="sm" />
+					<Button href={resolve('/settings/practice')} variant="tertiary" size="sm">
+						{m.settings_practice_manage_link()}
+					</Button>
+				</div>
+			</li>
+		</ul>
+	</Section>
 
-		<!-- ── design system reference ────────────────────────────────── -->
-		<li class="row">
-			<div class="row-main">
-				<p class="row-title">{m.settings_design_heading()}</p>
-				<p class="row-meta">{m.settings_design_note()}</p>
-			</div>
-			<div class="row-actions">
-				<Button href={resolve('/design')} variant="tertiary" size="sm">
-					{m.settings_design_link()}
-				</Button>
-			</div>
-		</li>
-
-		<!-- ── last backup ────────────────────────────────────────────── -->
-		<li class="row">
-			<div class="row-main">
-				<p class="row-title">{m.settings_backup_heading()}</p>
-				<p class="row-meta">
-					{#if data.backup.kind === 'ok'}
-						{m.settings_backup_ok_meta({
-							date: formatDateTime(data.backup.lastRunAt, locale),
-							size: backupSizeLabel ?? '—'
-						})}
-					{:else if data.backup.kind === 'failure'}
-						{m.settings_backup_failure_meta({
-							date: formatDateTime(data.backup.lastRunAt, locale),
-							detail: data.backup.detail ?? ''
-						})}
-					{:else if data.backup.kind === 'stale'}
-						{m.settings_backup_stale_meta({ date: formatDateTime(data.backup.lastRunAt, locale) })}
-					{:else}
-						{m.settings_backup_never_run_meta()}
-					{/if}
-				</p>
-			</div>
-			<div class="row-actions">
-				<Badge variant={backupBadge.variant} label={backupBadge.label} size="sm" />
-			</div>
-		</li>
-
-		<!-- ── mail polling ────────────────────────────────────────────── -->
-		<li class="row">
-			<div class="row-main">
-				<p class="row-title">{m.settings_mail_heading()}</p>
-				<p class="row-meta">
-					{#if !data.mail.configured}
-						{m.settings_mail_not_configured_meta()}
-					{:else if data.mail.health!.kind === 'ok'}
-						{m.settings_mail_ok_meta({ date: formatDateTime(data.mail.health!.lastRunAt, locale) })}
-					{:else if data.mail.health!.kind === 'failure'}
-						{m.settings_mail_failure_meta({
-							date: formatDateTime(data.mail.health!.lastRunAt, locale),
-							detail: data.mail.health!.detail ?? ''
-						})}
-					{:else if data.mail.health!.kind === 'stale'}
-						{m.settings_mail_stale_meta({
-							date: formatDateTime(data.mail.health!.lastRunAt, locale)
-						})}
-					{:else}
-						{m.settings_mail_never_run_meta()}
-					{/if}
-				</p>
-			</div>
-			<div class="row-actions">
-				<Badge variant={mailBadge.variant} label={mailBadge.label} size="sm" />
-				{#if data.mail.configured}
+	<Section title={m.settings_group_ingestion()}>
+		<p class="group-note">{m.settings_group_ingestion_note()}</p>
+		<ul class="rows">
+			<!-- ── mail polling ────────────────────────────────────────────────
+		     Badge and meta come from `mail/poll-status.ts`, the two functions
+		     `/mail` and `/mail/contracts/[id]` already render (#374). This row
+		     used to ask `pollingConfigured`, the conflated
+		     account-and-folder boolean, and told an instance with working
+		     credentials that IMAP was unconfigured - while `/mail` two clicks
+		     away said the opposite. One implementation now answers for all
+		     three, so they cannot disagree again. -->
+			<li class="row">
+				<div class="row-main">
+					<p class="row-title">{m.settings_mail_heading()}</p>
+					<p class="row-meta">{mailMeta}</p>
+				</div>
+				<div class="row-actions">
+					<Badge variant={mailPoll.variant} label={mailPoll.label} size="sm" />
+					<!-- Always offered, deliberately: the state that most needs this
+				     link is "configured, nothing mapped", which is exactly the
+				     state the old condition hid it in. -->
 					<Button href={resolve('/mail')} variant="tertiary" size="sm">
 						{m.settings_mail_open_link()}
 					</Button>
-				{/if}
-			</div>
-		</li>
+				</div>
+			</li>
 
-		<!-- ── extraction runner ──────────────────────────────────────── -->
-		<li class="row">
-			<div class="row-main">
-				<p class="row-title">{m.settings_runner_heading()}</p>
-				<p class="row-meta">
-					{#if !data.runner.configured}
-						{m.settings_runner_not_configured_meta()}
-					{:else if data.runner.health!.kind === 'ok'}
-						{m.settings_runner_ok_meta({
-							date: formatDateTime(data.runner.health!.lastRunAt, locale)
-						})}
-					{:else if data.runner.health!.kind === 'failure'}
-						{m.settings_runner_failure_meta({
-							date: formatDateTime(data.runner.health!.lastRunAt, locale),
-							detail: data.runner.health!.detail ?? ''
-						})}
-					{:else if data.runner.health!.kind === 'stale'}
-						{m.settings_runner_stale_meta({
-							date: formatDateTime(data.runner.health!.lastRunAt, locale)
-						})}
-					{:else}
-						{m.settings_runner_never_run_meta()}
+			<!-- ── extraction runner ──────────────────────────────────────── -->
+			<li class="row">
+				<div class="row-main">
+					<p class="row-title">{m.settings_runner_heading()}</p>
+					<p class="row-meta">
+						{#if !data.runner.configured}
+							{m.settings_runner_not_configured_meta()}
+						{:else if data.runner.health!.kind === 'ok'}
+							{m.settings_runner_ok_meta({
+								date: formatDateTime(data.runner.health!.lastRunAt, locale)
+							})}
+						{:else if data.runner.health!.kind === 'failure'}
+							{m.settings_runner_failure_meta({
+								date: formatDateTime(data.runner.health!.lastRunAt, locale),
+								detail: data.runner.health!.detail ?? ''
+							})}
+						{:else if data.runner.health!.kind === 'stale'}
+							{m.settings_runner_stale_meta({
+								date: formatDateTime(data.runner.health!.lastRunAt, locale)
+							})}
+						{:else}
+							{m.settings_runner_never_run_meta()}
+						{/if}
+					</p>
+				</div>
+				<div class="row-actions">
+					<Badge variant={runnerBadge.variant} label={runnerBadge.label} size="sm" />
+					{#if data.runner.configured}
+						<Button href={resolve('/proposals')} variant="tertiary" size="sm">
+							{m.settings_runner_review_link()}
+						</Button>
 					{/if}
-				</p>
-			</div>
-			<div class="row-actions">
-				<Badge variant={runnerBadge.variant} label={runnerBadge.label} size="sm" />
-				{#if data.runner.configured}
-					<Button href={resolve('/proposals')} variant="tertiary" size="sm">
-						{m.settings_runner_review_link()}
-					</Button>
-				{/if}
-			</div>
-		</li>
+				</div>
+			</li>
+		</ul>
+	</Section>
 
-		<!-- ── push notifications ─────────────────────────────────────── -->
-		<li class="row">
-			<div class="row-main">
-				<p class="row-title">{m.settings_push_heading()}</p>
-				<p class="row-meta">
-					{#if !data.vapidPublicKey}
-						{m.settings_push_not_configured_meta()}
-					{:else if pushSubscriptionStore.status === 'unsupported'}
-						{m.alerts_settings_push_unsupported()}
-					{:else if pushSubscriptionStore.status === 'ios-needs-install'}
-						{m.alerts_settings_push_ios_hint()}
-					{:else if pushSubscriptionStore.subscribed}
-						{m.alerts_settings_push_subscribed_status()}
-					{:else}
-						{m.alerts_settings_push_not_subscribed_status()}
-						{#if pushSubscriptionStore.permissionDenied}
-							<br />{m.alerts_settings_push_permission_denied()}
+	<Section title={m.settings_group_operations()}>
+		<p class="group-note">{m.settings_group_operations_note()}</p>
+		<ul class="rows">
+			<!-- ── last backup ────────────────────────────────────────────── -->
+			<li class="row">
+				<div class="row-main">
+					<p class="row-title">{m.settings_backup_heading()}</p>
+					<p class="row-meta">
+						{#if data.backup.kind === 'ok'}
+							{m.settings_backup_ok_meta({
+								date: formatDateTime(data.backup.lastRunAt, locale),
+								size: backupSizeLabel ?? '—'
+							})}
+						{:else if data.backup.kind === 'failure'}
+							{m.settings_backup_failure_meta({
+								date: formatDateTime(data.backup.lastRunAt, locale),
+								detail: data.backup.detail ?? ''
+							})}
+						{:else if data.backup.kind === 'stale'}
+							{m.settings_backup_stale_meta({
+								date: formatDateTime(data.backup.lastRunAt, locale)
+							})}
+						{:else}
+							{m.settings_backup_never_run_meta()}
+						{/if}
+					</p>
+				</div>
+				<div class="row-actions">
+					<Badge variant={backupBadge.variant} label={backupBadge.label} size="sm" />
+				</div>
+			</li>
+			<!-- ── conservazione sostitutiva reminder (#262) ──────────────── -->
+			<li class="row">
+				<div class="row-main">
+					<p class="row-title">{m.settings_conservazione_heading()}</p>
+					<p class="row-meta">{m.settings_conservazione_note()}</p>
+				</div>
+				<div class="row-actions">
+					<a
+						href="https://ivaservizi.agenziaentrate.gov.it/portale/"
+						target="_blank"
+						rel="noreferrer"
+						class="external-link"
+					>
+						{m.settings_conservazione_link()}
+					</a>
+				</div>
+			</li>
+		</ul>
+	</Section>
+
+	<Section title={m.settings_group_device()}>
+		<p class="group-note">{m.settings_group_device_note()}</p>
+		<ul class="rows">
+			<!-- ── push notifications ─────────────────────────────────────── -->
+			<li class="row">
+				<div class="row-main">
+					<p class="row-title">{m.settings_push_heading()}</p>
+					<p class="row-meta">
+						{#if !data.vapidPublicKey}
+							{m.settings_push_not_configured_meta()}
+						{:else if pushSubscriptionStore.status === 'unsupported'}
+							{m.alerts_settings_push_unsupported()}
+						{:else if pushSubscriptionStore.status === 'ios-needs-install'}
+							{m.alerts_settings_push_ios_hint()}
+						{:else if pushSubscriptionStore.subscribed}
+							{m.alerts_settings_push_subscribed_status()}
+						{:else}
+							{m.alerts_settings_push_not_subscribed_status()}
+							{#if pushSubscriptionStore.permissionDenied}
+								<br />{m.alerts_settings_push_permission_denied()}
+							{/if}
+						{/if}
+					</p>
+				</div>
+				<div class="row-actions">
+					<Badge variant={pushStatus.variant} label={pushStatus.label} size="sm" />
+					{#if data.vapidPublicKey && pushSubscriptionStore.status === 'supported'}
+						{#if pushSubscriptionStore.subscribed}
+							<Button
+								type="button"
+								variant="secondary"
+								size="sm"
+								disabled={pushSubscriptionStore.busy}
+								onclick={() => pushSubscriptionStore.unsubscribe()}
+							>
+								{m.alerts_settings_push_disable_button()}
+							</Button>
+						{:else}
+							<Button
+								type="button"
+								variant="primary"
+								size="sm"
+								disabled={pushSubscriptionStore.busy}
+								onclick={enablePush}
+							>
+								{m.alerts_settings_push_enable_button()}
+							</Button>
 						{/if}
 					{/if}
-				</p>
-			</div>
-			<div class="row-actions">
-				<Badge variant={pushStatus.variant} label={pushStatus.label} size="sm" />
-				{#if data.vapidPublicKey && pushSubscriptionStore.status === 'supported'}
-					{#if pushSubscriptionStore.subscribed}
-						<Button
-							type="button"
-							variant="secondary"
-							size="sm"
-							disabled={pushSubscriptionStore.busy}
-							onclick={() => pushSubscriptionStore.unsubscribe()}
-						>
-							{m.alerts_settings_push_disable_button()}
-						</Button>
-					{:else}
-						<Button
-							type="button"
-							variant="primary"
-							size="sm"
-							disabled={pushSubscriptionStore.busy}
-							onclick={enablePush}
-						>
-							{m.alerts_settings_push_enable_button()}
-						</Button>
-					{/if}
-				{/if}
-				<Button href={resolve('/alerts/settings')} variant="tertiary" size="sm">
-					{m.settings_alerts_link()}
-				</Button>
-			</div>
-		</li>
+					<Button href={resolve('/alerts/settings')} variant="tertiary" size="sm">
+						{m.settings_alerts_link()}
+					</Button>
+				</div>
+			</li>
 
-		<!-- ── conservazione sostitutiva reminder (#262) ──────────────── -->
-		<li class="row">
-			<div class="row-main">
-				<p class="row-title">{m.settings_conservazione_heading()}</p>
-				<p class="row-meta">{m.settings_conservazione_note()}</p>
-			</div>
-			<div class="row-actions">
-				<a
-					href="https://ivaservizi.agenziaentrate.gov.it/portale/"
-					target="_blank"
-					rel="noreferrer"
-					class="external-link"
-				>
-					{m.settings_conservazione_link()}
-				</a>
-			</div>
-		</li>
+			<!-- ── theme ───────────────────────────────────────────────────── -->
+			<li class="row">
+				<div class="row-main">
+					<p class="row-title">{m.settings_appearance_heading()}</p>
+				</div>
+				<div class="row-actions">
+					<SegmentedControl
+						label={m.theme_switch_label()}
+						options={themeOptions}
+						bind:value={themePreference}
+						size="md"
+					/>
+				</div>
+			</li>
 
-		<!-- ── theme ───────────────────────────────────────────────────── -->
-		<li class="row">
-			<div class="row-main">
-				<p class="row-title">{m.settings_appearance_heading()}</p>
-			</div>
-			<div class="row-actions">
-				<SegmentedControl
-					label={m.theme_switch_label()}
-					options={themeOptions}
-					bind:value={themePreference}
-					size="md"
-				/>
-			</div>
-		</li>
-
-		<!-- ── language ────────────────────────────────────────────────── -->
-		<li class="row">
-			<div class="row-main">
-				<p class="row-title">{m.settings_language_heading()}</p>
-			</div>
-			<div class="row-actions">
-				<LanguageSwitch />
-			</div>
-		</li>
-	</ul>
+			<!-- ── language ────────────────────────────────────────────────── -->
+			<li class="row">
+				<div class="row-main">
+					<p class="row-title">{m.settings_language_heading()}</p>
+				</div>
+				<div class="row-actions">
+					<LanguageSwitch />
+				</div>
+			</li>
+		</ul>
+	</Section>
 </Page>
 
 <style>
@@ -405,6 +422,14 @@
 	}
 	.row-meta {
 		margin: 0;
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
+	}
+	/* The one line under each group heading that says what the group is for
+	   and whether it is optional (#375). Sits above the rows, not inside
+	   them, because it describes the group and not any one setting. */
+	.group-note {
+		margin: 0 0 var(--space-3);
 		font-size: var(--text-sm);
 		color: var(--text-secondary);
 	}

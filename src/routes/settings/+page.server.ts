@@ -10,19 +10,10 @@
 // is a second reader of exactly the same two-part check #74 already
 // established, never a parallel implementation of it that could drift.
 import { db } from '$lib/server/db';
-import {
-	detectAgentRunFailure,
-	detectBackupFailure,
-	detectMailboxPollFailure
-} from '$lib/server/alerts/detectors';
-import {
-	fetchLatestAgentRun,
-	fetchLatestBackupRun,
-	fetchLatestMailboxPollRun
-} from '$lib/server/alerts/repository';
-import { classifyRun } from '$lib/server/alerts/run-health';
+import { detectAgentRunFailure, detectBackupFailure } from '$lib/server/alerts/detectors';
+import { fetchLatestAgentRun, fetchLatestBackupRun } from '$lib/server/alerts/repository';
+import { classifyRun, mailboxPollHealth } from '$lib/server/alerts/run-health';
 import { resolveActiveFiscalPack } from '$lib/server/fiscal/profile';
-import { imapConfiguredInEnv } from '$lib/server/mail/config';
 import { vapidPublicKeyFromEnv } from '$lib/server/push/config';
 import { getPracticeProfile } from '$lib/server/repositories/practice-profile';
 import { runnerConfiguredInEnv } from '$lib/server/runner/status';
@@ -31,15 +22,22 @@ import type { PageServerLoad } from './$types';
 export const load: PageServerLoad = async () => {
 	const today = new Date().toISOString().slice(0, 10);
 	const now = new Date();
-	const mailConfigured = imapConfiguredInEnv();
 	const runnerConfigured = runnerConfiguredInEnv();
 
+	// `mailboxPollHealth` rather than `fetchLatestMailboxPollRun` directly
+	// (#374): the raw fetch answers one conflated question - is an account
+	// configured *and* is a folder mapped - and this screen was rendering a
+	// false "IMAP is not configured" for an instance that had working
+	// credentials and simply nothing mapped yet. The reducer is the same one
+	// `/mail` and `/mail/contracts/[id]` read, so the three screens now
+	// answer with one implementation instead of three readings of a boolean
+	// (#351, #352 fixed the other two).
 	const [activeFiscalPack, practiceProfile, latestBackup, mailboxPoll, latestAgentRun] =
 		await Promise.all([
 			resolveActiveFiscalPack(db, today),
 			getPracticeProfile(db),
 			fetchLatestBackupRun(db),
-			fetchLatestMailboxPollRun(mailConfigured, db),
+			mailboxPollHealth(db),
 			fetchLatestAgentRun(db)
 		]);
 
@@ -63,14 +61,13 @@ export const load: PageServerLoad = async () => {
 			? { legalName: practiceProfile.legalName, taxId: practiceProfile.taxId }
 			: null,
 		backup: classifyRun(latestBackup, detectBackupFailure(latestBackup, now)),
+		// The three facts kept apart, exactly as `/mail` receives them, so
+		// the row can say "configured, nothing mapped" instead of collapsing
+		// that into "not configured".
 		mail: {
-			configured: mailboxPoll.pollingConfigured,
-			health: mailboxPoll.pollingConfigured
-				? classifyRun(
-						mailboxPoll.latestRun,
-						detectMailboxPollFailure(true, mailboxPoll.latestRun, now)
-					)
-				: null
+			accountConfigured: mailboxPoll.accountConfigured,
+			anyFolderMapped: mailboxPoll.anyFolderMapped,
+			health: mailboxPoll.health
 		},
 		runner: {
 			configured: runnerConfigured,
