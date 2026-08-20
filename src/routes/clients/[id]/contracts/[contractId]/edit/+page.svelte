@@ -33,6 +33,7 @@
 					? minorUnitsToDecimalString(data.contract.expensePolicy.capAmount, data.contract.currency)
 					: '',
 			requiresExpensePreAuthorisation: data.contract.requiresExpensePreAuthorisation,
+			appliesSocialCharge: data.contract.appliesSocialCharge,
 			templateLanguage: data.contract.templateLanguage,
 			status: data.contract.status
 		}
@@ -49,5 +50,6 @@
 		client={data.contract.client}
 		errors={form?.errors ?? {}}
 		submitLabel={m.contract_form_submit_save()}
+		socialChargeLabel={data.socialChargeLabel}
 	/>
 </Page>

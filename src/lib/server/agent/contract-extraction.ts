@@ -126,6 +126,17 @@ const ExtractedContractFieldsSchema = z.object({
 	taxTreatment: nullableTrimmed,
 	requiresPriorApproval: z.boolean(),
 	requiresExpensePreAuthorisation: z.boolean(),
+	/**
+	 * Whether the contract charges the pack's social charge (#379). Optional
+	 * in the schema and **false when absent**, which is the whole point: a
+	 * document that says nothing about a surcharge has not agreed to one,
+	 * and defaulting the other way would invoice a client 4% nobody wrote
+	 * down. Extraction may set it only when the document says so.
+	 */
+	appliesSocialCharge: z
+		.boolean()
+		.optional()
+		.transform((value) => value ?? false),
 	expensePolicy: ExpensePolicySchema
 });
 export type ExtractedContractFields = z.infer<typeof ExtractedContractFieldsSchema>;

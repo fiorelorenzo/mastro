@@ -131,6 +131,21 @@ export const contract = pgTable('contract', {
 	requiresExpensePreAuthorisation: boolean('requires_expense_pre_authorisation')
 		.notNull()
 		.default(false),
+	// Whether this counterparty pays the social charge the jurisdiction pack
+	// in force declares in its `social_charge` slot (#379) — Italy's flat
+	// rate regime calls it the rivalsa INPS, and the pack carries its rate,
+	// its label and its statutory citation. Named after the slot, never
+	// after any one country's name for it, so the core never learns which
+	// regime is in force (invariant 1); under a pack that declares no such
+	// charge the election has no effect at all.
+	//
+	// On the contract rather than the pack because it follows the
+	// counterparty (invariant 2): the rate is law and disappears with the
+	// regime, whereas whether this client agreed to be charged it survives
+	// any change of regime. Off by default, so a contract never charges a
+	// client something nobody elected — including one built by extraction
+	// from a document that says nothing about it.
+	appliesSocialCharge: boolean('applies_social_charge').notNull().default(false),
 	status: contractStatus('status').notNull().default('draft'),
 	...timestamps()
 });

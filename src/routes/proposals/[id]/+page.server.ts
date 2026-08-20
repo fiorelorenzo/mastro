@@ -385,6 +385,10 @@ function contractEditsFromForm(
 		taxTreatment: optionalStringField(formData, 'taxTreatment'),
 		requiresPriorApproval: formData.has('requiresPriorApproval'),
 		requiresExpensePreAuthorisation: formData.has('requiresExpensePreAuthorisation'),
+		// #379: an unchecked box is the answer, so this reads the submission
+		// rather than falling back to the candidate - the reviewer clearing
+		// a surcharge the extraction proposed has to survive the accept.
+		appliesSocialCharge: formData.has('appliesSocialCharge'),
 		expensePolicy
 	};
 

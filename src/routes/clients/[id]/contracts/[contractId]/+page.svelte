@@ -135,6 +135,19 @@
 				? m.contract_detail_terms_prior_approval_required()
 				: m.contract_form_requires_prior_approval_not_required_option()
 		},
+		// #379: only when the pack in force declares a social charge, and
+		// labelled with the pack's own name for it. Under `generic` there is
+		// nothing to show, so the row is absent rather than reading "no".
+		...(data.socialChargeLabel
+			? [
+					{
+						dt: data.socialChargeLabel,
+						dd: contract.appliesSocialCharge
+							? m.contract_detail_terms_social_charge_applied()
+							: m.contract_detail_terms_social_charge_not_applied()
+					}
+				]
+			: []),
 		{
 			dt: m.mail_contract_template_language_legend(),
 			dd: autonym(contract.templateLanguage)

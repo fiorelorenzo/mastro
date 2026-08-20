@@ -39,6 +39,8 @@ export type ContractInput = {
 	templateLanguage: ContractTemplateLanguage;
 	expensePolicy: ExpensePolicy;
 	requiresExpensePreAuthorisation: boolean;
+	/** #379: whether this counterparty pays the pack's `social_charge`. */
+	appliesSocialCharge: boolean;
 	status: ContractStatus;
 };
 

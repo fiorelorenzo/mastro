@@ -1,0 +1,16 @@
+-- #379: whether a contract charges its counterparty the social charge the
+-- jurisdiction pack in force declares in its `social_charge` slot. Italy's
+-- flat-rate pack declares one (the rivalsa INPS, 4%, with its statutory
+-- citation); the `generic` pack declares none, and there the column has no
+-- effect at all. Named after the slot rather than after any country's name
+-- for it, so nothing outside a pack learns which regime is in force.
+--
+-- Defaults to false, and that is a behaviour change worth stating plainly:
+-- before this column, `resolveInvoiceTax` evaluated every charge a pack
+-- declared, so every invoice issued under the flat-rate regime carried the
+-- 4% surcharge whether or not the client had agreed to pay it. After this
+-- migration, existing contracts charge nothing until the election is set on
+-- each one deliberately. That is the safe direction: an invoice that is 4%
+-- short is a correction, an invoice charging a client something they never
+-- agreed to is a dispute.
+ALTER TABLE "contract" ADD COLUMN "applies_social_charge" boolean DEFAULT false NOT NULL;

@@ -6,7 +6,7 @@ import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
 import { resolveRateCard } from '$lib/server/domain/rate-card';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
 import { resolveActiveFiscalPack } from '$lib/server/fiscal/profile';
-import { listContractsWithClient } from '$lib/server/repositories/contract';
+import { getContract, listContractsWithClient } from '$lib/server/repositories/contract';
 import { listEligibleExpensesForRebilling } from '$lib/server/repositories/expense';
 import {
 	createInvoice,
@@ -118,12 +118,18 @@ export const actions: Actions = {
 		if (!parsed.ok) return fail(400, { errors: parsed.errors, values: parsed.values });
 		const { core, values } = parsed;
 
-		const [rateCards, eligibleDays, eligibleExpenses, correctableInvoices] = await Promise.all([
-			listRateCards(core.contractId),
-			listEligibleWorkUnitsForInvoicing(core.contractId),
-			listEligibleExpensesForRebilling(core.contractId),
-			listCorrectableInvoicesForContract(core.contractId)
-		]);
+		const [rateCards, eligibleDays, eligibleExpenses, correctableInvoices, invoicedContract] =
+			await Promise.all([
+				listRateCards(core.contractId),
+				listEligibleWorkUnitsForInvoicing(core.contractId),
+				listEligibleExpensesForRebilling(core.contractId),
+				listCorrectableInvoicesForContract(core.contractId),
+				// The contract itself, for one field: whether it elected the
+				// pack's social charge (#379). Read here rather than trusted
+				// from the form, because it is a term of the contract and not
+				// something this submission gets to assert.
+				getContract(core.contractId)
+			]);
 
 		const eligibleDaysById = new Map(eligibleDays.map((day) => [day.id, day]));
 		const eligibleExpensesById = new Map(eligibleExpenses.map((expense) => [expense.id, expense]));
@@ -174,7 +180,11 @@ export const actions: Actions = {
 		const taxableAmount = sumMinorUnits(baseLines.map((line) => line.amount));
 
 		const resolvedPack = await resolveActiveFiscalPack(db, core.issueDate);
-		const tax = resolveInvoiceTax(resolvedPack?.pack ?? null, taxableAmount);
+		const tax = resolveInvoiceTax(
+			resolvedPack?.pack ?? null,
+			taxableAmount,
+			invoicedContract?.appliesSocialCharge ?? false
+		);
 
 		let taxTreatmentCode: string | null;
 		let taxRate: number;

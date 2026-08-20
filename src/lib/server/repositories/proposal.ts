@@ -798,6 +798,10 @@ async function applyProposal(
 					templateLanguage: 'en',
 					expensePolicy: c.expensePolicy!,
 					requiresExpensePreAuthorisation: c.requiresExpensePreAuthorisation,
+					// #379: whatever the reviewer confirmed on the review screen,
+					// which is `false` unless the document said otherwise and the
+					// reviewer left it that way.
+					appliesSocialCharge: c.appliesSocialCharge,
 					// Active, not draft (#365). This is the only creation path that
 					// produced a draft: a hand-made contract defaults to `'active'`
 					// (`clients/[id]/contracts/new/+page.svelte`, whose own comment
