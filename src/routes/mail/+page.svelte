@@ -42,7 +42,7 @@
 		{
 			key: 'address',
 			label: m.mail_unknown_senders_column_address(),
-			format: (row) => row.senderAddress ?? m.mail_unknown_senders_unreadable()
+			cell: addressCell
 		},
 		{
 			key: 'messages',
@@ -149,6 +149,22 @@
 	/>
 {/snippet}
 
+<!--
+	#394: the badge is why this row is where it is. Ordering used to be by
+	recency, which on a real mailbox buried the one address that mattered at
+	position 57 of 133 behind every newsletter that happened to arrive that
+	morning. An address at a domain some contact of yours already uses is
+	almost never a newsletter, so it sorts first and says so.
+-->
+{#snippet addressCell(row: UnknownSenderRow)}
+	<span class="address">
+		{row.senderAddress ?? m.mail_unknown_senders_unreadable()}
+		{#if row.domainKnown}
+			<Badge variant="info" size="sm" label={m.mail_unknown_senders_domain_known_badge()} />
+		{/if}
+	</span>
+{/snippet}
+
 <!-- The link is the same target for every row (#394): there is no "add
      contact to which client" screen that takes an address, so this points
      at the client list rather than inventing one. Read-only per row - a
@@ -235,6 +251,12 @@
 </Page>
 
 <style>
+	.address {
+		display: inline-flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: var(--space-2);
+	}
 	.poll-status {
 		display: flex;
 		align-items: center;

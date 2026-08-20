@@ -2,9 +2,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
+import { eq } from 'drizzle-orm';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
-import { client, contract } from '$lib/server/db/schema';
+import { client, clientContact, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { normaliseAddress } from '../mail/attribute';
 import { parseMessage } from '../mail/headers';
@@ -685,10 +686,81 @@ test('listUnknownSenderAddresses groups refused senders by address, most recent 
 
 		expect(rows.some((row) => row.senderAddress === known)).toBe(false);
 
-		// leo's most recent message (Aug 5) sorts before the null group's
-		// most recent one (Aug 3).
+		// leo has two messages against the null group's one, and neither
+		// address shares a domain with any contact here, so volume is what
+		// separates them. Not recency: that was the original ordering and it
+		// was wrong (see the ordering test below).
 		const leoIndex = rows.findIndex((row) => row.senderAddress === leo);
 		const unreadableIndex = rows.findIndex((row) => row.senderAddress === null);
 		expect(leoIndex).toBeLessThan(unreadableIndex);
 	});
+});
+
+test('an address at a domain some contact already uses sorts first, ahead of a louder and newer stranger (#394)', async () => {
+	// The defect this defends was invisible until the panel met a real
+	// mailbox: 133 distinct addresses had written to it, and the one that
+	// mattered - a client's, differing from the recorded contact only by
+	// `leo@` against `leonardo@` - ranked 57th by recency, outside the
+	// panel's own limit. The diagnostic built to surface that address would
+	// not have surfaced it. So a shared domain outranks both volume and
+	// recency, and this test pins it by making the stranger win on both.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const domain = `visumlabs-${crypto.randomUUID().slice(0, 8)}.example`;
+		const recordedContact = `leonardo@${domain}`;
+		const actualSender = `leo@${domain}`;
+		const stranger = `newsletter-${crypto.randomUUID().slice(0, 8)}@stranger.example`;
+
+		const [clientRow] = await tx.select().from(client).where(eq(client.id, contractRow.clientId));
+		await tx.insert(clientContact).values({
+			clientId: clientRow.id,
+			name: 'Leonardo Ubbiali',
+			email: recordedContact,
+			role: 'CEO'
+		});
+
+		async function refused(senderAddress: string, uid: number, receivedAt: Date) {
+			const document = await archiveMessage(tx, contractRow.id);
+			return recordInboundThread(
+				{
+					...threadInput(contractRow.id, document.id, {
+						messageId: null,
+						imapUid: uid,
+						senderAddress,
+						receivedAt
+					}),
+					contractId: null,
+					skipReason: 'sender_unknown' as const
+				},
+				tx
+			);
+		}
+
+		// The client wrote twice, a while ago.
+		await refused(actualSender, 101, new Date('2026-08-01T09:00:00.000Z'));
+		await refused(actualSender, 102, new Date('2026-08-02T09:00:00.000Z'));
+		// The stranger wrote more, and more recently - it wins on every other
+		// axis, which is the point.
+		await refused(stranger, 103, new Date('2026-08-20T09:00:00.000Z'));
+		await refused(stranger, 104, new Date('2026-08-20T10:00:00.000Z'));
+		await refused(stranger, 105, new Date('2026-08-20T11:00:00.000Z'));
+
+		const rows = await listUnknownSenderAddresses(1000, tx);
+		return {
+			rows,
+			actualSender,
+			stranger,
+			senderIndex: rows.findIndex((row) => row.senderAddress === actualSender),
+			strangerIndex: rows.findIndex((row) => row.senderAddress === stranger)
+		};
+	});
+
+	const sender = result.rows[result.senderIndex];
+	const stranger = result.rows[result.strangerIndex];
+	expect(sender?.domainKnown).toBe(true);
+	expect(stranger?.domainKnown).toBe(false);
+	expect(sender?.messageCount).toBe(2);
+	expect(stranger?.messageCount).toBe(3);
+	// Fewer messages, older, and still first.
+	expect(result.senderIndex).toBeLessThan(result.strangerIndex);
 });

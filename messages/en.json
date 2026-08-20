@@ -1226,6 +1226,7 @@
 	"mail_unknown_senders_column_last": "Last one",
 	"mail_unknown_senders_column_messages": "Messages",
 	"mail_unknown_senders_column_subject": "Most recent subject",
+	"mail_unknown_senders_domain_known_badge": "Same domain as a contact",
 	"mail_unknown_senders_empty_body": "Nothing has been archived from an address that matches no contact.",
 	"mail_unknown_senders_empty_title": "Every sender is known",
 	"mail_unknown_senders_heading": "Addresses nobody claims",

@@ -1226,6 +1226,7 @@
 	"mail_unknown_senders_column_last": "Ultimo",
 	"mail_unknown_senders_column_messages": "Messaggi",
 	"mail_unknown_senders_column_subject": "Oggetto più recente",
+	"mail_unknown_senders_domain_known_badge": "Stesso dominio di un contatto",
 	"mail_unknown_senders_empty_body": "Non è stato archiviato niente da un indirizzo che non corrisponde a un contatto.",
 	"mail_unknown_senders_empty_title": "Ogni mittente è noto",
 	"mail_unknown_senders_heading": "Indirizzi che nessuno rivendica",
