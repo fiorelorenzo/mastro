@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
-import { client, contract, documentMirrorRun } from '$lib/server/db/schema';
+import { client, contract, document, documentMirrorRun } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { storeDocument } from './document';
 import {
@@ -128,6 +128,20 @@ test('listUnmirroredDocuments only returns documents with no remote_file_id, old
 			},
 			tx
 		);
+
+		// Distinct timestamps, because ordering is the point of this test and
+		// `now()` is the transaction's own start time: two rows inserted here
+		// share it, so "oldest first" between them is undefined. It only ever
+		// looked deterministic while this table was nearly empty. AGENTS.md
+		// records this trap; this test was standing on it.
+		await tx
+			.update(document)
+			.set({ createdAt: new Date('2026-01-01T00:00:00Z') })
+			.where(eq(document.id, first.id));
+		await tx
+			.update(document)
+			.set({ createdAt: new Date('2026-01-02T00:00:00Z') })
+			.where(eq(document.id, second.id));
 
 		const pending = await listUnmirroredDocuments(tx);
 		const pendingIds = pending.map((row) => row.id);
