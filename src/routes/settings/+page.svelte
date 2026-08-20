@@ -349,6 +349,9 @@
 							</Button>
 						{/if}
 					{/if}
+					<Button href={resolve('/alerts')} variant="tertiary" size="sm">
+						{m.settings_alerts_open_link()}
+					</Button>
 					<Button href={resolve('/alerts/settings')} variant="tertiary" size="sm">
 						{m.settings_alerts_link()}
 					</Button>

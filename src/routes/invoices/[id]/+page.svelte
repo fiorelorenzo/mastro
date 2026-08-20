@@ -481,7 +481,7 @@
 			{:else}
 				<SourceDocument document={null} />
 			{/each}
-			{#if data.routing}
+			{#if data.fatturaApplicable}
 				<form
 					method="POST"
 					action="?/generateFattura"
@@ -492,24 +492,38 @@
 						type="submit"
 						variant="tertiary"
 						size="sm"
-						disabled={data.invoicingGaps.length > 0}
+						disabled={data.fatturaGaps.length > 0}
 						loading={generateFattura.busy}
 					>
 						{m.invoice_detail_fattura_generate_button()}
 					</Button>
-					<!-- Named before the click, not after: the fields live on
-						     the client's own screen, so a bare refusal would send
-						     a reviewer hunting. -->
-					{#if data.invoicingGaps.length > 0}
+					<!-- Named before the click, not after (#371): every
+					     precondition `generateFattura` itself checks gets its
+					     own line here, naming which one is missing and linking
+					     to the screen that fixes it, since the fix is always on
+					     another screen. -->
+					{#each data.fatturaGaps as blocker (blocker.kind)}
 						<p class="gaps">
-							{m.invoice_detail_fattura_client_incomplete({
-								fields: data.invoicingGaps.map((field) => clientFieldLabel(field)).join(', ')
-							})}
-							<a href={appHref(`/clients/${data.invoice.contract.client.id}/edit`)}>
-								{m.invoice_detail_fattura_client_fix_link()}
-							</a>
+							{#if blocker.kind === 'clientFields'}
+								{m.invoice_detail_fattura_client_incomplete({
+									fields: blocker.fields.map((field) => clientFieldLabel(field)).join(', ')
+								})}
+								<a href={appHref(`/clients/${data.invoice.contract.client.id}/edit`)}>
+									{m.invoice_detail_fattura_client_fix_link()}
+								</a>
+							{:else if blocker.kind === 'practiceProfile'}
+								{m.invoice_detail_fattura_missing_practice_profile()}
+								<a href={resolve('/settings/practice')}>
+									{m.invoice_detail_fattura_fix_practice_link()}
+								</a>
+							{:else}
+								{m.invoice_detail_fattura_missing_pack()}
+								<a href={resolve('/settings/fiscal')}>
+									{m.invoice_detail_fattura_fix_pack_link()}
+								</a>
+							{/if}
 						</p>
-					{/if}
+					{/each}
 					{#if form?.fatturaError}<p class="error">{form.fatturaError}</p>{/if}
 				</form>
 			{/if}

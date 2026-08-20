@@ -90,6 +90,37 @@
 		toasts.push('neutral', m.day_detail_resolve_dispute_toast());
 	});
 
+	// #370: `reject` (proposed -> rejected) and `revoke` (approved ->
+	// revoked) — the two remaining branches AGENTS.md names alongside
+	// `disputed`/`unbillable`, both previously reachable only by
+	// hand-written SQL. Simpler dialogs than the three above: no reason
+	// field, because there is nothing to add that the source evidence
+	// (the proposal's document, the approval's excerpt) does not already
+	// say, and no dedicated Cancel button text — the Dialog's own × close
+	// (`m.dialog_close_label()`) is the way out, since neither of these
+	// four messages exists as a translated string and #370 forbids
+	// inventing one. Both are terminal, like `unbillable`: the trigger's
+	// allowed-edge list has no edge out of `revoked` or `rejected`.
+	const reject = submitting();
+	let rejectDialogOpen = $state(false);
+	let announcedRejected = false;
+	$effect(() => {
+		if (!form?.rejected || announcedRejected) return;
+		announcedRejected = true;
+		rejectDialogOpen = false;
+		toasts.push('neutral', m.day_detail_reject_toast());
+	});
+
+	const revoke = submitting();
+	let revokeDialogOpen = $state(false);
+	let announcedRevoked = false;
+	$effect(() => {
+		if (!form?.revoked || announcedRevoked) return;
+		announcedRevoked = true;
+		revokeDialogOpen = false;
+		toasts.push('neutral', m.day_detail_revoke_toast());
+	});
+
 	function actorLabel(actor: { kind: string; email?: string; proposalReference?: string }): string {
 		if (actor.kind === 'human') return actor.email ?? '';
 		if (actor.kind === 'agent') {
@@ -172,6 +203,62 @@
 		<dt>{m.day_detail_scope_label()}</dt>
 		<dd>{data.workUnit.scope}</dd>
 	</dl>
+
+	{#if data.workUnit.state === 'proposed'}
+		<div class="lifecycle-actions">
+			<Button
+				type="button"
+				variant="danger"
+				size="sm"
+				onclick={() => {
+					rejectDialogOpen = true;
+				}}
+			>
+				{m.day_detail_reject_action()}
+			</Button>
+		</div>
+		<form method="POST" action="?/reject" onsubmit={reject.onsubmit}>
+			<Dialog
+				bind:open={rejectDialogOpen}
+				title={m.day_detail_reject_confirm_title()}
+				role="alertdialog"
+			>
+				<p>{m.day_detail_reject_confirm_body()}</p>
+				{#snippet actions()}
+					<Button type="submit" variant="danger" loading={reject.busy}>
+						{m.day_detail_reject_action()}
+					</Button>
+				{/snippet}
+			</Dialog>
+		</form>
+	{:else if data.workUnit.state === 'approved'}
+		<div class="lifecycle-actions">
+			<Button
+				type="button"
+				variant="danger"
+				size="sm"
+				onclick={() => {
+					revokeDialogOpen = true;
+				}}
+			>
+				{m.day_detail_revoke_action()}
+			</Button>
+		</div>
+		<form method="POST" action="?/revoke" onsubmit={revoke.onsubmit}>
+			<Dialog
+				bind:open={revokeDialogOpen}
+				title={m.day_detail_revoke_confirm_title()}
+				role="alertdialog"
+			>
+				<p>{m.day_detail_revoke_confirm_body()}</p>
+				{#snippet actions()}
+					<Button type="submit" variant="danger" loading={revoke.busy}>
+						{m.day_detail_revoke_action()}
+					</Button>
+				{/snippet}
+			</Dialog>
+		</form>
+	{/if}
 
 	{#if data.workUnit.state === 'worked_without_approval'}
 		<Banner tone="critical">
@@ -401,6 +488,18 @@
 	}
 	.clause {
 		margin: 0;
+	}
+	.lifecycle-actions {
+		/* #370: bottom margin as well as top. The `proposed` and `approved`
+		   actions are the first ones on this page to sit between the detail
+		   list and the next heading rather than inside a Banner, and without
+		   it the button reads as part of the "Approval" section below it. */
+		margin-top: var(--space-3);
+		margin-bottom: var(--space-6);
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+		flex-wrap: wrap;
 	}
 	.link-form {
 		margin-top: var(--space-4);

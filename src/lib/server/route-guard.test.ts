@@ -13,6 +13,12 @@ const EXPECTED_PUBLIC_ROUTE_IDS = new Set([
 	'/api/alerts/run/[job]',
 	'/api/agent/run',
 	'/api/mail/poll',
+	// #346: the mirror publish tick, bearer-authed on
+	// `DRIVE_MIRROR_CRON_TOKEN` exactly like the three above. On this list
+	// means "the session gate does not apply", not unauthenticated: the
+	// session check runs before any handler, so a cron caller holding a
+	// valid token would otherwise collect a 401 it can do nothing about.
+	'/api/drive/publish',
 	'/offline'
 ]);
 

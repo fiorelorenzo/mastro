@@ -325,6 +325,35 @@ this run just built. A green `/health` alone would pass just as happily
 against yesterday's container, which is the whole reason the second check
 exists.
 
+**If that recreated `web`, the script also recreates `scheduler` (#384).**
+Compose only recreates a container whose own inputs actually changed, which
+is what lets a `runner`-only or `scheduler`-only release leave the rest of
+the stack alone — but it also means a `web`-only release leaves `scheduler`
+untouched, still holding whatever network reference it resolved `web` to at
+its own boot. `docker inspect`'s own container id, compared before and after
+`up`, is what the script uses to tell "web was recreated" from "web was left
+alone": the id changes on recreate and nowhere else, so this fires exactly
+when it needs to and never on a deploy that did not touch `web`. Measured on
+`v0.13.0`: `web` recreated at 11:41, `scheduler`'s next tick at 11:53 threw
+`TypeError: fetch failed`, and nothing reported it, because the alert engine
+was one of the things that had just gone silent. `docker compose restart
+scheduler` fixed it by hand at the time; the deploy does that same restart
+itself now, automatically, only on the deploys that actually need it.
+
+**Then it confirms `scheduler` can actually reach `web` (#384).** `/health`
+above only proves `web` answers on the _host's_ loopback port, a path
+`scheduler` never uses at all — it calls `web` by service name over the
+compose network, which is exactly the path that broke. The script execs into
+the running `scheduler` container and has it POST one of its own cron
+routes (`/api/mail/poll` or `/api/alerts/run/push`, whichever this instance
+has a token configured for — the same shape ci.yml's `image` job already
+uses against the runtime image, bearer token in, 200 out) using the token
+`scheduler` itself was started with, not one chosen by the script. A caught
+fetch error or a non-200 fails the deploy the same way a failed `/health`
+does: previous image back, exit non-zero. An instance with neither cron
+token configured yet has nothing to poll, and that is not treated as a
+failure — see "The scheduler service" below.
+
 `/health` itself (#316) makes two checks, each its own key in the body:
 `database` is a real `select 1` round trip; `storage` writes a small probe
 file under `DOCUMENTS_DIR`, reads it back and deletes it — the same
@@ -395,6 +424,18 @@ the same as `db` and `web`: an unset cron token makes it skip that one job and l
 why (`scripts/scheduler.ts`'s own comment), never crash-loop, so there is no
 "nothing to do" case worth leaving it stopped for. See "Scheduling" above for what
 it calls and on what interval.
+
+**A deploy that recreates `web` also recreates `scheduler` (#384),** and then
+makes `scheduler` prove it can reach `web` before calling the deploy a success —
+see "Releasing" above for both in detail. Before #384, only `web` and `runner`
+were recreated on their own inputs changing; `scheduler` kept running against
+whatever network reference it had resolved at its own boot, which failed
+silently and specifically broke the one thing that would otherwise have
+reported the breakage: the alert engine, which `scheduler` is the only caller
+of. Configuring neither `IMAP_POLL_CRON_TOKEN` nor `ALERT_CRON_TOKEN` yet
+leaves the reachability check with nothing to poll, in which case it logs that
+and passes — the same "unset is a supported configuration, not an error"
+treatment "Scheduling" already gives an unconfigured job.
 
 ### The runner service
 

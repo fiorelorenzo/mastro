@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
-	import { Button } from '$lib/design';
+	import { Button, Checkbox } from '$lib/design';
 	import { submitting } from '$lib/design/submitting.svelte';
 	import DropZone from '$lib/design/DropZone.svelte';
 	import SourceDocument from '$lib/design/SourceDocument.svelte';
@@ -57,10 +57,11 @@
 		<input name="amount" value={values.amount} class="border px-2 py-1" required />
 		{#if errors.amount}<span class="text-xs font-semibold">{errors.amount}</span>{/if}
 	</label>
-	<label class="flex items-center gap-2 text-sm">
-		<input type="checkbox" name="preAuthorised" bind:checked={preAuthorised} />
-		{m.expense_form_pre_authorised_label()}
-	</label>
+	<Checkbox
+		name="preAuthorised"
+		bind:checked={preAuthorised}
+		label={m.expense_form_pre_authorised_label()}
+	/>
 	{#if preAuthorised}
 		<label class="flex flex-col gap-1 text-sm">
 			{m.expense_form_authorisation_reference_label()}
@@ -83,10 +84,7 @@
 			<SourceDocument document={existingReceipt} />
 		{:else}
 			<DropZone name="receipt" />
-			<label class="flex items-center gap-2 text-sm">
-				<input type="checkbox" name="receiptConfidential" />
-				{m.expense_form_receipt_confidential_label()}
-			</label>
+			<Checkbox name="receiptConfidential" label={m.expense_form_receipt_confidential_label()} />
 		{/if}
 	</div>
 

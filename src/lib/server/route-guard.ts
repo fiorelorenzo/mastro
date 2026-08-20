@@ -28,6 +28,10 @@ export const PUBLIC_ROUTE_IDS: ReadonlySet<string> = new Set([
 	// route above — the caller is cron, no session to present, protected
 	// by the route's own bearer-token check instead.
 	'/api/mail/poll',
+	// The Drive mirror's cron-driven publish run (#346): same shape as the
+	// mail poll and agent-run routes above — the caller is cron, no session
+	// to present, protected by the route's own bearer-token check instead.
+	'/api/drive/publish',
 	// The offline fallback the service worker serves for a failed navigation
 	// (#61). Prerendered and stateless — it never reads locals.user — which
 	// is exactly why it is safe to precache and hand to a visitor the

@@ -16,6 +16,7 @@
 	let {
 		checked = $bindable(false),
 		label,
+		labelHidden = false,
 		hint,
 		error,
 		indeterminate = false,
@@ -27,6 +28,17 @@
 		checked?: boolean;
 		/** Visible text beside the box — a checkbox is never label-less. */
 		label: string;
+		/**
+		 * Keeps the label as the accessible name but stops printing it, for
+		 * the one shape where the visible text is redundant: a matrix whose
+		 * column header already says what the box means (#387, the alert
+		 * preferences grid, where printing it repeated "Weekly email" and
+		 * "Push" 26 times). Pass a label that reads on its own even so - a
+		 * screen reader announces the cell, not the column, so
+		 * "Weekly email for Invoice overdue" is the useful name and
+		 * "Weekly email" thirteen times is not.
+		 */
+		labelHidden?: boolean;
 		hint?: string;
 		error?: string;
 		indeterminate?: boolean;
@@ -59,7 +71,7 @@
 			aria-invalid={Boolean(error) || undefined}
 			aria-describedby={ids.describedBy}
 		/>
-		<span>{label}</span>
+		<span class:sr-only={labelHidden}>{label}</span>
 	</label>
 	{#if hint}
 		<p class="hint" id={ids.hintId}>{hint}</p>
@@ -117,5 +129,19 @@
 	.err {
 		color: var(--color-danger);
 		font-weight: var(--weight-medium);
+	}
+	/* Same shape as Field.svelte's and RecordList.svelte's: still in the
+	   accessibility tree and still the label the box is named by, just not
+	   painted. */
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+		border: 0;
 	}
 </style>

@@ -218,6 +218,39 @@ export async function resolveWorkUnitDispute(
 	return transitionWorkUnit(id, { state: 'invoiced' }, actor, reason, tx);
 }
 
+/** #370: the client withdrew an approval before the day was worked, so it
+ * stops being billable. Legal only from `approved` (`'approved' ->
+ * 'revoked'`) — the trigger enforces that. Unlike `markWorkUnitUnbillable`/
+ * `disputeWorkUnit`, the day detail page collects no free-text reason for
+ * this one: the evidence for *why* is the approval itself, which stays
+ * archived and linked (AGENTS.md's "every derived datum keeps its source
+ * document"), not a second explanation typed into a form that would only
+ * duplicate it. `reason` here is the fixed string the route passes, kept
+ * as a parameter rather than hard-coded so a future caller (an import, an
+ * agent) can still say why in its own words. */
+export async function revokeWorkUnit(
+	id: string,
+	actor: TransitionActor,
+	reason: string,
+	tx?: DbExecutor
+) {
+	return transitionWorkUnit(id, { state: 'revoked' }, actor, reason, tx);
+}
+
+/** #370: a proposed day that never took place. Legal only from `proposed`
+ * (`'proposed' -> 'rejected'`) — the trigger enforces that. Same reasoning
+ * as `revokeWorkUnit` above for carrying no free-text reason from the UI:
+ * the evidence is the source document the proposal rested on, already
+ * archived, never a fresh explanation typed here. */
+export async function rejectWorkUnit(
+	id: string,
+	actor: TransitionActor,
+	reason: string,
+	tx?: DbExecutor
+) {
+	return transitionWorkUnit(id, { state: 'rejected' }, actor, reason, tx);
+}
+
 export async function getWorkUnit(id: string, executor: DbExecutor = db) {
 	const [row] = await executor.select().from(workUnit).where(eq(workUnit.id, id));
 	return row;
@@ -321,6 +354,30 @@ export async function listEligibleWorkUnitsForInvoicing(
 			)
 		)
 		.orderBy(asc(workUnit.date));
+}
+
+/**
+ * Whether a contract has any day recorded at all, in any state. The
+ * invoice form (#372) needs this alongside `listEligibleWorkUnitsForInvoicing`
+ * to tell apart a fresh contract with nothing recorded yet ("record a
+ * day"), from one whose days exist but are all ineligible to bill:
+ * `worked_without_approval`, still `proposed`/`approved`, or already
+ * `invoiced`. That distinction owes the reader the excluding condition,
+ * not a pointer at the entry form they already used. Selects only `id`
+ * and stops at the first row, since the form only needs emptiness, not
+ * the rows `listWorkUnitsForContract` fetches for the contract detail
+ * feed.
+ */
+export async function hasAnyWorkUnitForContract(
+	contractId: string,
+	executor: DbExecutor = db
+): Promise<boolean> {
+	const [row] = await executor
+		.select({ id: workUnit.id })
+		.from(workUnit)
+		.where(eq(workUnit.contractId, contractId))
+		.limit(1);
+	return row !== undefined;
 }
 
 /** Every day whose `date` falls in `[startInclusive, endInclusive]`

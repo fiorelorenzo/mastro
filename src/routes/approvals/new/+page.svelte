@@ -15,7 +15,7 @@
 	 */
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate } from '$lib/i18n/format';
-	import { Button, DropZone, Field, Input, Select, Textarea } from '$lib/design';
+	import { Button, Checkbox, DropZone, Field, Input, Select, Textarea } from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
 	import { noticeChannelLabel, type NoticeChannelValue } from '../../clients/notice-channel';
 	import { submitting } from '$lib/design/submitting.svelte';
@@ -93,10 +93,11 @@
 				<Textarea name="proofText" value={values.proofText} rows={4}></Textarea>
 			</Field>
 
-			<label class="confidential">
-				<input type="checkbox" name="confidential" checked={values.confidential} />
-				{m.approval_form_confidential_label()}
-			</label>
+			<Checkbox
+				name="confidential"
+				checked={values.confidential}
+				label={m.approval_form_confidential_label()}
+			/>
 		</fieldset>
 
 		<Button type="submit" variant="primary" loading={save.busy}>{m.approval_form_submit()}</Button>
@@ -139,12 +140,5 @@
 		font-size: var(--text-xs);
 		font-weight: var(--weight-medium);
 		color: var(--color-danger);
-	}
-	.confidential {
-		display: flex;
-		align-items: center;
-		gap: var(--space-2);
-		font-size: var(--text-sm);
-		color: var(--text-primary);
 	}
 </style>

@@ -33,10 +33,12 @@ export interface NavGroup {
  * human half of "agents propose, humans confirm," and before this it had no
  * navigation entry at all, reachable only from a conditional dashboard card
  * (ux-review finding 1, the BLOCKER). `/alerts` drops out of the primary
- * nav in this pass — it stays reachable from Settings, whose own
- * `settings_alerts_link` already points at `/alerts/settings`, and from
- * there `alertsCrumbs()`'s trail — without a second "things needing
- * attention" destination competing with "Da rivedere" for the same job.
+ * nav in this pass — it stays reachable from Settings instead, which
+ * (#369) now links to `/alerts` itself next to
+ * `settings_alerts_link`'s existing `/alerts/settings`, plus
+ * `alertsCrumbs()`'s breadcrumb trail from any page below it — without a
+ * second "things needing attention" destination competing with "Da
+ * rivedere" for the same job.
  */
 export const NAV_GROUPS: readonly NavGroup[] = [
 	{

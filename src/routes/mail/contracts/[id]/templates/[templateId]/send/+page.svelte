@@ -3,7 +3,7 @@
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate, formatMinorUnits } from '$lib/i18n/format';
 	import Page from '$lib/layout/Page.svelte';
-	import { Button } from '$lib/design';
+	import { Button, Field, Select, Textarea } from '$lib/design';
 	import { submitting } from '$lib/design/submitting.svelte';
 	import type { MailSendFormValues } from '$lib/server/repositories/mail-send-form';
 	import type { ActionData, PageData } from './$types';
@@ -69,9 +69,8 @@
 			class="mt-6 flex flex-col gap-4"
 			onsubmit={preview.onsubmit}
 		>
-			<label class="flex flex-col gap-1 text-sm">
-				{m.mail_send_form_invoice_label()}
-				<select name="invoiceId" class="border px-2 py-1" required>
+			<Field label={m.mail_send_form_invoice_label()} error={errors.invoiceId} required>
+				<Select name="invoiceId" value={values.invoiceId} required>
 					{#each data.invoices as invoice (invoice.id)}
 						<option value={invoice.id} selected={values.invoiceId === invoice.id}>
 							{m.mail_send_form_invoice_option({
@@ -81,15 +80,12 @@
 							})}
 						</option>
 					{/each}
-				</select>
-				{#if errors.invoiceId}<span class="text-xs font-semibold">{errors.invoiceId}</span>{/if}
-			</label>
+				</Select>
+			</Field>
 
-			<label class="flex flex-col gap-1 text-sm">
-				{m.mail_send_to_label()}
-				<textarea name="to" rows="2" class="border px-2 py-1">{values.to}</textarea>
-				{#if errors.to}<span class="text-xs font-semibold">{errors.to}</span>{/if}
-			</label>
+			<Field label={m.mail_send_to_label()} error={errors.to}>
+				<Textarea name="to" rows={2} value={values.to}></Textarea>
+			</Field>
 
 			<Button type="submit" variant="secondary" size="md" loading={preview.busy}>
 				{m.mail_send_preview_button()}

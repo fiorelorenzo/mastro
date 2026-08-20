@@ -11,9 +11,11 @@
 	import * as m from '$lib/paraglide/messages';
 	import { importTabs } from '$lib/nav/import-tabs';
 	import { formatDate, formatMinorUnits, formatNumber } from '$lib/i18n/format';
-	import { Banner, Button, DropZone, EmptyState, Field, Tabs } from '$lib/design';
+	import { Banner, Button, Checkbox, DropZone, EmptyState, Field, Select, Tabs } from '$lib/design';
 	import { appHref } from '$lib/nav/href';
 	import Page from '$lib/layout/Page.svelte';
+	import Table from '$lib/design/Table.svelte';
+	import type { TableColumn } from '$lib/design/table';
 	import {
 		scanDirectoryHandle,
 		scanFileList,
@@ -24,11 +26,14 @@
 	import { invoicingCadenceLabel, invoicingCadences } from './invoicing-cadence';
 	import { skipReasonLabel } from './skip-reason';
 	import type {
+		AlreadyPresentFile,
 		ClarificationGroup,
 		ConfirmResponse,
+		ConflictFile,
 		InvoiceLineView,
 		RecognisedFile,
-		ReviewResult
+		ReviewResult,
+		SkippedFile
 	} from './types';
 
 	type Stage = 'idle' | 'scanning' | 'analyzing' | 'review' | 'confirming' | 'done' | 'error';
@@ -217,9 +222,78 @@
 		confirmResult = (await response.json()) as ConfirmResponse;
 		stage = 'done';
 	}
+	/*
+	 * These live here rather than as `{@const}` beside their tables (#387):
+	 * a `{@const}` must be the immediate child of a block or a component,
+	 * and these sit directly inside a `<section>`. `$derived` rather than a
+	 * plain `const` because the labels are message functions, so they have
+	 * to be recomputed when the locale changes.
+	 */
+	const alreadyPresentColumns = $derived([
+		{ key: 'filename', label: m.import_column_file() },
+		{
+			key: 'invoice',
+			label: m.import_column_invoice(),
+			format: (row: AlreadyPresentFile) =>
+				`${row.invoice.number} — ${formatDate(row.invoice.issueDate)}`
+		},
+		{
+			key: 'reason',
+			label: m.import_column_reason(),
+			format: (row: AlreadyPresentFile) =>
+				row.source === 'batch' && row.duplicateOfFilename
+					? m.import_already_present_duplicate_of({
+							duplicateOfFilename: row.duplicateOfFilename
+						})
+					: row.existingInvoiceNumber
+						? m.import_already_present_already_imported({
+								number: row.existingInvoiceNumber
+							})
+						: ''
+		}
+	] satisfies readonly TableColumn<AlreadyPresentFile>[]);
+	const conflictColumns = $derived([
+		{ key: 'filename', label: m.import_column_file() },
+		{
+			key: 'invoice',
+			label: m.import_column_invoice(),
+			format: (row: ConflictFile) => `${row.invoice.number} — ${formatDate(row.invoice.issueDate)}`
+		},
+		{
+			key: 'reason',
+			label: m.import_column_reason(),
+			format: (row: ConflictFile) =>
+				m.import_conflict_existing({
+					number: row.existingInvoiceNumber,
+					issueDate: formatDate(row.existingIssueDate)
+				})
+		}
+	] satisfies readonly TableColumn<ConflictFile>[]);
+	const skippedColumns = $derived([
+		{ key: 'filename', label: m.import_column_file() },
+		{
+			key: 'reason',
+			label: m.import_column_reason(),
+			format: (row: SkippedFile) => skipReasonLabel(row.reason)
+		}
+	] satisfies readonly TableColumn<SkippedFile>[]);
 </script>
 
 <svelte:head><title>{m.import_page_title()}</title></svelte:head>
+
+{#snippet alreadyPresentEmpty()}
+	<EmptyState
+		icon="✓"
+		title={m.import_already_present_empty_title()}
+		body={m.import_already_present_empty()}
+	/>
+{/snippet}
+{#snippet conflictsEmpty()}
+	<EmptyState icon="✓" title={m.import_conflicts_empty_title()} body={m.import_conflicts_empty()} />
+{/snippet}
+{#snippet skippedEmpty()}
+	<EmptyState icon="✓" title={m.import_skipped_empty_title()} body={m.import_skipped_empty()} />
+{/snippet}
 
 <Page title={m.import_heading()} width="wide">
 	<Tabs label={m.import_tabs_label()} {tabs} />
@@ -312,30 +386,28 @@
 											{line.description} — {formatMinorUnits(line.amount, file.invoice.currency)}
 										</p>
 										{#if line.dayMapping}
-											<label class="mt-1 flex items-start gap-2 text-xs">
-												<input type="checkbox" bind:checked={line.accepted} class="mt-0.5" />
-												<span>
-													{m.import_day_mapping_proposal({
-														count: formatNumber(line.dayMapping.dayCount),
-														periodStart: formatDate(line.dayMapping.periodStart),
-														periodEnd: formatDate(line.dayMapping.periodEnd),
-														amount: formatMinorUnits(
-															line.dayMapping.proposedAmount,
+											<Checkbox
+												bind:checked={line.accepted}
+												label={m.import_day_mapping_proposal({
+													count: formatNumber(line.dayMapping.dayCount),
+													periodStart: formatDate(line.dayMapping.periodStart),
+													periodEnd: formatDate(line.dayMapping.periodEnd),
+													amount: formatMinorUnits(
+														line.dayMapping.proposedAmount,
+														file.invoice.currency
+													)
+												})}
+											/>
+											{#if !line.dayMapping.amountMatches}
+												<strong class="block">
+													{m.import_day_mapping_amount_mismatch({
+														lineAmount: formatMinorUnits(
+															line.dayMapping.lineAmount,
 															file.invoice.currency
 														)
 													})}
-													{#if !line.dayMapping.amountMatches}
-														<strong class="block">
-															{m.import_day_mapping_amount_mismatch({
-																lineAmount: formatMinorUnits(
-																	line.dayMapping.lineAmount,
-																	file.invoice.currency
-																)
-															})}
-														</strong>
-													{/if}
-												</span>
-											</label>
+												</strong>
+											{/if}
 										{/if}
 									</div>
 								{/each}
@@ -348,82 +420,25 @@
 			<section>
 				<h2 class="text-lg font-semibold">{m.import_section_already_present_heading()}</h2>
 				<p class="mt-1 text-xs opacity-70">{m.import_already_present_hint()}</p>
-				{#if review.alreadyPresent.length === 0}
-					<EmptyState
-						icon="✓"
-						title={m.import_already_present_empty_title()}
-						body={m.import_already_present_empty()}
-					/>
-				{:else}
-					<table class="mt-2 w-full border-collapse text-sm">
-						<thead>
-							<tr class="border-b text-left">
-								<th class="py-2 pr-4">{m.import_column_file()}</th>
-								<th class="py-2 pr-4">{m.import_column_invoice()}</th>
-								<th class="py-2">{m.import_column_reason()}</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each review.alreadyPresent as row (row.filename + ':' + row.invoiceIndex)}
-								<tr class="border-b">
-									<td class="py-2 pr-4">{row.filename}</td>
-									<td class="py-2 pr-4"
-										>{row.invoice.number} — {formatDate(row.invoice.issueDate)}</td
-									>
-									<td class="py-2">
-										{#if row.source === 'batch' && row.duplicateOfFilename}
-											{m.import_already_present_duplicate_of({
-												duplicateOfFilename: row.duplicateOfFilename
-											})}
-										{:else if row.existingInvoiceNumber}
-											{m.import_already_present_already_imported({
-												number: row.existingInvoiceNumber
-											})}
-										{/if}
-									</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				{/if}
+				<Table
+					columns={alreadyPresentColumns}
+					rows={review.alreadyPresent}
+					caption={m.import_section_already_present_heading()}
+					rowKey={(row) => row.filename + ':' + row.invoiceIndex}
+					empty={alreadyPresentEmpty}
+				/>
 			</section>
 
 			<section>
 				<h2 class="text-lg font-semibold">{m.import_section_conflicts_heading()}</h2>
 				<p class="mt-1 text-xs opacity-70">{m.import_conflicts_hint()}</p>
-				{#if review.conflicts.length === 0}
-					<EmptyState
-						icon="✓"
-						title={m.import_conflicts_empty_title()}
-						body={m.import_conflicts_empty()}
-					/>
-				{:else}
-					<table class="mt-2 w-full border-collapse text-sm">
-						<thead>
-							<tr class="border-b text-left">
-								<th class="py-2 pr-4">{m.import_column_file()}</th>
-								<th class="py-2 pr-4">{m.import_column_invoice()}</th>
-								<th class="py-2">{m.import_column_reason()}</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each review.conflicts as row (row.filename + ':' + row.invoiceIndex)}
-								<tr class="border-b">
-									<td class="py-2 pr-4">{row.filename}</td>
-									<td class="py-2 pr-4"
-										>{row.invoice.number} — {formatDate(row.invoice.issueDate)}</td
-									>
-									<td class="py-2"
-										>{m.import_conflict_existing({
-											number: row.existingInvoiceNumber,
-											issueDate: formatDate(row.existingIssueDate)
-										})}</td
-									>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				{/if}
+				<Table
+					columns={conflictColumns}
+					rows={review.conflicts}
+					caption={m.import_section_conflicts_heading()}
+					rowKey={(row) => row.filename + ':' + row.invoiceIndex}
+					empty={conflictsEmpty}
+				/>
 			</section>
 
 			<section>
@@ -438,10 +453,7 @@
 					<div class="mt-2 flex flex-col gap-4">
 						{#each clarifications as group (group.groupKey)}
 							<div class="flex flex-col gap-3 border p-4 text-sm">
-								<label class="flex items-center gap-2 font-semibold">
-									<input type="checkbox" bind:checked={group.include} />
-									{m.import_clarify_include_label()}
-								</label>
+								<Checkbox bind:checked={group.include} label={m.import_clarify_include_label()} />
 
 								<p class="text-xs opacity-70">
 									{m.import_clarify_files_heading({ count: formatNumber(group.files.length) })}:
@@ -503,14 +515,13 @@
 											class="border px-2 py-1"
 										/>
 									</label>
-									<label class="flex flex-col gap-1">
-										{m.import_clarify_invoicing_cadence_label()}
-										<select bind:value={group.contract.invoicingCadence} class="border px-2 py-1">
+									<Field label={m.import_clarify_invoicing_cadence_label()}>
+										<Select bind:value={group.contract.invoicingCadence}>
 											{#each invoicingCadences as cadence (cadence)}
 												<option value={cadence}>{invoicingCadenceLabel(cadence)}</option>
 											{/each}
-										</select>
-									</label>
+										</Select>
+									</Field>
 									<label class="flex flex-col gap-1">
 										{m.import_clarify_tax_treatment_label()}
 										<input bind:value={group.contract.taxTreatment} class="border px-2 py-1" />
@@ -529,30 +540,13 @@
 
 			<section>
 				<h2 class="text-lg font-semibold">{m.import_section_skipped_heading()}</h2>
-				{#if review.skipped.length === 0}
-					<EmptyState
-						icon="✓"
-						title={m.import_skipped_empty_title()}
-						body={m.import_skipped_empty()}
-					/>
-				{:else}
-					<table class="mt-2 w-full border-collapse text-sm">
-						<thead>
-							<tr class="border-b text-left">
-								<th class="py-2 pr-4">{m.import_column_file()}</th>
-								<th class="py-2">{m.import_column_reason()}</th>
-							</tr>
-						</thead>
-						<tbody>
-							{#each review.skipped as row (row.filename + ':' + row.invoiceIndex)}
-								<tr class="border-b">
-									<td class="py-2 pr-4">{row.filename}</td>
-									<td class="py-2">{skipReasonLabel(row.reason)}</td>
-								</tr>
-							{/each}
-						</tbody>
-					</table>
-				{/if}
+				<Table
+					columns={skippedColumns}
+					rows={review.skipped}
+					caption={m.import_section_skipped_heading()}
+					rowKey={(row) => row.filename + ':' + row.invoiceIndex}
+					empty={skippedEmpty}
+				/>
 			</section>
 
 			<button

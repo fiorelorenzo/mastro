@@ -187,8 +187,21 @@
 		</dl>
 	</Section>
 
-	{#if data.client.contacts.length > 0}
-		<Section title={m.client_form_contacts_legend()}>
+	<!--
+		#385: `client_contact.email` is `not null` at the schema level
+		(`db/schema/client.ts`), so "no contact carrying an email" and "no
+		contact at all" are the same state for this client — there is no
+		partial case to distinguish. Mail attribution and the extraction
+		gate both match a sender against this table (#380), so a client
+		with zero contacts is a client whose inbound mail can never be
+		recognised; this is the one place on the client record a reader
+		already looks for contacts, so it is where the gap is said, with
+		the edit screen that fixes it right there (same shape as the
+		incomplete-identity banner above, and #357/#377's blocked-state
+		badges).
+	-->
+	<Section title={m.client_form_contacts_legend()}>
+		{#if data.client.contacts.length > 0}
 			<ul class="flex flex-col gap-1 text-sm">
 				{#each data.client.contacts as contact (contact.id)}
 					<li>
@@ -198,8 +211,17 @@
 					</li>
 				{/each}
 			</ul>
-		</Section>
-	{/if}
+		{:else}
+			<Banner tone="warning">
+				{m.client_detail_no_contact_email_hint()}
+				{#snippet actions()}
+					<a href={resolve('/clients/[id]/edit', { id: data.client.id })} class="underline"
+						>{m.clients_edit_link()}</a
+					>
+				{/snippet}
+			</Banner>
+		{/if}
+	</Section>
 
 	<Section title={m.contract_section_heading()}>
 		{#snippet actions()}
