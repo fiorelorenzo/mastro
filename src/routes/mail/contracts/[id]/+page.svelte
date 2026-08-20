@@ -4,13 +4,12 @@
 	import { factLine } from '$lib/nav/crumbs';
 	import Page from '$lib/layout/Page.svelte';
 	import Section from '$lib/layout/Section.svelte';
-	import { getLocale, locales, type Locale } from '$lib/paraglide/runtime';
+	import { locales, type Locale } from '$lib/paraglide/runtime';
 	import { formatBytes, formatDateTime } from '$lib/i18n/format';
-	import { Badge, Button, Checkbox, EmptyState, Field, Input, Select } from '$lib/design';
+	import { Button, Checkbox, EmptyState, Field, Select } from '$lib/design';
 	import Table from '$lib/design/Table.svelte';
 	import type { TableColumn } from '$lib/design/table';
 	import { submitting } from '$lib/design/submitting.svelte';
-	import { mailPollBadge, mailPollMeta } from '../../poll-status';
 	import type { ActionData, PageData } from './$types';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -20,7 +19,6 @@
 
 	const autoSend = submitting();
 	const templateLanguage = submitting();
-	const mailFolder = submitting();
 
 	// Each language names itself, never translated (AGENTS.md invariant
 	// 5's spirit applied to a language name — the same helper
@@ -56,26 +54,6 @@
 
 	const templateLanguageError = $derived(
 		form && 'templateLanguageError' in form ? form.templateLanguageError : undefined
-	);
-	const mailFolderError = $derived(
-		form && 'mailFolderError' in form ? form.mailFolderError : undefined
-	);
-
-	const locale = $derived(getLocale());
-	const pollBadge = $derived(
-		mailPollBadge(
-			data.mailPoll.accountConfigured,
-			data.mailPoll.anyFolderMapped,
-			data.mailPoll.health
-		)
-	);
-	const pollMeta = $derived(
-		mailPollMeta(
-			data.mailPoll.accountConfigured,
-			data.mailPoll.anyFolderMapped,
-			data.mailPoll.health,
-			locale
-		)
 	);
 </script>
 
@@ -237,31 +215,6 @@
 					{m.mail_contract_template_language_save()}
 				</Button>
 			</form>
-
-			<form method="POST" action="?/mailFolder" class="card" onsubmit={mailFolder.onsubmit}>
-				<Field
-					label={m.mail_contract_inbound_folder_legend()}
-					hint={m.mail_contract_inbound_folder_hint()}
-					error={mailFolderError}
-				>
-					<Input
-						type="text"
-						name="mailFolder"
-						value={data.contract.mailFolder ?? ''}
-						placeholder={m.mail_contract_inbound_folder_placeholder()}
-					/>
-				</Field>
-				{#if data.contract.mailFolder}
-					<div class="poll-status">
-						<span class="poll-status-label">{m.mail_poll_status_heading()}</span>
-						<Badge variant={pollBadge.variant} label={pollBadge.label} size="sm" />
-						<p>{pollMeta}</p>
-					</div>
-				{/if}
-				<Button type="submit" variant="secondary" size="md" loading={mailFolder.busy}>
-					{m.mail_contract_inbound_folder_save()}
-				</Button>
-			</form>
 		</div>
 	</Section>
 </Page>
@@ -282,23 +235,5 @@
 		box-shadow: var(--shadow-card);
 		padding: var(--space-5);
 		min-width: 0;
-	}
-	.poll-status {
-		display: flex;
-		align-items: center;
-		flex-wrap: wrap;
-		gap: var(--space-2) var(--space-3);
-	}
-	.poll-status-label {
-		font-size: var(--text-xs);
-		font-weight: var(--weight-medium);
-		color: var(--text-secondary);
-		text-transform: uppercase;
-		letter-spacing: 0.02em;
-	}
-	.poll-status p {
-		margin: 0;
-		font-size: var(--text-sm);
-		color: var(--text-secondary);
 	}
 </style>

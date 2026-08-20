@@ -342,8 +342,8 @@ export async function fetchMirrorFailureRows(
  * watched whenever there are credentials, that second condition would report
  * "not configured" for an instance that is polling every few minutes — which
  * is exactly the falsehood #374 fixed downstream, and this is where it came
- * from. A folder mapping is now an addition to ingestion, never its
- * precondition.
+ * from. The folder mapping itself is gone now too (#394): attribution is a
+ * fact read off `client_contact.email`, never a precondition of anything.
  */
 export async function fetchLatestMailboxPollRun(
 	mailAccountConfigured: boolean,

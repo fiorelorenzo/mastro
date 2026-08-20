@@ -6,17 +6,23 @@ import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
-import { storeDocument } from './document';
+import { normaliseAddress } from '../mail/attribute';
+import { parseMessage } from '../mail/headers';
+import { readDocumentBytes, storeDocument } from './document';
 import { createProposal } from './proposal';
 import {
 	findByMailboxAndMessageId,
+	getInboundThreadForDocument,
 	getInboundThreadsForDocuments,
 	listInboundThreadsAwaitingExtraction,
 	listInboundThreadsForContract,
+	listInboundThreadsMissingSenderAddress,
 	listSkippedInboundThreadsForContract,
+	listUnknownSenderAddresses,
 	maxImapUidForMailbox,
 	recordInboundThread,
 	recordSkippedInboundThread,
+	setInboundThreadSenderAddress,
 	type InboundThreadInput,
 	type InboundThreadSkipInput
 } from './inbound-thread';
@@ -106,6 +112,7 @@ function threadInput(
 		imapUid: 1,
 		messageId: `<${crypto.randomUUID()}@example.com>`,
 		subject: 'Re: approval for next week',
+		senderAddress: null,
 		receivedAt: new Date('2026-08-01T09:00:00.000Z'),
 		...overrides
 	};
@@ -122,6 +129,7 @@ function skippedInput(
 		imapUid: 1,
 		messageId: `<${crypto.randomUUID()}@example.com>`,
 		subject: 'A message too large to archive',
+		senderAddress: null,
 		receivedAt: new Date('2026-08-01T09:00:00.000Z'),
 		skipReason: 'oversized',
 		messageSize: 42_000_000,
@@ -486,4 +494,201 @@ test('a thread archived with an unknown sender is never queued for extraction', 
 	expect(result.unknown?.documentId).not.toBeNull();
 	expect(result.unknown?.archived).toBe(true);
 	expect(result.unknown?.contractId).toBeNull();
+});
+
+// #394: the backfill (`scripts/backfill-sender-address.ts`) for every
+// `inbound_thread` row written before `sender_address` existed. These
+// cover the two repository functions it is built from; the script itself
+// is a thin `node --env-file-if-exists` entrypoint in the same shape as
+// `scripts/seed-demo.ts`, run directly rather than imported by a test.
+
+test('listInboundThreadsMissingSenderAddress returns a null-sender row with its document hash, and excludes one that already has an address', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+
+		const missingDocument = await archiveMessage(tx, contractRow.id);
+		const missing = await recordInboundThread(
+			threadInput(contractRow.id, missingDocument.id, { imapUid: 1, messageId: null }),
+			tx
+		);
+
+		const knownDocument = await archiveMessage(tx, contractRow.id);
+		const known = await recordInboundThread(
+			threadInput(contractRow.id, knownDocument.id, {
+				imapUid: 2,
+				messageId: null,
+				senderAddress: 'known@example.com'
+			}),
+			tx
+		);
+
+		const rows = await listInboundThreadsMissingSenderAddress(tx);
+		const byId = new Map(rows.map((row) => [row.id, row]));
+
+		expect(byId.get(missing!.id)).toEqual({
+			id: missing!.id,
+			documentId: missingDocument.id,
+			documentHash: missingDocument.hash
+		});
+		expect(byId.has(known!.id)).toBe(false);
+	});
+});
+
+test('a skipped message has no document to read, and the query reports a null hash rather than omitting it', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const skipped = await recordSkippedInboundThread(
+			skippedInput(contractRow.id, { imapUid: 9, messageId: null }),
+			tx
+		);
+
+		const rows = await listInboundThreadsMissingSenderAddress(tx);
+		expect(rows.find((row) => row.id === skipped!.id)).toEqual({
+			id: skipped!.id,
+			documentId: null,
+			documentHash: null
+		});
+	});
+});
+
+test('setInboundThreadSenderAddress writes the address, and the row leaves the missing set', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await archiveMessage(tx, contractRow.id);
+		const thread = await recordInboundThread(
+			threadInput(contractRow.id, documentRow.id, { imapUid: 3, messageId: null }),
+			tx
+		);
+
+		await setInboundThreadSenderAddress(thread!.id, 'leo@visumlabs.example', tx);
+
+		const refreshed = await getInboundThreadForDocument(documentRow.id, tx);
+		expect(refreshed?.senderAddress).toBe('leo@visumlabs.example');
+
+		const stillMissing = await listInboundThreadsMissingSenderAddress(tx);
+		expect(stillMissing.map((row) => row.id)).not.toContain(thread!.id);
+	});
+});
+
+// The script reads real bytes off disk and has to cope with a `From`
+// header folded across a continuation line — a long display name genuinely
+// does this. `parseMessage` already unfolds it (`mail/headers.test.ts`);
+// this proves the whole chain the script actually runs — archived bytes,
+// through `parseMessage`, through `normaliseAddress`, into the row — comes
+// out the same address a bare envelope would have given it.
+test('the backfill chain recovers a folded From header from an archived document', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const raw = Buffer.from(
+			'From: Leonardo Bianchi\r\n' +
+				' <leo@visumlabs.example>\r\n' +
+				'Subject: giornate agosto\r\n' +
+				'\r\n' +
+				'corpo del messaggio\r\n'
+		);
+		const documentRow = await storeDocument(
+			{
+				bytes: raw,
+				mime: 'message/rfc822',
+				originalName: 'thread.eml',
+				provenance: 'mail',
+				contractId: contractRow.id,
+				confidential: true,
+				ownerType: 'contract',
+				ownerId: contractRow.id
+			},
+			tx
+		);
+		const thread = await recordInboundThread(
+			threadInput(contractRow.id, documentRow.id, { imapUid: 5, messageId: null }),
+			tx
+		);
+
+		const [candidate] = (await listInboundThreadsMissingSenderAddress(tx)).filter(
+			(row) => row.id === thread!.id
+		);
+		expect(candidate.documentHash).toBe(documentRow.hash);
+
+		const bytesBackOffDisk = await readDocumentBytes({ hash: candidate.documentHash! });
+		const { headers } = parseMessage(bytesBackOffDisk);
+		const address = normaliseAddress(headers.get('from') ?? null);
+		expect(address).toBe('leo@visumlabs.example');
+
+		await setInboundThreadSenderAddress(thread!.id, address!, tx);
+		const refreshed = await getInboundThreadForDocument(documentRow.id, tx);
+		expect(refreshed?.senderAddress).toBe('leo@visumlabs.example');
+	});
+});
+
+// #394: the panel `/mail` shows a human every sender the poll refused
+// because it matched no contact — the diagnostic that would have surfaced
+// `leo@visumlabs.com` sitting unread next to a contact recorded as
+// `leonardo@visumlabs.com`.
+test('listUnknownSenderAddresses groups refused senders by address, most recent message first, with the latest subject per group', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const leo = `leo-${crypto.randomUUID()}@visumlabs.example`;
+		const known = `known-${crypto.randomUUID()}@example.com`;
+
+		async function unknownSenderRow(overrides: Partial<InboundThreadInput>) {
+			const document = await archiveMessage(tx, contractRow.id);
+			return recordInboundThread(
+				{
+					...threadInput(contractRow.id, document.id, { messageId: null, ...overrides }),
+					contractId: null,
+					skipReason: 'sender_unknown' as const
+				},
+				tx
+			);
+		}
+
+		await unknownSenderRow({
+			imapUid: 1,
+			senderAddress: leo,
+			subject: 'first message',
+			receivedAt: new Date('2026-08-01T09:00:00.000Z')
+		});
+		await unknownSenderRow({
+			imapUid: 2,
+			senderAddress: leo,
+			subject: 'second message',
+			receivedAt: new Date('2026-08-05T09:00:00.000Z')
+		});
+		await unknownSenderRow({
+			imapUid: 3,
+			senderAddress: null,
+			subject: 'no sender header',
+			receivedAt: new Date('2026-08-03T09:00:00.000Z')
+		});
+
+		// A known-sender hand-off (default skipReason null) must not appear:
+		// this panel is only for what the poll refused to attribute.
+		const knownDocument = await archiveMessage(tx, contractRow.id);
+		await recordInboundThread(
+			threadInput(contractRow.id, knownDocument.id, {
+				imapUid: 4,
+				messageId: null,
+				senderAddress: known
+			}),
+			tx
+		);
+
+		const rows = await listUnknownSenderAddresses(1000, tx);
+
+		const leoRow = rows.find((row) => row.senderAddress === leo);
+		expect(leoRow?.messageCount).toBe(2);
+		expect(leoRow?.lastSubject).toBe('second message');
+		expect(leoRow?.lastReceivedAt.toISOString()).toBe('2026-08-05T09:00:00.000Z');
+
+		const unreadableRow = rows.find((row) => row.senderAddress === null);
+		expect(unreadableRow?.messageCount).toBeGreaterThanOrEqual(1);
+
+		expect(rows.some((row) => row.senderAddress === known)).toBe(false);
+
+		// leo's most recent message (Aug 5) sorts before the null group's
+		// most recent one (Aug 3).
+		const leoIndex = rows.findIndex((row) => row.senderAddress === leo);
+		const unreadableIndex = rows.findIndex((row) => row.senderAddress === null);
+		expect(leoIndex).toBeLessThan(unreadableIndex);
+	});
 });

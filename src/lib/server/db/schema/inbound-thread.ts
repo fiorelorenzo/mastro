@@ -109,6 +109,22 @@ export const inboundThread = pgTable(
 		imapUid: integer('imap_uid').notNull(),
 		messageId: text('message_id'),
 		subject: text('subject'),
+		/**
+		 * The `From` address, lower-cased and trimmed, as it arrived (#394).
+		 *
+		 * The poll already read this to decide attribution and then threw it
+		 * away, keeping only the yes/no. That cost two things the product
+		 * needs. A contact added later cannot unblock the messages already
+		 * archived without it (#388), and nobody could see *which* addresses
+		 * were being refused - which is how a contact recorded as
+		 * `leonardo@` sat next to 407 archived messages from `leo@` with
+		 * nothing anywhere saying so.
+		 *
+		 * Null on a row archived before this column existed and on one whose
+		 * envelope carried no sender at all, so a reader must handle absence
+		 * rather than assume every row has one.
+		 */
+		senderAddress: text('sender_address'),
 		receivedAt: timestamp('received_at', { withTimezone: true }).notNull(),
 		archived: boolean('archived').notNull().default(true),
 		skipReason: text('skip_reason').$type<InboundThreadSkipReason>(),

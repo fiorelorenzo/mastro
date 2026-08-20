@@ -8,6 +8,7 @@ import { db } from '$lib/server/db';
 import { inboundThread } from '$lib/server/db/schema';
 import { mailboxPollHealth } from '$lib/server/alerts/run-health';
 import { listContractsWithClient } from '$lib/server/repositories/contract';
+import { listUnknownSenderAddresses } from '$lib/server/repositories/inbound-thread';
 import { imapConfigFromEnv, imapConfiguredInEnv } from '$lib/server/mail/config';
 import { pollMailboxesOnce } from '$lib/server/mail/poll';
 import { MailPollAlreadyInFlightError, runExclusiveMailPoll } from '$lib/server/mail/poll-lock';
@@ -30,12 +31,13 @@ async function countArchivedUnknownSenderThreads(): Promise<number> {
 }
 
 export const load: PageServerLoad = async () => {
-	const [contracts, mailPoll, unknownSenderArchivedCount] = await Promise.all([
+	const [contracts, mailPoll, unknownSenderArchivedCount, unknownSenders] = await Promise.all([
 		listContractsWithClient(),
 		mailboxPollHealth(db),
-		countArchivedUnknownSenderThreads()
+		countArchivedUnknownSenderThreads(),
+		listUnknownSenderAddresses()
 	]);
-	return { contracts, mailPoll, unknownSenderArchivedCount };
+	return { contracts, mailPoll, unknownSenderArchivedCount, unknownSenders };
 };
 
 export const actions: Actions = {
@@ -74,18 +76,20 @@ export const actions: Actions = {
 			throw err;
 		}
 
-		// Three counts, not two (#380). Watching a whole mailbox means most of
-		// what arrives is archived and deliberately not extracted, so folding
-		// that into "skipped" - which means the bytes were refused - would
-		// read as failure on a perfectly normal inbox.
-		const totals = result.folders.reduce(
-			(acc, folder) => ({
-				archived: acc.archived + folder.handedOff,
-				skipped: acc.skipped + folder.skipped,
-				unknownSender: acc.unknownSender + folder.archivedUnknownSender
-			}),
-			{ archived: 0, skipped: 0, unknownSender: 0 }
-		);
+		// Four counts, not the reduce over several folders this used to be
+		// (#380 for the three, #394 for why there is only ever one mailbox
+		// left to read from: per-contract folders are gone, so
+		// `pollMailboxesOnce` returns one `MailboxPollResult`, not an array).
+		// `recovered` (#388) is messages an earlier pass archived unread that
+		// this pass could finally attribute, because a contact was added in
+		// between - reported so the toast can say so instead of leaving the
+		// reader to notice the unknown-senders panel shrank on its own.
+		const {
+			handedOff: archived,
+			skipped,
+			archivedUnknownSender: unknownSender,
+			recovered
+		} = result.mailbox;
 
 		if (result.status === 'failure') {
 			// Read back through `mailboxPollHealth` — the exact row
@@ -96,9 +100,28 @@ export const actions: Actions = {
 			// file's own load function keeps that same rule for the badge.
 			const { health } = await mailboxPollHealth(db);
 			const detail = health?.kind === 'failure' ? health.detail : null;
-			return { pollNow: { ok: true as const, status: 'failure' as const, ...totals, detail } };
+			return {
+				pollNow: {
+					ok: true as const,
+					status: 'failure' as const,
+					archived,
+					skipped,
+					unknownSender,
+					recovered,
+					detail
+				}
+			};
 		}
 
-		return { pollNow: { ok: true as const, status: 'success' as const, ...totals } };
+		return {
+			pollNow: {
+				ok: true as const,
+				status: 'success' as const,
+				archived,
+				skipped,
+				unknownSender,
+				recovered
+			}
+		};
 	}
 };

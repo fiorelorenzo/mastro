@@ -432,9 +432,8 @@ test('fetchMirrorFailureRows excludes an already-mirrored document and attaches 
 
 // ── fetchLatestMailboxPollRun ────────────────────────────────────────────
 
-test('fetchLatestMailboxPollRun reports not configured when the mail account is not set up, even with a contract mapped', async () => {
+test('fetchLatestMailboxPollRun reports not configured when the mail account is not set up, even if a run already exists', async () => {
 	await inRolledBackTransaction(async (tx) => {
-		await insertContract(tx, { mailFolder: 'Acme Corp' });
 		await tx.insert(mailboxPollRun).values({ status: 'success', detail: null });
 
 		expect(await fetchLatestMailboxPollRun(false, tx)).toEqual({
@@ -442,21 +441,6 @@ test('fetchLatestMailboxPollRun reports not configured when the mail account is 
 			latestRun: null
 		});
 	});
-});
-
-// #380: an account is the whole gate. A contract folder used to be required
-// too, because polling meant polling folders; the shared mailbox is watched
-// whenever credentials exist, so reporting "not configured" for an instance
-// with no folder mapped would describe an instance that is in fact polling.
-test('fetchLatestMailboxPollRun reports configured on an account alone, with no folder mapped anywhere', async () => {
-	const result = await inRolledBackTransaction(async (tx) => {
-		await insertContract(tx); // mailFolder left null
-		await tx.delete(mailboxPollRun);
-		return fetchLatestMailboxPollRun(true, tx);
-	});
-
-	expect(result.pollingConfigured).toBe(true);
-	expect(result.latestRun).toBeNull();
 });
 
 test('fetchLatestMailboxPollRun still reports not configured without an account', async () => {
@@ -467,8 +451,6 @@ test('fetchLatestMailboxPollRun still reports not configured without an account'
 
 test('fetchLatestMailboxPollRun returns the most recent row once configured, null when none exist yet', async () => {
 	await inRolledBackTransaction(async (tx) => {
-		await insertContract(tx, { mailFolder: 'Acme Corp' });
-
 		// This query reads the whole table, so "no rows yet" is only a fact
 		// this test can assert if it makes it one. Deleting inside the
 		// transaction is safe and rolls back with everything else, and the

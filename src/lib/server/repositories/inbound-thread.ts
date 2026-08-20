@@ -1,6 +1,11 @@
-import { and, desc, eq, inArray, isNull, max } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
-import { inboundThread, proposal, type InboundThreadSkipReason } from '$lib/server/db/schema';
+import {
+	document,
+	inboundThread,
+	proposal,
+	type InboundThreadSkipReason
+} from '$lib/server/db/schema';
 
 export type InboundThreadRow = typeof inboundThread.$inferSelect;
 export type InboundThreadInput = {
@@ -12,6 +17,13 @@ export type InboundThreadInput = {
 	imapUid: number;
 	messageId: string | null;
 	subject: string | null;
+	/**
+	 * The `From` address, normalised, or null when the envelope carried none
+	 * (#394). Recorded whether or not it matched anything: an address nobody
+	 * knows is exactly the one a human needs to see, and it is what makes a
+	 * contact added later able to unblock this row (#388).
+	 */
+	senderAddress: string | null;
 	receivedAt: Date;
 	/**
 	 * `'sender_unknown'` for a message archived but deliberately not queued
@@ -27,7 +39,7 @@ export type InboundThreadInput = {
  * this row together is the entire hand-off, so `mail/poll.ts` always
  * calls this inside the same transaction as `storeDocument`. `onConflict
  * DoNothing` is the last-resort safety net behind the pre-insert checks
- * `pollContractFolder` already does (`findByContractAndMessageId`, the
+ * `poll.ts`'s mailbox pass already does (`findByMailboxAndMessageId`, the
  * UID high-water mark) — either unique index in the accompanying custom
  * migration firing here means a concurrent or repeated pass raced this
  * one, not a bug in the caller's own bookkeeping.
@@ -55,6 +67,10 @@ export type InboundThreadSkipInput = {
 	imapUid: number;
 	messageId: string | null;
 	subject: string | null;
+	/** As `InboundThreadInput.senderAddress` (#394): recorded even here, so
+	 * an oversized message from an unknown address is visible alongside the
+	 * rest rather than being the one shape nobody can account for. */
+	senderAddress: string | null;
 	receivedAt: Date;
 	/** Only `'oversized'` reaches here: it is the reason the bytes are absent. */
 	skipReason: Extract<InboundThreadSkipReason, 'oversized'>;
@@ -65,8 +81,8 @@ export type InboundThreadSkipInput = {
  * invariant 4 means the arrival is still recorded even though the bytes
  * are not, so this writes the same row shape minus `documentId`, which
  * stays null. Same `onConflictDoNothing` safety net, same reasoning —
- * `pollContractFolder` still checks the UID high-water mark and
- * `findByContractAndMessageId` first; either unique index firing here
+ * `poll.ts` still checks the UID high-water mark and
+ * `findByMailboxAndMessageId` first; either unique index firing here
  * means a concurrent or repeated pass raced this one, not a bug in the
  * caller's own bookkeeping. */
 export async function recordSkippedInboundThread(
@@ -238,5 +254,108 @@ export async function listSkippedInboundThreadsForContract(
 		.from(inboundThread)
 		.where(and(eq(inboundThread.contractId, contractId), eq(inboundThread.archived, false)))
 		.orderBy(desc(inboundThread.receivedAt))
+		.limit(limit);
+}
+
+/**
+ * A row written before `sender_address` existed (#394): 407 of them on the
+ * live instance, 405 from mail. `scripts/backfill-sender-address.ts` reads
+ * each one's archived `From` header off disk and writes it here — see that
+ * script's own header for why this cannot come from IMAP again.
+ *
+ * Left-joined to `document` rather than inner-joined: a row skipped as
+ * `oversized` (#306) has no `documentId` at all, and `documentHash` comes
+ * back null for it the same way it does for a row whose `documentId` points
+ * at a document row that, for whatever reason, no longer resolves. Either
+ * way there is nothing on disk to read, which is a fact the backfill script
+ * counts rather than something this query decides.
+ */
+export type InboundThreadMissingSenderAddress = {
+	id: string;
+	documentId: string | null;
+	documentHash: string | null;
+};
+
+export async function listInboundThreadsMissingSenderAddress(
+	executor: DbExecutor = db
+): Promise<InboundThreadMissingSenderAddress[]> {
+	return executor
+		.select({
+			id: inboundThread.id,
+			documentId: inboundThread.documentId,
+			documentHash: document.hash
+		})
+		.from(inboundThread)
+		.leftJoin(document, eq(document.id, inboundThread.documentId))
+		.where(isNull(inboundThread.senderAddress));
+}
+
+/** Writes the address `scripts/backfill-sender-address.ts` recovered for
+ * one row. Never called with null — a row the script could not recover an
+ * address for is simply left alone, still selected by
+ * `listInboundThreadsMissingSenderAddress` on the next run, which is what
+ * makes the script idempotent without this function needing to know why a
+ * previous attempt failed. */
+export async function setInboundThreadSenderAddress(
+	id: string,
+	senderAddress: string,
+	executor: DbExecutor = db
+) {
+	await executor.update(inboundThread).set({ senderAddress }).where(eq(inboundThread.id, id));
+}
+
+/**
+ * The panel `/mail` exists for now (#394): every distinct `sender_address`
+ * that wrote to the watched mailbox and matched no `client_contact`, so a
+ * human can see what the product used to hide entirely. This is what would
+ * have shown `leo@visumlabs.com` next to a contact recorded as
+ * `leonardo@visumlabs.com` on the live instance, instead of 407 archived
+ * messages nothing pointed at.
+ *
+ * Grouped by `senderAddress` rather than listed per message: an operator
+ * needs "which addresses are being refused", not a scrollable duplicate of
+ * every newsletter drop from the same list-unsubscribe sender. `null`
+ * addresses (a row archived before that column existed, #394's own
+ * migration) group into one row rather than one per message, for the same
+ * reason - the UI names that row "unreadable" instead of pretending every
+ * one is a different unknown sender.
+ *
+ * `lastSubject` is the subject of the *most recent* message for that
+ * sender, not an aggregate - `array_agg(... order by received_at desc)` and
+ * take the first element is the plain way to get a row-specific column out
+ * of a `GROUP BY` in Postgres without a second query or a window function
+ * spread across the whole file. Bounded the same way
+ * `listSkippedInboundThreadsForContract` is: an instance can accumulate
+ * thousands of refused newsletters, and this is a diagnostic panel, not an
+ * unbounded audit log.
+ */
+export const DEFAULT_UNKNOWN_SENDER_LIMIT = 50;
+
+export type UnknownSenderRow = {
+	senderAddress: string | null;
+	messageCount: number;
+	lastReceivedAt: Date;
+	lastSubject: string | null;
+};
+
+export async function listUnknownSenderAddresses(
+	limit = DEFAULT_UNKNOWN_SENDER_LIMIT,
+	executor: DbExecutor = db
+): Promise<UnknownSenderRow[]> {
+	return executor
+		.select({
+			senderAddress: inboundThread.senderAddress,
+			messageCount: sql<number>`count(*)`.mapWith(Number),
+			lastReceivedAt: sql<Date>`max(${inboundThread.receivedAt})`.mapWith(
+				(value: string) => new Date(value)
+			),
+			lastSubject: sql<
+				string | null
+			>`(array_agg(${inboundThread.subject} order by ${inboundThread.receivedAt} desc))[1]`
+		})
+		.from(inboundThread)
+		.where(and(eq(inboundThread.archived, true), eq(inboundThread.skipReason, 'sender_unknown')))
+		.groupBy(inboundThread.senderAddress)
+		.orderBy(sql`max(${inboundThread.receivedAt}) desc`)
 		.limit(limit);
 }

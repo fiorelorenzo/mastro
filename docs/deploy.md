@@ -268,16 +268,23 @@ within seconds of startup:
 
 ```
 scheduler: starting, base url http://web:3000, jobs: mail poll every 1m, agent run every 1m, alert push every 1m, alert digest every 1m
-scheduler: mail poll ok: {"status":"skipped","reason":"no folders configured","folders":[]}
+scheduler: mail poll ok: {"status":"failure","mailbox":{"mailbox":"INBOX","handedOff":0,"skipped":0,"archivedUnknownSender":0,"recovered":0,"error":"getaddrinfo ENOTFOUND imap.rehearsal.invalid"}}
 scheduler: agent run ok: {"drained":{"applied":0,"skipped":0,"failed":[],"rejectedDays":[]},"queued":{"enqueued":0,"alreadyProposed":0}}
 scheduler: alert push ok: {"attempted":1,"delivered":0,"prunedSubscriptions":0}
 scheduler: alert digest responded 500: {"message":"Internal Error"}
 ```
 
-Mail polling skips cleanly (no contract has a folder mapped on a fresh
-database — correct, not a bug). The digest 500 is `getaddrinfo ENOTFOUND
-smtp.rehearsal.invalid`, the deliberately-fake SMTP host this rehearsal used —
-expected, and exactly what a self-hoster with real credentials would not see.
+Mail polling fails the same way the digest does, and for the same reason:
+`imap.rehearsal.invalid` is the deliberately-fake IMAP host this rehearsal
+used, so the connection attempt itself is what fails (`status: "failure"`,
+`mailbox.error` carrying the DNS lookup error). There is no per-contract
+skip to report any more, because #394 removed that question along with
+`contract.mail_folder` itself: watching the whole mailbox needs only
+credentials, and there is no second, per-contract target left to be unset.
+The digest 500 is the matching `getaddrinfo ENOTFOUND
+smtp.rehearsal.invalid`, the same deliberately-fake host pattern for SMTP —
+both expected, and exactly what a self-hoster with real credentials would
+not see.
 `select * from agent_run` afterward showed one `success` row with detail
 `drained 0 applied, 0 skipped; queued 0, 0 already proposed`, confirming the
 run-record path this section documents actually writes.

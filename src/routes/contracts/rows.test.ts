@@ -9,7 +9,6 @@ function contract(overrides: Partial<ContractSource> & { id: string }): Contract
 		endsOn: null,
 		currency: 'EUR',
 		requiresPriorApproval: true,
-		mailFolder: null,
 		client: { id: 'client-1', legalName: 'Acme S.r.l.' },
 		...overrides
 	};
@@ -106,20 +105,17 @@ test('a numeric amount arrives as a string from Postgres and is handed on as a n
 	expect(rows[0].rateInForce).toEqual({ amount: 1234.56, unit: 'day' });
 });
 
-test('the facts that block work are carried through per row, not defaulted', () => {
+test('requiresPriorApproval is carried through per row, not defaulted', () => {
 	const rows = contractRows(
 		[
-			contract({ id: 'c1', requiresPriorApproval: true, mailFolder: 'Clients/Acme' }),
-			contract({ id: 'c2', requiresPriorApproval: false, mailFolder: null })
+			contract({ id: 'c1', requiresPriorApproval: true }),
+			contract({ id: 'c2', requiresPriorApproval: false })
 		],
 		[],
 		'2026-06-01'
 	);
 
-	expect(rows.map((row) => [row.requiresPriorApproval, row.mailFolder])).toEqual([
-		[true, 'Clients/Acme'],
-		[false, null]
-	]);
+	expect(rows.map((row) => row.requiresPriorApproval)).toEqual([true, false]);
 });
 
 test('an instance with no contracts produces no rows rather than throwing', () => {

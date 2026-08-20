@@ -61,12 +61,14 @@ export const load: PageServerLoad = async () => {
 			? { legalName: practiceProfile.legalName, taxId: practiceProfile.taxId }
 			: null,
 		backup: classifyRun(latestBackup, detectBackupFailure(latestBackup, now)),
-		// The three facts kept apart, exactly as `/mail` receives them, so
-		// the row can say "configured, nothing mapped" instead of collapsing
-		// that into "not configured".
+		// Two facts kept apart, exactly as `/mail` receives them: whether the
+		// account is configured at all, and how its last pass went. There
+		// used to be a third, whether any contract had a folder mapped, so
+		// the row could say "configured, nothing mapped"; that state cannot
+		// exist since #394 removed folders, and a row cannot report a
+		// condition nothing can produce.
 		mail: {
 			accountConfigured: mailboxPoll.accountConfigured,
-			anyFolderMapped: mailboxPoll.anyFolderMapped,
 			health: mailboxPoll.health
 		},
 		runner: {

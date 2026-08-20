@@ -625,12 +625,13 @@ export interface MailboxPollRunRow {
 
 /** The same two-part check as `detectBackupFailure` (#84 follows that
  * table's own instruction to reuse the pattern), gated first on
- * `pollingConfigured` — true only when the mail account is configured
- * *and* at least one contract has a folder mapped
- * (`repository.ts`'s `fetchLatestMailboxPollRun`) — the same "not
+ * `pollingConfigured` - true only when the mail account is configured
+ * (`repository.ts`'s `fetchLatestMailboxPollRun`) - the same "not
  * configured is never a failure to alert on" gate `detectMirrorFailure`
  * gets from `mirrorConfigured`, so an instance that has not opted into
- * mail ingestion yet never sees a spurious "never run" alert. */
+ * mail ingestion yet never sees a spurious "never run" alert. Attribution
+ * of an inbound message to a contract is a separate concern (#394,
+ * `sender_address`), not a precondition of the poller running at all. */
 export function detectMailboxPollFailure(
 	pollingConfigured: boolean,
 	latestRun: MailboxPollRunRow | null,

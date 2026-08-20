@@ -16,8 +16,7 @@
 
 	// Columns chosen for what a reader needs to decide whether to open a row,
 	// not for what the table happens to have: who it is with, whether it is
-	// live, what it can charge today, and the two facts that silently block
-	// work (no rate in force, no inbound folder).
+	// live, what it can charge today, and whether it needs prior approval.
 	const columns: readonly TableColumn<Row>[] = [
 		{ key: 'title', label: m.contracts_column_contract() },
 		{
@@ -33,8 +32,7 @@
 				`${formatDate(row.startsOn)} – ${row.endsOn ? formatDate(row.endsOn) : m.rate_card_valid_to_open()}`
 		},
 		{ key: 'rate', label: m.contracts_column_rate(), align: 'end', cell: rateCell },
-		{ key: 'approval', label: m.contracts_column_approval(), cell: approvalCell },
-		{ key: 'folder', label: m.mail_index_column_folder(), cell: folderCell }
+		{ key: 'approval', label: m.contracts_column_approval(), cell: approvalCell }
 	];
 </script>
 
@@ -86,14 +84,6 @@
 	{/if}
 {/snippet}
 
-{#snippet folderCell(row: Row)}
-	{#if row.mailFolder}
-		<code class="folder">{row.mailFolder}</code>
-	{:else}
-		<Badge variant="warning" label={m.mail_index_folder_unset_badge()} size="sm" />
-	{/if}
-{/snippet}
-
 {#snippet empty()}
 	<!--
 		A contract is created under the client it belongs to, so the way
@@ -124,10 +114,6 @@
 </Page>
 
 <style>
-	.folder {
-		font-family: var(--font-mono);
-		font-size: var(--text-sm);
-	}
 	.muted {
 		color: var(--text-secondary);
 	}

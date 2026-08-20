@@ -18,7 +18,6 @@ export type ContractRow = {
 	endsOn: string | null;
 	currency: string;
 	requiresPriorApproval: boolean;
-	mailFolder: string | null;
 	rateInForce: { amount: number; unit: string } | null;
 };
 
@@ -32,7 +31,6 @@ export interface ContractSource {
 	readonly endsOn: string | null;
 	readonly currency: string;
 	readonly requiresPriorApproval: boolean;
-	readonly mailFolder: string | null;
 	readonly client: { readonly id: string; readonly legalName: string };
 }
 
@@ -84,7 +82,6 @@ export function contractRows(
 			endsOn: row.endsOn,
 			currency: row.currency,
 			requiresPriorApproval: row.requiresPriorApproval,
-			mailFolder: row.mailFolder,
 			// `numeric` comes back from Postgres as a string, and the page
 			// formats it through `Intl`, which would render "NaN" for one that
 			// slipped through unconverted.

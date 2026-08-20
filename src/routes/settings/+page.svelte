@@ -82,12 +82,8 @@
 	const backupBadge = $derived(healthBadge(data.backup.kind));
 	// The mail row's badge and its sentence, from the same two functions
 	// `/mail` renders (#374) — never a local reading of the payload.
-	const mailPoll = $derived(
-		mailPollBadge(data.mail.accountConfigured, data.mail.anyFolderMapped, data.mail.health)
-	);
-	const mailMeta = $derived(
-		mailPollMeta(data.mail.accountConfigured, data.mail.anyFolderMapped, data.mail.health, locale)
-	);
+	const mailPoll = $derived(mailPollBadge(data.mail.accountConfigured, data.mail.health));
+	const mailMeta = $derived(mailPollMeta(data.mail.accountConfigured, data.mail.health, locale));
 	const runnerBadge = $derived(
 		data.runner.configured ? healthBadge(data.runner.health!.kind) : configuredBadge(false)
 	);

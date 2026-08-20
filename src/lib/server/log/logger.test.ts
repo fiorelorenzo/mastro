@@ -16,7 +16,7 @@ test('carries a context object, so a line stays joinable to the run it belongs t
 });
 
 test('omits an empty context entirely rather than writing `{}`', () => {
-	expect(buildLogRecord('warn', 'no folders configured', {}).context).toBeUndefined();
+	expect(buildLogRecord('warn', 'mailbox unreachable', {}).context).toBeUndefined();
 });
 
 test('redacts a DATABASE_URL-shaped context value wherever it arrives', () => {
@@ -88,10 +88,10 @@ test('never redacts a UUID — the run/job id every call site is asked to carry'
 
 test('leaves an ordinary short word or sentence alone', () => {
 	const record = buildLogRecord('info', 'scheduler: mail poll ok', {
-		body: '{"status":"skipped","reason":"no folders configured"}'
+		body: '{"status":"success","mailbox":{"handedOff":2}}'
 	});
 	expect((record.context as Record<string, unknown>).body).toBe(
-		'{"status":"skipped","reason":"no folders configured"}'
+		'{"status":"success","mailbox":{"handedOff":2}}'
 	);
 });
 
