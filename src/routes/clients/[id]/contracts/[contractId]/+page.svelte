@@ -29,7 +29,7 @@
 		formatPercent
 	} from '$lib/i18n/format';
 	import { ceilingBasisWords } from '$lib/dashboard/ceiling';
-	import { Amount, Badge, Banner, Button, EmptyState, Select, StatTile } from '$lib/design';
+	import { Amount, Badge, Banner, Button, EmptyState, Select, StatTile, toasts } from '$lib/design';
 	import { submitting } from '$lib/design/submitting.svelte';
 	import SourceDocument from '$lib/design/SourceDocument.svelte';
 	import Table from '$lib/design/Table.svelte';
@@ -191,6 +191,19 @@
 				})
 			: null
 	);
+
+	// Plain POST with no `use:enhance`, matching the rest of this app, so a
+	// submit is a full navigation and `form` is that navigation's own SSR
+	// output. `announced` guards the effect defensively against Svelte
+	// re-running it within one mount, the same shape the proposal review
+	// screen uses for its own decision toast.
+	const activate = submitting();
+	let announced = false;
+	$effect(() => {
+		if (!form?.activated || announced) return;
+		announced = true;
+		toasts.push('success', m.contract_activated_toast());
+	});
 </script>
 
 <svelte:head><title>{m.contract_detail_page_title({ title: contract.title })}</title></svelte:head>
@@ -308,6 +321,23 @@
 			variant={contract.status === 'active' ? 'good' : 'neutral'}
 			label={statusLabel(contract.status)}
 		/>
+		<!--
+			The status is the one thing on this page that silently blocks
+			everything else: a contract that is not active is invisible to
+			`/day/new`, to the day import and to both contract alerts. Flipping
+			it used to mean opening the twenty-field editor and finding one
+			select, which is why "there is no way to change the status" was a
+			fair reading (#377). One POST, offered right where the state is
+			stated. The editor keeps the full select for the other
+			transitions, which are decisions rather than a stuck prerequisite.
+		-->
+		{#if contract.status !== 'active'}
+			<form method="POST" action="?/activate" onsubmit={activate.onsubmit}>
+				<Button type="submit" variant="primary" size="sm" loading={activate.busy}>
+					{m.contract_activate_action()}
+				</Button>
+			</form>
+		{/if}
 		<Button href={`${resolve('/day/new')}?contractId=${contract.id}`} variant="primary" size="sm">
 			{m.contract_detail_register_day_action()}
 		</Button>

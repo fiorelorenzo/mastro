@@ -172,3 +172,33 @@ export async function setContractMailFolder(id: string, mailFolder: string | nul
 		.returning();
 	return row;
 }
+
+/**
+ * The contract's own status, set on its own (#377) rather than through
+ * `updateContract`'s whole-contract input.
+ *
+ * Activating is the one status change that has a shortcut, because it is the
+ * one that unblocks work: `/day/new` offers active contracts only, the day
+ * import skips the rest, and both contract alerts query for active. Sending
+ * a person through a twenty-field editor to flip that is what made "there
+ * is no way to change the status" a reasonable thing to conclude.
+ *
+ * Takes the status rather than hard-coding `'active'` so the same action can
+ * carry the other transitions if they ever earn a shortcut too; the editor
+ * keeps the full select either way. Takes an `executor` for the same reason
+ * `listContractsWithMailFolder` does - here so a test can watch the write
+ * inside a transaction it rolls back, which is what pins down that it
+ * touches one contract and not the table.
+ */
+export async function setContractStatus(
+	id: string,
+	status: ContractStatus,
+	executor: DbExecutor = db
+) {
+	const [row] = await executor
+		.update(contract)
+		.set({ status })
+		.where(eq(contract.id, id))
+		.returning();
+	return row ?? null;
+}
