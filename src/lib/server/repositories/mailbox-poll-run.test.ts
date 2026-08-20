@@ -31,6 +31,13 @@ test('recordMailboxPollRun writes a row with the given status and detail, unackn
 
 test('getLatestMailboxPollRun returns the most recent row, null when none exist', async () => {
 	await inRolledBackTransaction(async (tx) => {
+		// This query reads the whole table, so "no rows yet" is only a fact
+		// this test can assert if it makes it one — the same reasoning the
+		// sibling test in `alerts/repository.test.ts` already carries. It
+		// passed for a year only because nothing else in the suite wrote a
+		// poll run; #380's shared-mailbox pass does, and a real instance
+		// certainly does.
+		await tx.delete(mailboxPollRun);
 		expect(await getLatestMailboxPollRun(tx)).toBeNull();
 
 		// Distinct times: two rows inserted in one transaction share its clock,

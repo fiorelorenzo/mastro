@@ -24,6 +24,8 @@ export type ImapConfig = {
 	user: string;
 	password: string;
 	sentMailbox: string;
+	/** #380: the mailbox inbound polling watches, `INBOX` unless overridden. */
+	inboxMailbox: string;
 	// #306: the ceiling on one inbound message's RFC822 size, checked
 	// against `message.size` in the IMAP listing before `source` is ever
 	// fetched — an oversized message is never buffered whole. Optional in
@@ -99,6 +101,11 @@ export function readImapConfig(source: Record<string, string | undefined>): Imap
 		user: required(source, 'IMAP_USER'),
 		password: required(source, 'IMAP_APP_PASSWORD'),
 		sentMailbox: source.IMAP_SENT_MAILBOX?.trim() || 'Sent',
+		// #380: the mailbox polled for inbound mail, whether or not any
+		// contract has a folder of its own. `INBOX` by default, which is the
+		// whole point: monitoring should need no setup beyond credentials.
+		// Overridable for an account that filters client mail elsewhere.
+		inboxMailbox: source.IMAP_INBOX_MAILBOX?.trim() || 'INBOX',
 		maxMessageBytes: optionalPositiveInt(
 			source,
 			'IMAP_MAX_MESSAGE_BYTES',

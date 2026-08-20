@@ -29,6 +29,7 @@ const config: MailConfig = {
 		user: 'mastro@mastro.test',
 		password: 'test-app-password',
 		sentMailbox: 'Sent',
+		inboxMailbox: 'INBOX',
 		maxMessageBytes: DEFAULT_IMAP_MAX_MESSAGE_BYTES
 	}
 };

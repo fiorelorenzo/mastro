@@ -16,6 +16,7 @@ import { ImapFlow } from 'imapflow';
 import { desc, eq } from 'drizzle-orm';
 import { afterAll, afterEach, expect, test } from 'vitest';
 import { client as pool, db } from '$lib/server/db';
+import { listInboundThreadsAwaitingExtraction } from '$lib/server/repositories/inbound-thread';
 import {
 	client,
 	contract,
@@ -35,6 +36,7 @@ const imapConfig: ImapConfig = {
 	user: 'mastro@mastro.test',
 	password: 'test-app-password',
 	sentMailbox: 'Sent',
+	inboxMailbox: 'INBOX',
 	maxMessageBytes: DEFAULT_IMAP_MAX_MESSAGE_BYTES
 };
 
@@ -184,7 +186,8 @@ async function appendMessage(
 }
 
 /** Calls `pollMailboxesOnce`, then tracks the `mailbox_poll_run` row it
- * just wrote (there is exactly one, or none for a `'skipped'` result) so
+ * just wrote (there is exactly one per pass since #380 removed the
+ * "nothing configured" outcome) so
  * `afterEach` cleans it up. `config` defaults to the module's own
  * `imapConfig`; #306's own test overrides just `maxMessageBytes`, the
  * same way `unreachableConfig` further down overrides just `port`. */
@@ -193,7 +196,7 @@ async function pollOnce(
 	config: ImapConfig = imapConfig
 ) {
 	const result = await pollMailboxesOnce(config, options);
-	if (result.status !== 'skipped') {
+	{
 		const [latest] = await db
 			.select({ id: mailboxPollRun.id })
 			.from(mailboxPollRun)
@@ -202,6 +205,19 @@ async function pollOnce(
 		if (latest && !createdRunIds.includes(latest.id)) createdRunIds.push(latest.id);
 	}
 	return result;
+}
+
+/**
+ * The result entry for one contract's own folder.
+ *
+ * By id, never by position: since #380 a pass polls the shared mailbox as
+ * well, so `folders[0]` is that mailbox and a positional index silently
+ * asserts against the wrong target.
+ */
+function folderFor(result: Awaited<ReturnType<typeof pollMailboxesOnce>>, contractId: string) {
+	const entry = result.folders.find((folder) => folder.contractId === contractId);
+	if (!entry) throw new Error(`no result entry for contract ${contractId}`);
+	return entry;
 }
 
 test.skipIf(!mailboxAvailable)(
@@ -216,7 +232,7 @@ test.skipIf(!mailboxAvailable)(
 
 		const first = await pollOnce();
 		expect(first.status).toBe('success');
-		expect(first.status === 'success' && first.folders[0].handedOff).toBe(1);
+		expect(folderFor(first, contractId).handedOff).toBe(1);
 
 		const afterFirst = await db
 			.select()
@@ -248,7 +264,7 @@ test.skipIf(!mailboxAvailable)(
 		// Postgres, exactly what a real process restart would also do.
 		const second = await pollOnce();
 		expect(second.status).toBe('success');
-		expect(second.status === 'success' && second.folders[0].handedOff).toBe(0);
+		expect(folderFor(second, contractId).handedOff).toBe(0);
 
 		const afterSecond = await db
 			.select()
@@ -260,7 +276,7 @@ test.skipIf(!mailboxAvailable)(
 		const messageIdTwo = `<two-${crypto.randomUUID()}@example.com>`;
 		await appendMessage(folder, { messageId: messageIdTwo, subject: 'second approval' });
 		const third = await pollOnce();
-		expect(third.status === 'success' && third.folders[0].handedOff).toBe(1);
+		expect(folderFor(third, contractId).handedOff).toBe(1);
 
 		const afterThird = await db
 			.select()
@@ -301,8 +317,8 @@ test.skipIf(!mailboxAvailable)(
 		// only the small message was ever buffered whole. "Skipped" (#343)
 		// is the oversized-arrival counterpart, read by the mail page's
 		// poll-now action to report "N archived, M skipped".
-		expect(result.status === 'success' && result.folders[0].handedOff).toBe(1);
-		expect(result.status === 'success' && result.folders[0].skipped).toBe(1);
+		expect(folderFor(result, contractId).handedOff).toBe(1);
+		expect(folderFor(result, contractId).skipped).toBe(1);
 
 		const rows = await db
 			.select()
@@ -337,7 +353,7 @@ test.skipIf(!mailboxAvailable)(
 
 		await appendMessage(folder, { messageId: messageIdOld, subject: 'before the bump' });
 		const first = await pollOnce();
-		expect(first.status === 'success' && first.folders[0].handedOff).toBe(1);
+		expect(folderFor(first, contractId).handedOff).toBe(1);
 
 		// Force a genuine UIDVALIDITY bump: delete and recreate the same
 		// mailbox. This is the documented exception to "no real timers in
@@ -404,8 +420,6 @@ test.skipIf(!mailboxAvailable)(
 
 		const result = await pollOnce();
 		expect(result.status).toBe('failure'); // one folder failed
-		if (result.status === 'skipped') throw new Error('unreachable');
-
 		const good = result.folders.find((folder) => folder.contractId === goodContractId);
 		const bad = result.folders.find((folder) => folder.contractId === badContractId);
 		expect(good?.error).toBeNull();
@@ -481,13 +495,38 @@ test.skipIf(!mailboxAvailable)(
 	}
 );
 
+// #380 replaced the old "nothing configured, nothing attempted" behaviour on
+// purpose: credentials now imply a mailbox to watch, so a pass always runs and
+// always records a run. The thing worth pinning down is what it does with a
+// mailbox full of mail from senders nobody knows, which is what a real inbox
+// is: it archives them and hands none of them to extraction.
 test.skipIf(!mailboxAvailable)(
-	'nothing is attempted, and no run is recorded, when no contract has a folder configured',
+	'with no folder mapped the shared mailbox is still polled, and an unknown sender is archived but never extracted',
 	async () => {
-		const before = await db.select({ id: mailboxPollRun.id }).from(mailboxPollRun);
-		const result = await pollMailboxesOnce(imapConfig);
-		expect(result).toEqual({ status: 'skipped', reason: 'no folders configured', folders: [] });
-		const after = await db.select({ id: mailboxPollRun.id }).from(mailboxPollRun);
-		expect(after).toHaveLength(before.length);
+		const messageId = `<stranger-${crypto.randomUUID()}@example.com>`;
+		await appendMessage('INBOX', { messageId, subject: 'a newsletter' });
+
+		const result = await pollOnce();
+
+		expect(result.status).toBe('success');
+		const inbox = result.folders.find((folder) => folder.contractId === null);
+		if (!inbox) throw new Error('the shared mailbox was not polled');
+		expect(inbox.mailbox).toBe('INBOX');
+		// Kept, and deliberately not read.
+		expect(inbox.archivedUnknownSender).toBeGreaterThanOrEqual(1);
+		expect(inbox.handedOff).toBe(0);
+
+		const [archived] = await db
+			.select()
+			.from(inboundThread)
+			.where(eq(inboundThread.messageId, messageId));
+		expect(archived.archived).toBe(true);
+		expect(archived.documentId).not.toBeNull();
+		expect(archived.contractId).toBeNull();
+		expect(archived.skipReason).toBe('sender_unknown');
+
+		// And the guard holds where it matters: the drain never sees it.
+		const queued = await listInboundThreadsAwaitingExtraction(500);
+		expect(queued.map((row) => row.id)).not.toContain(archived.id);
 	}
 );

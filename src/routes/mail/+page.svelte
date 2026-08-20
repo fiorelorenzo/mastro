@@ -86,14 +86,24 @@
 					? m.mail_poll_now_in_flight_toast()
 					: m.mail_poll_now_not_configured_toast()
 			);
-		} else if (outcome.status === 'skipped') {
-			toasts.push('neutral', m.mail_poll_now_skipped_toast());
 		} else if (outcome.status === 'failure') {
 			toasts.push('danger', m.mail_poll_now_failure_toast({ detail: outcome.detail ?? '' }));
 		} else {
+			// #380: name the three outcomes apart. "40 archived from senders
+			// nobody knows" is what a normal inbox looks like, and reading it
+			// as 40 failures would be wrong.
 			toasts.push(
 				'success',
-				m.mail_poll_now_success_toast({ archived: outcome.archived, skipped: outcome.skipped })
+				outcome.unknownSender > 0
+					? m.mail_poll_now_success_toast_with_unknown({
+							archived: outcome.archived,
+							unknown: outcome.unknownSender,
+							skipped: outcome.skipped
+						})
+					: m.mail_poll_now_success_toast({
+							archived: outcome.archived,
+							skipped: outcome.skipped
+						})
 			);
 		}
 	});

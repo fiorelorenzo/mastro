@@ -9,12 +9,12 @@ import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract
 import { storeDocument } from './document';
 import { createProposal } from './proposal';
 import {
-	findByContractAndMessageId,
+	findByMailboxAndMessageId,
 	getInboundThreadsForDocuments,
 	listInboundThreadsAwaitingExtraction,
 	listInboundThreadsForContract,
 	listSkippedInboundThreadsForContract,
-	maxImapUidForContract,
+	maxImapUidForMailbox,
 	recordInboundThread,
 	recordSkippedInboundThread,
 	type InboundThreadInput,
@@ -159,12 +159,12 @@ test("recordInboundThread returns null instead of throwing on a duplicate UID, t
 	});
 });
 
-test('maxImapUidForContract is scoped per UIDVALIDITY generation, null for a generation never seen', async () => {
+test('maxImapUidForMailbox is scoped per mailbox and UIDVALIDITY generation, null for a generation never seen', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const contractRow = await insertContract(tx);
 		const documentRow = await archiveMessage(tx, contractRow.id);
 
-		expect(await maxImapUidForContract(contractRow.id, 1700000000, tx)).toBeNull();
+		expect(await maxImapUidForMailbox('Acme Corp', 1700000000, tx)).toBeNull();
 
 		await recordInboundThread(
 			threadInput(contractRow.id, documentRow.id, {
@@ -182,21 +182,21 @@ test('maxImapUidForContract is scoped per UIDVALIDITY generation, null for a gen
 			}),
 			tx
 		);
-		expect(await maxImapUidForContract(contractRow.id, 1700000000, tx)).toBe(9);
+		expect(await maxImapUidForMailbox('Acme Corp', 1700000000, tx)).toBe(9);
 
 		// A UIDVALIDITY bump starts a fresh generation: the old
 		// generation's high UID must not leak into the new one.
-		expect(await maxImapUidForContract(contractRow.id, 1800000000, tx)).toBeNull();
+		expect(await maxImapUidForMailbox('Acme Corp', 1800000000, tx)).toBeNull();
 	});
 });
 
-test('findByContractAndMessageId finds a thread regardless of which UIDVALIDITY generation recorded it', async () => {
+test('findByMailboxAndMessageId finds a thread regardless of which UIDVALIDITY generation recorded it', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const contractRow = await insertContract(tx);
 		const documentRow = await archiveMessage(tx, contractRow.id);
 		const messageId = '<same-message@example.com>';
 
-		expect(await findByContractAndMessageId(contractRow.id, messageId, tx)).toBeNull();
+		expect(await findByMailboxAndMessageId('Acme Corp', messageId, tx)).toBeNull();
 
 		await recordInboundThread(
 			threadInput(contractRow.id, documentRow.id, {
@@ -207,7 +207,7 @@ test('findByContractAndMessageId finds a thread regardless of which UIDVALIDITY 
 			tx
 		);
 
-		const found = await findByContractAndMessageId(contractRow.id, messageId, tx);
+		const found = await findByMailboxAndMessageId('Acme Corp', messageId, tx);
 		expect(found?.imapUidValidity).toBe(1700000000);
 	});
 });
@@ -451,4 +451,39 @@ test("listSkippedInboundThreadsForContract returns only this contract's skipped 
 		expect(rows.every((row) => row.archived === false)).toBe(true);
 		expect(rows.map((row) => row.imapUid)).toEqual([3, 2]);
 	});
+});
+
+// #380: watching a whole mailbox archives every message, and extraction
+// costs a model call each, so a message whose sender nobody knows is kept
+// and never queued. This is the guard, at the one query the drain reads.
+test('a thread archived with an unknown sender is never queued for extraction', async () => {
+	const result = await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const knownDocument = await archiveMessage(tx, contractRow.id);
+		const known = await recordInboundThread(
+			threadInput(contractRow.id, knownDocument.id, { imapUid: 41 }),
+			tx
+		);
+
+		const unknownDocument = await archiveMessage(tx, contractRow.id);
+		const unknown = await recordInboundThread(
+			{
+				...threadInput(contractRow.id, unknownDocument.id, { imapUid: 42, messageId: null }),
+				contractId: null,
+				skipReason: 'sender_unknown' as const
+			},
+			tx
+		);
+
+		const queued = await listInboundThreadsAwaitingExtraction(500, tx);
+		return { known, unknown, queuedIds: queued.map((row) => row.id) };
+	});
+
+	// Scoped to the rows this test made: the seeded instance has its own.
+	expect(result.queuedIds).toContain(result.known?.id);
+	expect(result.queuedIds).not.toContain(result.unknown?.id);
+	// The bytes are still there. Nothing was discarded to save the call.
+	expect(result.unknown?.documentId).not.toBeNull();
+	expect(result.unknown?.archived).toBe(true);
+	expect(result.unknown?.contractId).toBeNull();
 });

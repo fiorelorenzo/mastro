@@ -105,6 +105,7 @@ test('readImapConfig reads the IMAP half with no SMTP key set at all', () => {
 		user: 'someone@example.com',
 		password: 'app-password',
 		sentMailbox: 'Sent',
+		inboxMailbox: 'INBOX',
 		maxMessageBytes: DEFAULT_IMAP_MAX_MESSAGE_BYTES
 	});
 	expect(() => readMailConfig(imapOnly)).toThrow(/SMTP_HOST/);

@@ -43,6 +43,7 @@ const realConfig: MailConfig = {
 		user: 'mastro@mastro.test',
 		password: 'test-app-password',
 		sentMailbox: 'Sent',
+		inboxMailbox: 'INBOX',
 		maxMessageBytes: DEFAULT_IMAP_MAX_MESSAGE_BYTES
 	}
 };
@@ -69,6 +70,7 @@ const unreachableConfig: MailConfig = {
 		user: 'x',
 		password: 'x',
 		sentMailbox: 'Sent',
+		inboxMailbox: 'INBOX',
 		maxMessageBytes: DEFAULT_IMAP_MAX_MESSAGE_BYTES
 	}
 };

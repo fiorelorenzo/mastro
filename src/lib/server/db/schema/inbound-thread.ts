@@ -76,15 +76,33 @@ import { document } from './document';
  * `skipReason`/`messageSize` and no `documentId` — so a caller cannot
  * half-write either one.
  */
-export type InboundThreadSkipReason = 'oversized';
+/**
+ * Why a message was archived without being handed to extraction.
+ *
+ * `'oversized'` is the RFC822 size guard (#306). `'sender_unknown'` is the
+ * whole-mailbox mode (#380): watching an inbox means every newsletter is
+ * archived too, and extraction costs a model call, so only a message whose
+ * sender matches a known client contact is handed off. The message is kept
+ * either way - invariant 4 does not care why we archived it - so a sender
+ * added later makes the archived message extractable rather than lost.
+ */
+export type InboundThreadSkipReason = 'oversized' | 'sender_unknown';
 
 export const inboundThread = pgTable(
 	'inbound_thread',
 	{
 		id: id(),
-		contractId: uuid('contract_id')
-			.notNull()
-			.references(() => contract.id, { onDelete: 'restrict' }),
+		/**
+		 * Which contract this message belongs to, when that is known.
+		 *
+		 * Null since #380: watching a whole mailbox means a message arrives
+		 * before anyone knows whose it is, so attribution stopped being a
+		 * precondition of archiving and became a fact discovered afterwards -
+		 * by matching the sender against client contacts, or by a human. It
+		 * stays non-null for every message that arrived through a contract's
+		 * own configured folder, where the folder is the attribution.
+		 */
+		contractId: uuid('contract_id').references(() => contract.id, { onDelete: 'restrict' }),
 		documentId: uuid('document_id').references(() => document.id, { onDelete: 'restrict' }),
 		mailbox: text('mailbox').notNull(),
 		imapUidValidity: bigint('imap_uid_validity', { mode: 'number' }).notNull(),

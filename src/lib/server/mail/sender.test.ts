@@ -28,6 +28,7 @@ const IMAP: ImapConfig = {
 	user: 'user',
 	password: 'password',
 	sentMailbox: 'Sent',
+	inboxMailbox: 'INBOX',
 	maxMessageBytes: 1024
 };
 

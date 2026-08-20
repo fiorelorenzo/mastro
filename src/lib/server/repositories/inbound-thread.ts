@@ -4,7 +4,8 @@ import { inboundThread, proposal, type InboundThreadSkipReason } from '$lib/serv
 
 export type InboundThreadRow = typeof inboundThread.$inferSelect;
 export type InboundThreadInput = {
-	contractId: string;
+	/** Null when the sender matched nothing the ledger knows (#380). */
+	contractId: string | null;
 	documentId: string;
 	mailbox: string;
 	imapUidValidity: number;
@@ -12,6 +13,13 @@ export type InboundThreadInput = {
 	messageId: string | null;
 	subject: string | null;
 	receivedAt: Date;
+	/**
+	 * `'sender_unknown'` for a message archived but deliberately not queued
+	 * for extraction (#380). Null - the default - is the ordinary hand-off.
+	 * `'oversized'` never appears here: those never reach this function,
+	 * because their bytes were refused before being fetched.
+	 */
+	skipReason?: Extract<InboundThreadSkipReason, 'sender_unknown'> | null;
 };
 
 /**
@@ -40,14 +48,16 @@ export async function recordInboundThread(input: InboundThreadInput, executor: D
  * `inbound_thread_archived_shape` (the table's own `check()`) requires
  * alongside a non-null `skipReason`/`messageSize`. */
 export type InboundThreadSkipInput = {
-	contractId: string;
+	/** Null when the sender matched nothing the ledger knows (#380). */
+	contractId: string | null;
 	mailbox: string;
 	imapUidValidity: number;
 	imapUid: number;
 	messageId: string | null;
 	subject: string | null;
 	receivedAt: Date;
-	skipReason: InboundThreadSkipReason;
+	/** Only `'oversized'` reaches here: it is the reason the bytes are absent. */
+	skipReason: Extract<InboundThreadSkipReason, 'oversized'>;
 	messageSize: number;
 };
 
@@ -106,7 +116,20 @@ export async function listInboundThreadsAwaitingExtraction(
 		.select({ thread: inboundThread })
 		.from(inboundThread)
 		.leftJoin(proposal, eq(proposal.documentId, inboundThread.documentId))
-		.where(and(eq(inboundThread.archived, true), isNull(proposal.id)))
+		.where(
+			and(
+				eq(inboundThread.archived, true),
+				isNull(proposal.id),
+				// The cost guard (#380). A message archived with
+				// `sender_unknown` is kept and never handed to a model, so
+				// watching a whole mailbox does not mean paying for every
+				// newsletter in it. Enforced here, at the one query the drain
+				// reads, rather than at each caller: this is the only door into
+				// extraction, so it is the only place the guard can be
+				// forgotten - and it cannot be forgotten here.
+				isNull(inboundThread.skipReason)
+			)
+		)
 		.orderBy(inboundThread.receivedAt)
 		.limit(limit);
 	// `inbound_thread_archived_shape` is what actually guarantees this,
@@ -149,8 +172,8 @@ export async function getInboundThreadsForDocuments(
  * contract under this generation — either the very first poll, or a
  * generation this contract has not seen before (a `UIDVALIDITY` bump),
  * and both cases are handled identically: start from UID 1. */
-export async function maxImapUidForContract(
-	contractId: string,
+export async function maxImapUidForMailbox(
+	mailbox: string,
 	imapUidValidity: number,
 	executor: DbExecutor = db
 ): Promise<number | null> {
@@ -158,29 +181,30 @@ export async function maxImapUidForContract(
 		.select({ maxUid: max(inboundThread.imapUid) })
 		.from(inboundThread)
 		.where(
-			and(
-				eq(inboundThread.contractId, contractId),
-				eq(inboundThread.imapUidValidity, imapUidValidity)
-			)
+			and(eq(inboundThread.mailbox, mailbox), eq(inboundThread.imapUidValidity, imapUidValidity))
 		);
 	return row?.maxUid ?? null;
 }
 
 /** The `UIDVALIDITY`-bump safety net: a message already handed off under
  * an earlier generation still carries the same `Message-ID`, so this is
- * checked regardless of which generation `maxImapUidForContract` says is
+ * checked regardless of which generation `maxImapUidForMailbox` says is
  * current. `null` when the candidate message has no `Message-ID` header
  * at all — nothing to check against, the UID-based cursor is this
- * message's only protection. */
-export async function findByContractAndMessageId(
-	contractId: string,
+ * message's only protection.
+ *
+ * Keyed on the mailbox rather than the contract (#380), matching the
+ * unique index: a Message-ID is unique within one mailbox's history, and
+ * a message in a shared mailbox may have no contract at all. */
+export async function findByMailboxAndMessageId(
+	mailbox: string,
 	messageId: string,
 	executor: DbExecutor = db
 ) {
 	const [row] = await executor
 		.select()
 		.from(inboundThread)
-		.where(and(eq(inboundThread.contractId, contractId), eq(inboundThread.messageId, messageId)));
+		.where(and(eq(inboundThread.mailbox, mailbox), eq(inboundThread.messageId, messageId)));
 	return row ?? null;
 }
 

@@ -54,7 +54,15 @@ export async function enqueueDayExtractions(
 	);
 	if (threads.length === 0) return { enqueued, alreadyProposed };
 
-	const contractIds = [...new Set(threads.map((thread) => thread.contractId))];
+	// An unattributed thread cannot be enqueued: the extraction prompt is
+	// built around a contract, and inventing one would be the guess this
+	// product refuses to make (#380). `listInboundThreadsAwaitingExtraction`
+	// already excludes `sender_unknown` rows, so what reaches here with no
+	// contract is a message whose sender was known but whose client has more
+	// than one active contract - genuinely ambiguous, and left for a human.
+	const contractIds = [
+		...new Set(threads.map((thread) => thread.contractId).filter((id): id is string => id !== null))
+	];
 	const documentIds = [...new Set(threads.map((thread) => thread.documentId))];
 
 	const [contracts, documents, existingProposals] = await Promise.all([
@@ -67,6 +75,7 @@ export async function enqueueDayExtractions(
 	const documentIdsWithProposal = new Set(existingProposals.map((row) => row.documentId));
 
 	for (const thread of threads) {
+		if (thread.contractId === null) continue;
 		if (!contractIdsPresent.has(thread.contractId)) continue;
 		if (documentIdsWithProposal.has(thread.documentId)) {
 			alreadyProposed += 1;
