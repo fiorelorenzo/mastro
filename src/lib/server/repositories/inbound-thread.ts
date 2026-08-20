@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
+	clientContact,
 	document,
 	inboundThread,
 	proposal,
@@ -336,26 +337,57 @@ export type UnknownSenderRow = {
 	messageCount: number;
 	lastReceivedAt: Date;
 	lastSubject: string | null;
+	/**
+	 * Whether some contact you already have sits at this address's own
+	 * domain. That is the strongest signal there is that this is a client
+	 * writing from a second address rather than a newsletter, and it is
+	 * evidence rather than a guess: the domain is already in the ledger.
+	 */
+	domainKnown: boolean;
 };
 
 export async function listUnknownSenderAddresses(
 	limit = DEFAULT_UNKNOWN_SENDER_LIMIT,
 	executor: DbExecutor = db
 ): Promise<UnknownSenderRow[]> {
-	return executor
-		.select({
-			senderAddress: inboundThread.senderAddress,
-			messageCount: sql<number>`count(*)`.mapWith(Number),
-			lastReceivedAt: sql<Date>`max(${inboundThread.receivedAt})`.mapWith(
-				(value: string) => new Date(value)
-			),
-			lastSubject: sql<
-				string | null
-			>`(array_agg(${inboundThread.subject} order by ${inboundThread.receivedAt} desc))[1]`
-		})
-		.from(inboundThread)
-		.where(and(eq(inboundThread.archived, true), eq(inboundThread.skipReason, 'sender_unknown')))
-		.groupBy(inboundThread.senderAddress)
-		.orderBy(sql`max(${inboundThread.receivedAt}) desc`)
-		.limit(limit);
+	// `domainKnown` compares the part after the `@` against every contact
+	// email's domain. Cheap: `client_contact` is a small table, and this
+	// runs once per group rather than once per message.
+	const domainKnown = sql<boolean>`exists (
+		select 1 from ${clientContact}
+		where split_part(${clientContact.email}, '@', 2) = split_part(${inboundThread.senderAddress}, '@', 2)
+	)`.mapWith(Boolean);
+
+	return (
+		executor
+			.select({
+				senderAddress: inboundThread.senderAddress,
+				messageCount: sql<number>`count(*)`.mapWith(Number),
+				lastReceivedAt: sql<Date>`max(${inboundThread.receivedAt})`.mapWith(
+					(value: string) => new Date(value)
+				),
+				lastSubject: sql<
+					string | null
+				>`(array_agg(${inboundThread.subject} order by ${inboundThread.receivedAt} desc))[1]`,
+				domainKnown
+			})
+			.from(inboundThread)
+			.where(and(eq(inboundThread.archived, true), eq(inboundThread.skipReason, 'sender_unknown')))
+			.groupBy(inboundThread.senderAddress)
+			// Recency was the first ordering here and it was wrong, in a way only
+			// real data showed: on the live instance 133 distinct addresses had
+			// written, and the one address that mattered - a client's, differing
+			// from the recorded contact by `leo@` against `leonardo@` - ranked
+			// **57th** by recency, outside this limit entirely. The panel built to
+			// surface it would not have surfaced it. So: addresses at a domain
+			// already in the ledger first, then by how much they wrote, and only
+			// then by recency. A newsletter that arrived this morning is not more
+			// interesting than a client who wrote eight times last week.
+			.orderBy(
+				sql`${domainKnown} desc`,
+				sql`count(*) desc`,
+				sql`max(${inboundThread.receivedAt}) desc`
+			)
+			.limit(limit)
+	);
 }
