@@ -16,7 +16,7 @@
 // `finished_at`, `error`, `proposal_id` — that a generic setter would
 // leave callers to remember individually.
 
-import { and, asc, desc, eq, notInArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, notInArray } from 'drizzle-orm';
 import type { ExtractionFailureKind } from '$lib/extraction/failure-kind';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
@@ -117,6 +117,39 @@ export async function countExtractionRunsForDocument(
 		.from(extractionRun)
 		.where(eq(extractionRun.documentId, documentId));
 	return rows.length;
+}
+
+/**
+ * Which of `documentIds` have been handed to the runner at all (#398).
+ *
+ * The enqueue guard. It used to ask "does this document have a proposal",
+ * which is a different question and answers the wrong way for a message
+ * that legitimately approves nothing: no proposal is ever written, so the
+ * document looked un-extracted forever and was re-queued on every tick.
+ * Measured on the live instance: `queued 3` on every scheduler run, five
+ * minutes apart, indefinitely - three newsletters costing a model call
+ * each, 864 a day, to re-learn that they approve no days.
+ *
+ * Any run counts, whatever its status. `queued` and `running` mean one is
+ * in flight and a second would be duplicate work; `applied` means it is
+ * done; `failed` is deliberately included too, because re-trying a failed
+ * extraction is #315's explicit, human-driven path and not something an
+ * automatic sweep should do behind everyone's back every five minutes.
+ *
+ * One query for the batch rather than `countExtractionRunsForDocument` per
+ * thread: the enqueue pass already reads its contracts, documents and
+ * proposals in three batched lookups and this is the fourth.
+ */
+export async function documentIdsWithExtractionRun(
+	documentIds: readonly string[],
+	executor: DbExecutor = db
+): Promise<Set<string>> {
+	if (documentIds.length === 0) return new Set();
+	const rows = await executor
+		.select({ documentId: extractionRun.documentId })
+		.from(extractionRun)
+		.where(inArray(extractionRun.documentId, [...documentIds]));
+	return new Set(rows.map((row) => row.documentId));
 }
 
 /** Every run, newest first, with its document's name for display — the

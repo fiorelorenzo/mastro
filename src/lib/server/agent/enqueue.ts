@@ -9,6 +9,10 @@
 
 import { listProposalsForDocuments } from '$lib/server/repositories/proposal';
 import {
+	createExtractionRun,
+	documentIdsWithExtractionRun
+} from '$lib/server/repositories/extraction-run';
+import {
 	listInboundThreadsAwaitingExtraction,
 	type ArchivedInboundThreadRow
 } from '$lib/server/repositories/inbound-thread';
@@ -65,10 +69,11 @@ export async function enqueueDayExtractions(
 	];
 	const documentIds = [...new Set(threads.map((thread) => thread.documentId))];
 
-	const [contracts, documents, existingProposals] = await Promise.all([
+	const [contracts, documents, existingProposals, alreadyExtracted] = await Promise.all([
 		getContractsWithClient(contractIds, executor),
 		getDocuments(documentIds, executor),
-		listProposalsForDocuments(documentIds, executor)
+		listProposalsForDocuments(documentIds, executor),
+		documentIdsWithExtractionRun(documentIds, executor)
 	]);
 	const contractIdsPresent = new Set(contracts.map((contract) => contract.id));
 	const documentsById = new Map(documents.map((document) => [document.id, document]));
@@ -78,6 +83,18 @@ export async function enqueueDayExtractions(
 		if (thread.contractId === null) continue;
 		if (!contractIdsPresent.has(thread.contractId)) continue;
 		if (documentIdsWithProposal.has(thread.documentId)) {
+			alreadyProposed += 1;
+			continue;
+		}
+		// Having a proposal is not the same as having been extracted, and
+		// this is where the difference bit (#398). A message that approves
+		// nothing produces no proposal, ever, so the check above answers
+		// "not extracted yet" for it on every single pass: measured on the
+		// live instance, `queued 3` on every scheduler tick, five minutes
+		// apart, indefinitely - three newsletters paying for a model call
+		// each to re-learn that they approve no days. The run is the record
+		// of the attempt, so it is what the guard has to read.
+		if (alreadyExtracted.has(thread.documentId)) {
 			alreadyProposed += 1;
 			continue;
 		}
@@ -94,13 +111,35 @@ export async function enqueueDayExtractions(
 		// missing blob without touching any other message in the batch.
 		const bytes = await readDocumentBytes(archived);
 
-		await enqueueJob(queueDir, {
+		const enqueuedAt = new Date();
+		const jobId = await enqueueJob(queueDir, {
 			documentId: thread.documentId,
 			contractId: thread.contractId,
 			targetType: 'work_unit',
 			content: bytes.toString('utf8'),
 			instructions: dayExtractionInstructions(thread.receivedAt.toISOString().slice(0, 10))
 		});
+		// The row the guard above reads next time, and the row #281's three
+		// views need. Until now only the hand-driven import created one, so
+		// "every extraction is a run you can watch" was false for exactly the
+		// extractions nobody watches: on the live instance the registry held
+		// two rows while the mailbox had produced eight jobs. The registry's
+		// own design doc says it exists to make "a failure repeating every
+		// five minutes visible", and it could not see this one.
+		//
+		// After the job file, not before, because the run is keyed by the job
+		// id. If this insert fails the file is already in `pending/` and the
+		// drain's unassociated-job path handles it, so the cost is one
+		// unwatched extraction rather than a lost message.
+		await createExtractionRun(
+			{
+				jobId,
+				documentId: thread.documentId,
+				targetType: 'work_unit',
+				enqueuedAt
+			},
+			executor
+		);
 		enqueued += 1;
 	}
 	return { enqueued, alreadyProposed };

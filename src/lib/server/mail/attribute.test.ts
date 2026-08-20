@@ -267,7 +267,7 @@ test('reattributeKnownSenders clears skip_reason, claims the contract and its do
 		return { recovered, updatedThread, updatedDocument, contractIds, queued };
 	});
 
-	expect(result.recovered).toBe(1);
+	expect(result.recovered).toBeGreaterThanOrEqual(1);
 	expect(result.updatedThread.skipReason).toBeNull();
 	expect(result.updatedThread.contractId).toBe(result.contractIds[0]);
 	// The thread and its archived document move together (#86's claim path):
@@ -334,7 +334,7 @@ test('a row whose document is already claimed is skipped without stopping the re
 	});
 
 	// The recoverable row moved, so one row's refusal did not stop the batch.
-	expect(result.recovered).toBe(1);
+	expect(result.recovered).toBeGreaterThanOrEqual(1);
 	expect(result.recoveredRow.skipReason).toBeNull();
 	expect(result.recoveredRow.contractId).toBe(result.contractIds[0]);
 	// The blocked one is exactly as it was, and its document still belongs
@@ -375,7 +375,7 @@ test('a document already claimed by the very contract the sender resolves to sti
 		return { recovered, updated, contractIds };
 	});
 
-	expect(result.recovered).toBe(1);
+	expect(result.recovered).toBeGreaterThanOrEqual(1);
 	expect(result.updated.skipReason).toBeNull();
 	expect(result.updated.contractId).toBe(result.contractIds[0]);
 });
@@ -405,7 +405,11 @@ test('an address matching a client with two active contracts stays sender_unknow
 		return { recovered, updatedThread, updatedDocument };
 	});
 
-	expect(result.recovered).toBe(0);
+	// Deliberately not asserting the exact return value: it counts every row
+	// the pass recovered across the whole table, and other test files commit
+	// rows of their own, so an absolute number here passes alone and fails in
+	// a full run (AGENTS.md: scope every assertion to the ids the test
+	// created). What this test is about is the row below.
 	expect(result.updatedThread.skipReason).toBe('sender_unknown');
 	expect(result.updatedThread.contractId).toBeNull();
 	expect(result.updatedDocument.contractId).toBeNull();
@@ -431,7 +435,11 @@ test('reattributeKnownSenders never touches an oversized row, even once its send
 	// 'sender_unknown'` rows — an oversized row is a different shape
 	// entirely (no document, `archived = false`) and must never be counted
 	// or rewritten just because its sender happens to now be known.
-	expect(result.recovered).toBe(0);
+	// Deliberately not asserting the exact return value: it counts every row
+	// the pass recovered across the whole table, and other test files commit
+	// rows of their own, so an absolute number here passes alone and fails in
+	// a full run (AGENTS.md: scope every assertion to the ids the test
+	// created). What this test is about is the row below.
 	expect(result.updatedThread.skipReason).toBe('oversized');
 	expect(result.updatedThread.archived).toBe(false);
 	expect(result.updatedThread.documentId).toBeNull();
@@ -459,7 +467,11 @@ test('reattributeKnownSenders leaves a row with no sender_address alone, the pre
 		return { recovered, updatedThread };
 	});
 
-	expect(result.recovered).toBe(0);
+	// Deliberately not asserting the exact return value: it counts every row
+	// the pass recovered across the whole table, and other test files commit
+	// rows of their own, so an absolute number here passes alone and fails in
+	// a full run (AGENTS.md: scope every assertion to the ids the test
+	// created). What this test is about is the row below.
 	expect(result.updatedThread.senderAddress).toBeNull();
 	expect(result.updatedThread.skipReason).toBe('sender_unknown');
 	expect(result.updatedThread.contractId).toBeNull();
