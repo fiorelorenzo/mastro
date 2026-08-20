@@ -491,6 +491,13 @@
       "when": 1787249465510,
       "tag": "0070_sender_address_replaces_mail_folder",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1787262216404,
+      "tag": "0071_extraction_run_nothing_proposed",
+      "breakpoints": true
     }
   ]
 }

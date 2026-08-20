@@ -292,6 +292,27 @@ export async function finishRunApplied(
 		.where(and(eq(extractionRun.jobId, jobId), eq(extractionRun.status, 'extracted')));
 }
 
+/**
+ * The third terminal state: the extraction was read and had nothing in it
+ * to propose (#398).
+ *
+ * Guarded on `extracted`, exactly as `finishRunApplied` is, so it takes
+ * part in the same claim race and cannot move a run that some other sweep
+ * already finished. No `proposalId` and no `error`, which is the whole
+ * point of the status existing: neither of the CHECKs that tie those
+ * columns to `applied` and `failed` should have to bend to accommodate a
+ * message that simply approved no days.
+ */
+export async function finishRunNothingProposed(
+	jobId: string,
+	executor: DbExecutor = db
+): Promise<void> {
+	await executor
+		.update(extractionRun)
+		.set({ status: 'nothing_proposed', finishedAt: new Date() })
+		.where(and(eq(extractionRun.jobId, jobId), eq(extractionRun.status, 'extracted')));
+}
+
 /** Moves a run to its other terminal state: the runner's own extraction
  * call threw, or a producer's write rejected after `claimRunForApply`
  * won the race for it. Either way `error` is what the run page and the

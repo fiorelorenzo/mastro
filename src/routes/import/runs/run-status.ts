@@ -21,28 +21,21 @@ import * as m from '$lib/paraglide/messages';
 import type { ExtractionFailureKind } from '$lib/extraction/failure-kind';
 import type { RetryBlockReason } from '$lib/extraction/retry-eligibility';
 
-export const extractionRunStatuses = [
-	'queued',
-	'running',
-	'extracted',
-	'applied',
-	'failed'
-] as const;
-export type ExtractionRunStatusValue = (typeof extractionRunStatuses)[number];
+// Re-exported under the name this route's own files already use, so the
+// registry and the run page keep importing from here while the list itself
+// lives in one place (#398).
+export {
+	extractionRunStatuses,
+	isTerminalRunStatus,
+	type ExtractionRunStatus as ExtractionRunStatusValue
+} from '$lib/extraction/run-status';
+import type { ExtractionRunStatus as ExtractionRunStatusValue } from '$lib/extraction/run-status';
 
 export const runEventKinds = ['message', 'thought', 'tool_call', 'plan', 'stop', 'error'] as const;
 export type RunEventKindValue = (typeof runEventKinds)[number];
 
 export const extractionRunTargetTypes = ['contract', 'invoice', 'work_unit'] as const;
 export type ExtractionRunTargetTypeValue = (typeof extractionRunTargetTypes)[number];
-
-/** A run reaches exactly one of these and never leaves it — the registry's
- *  own "is this row still moving" check, and what closes the SSE
- *  connection on the run page (design doc: "Close the source on a
- *  terminal status"). */
-export function isTerminalRunStatus(status: ExtractionRunStatusValue): boolean {
-	return status === 'applied' || status === 'failed';
-}
 
 /**
  * `queued`/`running`/`extracted` share the "still moving" reading
@@ -61,6 +54,10 @@ const RUN_STATUS_BADGE: Readonly<Record<ExtractionRunStatusValue, BadgeVariant>>
 	running: 'info',
 	extracted: 'warning',
 	applied: 'good',
+	// Neutral, not `good`: nothing went wrong and nothing was produced, so
+	// this is the one terminal status with nothing for a reader to do. `good`
+	// stays with `applied`, which means a proposal is waiting (#398).
+	nothing_proposed: 'neutral',
 	failed: 'critical'
 };
 
@@ -69,6 +66,7 @@ const RUN_STATUS_LABEL: Readonly<Record<ExtractionRunStatusValue, () => string>>
 	running: m.extraction_run_status_running,
 	extracted: m.extraction_run_status_extracted,
 	applied: m.extraction_run_status_applied,
+	nothing_proposed: m.extraction_run_status_nothing_proposed,
 	failed: m.extraction_run_status_failed
 };
 

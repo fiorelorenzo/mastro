@@ -197,6 +197,11 @@
 				{m.extraction_run_detail_outcome_proposal_link()}
 			</a>
 		</p>
+	{:else if status === 'nothing_proposed'}
+		<!-- #398: a terminal outcome that is neither a proposal nor a failure.
+		     Said plainly, because a reader arrives here expecting one of those
+		     two and would otherwise be left inferring which one this is. -->
+		<p class="outcome-success">{m.extraction_run_detail_outcome_nothing_proposed()}</p>
 	{:else if status === 'failed'}
 		<Banner tone="critical">
 			<strong>{m.extraction_run_detail_outcome_failed_heading()}</strong>
