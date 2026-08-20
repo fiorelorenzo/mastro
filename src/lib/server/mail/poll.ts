@@ -20,10 +20,11 @@
 import { ImapFlow } from 'imapflow';
 import { db, type DbExecutor } from '$lib/server/db';
 import { listContractsWithMailFolder } from '$lib/server/repositories/contract';
+import { attributeBySender, knownSenderAddresses, normaliseAddress } from './attribute';
 import { storeDocument } from '$lib/server/repositories/document';
 import {
-	findByContractAndMessageId,
-	maxImapUidForContract,
+	findByMailboxAndMessageId,
+	maxImapUidForMailbox,
 	recordInboundThread,
 	recordSkippedInboundThread
 } from '$lib/server/repositories/inbound-thread';
@@ -92,15 +93,33 @@ export async function connectWithRetry(
 	throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
+/**
+ * What one pass polls: either a contract's own configured folder, where the
+ * folder itself is the attribution, or the shared mailbox (#380), where a
+ * message's contract is worked out from its sender or left unknown.
+ */
+export type PollTarget =
+	{ kind: 'contract'; contractId: string; mailbox: string } | { kind: 'inbox'; mailbox: string };
+
 export type ContractFolderResult = {
-	contractId: string;
+	/** Null for the shared mailbox: its messages are attributed per message. */
+	contractId: string | null;
 	mailbox: string;
+	/** Archived and queued for extraction. */
 	handedOff: number;
 	// Oversized messages (#306) recorded but never archived — surfaced
 	// separately from `handedOff` so a caller reporting "N archived, M
 	// skipped" (the mail page's poll-now action, #343) never has to
 	// re-derive it from `inbound_thread` itself.
 	skipped: number;
+	/**
+	 * Archived but deliberately not extracted, because the sender matches no
+	 * known client contact (#380). Counted apart from `skipped`, which means
+	 * the bytes were refused: these messages are kept, they simply cost
+	 * nothing to keep. A poll that reports 40 of these and 2 handed off is
+	 * describing a normal inbox, not a failure.
+	 */
+	archivedUnknownSender: number;
 	error: string | null;
 };
 
@@ -113,7 +132,7 @@ export type ContractFolderResult = {
  * establishes for mirror publishing.
  *
  * The incremental fetch is UID-ranged from the durable cursor
- * (`maxImapUidForContract`, scoped to the mailbox's *current*
+ * (`maxImapUidForMailbox`, scoped to the mailbox's *current*
  * `UIDVALIDITY` — see `inbound_thread`'s own doc comment for why that
  * scoping is what makes a `UIDVALIDITY` bump safe). IMAP's own `n:*`
  * gotcha — a `UID FETCH` range past every existing UID is defined as
@@ -136,25 +155,52 @@ export type ContractFolderResult = {
  * never in the second fetch's UID list at all, which is what actually
  * keeps it from ever being buffered whole.
  */
-export async function pollContractFolder(
+export async function pollMailboxTarget(
 	client: ImapFlow,
-	row: { id: string; mailFolder: string },
+	target: PollTarget,
 	executor: DbExecutor = db,
 	maxMessageBytes: number = DEFAULT_IMAP_MAX_MESSAGE_BYTES
 ): Promise<ContractFolderResult> {
-	const mailbox = row.mailFolder;
+	const mailbox = target.mailbox;
+	const folderContractId = target.kind === 'contract' ? target.contractId : null;
+	const empty = {
+		contractId: folderContractId,
+		mailbox,
+		handedOff: 0,
+		skipped: 0,
+		archivedUnknownSender: 0,
+		error: null
+	};
 	try {
 		const box = await client.mailboxOpen(mailbox);
 		const uidValidity = Number(box.uidValidity);
-		if (box.exists === 0)
-			return { contractId: row.id, mailbox, handedOff: 0, skipped: 0, error: null };
+		if (box.exists === 0) return empty;
 
-		const maxUid = await maxImapUidForContract(row.id, uidValidity, executor);
+		// Keyed on the mailbox, not the contract (#380): a shared mailbox has
+		// one UID sequence whoever the messages turn out to belong to, and a
+		// contract folder is a mailbox nobody else polls, so the same key is
+		// correct for both.
+		const maxUid = await maxImapUidForMailbox(mailbox, uidValidity, executor);
 		const from = (maxUid ?? 0) + 1;
 
-		type KeptMeta = { messageId: string | null; subject: string | null; internalDate: Date };
+		// The addresses the ledger already knows, read once per pass rather
+		// than per message. Only consulted for the shared mailbox: a message
+		// in a contract's own folder was filed there by a human, which is a
+		// stronger statement than any address match.
+		const knownSenders =
+			target.kind === 'inbox' ? await knownSenderAddresses(executor) : new Set<string>();
+
+		type KeptMeta = {
+			messageId: string | null;
+			subject: string | null;
+			internalDate: Date;
+			/** Null when nothing in the ledger claims this sender. */
+			contractId: string | null;
+			senderKnown: boolean;
+		};
 		const kept = new Map<number, KeptMeta>();
 		let skipped = 0;
+		let archivedUnknownSender = 0;
 
 		for await (const message of client.fetch(
 			`${from}:*`,
@@ -169,7 +215,7 @@ export async function pollContractFolder(
 				// already have been handed off under an earlier generation,
 				// which the UID cursor above cannot see since it is scoped to
 				// the current one.
-				const already = await findByContractAndMessageId(row.id, messageId, executor);
+				const already = await findByMailboxAndMessageId(mailbox, messageId, executor);
 				if (already) continue;
 			}
 
@@ -181,6 +227,22 @@ export async function pollContractFolder(
 			const uid = message.uid;
 			const size = message.size ?? null;
 
+			// Who it is from, and therefore whose it is. A contract folder
+			// answers both by construction; the shared mailbox asks the
+			// envelope, and accepts "nobody knows" as an answer.
+			const senderAddress =
+				target.kind === 'inbox'
+					? normaliseAddress(message.envelope?.from?.[0]?.address ?? null)
+					: null;
+			const senderKnown =
+				target.kind === 'contract' || (!!senderAddress && knownSenders.has(senderAddress));
+			const attributed =
+				target.kind === 'contract'
+					? folderContractId
+					: senderKnown
+						? ((await attributeBySender(senderAddress, executor))?.contractId ?? null)
+						: null;
+
 			if (size !== null && size > maxMessageBytes) {
 				// #306, invariant 4: the bytes are what get dropped, on
 				// purpose — this message never enters `kept`, so the second
@@ -190,7 +252,7 @@ export async function pollContractFolder(
 				await executor.transaction((tx) =>
 					recordSkippedInboundThread(
 						{
-							contractId: row.id,
+							contractId: attributed,
 							mailbox,
 							imapUidValidity: uidValidity,
 							imapUid: uid,
@@ -207,7 +269,7 @@ export async function pollContractFolder(
 				continue;
 			}
 
-			kept.set(uid, { messageId, subject, internalDate });
+			kept.set(uid, { messageId, subject, internalDate, contractId: attributed, senderKnown });
 		}
 
 		let handedOff = 0;
@@ -227,7 +289,9 @@ export async function pollContractFolder(
 					// not exist yet — the same starting owner `createApproval`
 					// (`repositories/approval.ts`) gives a freshly archived
 					// original before anything downstream decides what it
-					// evidences.
+					// evidences. Unattributed (#380): owned by nobody yet, the
+					// same unclaimed state #86's founding contract PDF sits in
+					// until an accept claims it.
 					const archived = await storeDocument(
 						{
 							bytes: source,
@@ -242,23 +306,29 @@ export async function pollContractFolder(
 							// built from fields this process controls.
 							originalName: `uid-${uid}@${mailbox}.eml`,
 							provenance: 'mail',
-							contractId: row.id,
+							contractId: meta.contractId,
 							confidential: true,
-							ownerType: 'contract',
-							ownerId: row.id
+							ownerType: meta.contractId ? 'contract' : null,
+							ownerId: meta.contractId
 						},
 						tx
 					);
 					await recordInboundThread(
 						{
-							contractId: row.id,
+							contractId: meta.contractId,
 							documentId: archived.id,
 							mailbox,
 							imapUidValidity: uidValidity,
 							imapUid: uid,
 							messageId: meta.messageId,
 							subject: meta.subject,
-							receivedAt: meta.internalDate
+							receivedAt: meta.internalDate,
+							// The cost guard (#380): a message nobody in the ledger
+							// sent is kept, and never handed to a model. Marking it
+							// here rather than filtering at drain time is what makes
+							// the decision visible on the row, and reversible — a
+							// contact added later is what changes the answer.
+							skipReason: meta.senderKnown ? null : 'sender_unknown'
 						},
 						tx
 					);
@@ -268,43 +338,54 @@ export async function pollContractFolder(
 				// exactly this, opening a nested savepoint, so this composes
 				// correctly whether `executor` is the pool or an ambient `tx`.
 				await executor.transaction(run);
-				handedOff += 1;
+				if (meta.senderKnown) handedOff += 1;
+				else archivedUnknownSender += 1;
 			}
 		}
 
-		return { contractId: row.id, mailbox, handedOff, skipped, error: null };
+		return {
+			contractId: folderContractId,
+			mailbox,
+			handedOff,
+			skipped,
+			archivedUnknownSender,
+			error: null
+		};
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error);
-		return { contractId: row.id, mailbox, handedOff: 0, skipped: 0, error: detail };
+		return { ...empty, error: detail };
 	}
 }
 
-export type PollRunResult =
-	| { status: 'skipped'; reason: 'no folders configured'; folders: [] }
-	| { status: 'success' | 'failure'; folders: ContractFolderResult[] };
+/**
+ * A pass either ran or failed to connect. There is no longer a "nothing
+ * configured" outcome (#380): credentials imply a mailbox to watch, so the
+ * only way to poll nothing is to have no credentials, which `imapConfigFromEnv`
+ * refuses before any of this is reached.
+ */
+export type PollRunResult = { status: 'success' | 'failure'; folders: ContractFolderResult[] };
 
 /**
- * One full pass over every contract with a mail folder configured
- * (#84's "poll a configured IMAP folder or label per contract"). Never
- * throws — a connection failure after every retry, or a per-folder
- * problem, is recorded to `mailbox_poll_run` and returned, never an
- * unhandled rejection (the same "surfaced, not swallowed" contract
- * `publishDocument` already keeps for mirror publishing).
+ * One full pass: the shared mailbox (#380), plus every contract that has a
+ * folder of its own (#84). Never throws — a connection failure after every
+ * retry, or a per-folder problem, is recorded to `mailbox_poll_run` and
+ * returned, never an unhandled rejection (the same "surfaced, not swallowed"
+ * contract `publishDocument` already keeps for mirror publishing).
  *
- * Nothing is attempted, and no run row is written, when no contract has
- * a folder configured — the same "genuinely nothing, ever" shape
- * `mirrorConfigFromEnv`'s absent-configuration path keeps: an instance
- * that has not opted into mail ingestion yet should not accumulate empty
- * "success" rows every time a cron entry ticks.
+ * There is no longer a "nothing configured" case to skip for: an account with
+ * credentials always has a mailbox to watch, which is the whole point of
+ * #380 — monitoring should need no setup beyond the credentials. Per-contract
+ * folders remain supported and are polled in addition, for an account that
+ * does file client mail into folders; a message in one of those is attributed
+ * by the folder, which is a human's own filing and a stronger statement than
+ * any address match.
  */
 export async function pollMailboxesOnce(
 	imapConfig: ImapConfig,
 	options: ConnectRetryOptions = {},
 	executor: DbExecutor = db
 ): Promise<PollRunResult> {
-	const targets = await listContractsWithMailFolder(executor);
-	if (targets.length === 0)
-		return { status: 'skipped', reason: 'no folders configured', folders: [] };
+	const folderTargets = await listContractsWithMailFolder(executor);
 
 	let client: ImapFlow;
 	try {
@@ -317,14 +398,24 @@ export async function pollMailboxesOnce(
 
 	const folders: ContractFolderResult[] = [];
 	try {
-		for (const target of targets) {
+		folders.push(
+			await pollMailboxTarget(
+				client,
+				{ kind: 'inbox', mailbox: imapConfig.inboxMailbox },
+				executor,
+				imapConfig.maxMessageBytes
+			)
+		);
+		for (const target of folderTargets) {
 			// mailFolder is non-null by construction (listContractsWithMailFolder
-			// filters on it), narrowed here only for TypeScript.
-			if (!target.mailFolder) continue;
+			// filters on it), narrowed here only for TypeScript. Skipped when it
+			// names the mailbox already polled above, so a contract that mapped
+			// INBOX itself does not get every message twice.
+			if (!target.mailFolder || target.mailFolder === imapConfig.inboxMailbox) continue;
 			folders.push(
-				await pollContractFolder(
+				await pollMailboxTarget(
 					client,
-					{ id: target.id, mailFolder: target.mailFolder },
+					{ kind: 'contract', contractId: target.id, mailbox: target.mailFolder },
 					executor,
 					imapConfig.maxMessageBytes
 				)

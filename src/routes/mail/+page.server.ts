@@ -55,16 +55,17 @@ export const actions: Actions = {
 			throw err;
 		}
 
-		if (result.status === 'skipped') {
-			return { pollNow: { ok: true as const, status: 'skipped' as const } };
-		}
-
+		// Three counts, not two (#380). Watching a whole mailbox means most of
+		// what arrives is archived and deliberately not extracted, so folding
+		// that into "skipped" - which means the bytes were refused - would
+		// read as failure on a perfectly normal inbox.
 		const totals = result.folders.reduce(
 			(acc, folder) => ({
 				archived: acc.archived + folder.handedOff,
-				skipped: acc.skipped + folder.skipped
+				skipped: acc.skipped + folder.skipped,
+				unknownSender: acc.unknownSender + folder.archivedUnknownSender
 			}),
-			{ archived: 0, skipped: 0 }
+			{ archived: 0, skipped: 0, unknownSender: 0 }
 		);
 
 		if (result.status === 'failure') {

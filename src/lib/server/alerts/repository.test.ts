@@ -444,15 +444,25 @@ test('fetchLatestMailboxPollRun reports not configured when the mail account is 
 	});
 });
 
-test('fetchLatestMailboxPollRun reports not configured when the account is set up but no contract has a folder mapped', async () => {
-	await inRolledBackTransaction(async (tx) => {
+// #380: an account is the whole gate. A contract folder used to be required
+// too, because polling meant polling folders; the shared mailbox is watched
+// whenever credentials exist, so reporting "not configured" for an instance
+// with no folder mapped would describe an instance that is in fact polling.
+test('fetchLatestMailboxPollRun reports configured on an account alone, with no folder mapped anywhere', async () => {
+	const result = await inRolledBackTransaction(async (tx) => {
 		await insertContract(tx); // mailFolder left null
-
-		expect(await fetchLatestMailboxPollRun(true, tx)).toEqual({
-			pollingConfigured: false,
-			latestRun: null
-		});
+		await tx.delete(mailboxPollRun);
+		return fetchLatestMailboxPollRun(true, tx);
 	});
+
+	expect(result.pollingConfigured).toBe(true);
+	expect(result.latestRun).toBeNull();
+});
+
+test('fetchLatestMailboxPollRun still reports not configured without an account', async () => {
+	const result = await inRolledBackTransaction(async (tx) => fetchLatestMailboxPollRun(false, tx));
+
+	expect(result).toEqual({ pollingConfigured: false, latestRun: null });
 });
 
 test('fetchLatestMailboxPollRun returns the most recent row once configured, null when none exist yet', async () => {

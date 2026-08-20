@@ -330,27 +330,26 @@ export async function fetchMirrorFailureRows(
 	}));
 }
 
-/** `mailAccountConfigured` is resolved once by the caller (`engine.ts`,
- * via a safe probe of the mail env vars) the same way `mirrorConfigured`
- * is `mirrorConfigFromEnv() !== null` — an env check has no business
- * inside a DB query function. Combined here with whether any contract
- * actually has a folder mapped (`contract.mail_folder`): polling counts
- * as "configured" only when both an account to connect with and at
- * least one contract to poll for exist — `detectMailboxPollFailure`'s
- * own gate, so an instance that has not opted into mail ingestion at
- * all never sees a spurious "never run" alert. */
+/**
+ * `mailAccountConfigured` is resolved once by the caller (`engine.ts`, via a
+ * safe probe of the mail env vars) the same way `mirrorConfigured` is
+ * `mirrorConfigFromEnv() !== null` — an env check has no business inside a DB
+ * query function.
+ *
+ * An account is now the whole gate (#380). It used to also require that some
+ * contract had a folder mapped, because polling meant polling folders and an
+ * instance with none really was polling nothing. Since the shared mailbox is
+ * watched whenever there are credentials, that second condition would report
+ * "not configured" for an instance that is polling every few minutes — which
+ * is exactly the falsehood #374 fixed downstream, and this is where it came
+ * from. A folder mapping is now an addition to ingestion, never its
+ * precondition.
+ */
 export async function fetchLatestMailboxPollRun(
 	mailAccountConfigured: boolean,
 	executor: DbExecutor = db
 ): Promise<{ pollingConfigured: boolean; latestRun: MailboxPollRunRow | null }> {
 	if (!mailAccountConfigured) return { pollingConfigured: false, latestRun: null };
-
-	const [anyMapped] = await executor
-		.select({ id: contract.id })
-		.from(contract)
-		.where(isNotNull(contract.mailFolder))
-		.limit(1);
-	if (!anyMapped) return { pollingConfigured: false, latestRun: null };
 
 	const [row] = await executor
 		.select({

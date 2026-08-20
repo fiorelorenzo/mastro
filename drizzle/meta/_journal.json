@@ -463,6 +463,20 @@
       "when": 1787219086619,
       "tag": "0066_contract_social_charge_election",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1787223650597,
+      "tag": "0067_inbound_thread_optional_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1787223816178,
+      "tag": "0068_inbound_thread_archived_not_extracted",
+      "breakpoints": true
     }
   ]
 }

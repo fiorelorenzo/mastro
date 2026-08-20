@@ -147,7 +147,7 @@ test('a blank mailbox is rejected by the database', async () => {
 	});
 });
 
-test('the same UID cannot be recorded twice for one contract under the same UIDVALIDITY — the durable seen-marker', async () => {
+test('the same UID cannot be recorded twice for one mailbox under the same UIDVALIDITY — the durable seen-marker', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const { contractRow, documentRow } = await insertContractAndDocument(tx);
 		await tx
@@ -165,7 +165,10 @@ test('the same UID cannot be recorded twice for one contract under the same UIDV
 			tx
 		);
 		expect(conflict.code).toBe('23505');
-		expect(conflict.constraint_name).toBe('inbound_thread_contract_uid_key');
+		// Keyed on the mailbox since #380: the contract was standing in for it
+		// while there was one folder per contract, and a shared mailbox breaks
+		// that proxy.
+		expect(conflict.constraint_name).toBe('inbound_thread_mailbox_uid_key');
 
 		// A different UID, or the same UID under a new UIDVALIDITY
 		// generation, is not a conflict.
@@ -182,7 +185,7 @@ test('the same UID cannot be recorded twice for one contract under the same UIDV
 	});
 });
 
-test('the same message_id cannot be recorded twice for one contract even under a different UIDVALIDITY — the UIDVALIDITY-bump safety net', async () => {
+test('the same message_id cannot be recorded twice for one mailbox even under a different UIDVALIDITY — the UIDVALIDITY-bump safety net', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const { contractRow, documentRow } = await insertContractAndDocument(tx);
 		const messageId = '<same-message@example.com>';
@@ -204,7 +207,7 @@ test('the same message_id cannot be recorded twice for one contract even under a
 			tx
 		);
 		expect(conflict.code).toBe('23505');
-		expect(conflict.constraint_name).toBe('inbound_thread_contract_message_id_key');
+		expect(conflict.constraint_name).toBe('inbound_thread_mailbox_message_id_key');
 
 		// A null message_id never conflicts with anything, including
 		// another null.
