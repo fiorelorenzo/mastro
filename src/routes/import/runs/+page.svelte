@@ -35,6 +35,12 @@
 		<a href={resolve('/proposals/[id]', { id: row.proposalId })}>
 			{m.extraction_run_registry_outcome_view_proposal()}
 		</a>
+	{:else if row.status === 'nothing_proposed'}
+		<!-- #398: an em dash here would read as "we have no idea", when the run
+		     has a definite answer: the message was read and approved no day.
+		     Worth a sentence, because this is the outcome a reader is most
+		     likely to mistake for a failure. -->
+		<span class="muted">{m.extraction_run_detail_outcome_nothing_proposed()}</span>
 	{:else if row.status === 'failed' && row.error}
 		<span class="outcome-error">{row.error}</span>
 	{:else}

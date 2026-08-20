@@ -1,6 +1,10 @@
 import { relations } from 'drizzle-orm';
 import { integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import type { ExtractionFailureKind } from '$lib/extraction/failure-kind';
+// The one canonical list, shared with the registry and the run page so an
+// exhaustive `Record` over it cannot go blind to a new status (#398).
+export type { ExtractionRunStatus } from '$lib/extraction/run-status';
+import type { ExtractionRunStatus } from '$lib/extraction/run-status';
 import { id, timestamps } from '../columns';
 import { document } from './document';
 import { proposal, type ProposalTargetType } from './proposal';
@@ -16,7 +20,6 @@ import { proposal, type ProposalTargetType } from './proposal';
  * `document.ownerType`: widening the list is a metadata-only migration,
  * never an `ALTER TYPE ... ADD VALUE`.
  */
-export type ExtractionRunStatus = 'queued' | 'running' | 'extracted' | 'applied' | 'failed';
 
 /**
  * One row per queued extraction job (epic "extraction runs"), keyed by

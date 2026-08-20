@@ -21,6 +21,7 @@ import {
 	claimRunForApply,
 	failRun,
 	finishRunApplied,
+	finishRunNothingProposed,
 	getExtractionRunByJobId,
 	markRunExtracted
 } from '$lib/server/repositories/extraction-run';
@@ -126,10 +127,21 @@ export async function drainCompletedJobs(
 					const result = await applyCompletedJob(job, tx);
 					const [proposal] = result.proposals;
 					if (!proposal) {
-						throw new Error(
-							`extraction for document ${job.result.documentId} produced no proposal ` +
-								`for run ${run.id}`
-						);
+						// Read successfully, nothing in it to propose (#398). This
+						// used to throw, so the run landed on `failed` with
+						// "produced no proposal" - which said the model broke when
+						// the truth was that a newsletter approved no days, and
+						// then said it again on every sweep forever, because a
+						// failed job is deliberately left in `done/` for a retry
+						// (#278). Measured on the live instance: three runs stuck
+						// that way, re-reported every five minutes into
+						// `agent_run.detail` and into `agent_run_failure`'s input.
+						//
+						// The zero-proposal case is genuinely terminal, so it gets
+						// its own status rather than borrowing `applied`, whose own
+						// CHECK requires a real `proposal_id`.
+						await finishRunNothingProposed(job.id, tx);
+						return result;
 					}
 					await finishRunApplied(job.id, proposal.id, tx);
 					return result;
