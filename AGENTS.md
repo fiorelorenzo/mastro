@@ -316,6 +316,18 @@ Jurisdiction packs carry their own presentational label bundle
 so a bundle missing a translation fails `pnpm check` rather than falling back
 silently.
 
+**Never run `messages:compile` while `pnpm dev` is up.** It cost two
+debugging detours in one session, and it does not present as an i18n problem
+when it bites: every route answers 500 with `Failed to load url
+/src/lib/paraglide/messages/<some_key>.js ... Does the file exist?`, naming a
+key nobody touched. Paraglide emits one file per message plus an `_index.js`
+importing them all, so a compile landing while Vite holds that graph leaves
+the two disagreeing and the dev server reads a barrel pointing at files the
+new run renamed. `pnpm check` compiles too, so a peer running it against the
+same checkout is enough to cause it. Retrying does not help, because a
+partial regeneration is the state that produced it: `rm -rf
+src/lib/paraglide && pnpm messages:compile`, then restart the dev server.
+
 ### Migrations
 
 **Drizzle ORM, with the SQL committed.** The tables live in TypeScript, one file per
