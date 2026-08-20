@@ -210,12 +210,14 @@
 			     actually true, `reattributeKnownSenders` runs at the start of
 			     every poll (#388), where it used to require the extra
 			     `mailFolder` field this instance never set. -->
-			<Banner tone="warning">
-				{m.mail_unknown_sender_explainer()}
-				{#snippet actions()}
-					<a href={resolve('/clients')} class="underline">{m.contracts_empty_action()}</a>
-				{/snippet}
-			</Banner>
+			<div class="explainer">
+				<Banner tone="warning">
+					{m.mail_unknown_sender_explainer()}
+					{#snippet actions()}
+						<a href={resolve('/clients')} class="underline">{m.contracts_empty_action()}</a>
+					{/snippet}
+				</Banner>
+			</div>
 		{/if}
 	</Section>
 
@@ -267,6 +269,14 @@
 		margin: 0;
 		font-size: var(--text-sm);
 		color: var(--text-secondary);
+	}
+	/* The Banner has no margins of its own, deliberately: one placed first
+	   inside a Section should not be pushed off its heading. Here it follows
+	   the poll-status row, so it was sitting flush against it - measured at
+	   0px above against 32px below, which is the asymmetry that reads as
+	   wrong rather than tight. */
+	.explainer {
+		margin-top: var(--space-4);
 	}
 	.hint {
 		margin: 0 0 var(--space-3);

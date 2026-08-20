@@ -219,6 +219,40 @@ test('a successful call with a confidenceReason carries it through; a blank one 
 	expect(blankResult.confidenceReason).toBeUndefined();
 });
 
+test('a message that approves no days is a completed extraction with no proposal, not a failure', async () => {
+	// The exact answer `day-extraction.ts` instructs the model to give:
+	// `If the message approves no days, answer
+	// {"proposedFields":{"days":[]},"excerpt":"","confidence":1}`. The parser
+	// used to reject it for having a blank excerpt, so the prompt and the
+	// parser contradicted each other and a model doing as it was told was
+	// recorded as broken. Measured on the live instance: two of eight
+	// extractions from a real mailbox failed this way, which also counts
+	// toward `agent_run_failure` and reports a broken model where the truth
+	// is that the message approved nothing.
+	const contractRow = await insertCommittedContract();
+	cleanup.push(() => deleteCommittedContract(contractRow.id, contractRow.clientId));
+	const documentRow = await insertCommittedDocument(contractRow.id);
+	runnerSql = connectRunnerDb(runnerDatabaseUrl);
+
+	const model: ExtractionModel = {
+		async call() {
+			return {
+				text: JSON.stringify({ proposedFields: { days: [] }, excerpt: '', confidence: 1 })
+			};
+		}
+	};
+
+	const result = await processExtractionJob(
+		runnerSql,
+		model,
+		baseRequest({ documentId: documentRow.id, contractId: contractRow.id })
+	);
+
+	expect(result.excerpt).toBe('');
+	expect(result.proposedFields).toEqual({ days: [] });
+	expect(result.confidence).toBe(1);
+});
+
 test.each([
 	['not json at all', 'is not valid JSON'],
 	[JSON.stringify({ excerpt: 'x' }), 'missing one of'],
