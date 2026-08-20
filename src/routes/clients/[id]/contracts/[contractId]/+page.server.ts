@@ -8,7 +8,11 @@ import { daysLate } from '$lib/server/domain/invoice';
 import { listApprovalsForContract } from '$lib/server/repositories/approval';
 import { listCeilingsByContract } from '$lib/server/repositories/ceiling';
 import { getRenewalAssumptionByContract } from '$lib/server/repositories/contract-renewal-assumption';
-import { getContractDocuments, getContractWithClient } from '$lib/server/repositories/contract';
+import {
+	getContractDocuments,
+	getContractWithClient,
+	setContractStatus
+} from '$lib/server/repositories/contract';
 import { listClauseNotes } from '$lib/server/repositories/clause-note';
 import { toSourceDocumentValue } from '$lib/server/repositories/document';
 import {
@@ -175,6 +179,23 @@ export const load: PageServerLoad = async ({ params }) => {
 };
 
 export const actions: Actions = {
+	/**
+	 * Activate, in one POST (#377). A draft contract is invisible to
+	 * `/day/new`, to the day import and to both contract alerts, and the
+	 * only way to change that was the full editor - which is why "there is
+	 * no way to change the status" was a fair reading of the product.
+	 *
+	 * Only ever sets `'active'`: the other transitions are decisions about
+	 * the contract's life, not a stuck prerequisite, and they stay in the
+	 * editor with the rest of the terms.
+	 */
+	activate: async ({ params }) => {
+		const contract = await loadContract(params.id, params.contractId);
+		if (!contract) error(404, m.contract_not_found());
+		await setContractStatus(contract.id, 'active');
+		return { activated: true as const };
+	},
+
 	rebill: async ({ request, params }) => {
 		const contract = await loadContract(params.id, params.contractId);
 		if (!contract) error(404, m.contract_not_found());

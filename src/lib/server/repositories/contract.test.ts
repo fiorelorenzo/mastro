@@ -1,9 +1,10 @@
+import { eq } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract, document } from '$lib/server/db/schema';
 import type { PaymentTerms } from '$lib/server/db/schema/contract';
-import { getContractDocuments, getContractsWithClient } from './contract';
+import { getContractDocuments, getContractsWithClient, setContractStatus } from './contract';
 
 // Needs a migrated database: `pnpm db:up && pnpm db:migrate`. Postgres work
 // happens inside a transaction that is always rolled back, same pattern as
@@ -101,4 +102,36 @@ test('getContractsWithClient returns every requested contract with its client ea
 
 		expect(await getContractsWithClient([], tx)).toEqual([]);
 	});
+});
+
+// #377: activating a contract is the one status change with a shortcut, so
+// the write behind that shortcut is worth pinning down. The bug this
+// defends against is not subtle and would be catastrophic: an `update`
+// without its `where` activates every contract in the ledger, and a draft
+// contract is draft on purpose.
+test('setContractStatus activates the contract it is given and leaves every other one alone', async () => {
+	const result = await inRolledBackTransaction(async (tx) => {
+		const target = await insertContract(tx);
+		const bystander = await insertContract(tx);
+
+		const returned = await setContractStatus(target.id, 'active', tx);
+
+		const [targetAfter] = await tx.select().from(contract).where(eq(contract.id, target.id));
+		const [bystanderAfter] = await tx.select().from(contract).where(eq(contract.id, bystander.id));
+		return { returned, targetAfter, bystanderAfter, bystanderBefore: bystander.status };
+	});
+
+	expect(result.returned?.status).toBe('active');
+	expect(result.targetAfter.status).toBe('active');
+	expect(result.bystanderAfter.status).toBe(result.bystanderBefore);
+});
+
+test('setContractStatus answers null for a contract that does not exist', async () => {
+	// The route errors 404 before ever calling this, so the honest contract
+	// here is "no row, no lie" rather than a thrown error.
+	const returned = await inRolledBackTransaction(async (tx) =>
+		setContractStatus(crypto.randomUUID(), 'active', tx)
+	);
+
+	expect(returned).toBeNull();
 });

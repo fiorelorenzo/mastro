@@ -41,11 +41,26 @@
 <svelte:head><title>{m.contracts_page_title()}</title></svelte:head>
 
 {#snippet statusCell(row: Row)}
-	<Badge
-		variant={row.status === 'active' ? 'good' : 'neutral'}
-		label={statusLabel(row.status as ContractStatusValue)}
-		size="sm"
-	/>
+	{#if row.status === 'active'}
+		<Badge variant="good" label={statusLabel(row.status as ContractStatusValue)} size="sm" />
+	{:else}
+		<!--
+			A status that is not active is the reason work is blocked - no day
+			can be recorded, no day imported, no contract alert fires - so the
+			cell that names it leads to the page that resolves it (#377). It
+			was a dead badge, which is where "there is no way to change the
+			status" came from: this is the screen a blocked person is sent to.
+		-->
+		<a
+			href={resolve('/clients/[id]/contracts/[contractId]', {
+				id: row.clientId,
+				contractId: row.id
+			})}
+			title={m.contract_activate_hint()}
+		>
+			<Badge variant="neutral" label={statusLabel(row.status as ContractStatusValue)} size="sm" />
+		</a>
+	{/if}
 {/snippet}
 
 {#snippet rateCell(row: Row)}
