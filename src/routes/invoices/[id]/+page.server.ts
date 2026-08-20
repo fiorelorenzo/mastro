@@ -10,6 +10,7 @@ import {
 } from '$lib/server/domain/invoice';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
 import { clientInvoicingGaps } from '$lib/server/fiscal/client-invoicing-gaps';
+import { fatturaBlockers } from './fattura-preconditions';
 import { resolveActiveFiscalPack } from '$lib/server/fiscal/profile';
 import { generateAndStoreInvoiceDocument } from '$lib/server/fiscal/generate-invoice-document';
 import { minorUnitsFromMajor } from '$lib/money';
@@ -35,19 +36,24 @@ import type { Actions, PageServerLoad } from './$types';
 export const load: PageServerLoad = async ({ params }) => {
 	const invoiceRow = await getInvoiceWithLines(params.id);
 	if (!invoiceRow) error(404, m.invoice_not_found());
-	const [documents, rateCards, chaseHistory, resolvedPack, payments] = await Promise.all([
-		getInvoiceDocuments(invoiceRow.id),
-		listRateCards(invoiceRow.contractId),
-		listSentEmailsForInvoice(invoiceRow.id),
-		// The pack in force on the invoice's own issue date, never "today":
-		// which regime applied — and therefore whether SdI routing (#259)
-		// is even a thing to say — is a fact about the invoice, not about
-		// whoever happens to be reading it later.
-		resolveActiveFiscalPack(db, invoiceRow.issueDate),
-		// Every payment on record (#212) — the payment history table and
-		// the balance below both read this one query, never a second.
-		listPaymentsForInvoice(invoiceRow.id)
-	]);
+	const [documents, rateCards, chaseHistory, resolvedPack, payments, practiceProfile] =
+		await Promise.all([
+			getInvoiceDocuments(invoiceRow.id),
+			listRateCards(invoiceRow.contractId),
+			listSentEmailsForInvoice(invoiceRow.id),
+			// The pack in force on the invoice's own issue date, never "today":
+			// which regime applied — and therefore whether SdI routing (#259)
+			// is even a thing to say — is a fact about the invoice, not about
+			// whoever happens to be reading it later.
+			resolveActiveFiscalPack(db, invoiceRow.issueDate),
+			// Every payment on record (#212) — the payment history table and
+			// the balance below both read this one query, never a second.
+			listPaymentsForInvoice(invoiceRow.id),
+			// #371: the practice profile is the second of `generateFattura`'s
+			// two non-client preconditions. Fetched here, not just inside the
+			// action, so the button can say "missing" before the click.
+			getPracticeProfile()
+		]);
 
 	// #212: derived from `invoice.total` and every payment on record —
 	// never a stored flag. Every other figure on this page that used to
@@ -65,14 +71,32 @@ export const load: PageServerLoad = async ({ params }) => {
 			? resolveInvoiceRouting(invoiceRow.contract.client)
 			: null;
 
-	// What this client is still missing before the document its
-	// jurisdiction requires can be generated (migration 0056: a client
-	// needs only a legal name and a country). The generator refuses on the
-	// same answer, but a reviewer should be told before clicking, not
-	// after — and told which field, since the fix is on another screen.
-	const invoicingGaps = resolvedPack
-		? clientInvoicingGaps(invoiceRow.contract.client, resolvedPack.pack)
-		: [];
+	// Whether the Generate-e-invoice control has anything to say at all.
+	// A resolved pack that declares no national format (the generic pack)
+	// means this invoice's jurisdiction never goes through FatturaPA —
+	// same reasoning as `routing` above, nothing to show. No resolved
+	// pack is a different fact: we do not yet know whether the eventual
+	// pack will require it, and #371 is exactly about not staying silent
+	// in that state — so it renders the control, blocked, rather than
+	// hiding it the way an absent `routing` does.
+	const fatturaApplicable = resolvedPack === null || resolvedPack.pack.formats.length > 0;
+
+	// Every precondition `generateFattura` below refuses on, named ahead
+	// of the click rather than surfaced only after (#371) — the client's
+	// own missing fields (migration 0056: a client needs only a legal
+	// name and a country), whether the practice profile is filled in, and
+	// whether a fiscal pack is even in force on this invoice's own issue
+	// date. `clientInvoicingGaps` alone, gated on `resolvedPack`, used to
+	// answer only the first of these — see `fattura-preconditions.ts` for
+	// why the other two are folded into the same list rather than left as
+	// checks only the action performs.
+	const fatturaGaps = fatturaBlockers({
+		clientFieldGaps: resolvedPack
+			? clientInvoicingGaps(invoiceRow.contract.client, resolvedPack.pack)
+			: [],
+		hasPracticeProfile: practiceProfile != null,
+		hasFiscalPack: resolvedPack != null
+	});
 
 	// Each day's own contribution (#239: "the days behind each line are
 	// visible", with a figure that reads as a verifiable sum, never an
@@ -137,7 +161,11 @@ export const load: PageServerLoad = async ({ params }) => {
 		// (#259), or `null` under a pack that carries no national e-invoice
 		// format at all — see the `formats` comment above.
 		routing,
-		invoicingGaps,
+		// Whether the Generate-e-invoice control renders at all, and every
+		// precondition it blocks on when it does — see the two comments
+		// above `fatturaApplicable` and `fatturaGaps`.
+		fatturaApplicable,
+		fatturaGaps,
 		crumbs
 	};
 };

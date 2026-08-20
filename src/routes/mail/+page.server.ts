@@ -3,7 +3,9 @@
 // staleness check that could disagree with the alert engine's own
 // `detectMailboxPollFailure` (`$lib/server/alerts/run-health.ts`).
 import { fail } from '@sveltejs/kit';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
+import { inboundThread } from '$lib/server/db/schema';
 import { mailboxPollHealth } from '$lib/server/alerts/run-health';
 import { listContractsWithClient } from '$lib/server/repositories/contract';
 import { imapConfigFromEnv, imapConfiguredInEnv } from '$lib/server/mail/config';
@@ -11,12 +13,29 @@ import { pollMailboxesOnce } from '$lib/server/mail/poll';
 import { MailPollAlreadyInFlightError, runExclusiveMailPoll } from '$lib/server/mail/poll-lock';
 import type { Actions, PageServerLoad } from './$types';
 
+// #385: the toast a manual poll drives (`pollNow`, below) names the
+// archived-unknown count for the one pass that just ran, and is gone on
+// the next navigation. Whether ingestion is actually stuck is a standing
+// fact of the mailbox, not of the last click, so the status strip needs
+// its own persistent read: every `inbound_thread` row already carries
+// `archived = true, skip_reason = 'sender_unknown'` for exactly this case
+// (`mail/poll.ts`), so a plain count over rows already written is enough
+// — no new column, no re-derivation of what the poller decided.
+async function countArchivedUnknownSenderThreads(): Promise<number> {
+	const [row] = await db
+		.select({ total: sql<number>`count(*)`.mapWith(Number) })
+		.from(inboundThread)
+		.where(and(eq(inboundThread.archived, true), eq(inboundThread.skipReason, 'sender_unknown')));
+	return row?.total ?? 0;
+}
+
 export const load: PageServerLoad = async () => {
-	const [contracts, mailPoll] = await Promise.all([
+	const [contracts, mailPoll, unknownSenderArchivedCount] = await Promise.all([
 		listContractsWithClient(),
-		mailboxPollHealth(db)
+		mailboxPollHealth(db),
+		countArchivedUnknownSenderThreads()
 	]);
-	return { contracts, mailPoll };
+	return { contracts, mailPoll, unknownSenderArchivedCount };
 };
 
 export const actions: Actions = {

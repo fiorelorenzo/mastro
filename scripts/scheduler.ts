@@ -1,8 +1,9 @@
 // The one thing that turns mail polling (#84), the agent drain/enqueue
-// loop (#85) and the alert engine's push/digest runs (#74/#75) into an
-// actual schedule (#222): every one of those is a plain HTTP endpoint
-// that expects a caller — `/api/mail/poll`, `/api/agent/run`,
-// `/api/alerts/run/push`, `/api/alerts/run/digest` — and nothing in this
+// loop (#85), the alert engine's push/digest runs (#74/#75) and the
+// drive mirror's publish run (#50/#346) into an actual schedule (#222):
+// every one of those is a plain HTTP endpoint that expects a caller —
+// `/api/mail/poll`, `/api/agent/run`, `/api/alerts/run/push`,
+// `/api/alerts/run/digest`, `/api/drive/publish` — and nothing in this
 // repository supplied one before this file. Runs as its own compose
 // service (`scheduler`, compose.prod.yaml), built from the same image
 // `web` is, on a different final stage with a different `CMD` — the same
@@ -12,9 +13,9 @@
 // scripts/migrate.ts and scripts/record-backup-run.ts, and for a related
 // reason: this file only ever calls the app's own HTTP endpoints, with
 // the shared bearer tokens `.env.prod` already carries
-// (`IMAP_POLL_CRON_TOKEN`, `ALERT_CRON_TOKEN` — the agent-run route
-// reuses the alert token, see its own comment), so it needs nothing a
-// plain node process cannot already do.
+// (`IMAP_POLL_CRON_TOKEN`, `ALERT_CRON_TOKEN`, `DRIVE_MIRROR_CRON_TOKEN`
+// — the agent-run route reuses the alert token, see its own comment),
+// so it needs nothing a plain node process cannot already do.
 //
 // Each job below is "run once now, then again every N minutes" rather
 // than a cron expression: this process *is* the timer, so there is no
@@ -32,7 +33,7 @@
 // silently stop every *other* job too.
 //
 // What this file cannot do anything about: if this process itself dies,
-// nothing calls any of the four endpoints any more, including the alert
+// nothing calls any of the five endpoints any more, including the alert
 // engine that would otherwise notice `agent_run`/`mailbox_poll_run`/
 // `backup_run` going stale — the alert engine cannot observe its own
 // absence, the same acknowledged gap docs/backup.md documents for "the
@@ -98,6 +99,19 @@ const jobs: Job[] = [
 		// already marked delivered and sends nothing), so this only needs
 		// to land roughly weekly, not on a calendar-aligned day.
 		intervalMinutes: minutes('ALERT_DIGEST_INTERVAL_MINUTES', 7 * 24 * 60)
+	},
+	{
+		name: 'drive publish',
+		path: '/api/drive/publish',
+		// #346: this job's own token, not a shared one — see the route's own
+		// comment for why. Unset (the common case until a self-hoster
+		// configures a mirror target at all) skips the tick outright, the
+		// same "not configured is a supported state" every other job here
+		// takes; the route also answers `{ status: 'skipped' }` on its own
+		// if the token is set but no mirror target is, since a self-hoster
+		// can configure the cron token ahead of the mirror itself.
+		token: process.env.DRIVE_MIRROR_CRON_TOKEN,
+		intervalMinutes: minutes('DRIVE_PUBLISH_INTERVAL_MINUTES', 15)
 	}
 ];
 

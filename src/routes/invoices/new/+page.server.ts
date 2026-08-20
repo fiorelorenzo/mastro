@@ -25,7 +25,10 @@ import {
 	type UnratedInvoiceLine
 } from '$lib/server/repositories/invoice-form';
 import { listRateCards } from '$lib/server/repositories/rate-card';
-import { listEligibleWorkUnitsForInvoicing } from '$lib/server/repositories/work-unit';
+import {
+	hasAnyWorkUnitForContract,
+	listEligibleWorkUnitsForInvoicing
+} from '$lib/server/repositories/work-unit';
 import { minorUnitsFromMajor, sumMinorUnits } from '$lib/money';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -38,16 +41,23 @@ export const load: PageServerLoad = async ({ url }) => {
 	const contractId = url.searchParams.get('contractId') ?? '';
 	const selectedContract = contracts.find((c) => c.id === contractId) ?? null;
 
-	const [rateCards, eligibleDaysRaw, eligibleExpensesRaw, activePack, correctableInvoicesRaw] =
-		contractId
-			? await Promise.all([
-					listRateCards(contractId),
-					listEligibleWorkUnitsForInvoicing(contractId),
-					listEligibleExpensesForRebilling(contractId),
-					resolveActiveFiscalPack(db, new Date().toISOString().slice(0, 10)),
-					listCorrectableInvoicesForContract(contractId)
-				])
-			: [[], [], [], null, []];
+	const [
+		rateCards,
+		eligibleDaysRaw,
+		eligibleExpensesRaw,
+		activePack,
+		correctableInvoicesRaw,
+		hasAnyDays
+	] = contractId
+		? await Promise.all([
+				listRateCards(contractId),
+				listEligibleWorkUnitsForInvoicing(contractId),
+				listEligibleExpensesForRebilling(contractId),
+				resolveActiveFiscalPack(db, new Date().toISOString().slice(0, 10)),
+				listCorrectableInvoicesForContract(contractId),
+				hasAnyWorkUnitForContract(contractId)
+			])
+		: [[], [], [], null, [], false];
 
 	const currency = selectedContract?.currency ?? '';
 
@@ -99,11 +109,18 @@ export const load: PageServerLoad = async ({ url }) => {
 	// only a momentarily misleading one.
 	const taxPreview = resolveInvoiceTax(activePack?.pack ?? null, NO_TAXABLE_AMOUNT);
 
+	// Distinguishes a fresh contract from one that has recorded days but
+	// none eligible to bill (#372): `hasAnyDays` comes from a separate,
+	// unfiltered existence check, since `eligibleDays` being empty alone
+	// cannot tell the two apart.
+	const daysAllIneligible = eligibleDays.length === 0 && hasAnyDays;
+
 	const crumbs = invoicesCrumbs();
 	return {
 		contracts,
 		selectedContractId: contractId,
 		eligibleDays,
+		daysAllIneligible,
 		eligibleExpenses,
 		correctableInvoices,
 		taxPreview,

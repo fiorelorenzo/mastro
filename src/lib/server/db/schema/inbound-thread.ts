@@ -116,14 +116,22 @@ export const inboundThread = pgTable(
 		...timestamps()
 	},
 	(table) => [
+		// These two are kept in step with
+		// `drizzle/0068_inbound_thread_archived_not_extracted.sql` by hand,
+		// because that migration was hand-written and the generator cannot see
+		// it. Drift here is not cosmetic: the next `db:generate` that touches
+		// this table emits SQL from *this* text, so leaving the narrow forms
+		// would silently revert the widening and reject every
+		// `sender_unknown` row the mailbox pass writes.
 		check(
 			'inbound_thread_archived_shape',
-			sql`(${table.archived} = true and ${table.documentId} is not null and ${table.skipReason} is null and ${table.messageSize} is null)
+			sql`(${table.archived} = true and ${table.documentId} is not null and ${table.messageSize} is null
+					and (${table.skipReason} is null or ${table.skipReason} = 'sender_unknown'))
 				or (${table.archived} = false and ${table.documentId} is null and ${table.skipReason} is not null and ${table.messageSize} is not null)`
 		),
 		check(
 			'inbound_thread_skip_reason_known',
-			sql`${table.skipReason} is null or ${table.skipReason} in ('oversized')`
+			sql`${table.skipReason} is null or ${table.skipReason} in ('oversized', 'sender_unknown')`
 		)
 	]
 );

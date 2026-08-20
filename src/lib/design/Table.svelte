@@ -12,6 +12,17 @@
 
   RecordList stays exactly as it is; #204 tracks migrating its eight
   callers here.
+
+  Do not put a form control in a cell. The duality above is the reason: both
+  trees are in the DOM at once, so a `<Checkbox>` or `<Select>` inside a
+  `cell` snippet exists twice under one `name`, and only one copy is visible.
+  Clicking the visible one leaves its twin at the old value, and both submit.
+  Measured on the alert preferences matrix while converting it (#387):
+  unticking the visible box gave `[false, true]` across the two copies and
+  `new FormData(form)` still yielded `["on"]`, so the preference could never
+  be turned off. A badge, a link or an Amount is fine - anything the reader
+  only reads. A row you edit wants a hand-built table, which is what that
+  page went back to.
 -->
 <script lang="ts" generics="Row">
 	import type { Snippet } from 'svelte';

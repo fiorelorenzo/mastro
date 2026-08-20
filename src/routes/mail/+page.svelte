@@ -4,7 +4,7 @@
 	import { getLocale } from '$lib/paraglide/runtime';
 	import Page from '$lib/layout/Page.svelte';
 	import Section from '$lib/layout/Section.svelte';
-	import { Badge, Button, EmptyState, toasts } from '$lib/design';
+	import { Badge, Banner, Button, EmptyState, toasts } from '$lib/design';
 	import { submitting } from '$lib/design/submitting.svelte';
 	import Table from '$lib/design/Table.svelte';
 	import type { TableColumn } from '$lib/design/table';
@@ -144,6 +144,22 @@
 				</Button>
 			</form>
 		</div>
+		{#if data.unknownSenderArchivedCount > 0}
+			<!-- #385: on the live instance 390 messages were archived and none
+			     was ever going to be extracted, and nothing on this screen said
+			     why. The toast a manual poll drives below
+			     (`mail_poll_now_success_toast_with_unknown`) names the count for
+			     the one pass that just ran and is gone on the next navigation;
+			     this reads the standing count off `inbound_thread` itself
+			     (`+page.server.ts`), so the explanation is here on every load,
+			     not only right after pressing the button. -->
+			<Banner tone="warning">
+				{m.mail_unknown_sender_explainer()}
+				{#snippet actions()}
+					<a href={resolve('/clients')} class="underline">{m.contracts_empty_action()}</a>
+				{/snippet}
+			</Banner>
+		{/if}
 	</Section>
 
 	<Table

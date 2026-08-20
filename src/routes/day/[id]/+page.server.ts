@@ -14,7 +14,9 @@ import {
 	linkApprovalToWorkUnit,
 	listWorkUnitTransitions,
 	markWorkUnitUnbillable,
-	resolveWorkUnitDispute
+	rejectWorkUnit,
+	resolveWorkUnitDispute,
+	revokeWorkUnit
 } from '$lib/server/repositories/work-unit';
 import { resolveRateCard } from '$lib/server/domain/rate-card';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
@@ -212,5 +214,46 @@ export const actions: Actions = {
 		await resolveWorkUnitDispute(params.id, { kind: 'human', email: locals.user!.email }, reason);
 
 		return { disputeResolved: true };
+	},
+
+	// #370: rejected is a proposed day that never took place. Legal only
+	// from `proposed` — the trigger enforces that, this action does not
+	// re-check the day's current state first, the same as every other
+	// exit on this page. No reason field: the evidence for why is the
+	// source document the proposal rested on, already archived, not a
+	// fresh explanation typed here — and a day that can still be rejected
+	// has never reached `invoiced` (`proposed` is the state before
+	// approval, let alone billing), so there is no invoice line for this
+	// to touch either.
+	reject: async ({ params, locals }) => {
+		const workUnit = await getWorkUnit(params.id);
+		if (!workUnit) error(404, m.day_detail_not_found());
+
+		await rejectWorkUnit(
+			params.id,
+			{ kind: 'human', email: locals.user!.email },
+			'recorded as not having happened, from the day detail page'
+		);
+
+		return { rejected: true };
+	},
+
+	// #370: revoked is an approval withdrawn before the day was worked.
+	// Legal only from `approved` — same reasoning as `reject` above, both
+	// for skipping a reason field (the approval itself is the evidence,
+	// and it stays archived and linked) and for never touching an
+	// invoice (only a `worked` day ever gets billed, and this is legal
+	// only one step before that).
+	revoke: async ({ params, locals }) => {
+		const workUnit = await getWorkUnit(params.id);
+		if (!workUnit) error(404, m.day_detail_not_found());
+
+		await revokeWorkUnit(
+			params.id,
+			{ kind: 'human', email: locals.user!.email },
+			'recorded as revoked, from the day detail page'
+		);
+
+		return { revoked: true };
 	}
 };

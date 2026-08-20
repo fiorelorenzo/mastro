@@ -22,7 +22,18 @@
 </section>
 
 <style>
-	/* One spacing scale, so two pages cannot disagree about it. */
+	/*
+	 * One spacing scale, so two pages cannot disagree about it.
+	 *
+	 * This rule assumes sections stack in normal flow, and CSS cannot ask
+	 * about its parent's display, so a section that is a *grid or flex item*
+	 * still matches it and starts 2rem lower than the item beside it. That
+	 * was #386 on the contract page, where rate cards sat 32px below
+	 * invoices for exactly this reason. No page pairs sections in a row any
+	 * more; one that wants to must zero this margin on its own items
+	 * (`.row > :global(.section) { margin-top: 0 }`), because the gap
+	 * belongs to the row then, not to the section.
+	 */
 	.section + :global(.section) {
 		margin-top: 2rem;
 	}

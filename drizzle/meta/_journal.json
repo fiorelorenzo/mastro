@@ -477,6 +477,13 @@
       "when": 1787223816178,
       "tag": "0068_inbound_thread_archived_not_extracted",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1787240333871,
+      "tag": "0069_schema_matches_handwritten_migrations",
+      "breakpoints": true
     }
   ]
 }

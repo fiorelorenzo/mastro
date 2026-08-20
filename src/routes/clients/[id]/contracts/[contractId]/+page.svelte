@@ -520,39 +520,47 @@
 		{ key: 'inForce', label: m.day_detail_state_label(), cell: rateCardInForceCell }
 	] satisfies readonly TableColumn<RateCardRow>[]}
 
-	<div class="cols-2">
-		<Section title={m.contract_detail_invoices_heading()}>
-			<Table
-				columns={invoiceColumns}
-				rows={data.invoices}
-				caption={m.contract_detail_invoices_heading()}
-				rowKey={(row) => row.id}
-				rowHref={(row) => `/invoices/${row.id}`}
-				empty={invoicesEmpty}
-			/>
-		</Section>
+	<!--
+		#386: rate cards and invoices used to share a two-column row, and both
+		reasons for that were wrong. Each is a four-column table, so half the
+		page width cost the columns their room while the other half held an
+		empty state; and a `Section` that is a grid item still matches
+		`Section.svelte`'s `.section + .section` stacking rule, so the second
+		one started 32px lower than the first. Full width, in document order,
+		like every other table on this page. Rate cards come first because a
+		rate is set before anything is billed against it.
+	-->
+	<Section title={m.rate_card_section_heading()}>
+		{#snippet actions()}
+			<a
+				href={resolve('/clients/[id]/contracts/[contractId]/rate-cards/new', {
+					id: contract.client.id,
+					contractId: contract.id
+				})}
+				class="underline">{m.rate_card_new_link()}</a
+			>
+		{/snippet}
+		<Table
+			columns={rateCardColumns}
+			rows={data.rateCards}
+			caption={m.rate_card_section_heading()}
+			rowKey={(row) => row.id}
+			rowHref={(row) =>
+				`/clients/${contract.client.id}/contracts/${contract.id}/rate-cards/${row.id}/edit`}
+			empty={rateCardsEmpty}
+		/>
+	</Section>
 
-		<Section title={m.rate_card_section_heading()}>
-			{#snippet actions()}
-				<a
-					href={resolve('/clients/[id]/contracts/[contractId]/rate-cards/new', {
-						id: contract.client.id,
-						contractId: contract.id
-					})}
-					class="underline">{m.rate_card_new_link()}</a
-				>
-			{/snippet}
-			<Table
-				columns={rateCardColumns}
-				rows={data.rateCards}
-				caption={m.rate_card_section_heading()}
-				rowKey={(row) => row.id}
-				rowHref={(row) =>
-					`/clients/${contract.client.id}/contracts/${contract.id}/rate-cards/${row.id}/edit`}
-				empty={rateCardsEmpty}
-			/>
-		</Section>
-	</div>
+	<Section title={m.contract_detail_invoices_heading()}>
+		<Table
+			columns={invoiceColumns}
+			rows={data.invoices}
+			caption={m.contract_detail_invoices_heading()}
+			rowKey={(row) => row.id}
+			rowHref={(row) => `/invoices/${row.id}`}
+			empty={invoicesEmpty}
+		/>
+	</Section>
 
 	{@const expenseColumns = [
 		{
@@ -764,20 +772,6 @@
 		text-align: right;
 		font-size: var(--text-sm);
 		color: var(--text-muted);
-	}
-	.cols-2 {
-		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-		gap: var(--space-6);
-		margin-top: 2rem;
-	}
-	.cols-2 + :global(.section) {
-		margin-top: 2rem;
-	}
-	@media (max-width: 767px) {
-		.cols-2 {
-			grid-template-columns: 1fr;
-		}
 	}
 	.rebill-form {
 		display: flex;

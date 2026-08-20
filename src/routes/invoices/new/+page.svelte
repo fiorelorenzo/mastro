@@ -15,6 +15,7 @@
 	`generic` pack).
 -->
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { formatDate, formatMinorUnits, formatPercent } from '$lib/i18n/format';
 	import {
@@ -28,6 +29,7 @@
 	import AmountInput from '$lib/design/AmountInput.svelte';
 	import Button from '$lib/design/Button.svelte';
 	import Checkbox from '$lib/design/Checkbox.svelte';
+	import EmptyState from '$lib/design/EmptyState.svelte';
 	import Field from '$lib/design/Field.svelte';
 	import Input from '$lib/design/Input.svelte';
 	import LegalText from '$lib/legal/LegalText.svelte';
@@ -65,6 +67,20 @@
 
 	const selectedContract = $derived(
 		data.contracts.find((c) => c.id === data.selectedContractId) ?? null
+	);
+
+	/**
+	 * Built here rather than inline, the shape the mail send page already
+	 * uses: `svelte/no-navigation-without-resolve` reads a native `<a href>`
+	 * statically, so appending a query string to `resolve()` inside the
+	 * attribute trips it even though the path itself is resolved. `/day/new`
+	 * does consume `?contractId=` (`+page.server.ts:109`), so the link
+	 * arrives with the contract already chosen.
+	 */
+	const recordDayHref = $derived(
+		selectedContract
+			? `${resolve('/day/new')}?contractId=${selectedContract.id}`
+			: resolve('/day/new')
 	);
 
 	const values: InvoiceFormValues = $derived(
@@ -223,34 +239,56 @@
 					</select>
 				</label>
 				{#if documentType === 'credit_note'}
-					<label class="flex flex-col gap-1 text-sm">
-						{m.invoice_form_corrects_invoice_label()}
-						<select
-							name="correctsInvoiceId"
-							class="border px-2 py-1"
-							required
-							onchange={(event) =>
-								selectCorrectsInvoice((event.currentTarget as HTMLSelectElement).value)}
+					{#if data.correctableInvoices.length === 0}
+						<!--
+							#372: a credit note that corrects nothing cannot actually be
+							submitted, since the select below would offer only its
+							disabled placeholder and `required` already refuses that.
+							Naming the reason and pointing at this contract's own
+							invoices beats a select the reader cannot get past.
+						-->
+						<EmptyState
+							icon="€"
+							title={m.invoice_form_corrects_invoice_label()}
+							body={m.invoice_form_no_correctable_invoices()}
 						>
-							<option value="" disabled selected={correctsInvoiceId === ''}
-								>{m.invoice_form_corrects_invoice_placeholder()}</option
-							>
-							{#each data.correctableInvoices as original (original.id)}
-								<option value={original.id} selected={original.id === correctsInvoiceId}
-									>{original.number} — {formatDate(original.issueDate)} — {formatMinorUnits(
-										original.total,
-										original.currency
-									)}</option
+							{#snippet actions()}
+								<a
+									href={resolve('/clients/[id]/contracts/[contractId]', {
+										id: selectedContract.clientId,
+										contractId: selectedContract.id
+									})}
+									class="underline">{m.invoice_form_no_correctable_action()}</a
 								>
-							{/each}
-						</select>
-						{#if errors.correctsInvoiceId}
-							<span class="text-xs font-semibold">{errors.correctsInvoiceId}</span>
-						{/if}
-						{#if data.correctableInvoices.length === 0}
-							<span class="text-xs opacity-70">{m.invoice_form_no_correctable_invoices()}</span>
-						{/if}
-					</label>
+							{/snippet}
+						</EmptyState>
+					{:else}
+						<label class="flex flex-col gap-1 text-sm">
+							{m.invoice_form_corrects_invoice_label()}
+							<select
+								name="correctsInvoiceId"
+								class="border px-2 py-1"
+								required
+								onchange={(event) =>
+									selectCorrectsInvoice((event.currentTarget as HTMLSelectElement).value)}
+							>
+								<option value="" disabled selected={correctsInvoiceId === ''}
+									>{m.invoice_form_corrects_invoice_placeholder()}</option
+								>
+								{#each data.correctableInvoices as original (original.id)}
+									<option value={original.id} selected={original.id === correctsInvoiceId}
+										>{original.number} — {formatDate(original.issueDate)} — {formatMinorUnits(
+											original.total,
+											original.currency
+										)}</option
+									>
+								{/each}
+							</select>
+							{#if errors.correctsInvoiceId}
+								<span class="text-xs font-semibold">{errors.correctsInvoiceId}</span>
+							{/if}
+						</label>
+					{/if}
 				{/if}
 				<label class="flex flex-col gap-1 text-sm">
 					{m.invoice_form_currency_label()}
@@ -321,8 +359,42 @@
 							</li>
 						{/each}
 					</ul>
+				{:else if data.daysAllIneligible}
+					<!--
+						#372: a fresh contract and a contract with three
+						worked_without_approval days both land here with an empty
+						eligibleDays list, but only the first is fixed by recording a
+						day. The second already has days; they are just none of the
+						two states listEligibleWorkUnitsForInvoicing
+						(work-unit.ts:319) bills from ('worked'/'disputed', with no
+						line yet). Sending that reader back to the entry form they
+						already used would be a second wrong turn, so this branch
+						names the condition instead and offers no action.
+					-->
+					<EmptyState
+						icon="▦"
+						title={m.invoice_form_days_legend()}
+						body={m.invoice_form_days_all_ineligible()}
+					/>
 				{:else}
-					<p class="text-xs opacity-70">{m.invoice_form_no_eligible_days()}</p>
+					<EmptyState
+						icon="▦"
+						title={m.invoice_form_days_legend()}
+						body={m.invoice_form_no_eligible_days()}
+					>
+						{#snippet actions()}
+							<!--
+								A `Button` with `href` rather than a bare `<a>`, the same shape
+								the contract page uses for this exact link:
+								`svelte/no-navigation-without-resolve` reads a native `href`
+								statically and cannot see that `recordDayHref` is built from
+								`resolve()`. The path does go through it.
+							-->
+							<Button href={recordDayHref} variant="secondary" size="sm">
+								{m.invoice_form_no_days_action()}
+							</Button>
+						{/snippet}
+					</EmptyState>
 				{/if}
 			</fieldset>
 
@@ -353,7 +425,21 @@
 						{/each}
 					</ul>
 				{:else}
-					<p class="text-xs opacity-70">{m.invoice_form_no_eligible_expenses()}</p>
+					<EmptyState
+						icon="▧"
+						title={m.invoice_form_expenses_legend()}
+						body={m.invoice_form_no_eligible_expenses()}
+					>
+						{#snippet actions()}
+							<a
+								href={resolve('/clients/[id]/contracts/[contractId]/expenses/new', {
+									id: selectedContract.clientId,
+									contractId: selectedContract.id
+								})}
+								class="underline">{m.invoice_form_no_expenses_action()}</a
+							>
+						{/snippet}
+					</EmptyState>
 				{/if}
 			</fieldset>
 

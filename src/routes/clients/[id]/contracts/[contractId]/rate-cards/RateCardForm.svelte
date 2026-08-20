@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as m from '$lib/paraglide/messages';
-	import { Button } from '$lib/design';
+	import { Button, Field, Select } from '$lib/design';
 	import { submitting } from '$lib/design/submitting.svelte';
 	import type { RateCardFormValues } from '$lib/server/repositories/rate-card-form';
 	import {
@@ -49,31 +49,27 @@
 		<span class="text-xs opacity-70">{m.rate_card_form_valid_to_hint()}</span>
 		{#if errors.validTo}<span class="text-xs font-semibold">{errors.validTo}</span>{/if}
 	</label>
-	<label class="flex flex-col gap-1 text-sm">
-		{m.rate_card_form_kind_label()}
-		<select name="kind" bind:value={kind} class="border px-2 py-1" required>
+	<Field label={m.rate_card_form_kind_label()} error={errors.kind} required>
+		<Select name="kind" bind:value={kind} required>
 			{#each rateCardKinds as candidate (candidate)}
-				<option value={candidate} selected={values.kind === candidate}
-					>{rateCardKindLabel(candidate)}</option
-				>
+				<option value={candidate} selected={values.kind === candidate}>
+					{rateCardKindLabel(candidate)}
+				</option>
 			{/each}
-		</select>
-		{#if errors.kind}<span class="text-xs font-semibold">{errors.kind}</span>{/if}
-	</label>
+		</Select>
+	</Field>
 	<label class="flex flex-col gap-1 text-sm">
 		{m.rate_card_form_amount_label()}
 		<input name="amount" value={values.amount} class="border px-2 py-1" required />
 		{#if errors.amount}<span class="text-xs font-semibold">{errors.amount}</span>{/if}
 	</label>
-	<label class="flex flex-col gap-1 text-sm">
-		{m.rate_card_form_unit_label()}
-		<select name="unit" value={values.unit} class="border px-2 py-1" required>
+	<Field label={m.rate_card_form_unit_label()} error={errors.unit} required>
+		<Select name="unit" value={values.unit} required>
 			{#each rateUnits as unit (unit)}
 				<option value={unit} selected={values.unit === unit}>{rateUnitLabel(unit)}</option>
 			{/each}
-		</select>
-		{#if errors.unit}<span class="text-xs font-semibold">{errors.unit}</span>{/if}
-	</label>
+		</Select>
+	</Field>
 	<label class="flex flex-col gap-1 text-sm">
 		{m.rate_card_form_allowed_fractions_label()}
 		<input
@@ -94,27 +90,22 @@
 		</label>
 	{/if}
 	{#if kind === 'fixed_recurring'}
-		<label class="flex flex-col gap-1 text-sm">
-			{m.rate_card_form_disbursement_period_label()}
-			<select
-				name="disbursementPeriod"
-				value={values.disbursementPeriod}
-				class="border px-2 py-1"
-				required
-			>
-				<option value="" disabled selected={values.disbursementPeriod === ''}
-					>{m.rate_card_form_disbursement_period_placeholder()}</option
-				>
+		<Field
+			label={m.rate_card_form_disbursement_period_label()}
+			error={errors.disbursementPeriod}
+			required
+		>
+			<Select name="disbursementPeriod" value={values.disbursementPeriod} required>
+				<option value="" disabled selected={values.disbursementPeriod === ''}>
+					{m.rate_card_form_disbursement_period_placeholder()}
+				</option>
 				{#each disbursementPeriods as period (period)}
-					<option value={period} selected={values.disbursementPeriod === period}
-						>{disbursementPeriodLabel(period)}</option
-					>
+					<option value={period} selected={values.disbursementPeriod === period}>
+						{disbursementPeriodLabel(period)}
+					</option>
 				{/each}
-			</select>
-			{#if errors.disbursementPeriod}<span class="text-xs font-semibold"
-					>{errors.disbursementPeriod}</span
-				>{/if}
-		</label>
+			</Select>
+		</Field>
 	{/if}
 
 	<Button type="submit" variant="secondary" size="md" loading={save.busy}>{submitLabel}</Button>
