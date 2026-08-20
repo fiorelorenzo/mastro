@@ -1,12 +1,14 @@
-// Colocated with `/mail` (#314) so the index page's status strip and the
-// per-contract inbound-folder field's badge — both `mailbox_poll_run` is
-// one account-wide row, never per-contract (see
-// `db/schema/mailbox-poll-run.ts`) — render the identical wording for the
-// identical fact instead of two independent copies. `kind` mirrors
-// `RunHealth` (`$lib/server/alerts/run-health.ts`) structurally rather than
-// importing it: that module lives under `$lib/server`, and this file is
-// also imported from `.svelte` files, where an import from `$lib/server`
-// is a build-time error.
+// Colocated with `/mail` (#314) so its own status strip and `/settings`'s
+// "Mail polling" row (`../settings/+page.svelte`) render the identical
+// wording for the identical fact instead of two independent copies —
+// `mailbox_poll_run` is one account-wide row, not per-contract (see
+// `db/schema/mailbox-poll-run.ts`). #394 removed the per-contract inbound
+// folder field this file used to also badge; `/mail/contracts/[id]` no
+// longer imports from here. `kind` mirrors `RunHealth`
+// (`$lib/server/alerts/run-health.ts`) structurally rather than importing
+// it: that module lives under `$lib/server`, and this file is also
+// imported from `.svelte` files, where an import from `$lib/server` is a
+// build-time error.
 import * as m from '$lib/paraglide/messages';
 import { formatDateTime } from '$lib/i18n/format';
 import type { BadgeVariant } from '$lib/design';
@@ -27,22 +29,24 @@ export interface PollHealthSnapshot {
  * failure and "never ran at all" are both `critical`, same as the alert
  * engine fires them.
  *
- * `accountConfigured` and `anyFolderMapped` are separate arguments because
- * they are separate problems with separate fixes (#351): the first is an
- * environment variable, the second is a contract's Inbound mail field. One
- * boolean for both made `/mail` tell its owner IMAP was not configured on
- * an instance where it was configured and working.
+ * `accountConfigured` used to travel with a second `anyFolderMapped`
+ * argument (#351): whether a contract had claimed a folder was a separate
+ * problem from whether IMAP was configured at all, with a separate fix.
+ * #394 removed the folder mechanism itself — attribution is by sender
+ * address, not by which folder a message landed in — so there is no
+ * mapping step left to report on. `accountConfigured` is the only
+ * precondition now; a `null` health with the account configured cannot
+ * happen (`mailboxPollHealth` only omits `health` when the account is
+ * not configured), but is treated the same as unconfigured rather than
+ * assumed away, since a UI reducer should never crash on a state its own
+ * caller could not have produced by construction alone.
  */
 export function mailPollBadge(
 	accountConfigured: boolean,
-	anyFolderMapped: boolean,
 	health: PollHealthSnapshot | null
 ): { variant: BadgeVariant; label: string } {
-	if (!accountConfigured) {
+	if (!accountConfigured || health === null) {
 		return { variant: 'warning', label: m.mail_poll_status_not_configured_badge() };
-	}
-	if (!anyFolderMapped || health === null) {
-		return { variant: 'warning', label: m.mail_poll_status_not_mapped_badge() };
 	}
 	switch (health.kind) {
 		case 'ok':
@@ -57,16 +61,15 @@ export function mailPollBadge(
 }
 
 /** The prose next to {@link mailPollBadge}'s badge: when it last polled,
- * and what happened — or, before any of that can be true, which of the two
- * things is missing and where it is fixed. */
+ * and what happened — or, before any of that can be true, that IMAP is
+ * unconfigured. See {@link mailPollBadge} for why the folder-mapping
+ * argument this used to also take is gone (#394). */
 export function mailPollMeta(
 	accountConfigured: boolean,
-	anyFolderMapped: boolean,
 	health: PollHealthSnapshot | null,
 	locale: Locale
 ): string {
-	if (!accountConfigured) return m.mail_poll_status_not_configured_meta();
-	if (!anyFolderMapped || health === null) return m.mail_poll_status_not_mapped_meta();
+	if (!accountConfigured || health === null) return m.mail_poll_status_not_configured_meta();
 	switch (health.kind) {
 		case 'ok':
 			return m.mail_poll_status_ok_meta({ date: formatDateTime(health.lastRunAt!, locale) });

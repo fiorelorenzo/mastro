@@ -105,6 +105,7 @@ function threadInput(
 		imapUid: 1,
 		messageId: `<${crypto.randomUUID()}@example.com>`,
 		subject: 'Re: approval for next week',
+		senderAddress: null,
 		receivedAt: new Date('2026-08-01T09:00:00.000Z'),
 		...overrides
 	};

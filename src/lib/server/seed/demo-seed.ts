@@ -548,15 +548,23 @@ async function seedNordwind() {
 	//
 	// The IMAP coordinates are the shape `mail/poll.ts` writes, not real
 	// ones: a UID validity and a UID are what identify a message inside a
-	// folder, and the demo has no folder.
+	// mailbox.
+	//
+	// `senderAddress` matches the contact recorded for this client, because
+	// that match is what makes a message readable at all since #394 - a
+	// seeded thread with a sender nobody knows would demonstrate the
+	// refusal path rather than the working one, and the archived `.eml`
+	// below carries the same address in its own `From` header, so the two
+	// cannot drift.
 	await recordInboundThread({
 		contractId: contractRow.id,
 		documentId: proposalsDocument.id,
-		mailbox: 'INBOX/Nordwind',
+		mailbox: 'INBOX',
 		imapUidValidity: 1,
 		imapUid: 4821,
 		messageId: '<giornate-fine-agosto@nordwindlogistics.example>',
 		subject: 'Giornate fine agosto',
+		senderAddress: 'elena.marchetti@nordwindlogistics.example',
 		receivedAt: new Date('2026-08-20T07:05:00Z')
 	});
 	await createProposal({

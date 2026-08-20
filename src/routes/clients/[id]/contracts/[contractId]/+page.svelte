@@ -696,27 +696,6 @@
 					<dt>{row.dt}</dt>
 					<dd>{row.dd}</dd>
 				{/each}
-				<!--
-					The inbound folder is the one term on this page that is written
-					somewhere else (`/mail/contracts/[id]`, which owns the field and
-					its duplicate check), and it used to render as a bare "Not set"
-					with no way forward from the contract it is a fact about (#360).
-					Same shape as the renewal assumption below: the label switches on
-					whether it is set, and there is exactly one writer.
-				-->
-				<dt>{m.contract_detail_terms_mail_folder_label()}</dt>
-				<dd>
-					{#if contract.mailFolder}
-						<code class="folder">{contract.mailFolder}</code>
-					{:else}
-						{m.contract_detail_terms_mail_folder_none()}
-					{/if}
-					<a href={resolve('/mail/contracts/[id]', { id: contract.id })} class="underline">
-						{contract.mailFolder
-							? m.contract_detail_terms_mail_folder_edit_link()
-							: m.contract_detail_terms_mail_folder_set_link()}
-					</a>
-				</dd>
 			</dl>
 		</Card>
 	</Section>
@@ -831,18 +810,6 @@
 	.terms dd {
 		margin: 0;
 		color: var(--text-primary);
-	}
-	/* The folder value and the link that changes it share one `dd`, so they
-	   need the gap the grid gives every other pair. */
-	.terms dd:has(> .folder),
-	.terms dd:has(> a) {
-		display: flex;
-		align-items: baseline;
-		flex-wrap: wrap;
-		gap: var(--space-2);
-	}
-	.folder {
-		font-family: var(--font-mono);
 	}
 	@media (max-width: 639px) {
 		.terms {

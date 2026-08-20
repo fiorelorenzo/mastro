@@ -51,24 +51,20 @@ export function classifyRun(latest: RunRow | null, alerts: readonly Alert[]): Ru
  * any differently than the alert engine or than each other.
  *
  * Three states, not two (#351). `fetchLatestMailboxPollRun` collapses "no
- * IMAP account" and "an account, but no contract mapped to a folder" into
- * one `pollingConfigured: false`, which is right for the alert engine — an
- * instance that never opted into ingestion must not be told its poller
- * never ran — and wrong for a screen, because the two have different fixes
- * in different places. The live instance sat for hours with a working
- * account and no contracts, and `/mail` told its owner IMAP was not
- * configured, which sent him to check environment variables that were
- * correct while the scheduler logged the real reason.
+ * IMAP account" into `pollingConfigured: false`, which is right for the
+ * alert engine — an instance that never opted into ingestion must not be
+ * told its poller never ran.
  *
- * So `accountConfigured` is the env question and `anyFolderMapped` the
- * ledger one. `configured` is kept, meaning both, so the alert engine and
- * any caller that only needs the old gate reads exactly what it read
- * before.
+ * `accountConfigured` used to sit beside a second gate, `anyFolderMapped` —
+ * whether any contract had a folder mapped. That gate is gone (#394):
+ * attribution is now a fact read off `client_contact.email`, never a
+ * precondition of the poller running at all. `configured` is kept, meaning
+ * the same thing `accountConfigured` does now, so any caller reading
+ * either name gets the same answer.
  */
 export async function mailboxPollHealth(executor: DbExecutor = db): Promise<{
 	configured: boolean;
 	accountConfigured: boolean;
-	anyFolderMapped: boolean;
 	health: RunHealth | null;
 }> {
 	const accountConfigured = imapConfiguredInEnv();
@@ -77,17 +73,12 @@ export async function mailboxPollHealth(executor: DbExecutor = db): Promise<{
 		return {
 			configured: false,
 			accountConfigured,
-			// The account is the first gate, so a false there says nothing
-			// about mapping; only when the account is configured does
-			// `pollingConfigured: false` mean "nothing is mapped".
-			anyFolderMapped: false,
 			health: null
 		};
 	}
 	return {
 		configured: true,
 		accountConfigured: true,
-		anyFolderMapped: true,
 		health: classifyRun(
 			mailboxPoll.latestRun,
 			detectMailboxPollFailure(true, mailboxPoll.latestRun, new Date())

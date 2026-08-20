@@ -1,4 +1,4 @@
-import { asc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
 	client,
@@ -59,22 +59,6 @@ export async function listContractsWithClient() {
 		with: { client: true },
 		orderBy: asc(contract.startsOn)
 	});
-}
-
-/** Every contract currently mapped to an inbound mail folder (#84) —
- * `mail/poll.ts`'s own candidate list for one poll pass. `isNotNull`
- * rather than a truthy check in application code: `mail_folder` is
- * never an empty string (`contract_mail_folder_not_blank`, the custom
- * migration), so this is the same "not polled" test the database
- * itself enforces. Takes `executor`, unlike this file's other reads,
- * because `mail/poll.ts` composes it with the rest of one poll pass —
- * the same reason `repositories/document-mirror.ts`'s `listUnmirrored
- * Documents` does. */
-export async function listContractsWithMailFolder(executor: DbExecutor = db) {
-	return executor
-		.select({ id: contract.id, mailFolder: contract.mailFolder })
-		.from(contract)
-		.where(isNotNull(contract.mailFolder));
 }
 
 export async function getContract(id: string, executor: DbExecutor = db) {
@@ -155,26 +139,6 @@ export async function setContractTemplateLanguage(
 	return row;
 }
 
-/** #84's per-contract inbound mail folder/label, set independently of
- * the rest of the contract from the mail hub — mirrors `setContract
- * AutoSendMail`'s and `setContractTemplateLanguage`'s narrow-setter
- * shape for the same reason. `null` clears the mapping (stops polling
- * that contract without deleting any history already handed off for
- * it); the `contract_mail_folder_key` partial unique index (custom
- * migration) is the actual guarantee against two contracts claiming the
- * same folder — this function does not pre-check it, the same way
- * `createContract` does not pre-check any of its own database
- * constraints, so a caller has to handle the constraint violation either
- * way. */
-export async function setContractMailFolder(id: string, mailFolder: string | null) {
-	const [row] = await db
-		.update(contract)
-		.set({ mailFolder })
-		.where(eq(contract.id, id))
-		.returning();
-	return row;
-}
-
 /**
  * The contract's own status, set on its own (#377) rather than through
  * `updateContract`'s whole-contract input.
@@ -188,7 +152,7 @@ export async function setContractMailFolder(id: string, mailFolder: string | nul
  * Takes the status rather than hard-coding `'active'` so the same action can
  * carry the other transitions if they ever earn a shortcut too; the editor
  * keeps the full select either way. Takes an `executor` for the same reason
- * `listContractsWithMailFolder` does - here so a test can watch the write
+ * `getContract` does - here so a test can watch the write
  * inside a transaction it rolls back, which is what pins down that it
  * touches one contract and not the table.
  */

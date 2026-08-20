@@ -99,6 +99,20 @@ Google's. For Gmail: enable 2-Step Verification, then generate an app password
 at myaccount.google.com/apppasswords. Note that IMAP is always on for personal
 `@gmail.com` accounts since 2025 — there is no setting to enable.
 
+**Watching the mailbox needs only the credentials above — there is nothing to
+map per client.** `IMAP_INBOX_MAILBOX` (`INBOX` unless your provider files
+client mail somewhere else) is the one mailbox polled. Earlier versions asked
+you to point each contract at its own IMAP folder or label; that mechanism is
+gone (#394). A message is handed off for extraction only when its sender
+address matches a client contact's email address exactly — that match is the
+entire attribution, and nothing else stands in for it. Get a contact's email
+wrong and the mismatch is invisible until you go looking for it: on this
+project's own first real instance, a contact was recorded as
+`leonardo@visumlabs.com` while every message actually arrived from
+`leo@visumlabs.com`, and nothing on screen said so. Keep every contact's
+email the exact address your client sends from, not an alias, an alternate
+account, or a display name you happened to type in.
+
 **Sending has two options, and SMTP is the default.** `SMTP_HOST`/... over the
 same app password is what most instances want, and the sent message is appended
 to your own Sent folder over IMAP so the thread lives where you expect it.

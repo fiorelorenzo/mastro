@@ -34,7 +34,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	// sibling already wrote for the alert engine's "is polling even configured"
 	// gate, reused here rather than duplicated.
 	if (!imapConfiguredInEnv()) {
-		return json({ status: 'skipped', reason: 'mail is not configured', folders: [] });
+		return json({ status: 'skipped', reason: 'mail is not configured' });
 	}
 
 	// Exclusively, like the button (#380). This route did not take the lock,
@@ -53,7 +53,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	} catch (error) {
 		if (error instanceof MailPollAlreadyInFlightError) {
 			// Not an error for a timer: the previous tick is still working.
-			return json({ status: 'in_flight', folders: [] });
+			return json({ status: 'in_flight' });
 		}
 		throw error;
 	}
