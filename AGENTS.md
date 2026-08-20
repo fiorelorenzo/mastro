@@ -458,3 +458,45 @@ touched, and passing a path through `pnpm` changes nothing. For a fast local pas
 tools directly (`pnpm exec eslint <files>`, `pnpm exec prettier --check <files>`) and know it
 proves less than the job does; a type check is whole-graph by nature and there is no honest
 way to narrow it. `pnpm test <path>` is the one that does scope, by file or directory.
+
+## Design and UI
+
+This is the reference implementation for the pipeline in `~/.config/agents/shared.md`:
+run `ui-brief-first`, `ui-design-tokens` and `ui-visual-review`, and drive rendering
+with `uishot`/`uislop` rather than re-deriving any of this by hand.
+
+**Boot and route.** `pnpm dev` runs `db:up` (Postgres, loopback `:5436`, waits for the
+healthcheck), then `db:migrate`, then Vite on `:5187` — there is no path to a render
+without Postgres already up. Screenshot `/design` first:
+`uishot http://localhost:5187/design --full --theme light,dark --axe`. Every route,
+`/design` included, sits behind the deny-by-default auth guard: `route-guard.ts` lists
+only `/sign-in`, `/sign-in/google`, `/health` and the cron/bearer-token API routes as
+public, so `uishot` needs a real signed-in, allowlisted session cookie or it screenshots
+the sign-in page instead of the design system.
+
+**Tokens, two files, both enforced.** `src/lib/design/tokens.css` owns the interface
+tokens (spacing, type, radius, elevation, the primary colour, the focus ring).
+`src/lib/design/palette.css` + `palette.ts` own the separate chart palette (eight
+categorical hues, a certainty ramp, a status scale), and it stays that way on purpose —
+see the header comment in `tokens.css`. `palette.test.ts` parses `palette.css` and
+asserts its light, `prefers-color-scheme: dark` and `data-theme="dark"` blocks each
+match `palette.ts` exactly (`toEqual`, not a subset). `palette-validator.ts` checks
+every colour against an OKLCH lightness band (light `[0.43, 0.77]`, dark
+`[0.48, 0.67]`), a chroma floor of `0.1`, CVD separation under simulated
+protanopia/deuteranopia at severity 1.0 (Machado-Oliveira-Fernandes 2009; target ΔE
+8.0, floor 6.0 with a secondary encoding, hard floor 15.0 without one) and WCAG
+contrast ≥3.0 against the surface. A raw hex or px value in a component is exactly what
+this setup exists to catch.
+
+**Light and dark are two designed sets, not one inversion** — `tokens.css`'s header
+comment says so explicitly, and `palette.ts` says the same for the chart colours.
+Do not generate a dark theme by flipping lightness on the light one.
+
+**`/design` exists** (`src/routes/design/+page.svelte`): every token, type step,
+spacing value and shared component, in every state a real screen puts it in and not
+only its default, plus the chart colour system and the validator that checks it.
+
+**A new component goes in `src/lib/design/`** and reuses what is already there (Badge,
+Table, EmptyState, ErrorState, Skeleton, Toast, Field, Dialog, Button, Input, Select,
+Checkbox, Radio, SegmentedControl, Amount/AmountInput, Banner, DropZone, StatTile,
+Tabs, SourceDocument, the `charts/` set) instead of restyling a one-off locally.
