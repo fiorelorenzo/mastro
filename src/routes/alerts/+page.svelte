@@ -102,7 +102,8 @@
 
 <svelte:head><title>{m.alerts_page_title()}</title></svelte:head>
 
-<Page title={m.alerts_page_heading()}>
+<!-- `wide`, matching every other index that carries a list of rows (#373). -->
+<Page title={m.alerts_page_heading()} width="wide">
 	{#snippet actions()}
 		<a href={resolve('/alerts/settings')} class="text-sm underline"
 			>{m.alerts_page_settings_link()}</a

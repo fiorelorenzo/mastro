@@ -113,7 +113,8 @@
 	{/if}
 {/snippet}
 
-<Page title={m.mail_index_heading()}>
+<!-- `wide`, matching every other index that carries a table (#373). -->
+<Page title={m.mail_index_heading()} width="wide">
 	<Section title={m.mail_poll_status_heading()}>
 		<div class="poll-status">
 			<Badge variant={pollBadge.variant} label={pollBadge.label} size="sm" />
