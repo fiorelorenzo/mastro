@@ -275,3 +275,26 @@ test('a counterparty with no country is still refused', () => {
 		parseExtractedContract(validFields({ client: { legalName: 'Visum Labs Ltd', country: null } }))
 	).toThrow();
 });
+
+// #379: a contract document that says nothing about a surcharge has not
+// agreed to one. Defaulting the other way would invoice a client 4% nobody
+// wrote down, which is a dispute rather than a rounding difference. The
+// fixture above deliberately does not mention it, which is the realistic
+// case: no contract PDF this product has seen so far does.
+test('a contract that says nothing about the social charge does not elect it', () => {
+	const candidate = parseExtractedContract(validFields());
+
+	expect(candidate.contract.appliesSocialCharge).toBe(false);
+});
+
+test('a contract that does state the social charge keeps it', () => {
+	const base = validFields();
+	const fields = {
+		...base,
+		contract: { ...base.contract, appliesSocialCharge: true }
+	};
+
+	const candidate = parseExtractedContract(fields);
+
+	expect(candidate.contract.appliesSocialCharge).toBe(true);
+});

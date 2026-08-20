@@ -46,9 +46,15 @@
 		values,
 		client,
 		errors = {},
-		submitLabel
+		submitLabel,
+		socialChargeLabel = null
 	}: {
 		values: ContractFormValues;
+		/** What the jurisdiction pack in force calls its `social_charge`,
+		 *  or null when it declares none (#379) - the label comes from the
+		 *  pack so this form never learns which regime is in force, and null
+		 *  means there is nothing to elect and no control to render. */
+		socialChargeLabel?: string | null;
 		/** Just enough of the client this contract belongs to for the
 		 *  Comunicazioni card's "follows the client's own language" hint —
 		 *  the form itself never lets you change which client a contract
@@ -328,6 +334,23 @@
 				checked={values.requiresExpensePreAuthorisation}
 				label={m.contract_form_requires_expense_pre_authorisation_label()}
 				error={errors.requiresExpensePreAuthorisation}
+			/>
+		{/if}
+		<!--
+			#379: whether this counterparty pays the pack's social charge -
+			Italy's flat-rate regime calls it the rivalsa INPS, and the label
+			above comes from the pack rather than from this file. Absent under
+			a pack that declares no such charge, since there is nothing to
+			elect. Off by default: nobody is charged a surcharge they were not
+			asked about.
+		-->
+		{#if socialChargeLabel}
+			<Checkbox
+				name="appliesSocialCharge"
+				checked={values.appliesSocialCharge}
+				label={socialChargeLabel}
+				hint={m.contract_form_applies_social_charge_hint()}
+				error={errors.appliesSocialCharge}
 			/>
 		{/if}
 	</fieldset>

@@ -7,7 +7,7 @@
 
 import { minorUnits, scaleMinorUnits, sumMinorUnits, type MinorUnits } from '$lib/money';
 import type { LegalText } from '$lib/legal/legal-text';
-import type { LabelBundle } from './label';
+import type { LabelBundle, SupportedLanguage } from './label';
 
 export type FiscalBasis = 'cash' | 'accrual';
 
@@ -410,4 +410,25 @@ export function evaluateInvoiceCharges(
 		return matches.length > 0 ? sumMinorUnits(matches.map((e) => e.amount)) : null;
 	};
 	return { stampDuty: bySlot('stamp_duty'), socialCharge: bySlot('social_charge') };
+}
+
+/**
+ * The label the pack in force uses for its `social_charge`, or null when it
+ * declares none (#379).
+ *
+ * The contract form's election needs a name for the thing being elected,
+ * and that name is the pack's, not the interface's: Italy's flat-rate pack
+ * calls it "Rivalsa contributiva INPS", another jurisdiction's pack would
+ * call its own surcharge something else, and `generic` declares none at all
+ * — which is what null means, and what tells the form to render no control.
+ * Reading it from the pack rather than the message catalogue is what keeps
+ * a country's vocabulary out of the core (AGENTS.md invariant 1); it is a
+ * `LabelBundle`, presentational, so displaying it needs nothing further.
+ */
+export function socialChargeLabel(
+	pack: FiscalPack | null,
+	language: SupportedLanguage
+): string | null {
+	const charge = pack?.charges.find((candidate) => candidate.slot === 'social_charge');
+	return charge ? charge.label[language] : null;
 }

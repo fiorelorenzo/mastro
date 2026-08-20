@@ -369,7 +369,20 @@ export type ResolvedInvoiceTax =
  */
 export function resolveInvoiceTax(
 	pack: FiscalPack | null,
-	taxableAmount: MinorUnits
+	taxableAmount: MinorUnits,
+	/**
+	 * Whether the contract elected the pack's `social_charge` (#379). Off
+	 * unless a contract says otherwise: this used to apply whenever the pack
+	 * declared one, so every flat-rate invoice carried the 4% rivalsa
+	 * whether or not the client had agreed to pay it. The pack's own comment
+	 * always said this was "an invoicing-time decision outside this pack's
+	 * job"; this is that decision arriving.
+	 *
+	 * Defaulted rather than required so a caller with no contract in hand -
+	 * `/invoices/new`'s empty preview before a contract is picked - reads as
+	 * "nothing elected" instead of having to invent a value.
+	 */
+	appliesSocialCharge: boolean = false
 ): ResolvedInvoiceTax {
 	const treatment = pack ? resolveDefaultTaxTreatment(pack) : null;
 	if (!pack || !treatment) return { source: 'manual' };
@@ -381,7 +394,10 @@ export function resolveInvoiceTax(
 		taxRate: treatment.taxRate,
 		statutoryReference: treatment.legalText,
 		stampDuty: charges.stampDuty,
-		socialCharge: charges.socialCharge
+		// Never negotiated away silently in the other direction either: an
+		// elected charge under a pack that declares none stays null, because
+		// `evaluateInvoiceCharges` had nothing to evaluate.
+		socialCharge: appliesSocialCharge ? charges.socialCharge : null
 	};
 }
 

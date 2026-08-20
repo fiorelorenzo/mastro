@@ -250,6 +250,7 @@ async function seedNordwind() {
 		templateLanguage: 'it',
 		expensePolicy: { kind: 'reimbursed_at_cost' },
 		requiresExpensePreAuthorisation: false,
+		appliesSocialCharge: false,
 		status: 'active'
 	});
 
@@ -627,6 +628,7 @@ async function seedBellani() {
 		templateLanguage: 'it',
 		expensePolicy: { kind: 'not_reimbursed' },
 		requiresExpensePreAuthorisation: false,
+		appliesSocialCharge: false,
 		status: 'active'
 	});
 
@@ -768,6 +770,7 @@ async function seedFermata() {
 		templateLanguage: 'it',
 		expensePolicy: { kind: 'not_reimbursed' },
 		requiresExpensePreAuthorisation: false,
+		appliesSocialCharge: false,
 		status: 'active'
 	});
 

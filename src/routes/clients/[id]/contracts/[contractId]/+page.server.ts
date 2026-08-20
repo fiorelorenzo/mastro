@@ -1,4 +1,8 @@
 import { error, fail } from '@sveltejs/kit';
+import { db } from '$lib/server/db';
+import { resolveActiveFiscalPack } from '$lib/server/fiscal/profile';
+import { socialChargeLabel } from '$lib/server/fiscal/pack';
+import { getLocale } from '$lib/paraglide/runtime';
 import { clientCrumbs } from '$lib/nav/crumbs';
 import * as m from '$lib/paraglide/messages';
 import { isRenewalWindowOpen, renewalWindowOpensOn } from '$lib/server/domain/contract';
@@ -174,7 +178,14 @@ export const load: PageServerLoad = async ({ params }) => {
 		ceilings,
 		renewalAssumption,
 		renewalWindowOpensOn: renewalWindowOpensOn(contract)?.toISOString().slice(0, 10) ?? null,
-		renewalWindowOpen: isRenewalWindowOpen(contract, now)
+		renewalWindowOpen: isRenewalWindowOpen(contract, now),
+		// #379: the pack's own name for its social charge, so the terms block
+		// can show the election under the regime's vocabulary and omit the row
+		// entirely under a pack that declares none.
+		socialChargeLabel: socialChargeLabel(
+			(await resolveActiveFiscalPack(db, now.toISOString().slice(0, 10)))?.pack ?? null,
+			getLocale()
+		)
 	};
 };
 

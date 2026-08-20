@@ -33,6 +33,7 @@ export type ContractFormValues = {
 	expensePolicyKind: string;
 	expensePolicyCapAmount: string;
 	requiresExpensePreAuthorisation: boolean;
+	appliesSocialCharge: boolean;
 	templateLanguage: string;
 	status: string;
 };
@@ -160,6 +161,10 @@ export function parseContractForm(formData: FormData): ContractFormResult {
 	}
 
 	const requiresExpensePreAuthorisation = formData.get('requiresExpensePreAuthorisation') === 'on';
+	// #379: the pack's social charge is charged to this counterparty only
+	// when the contract says so. An unchecked box is a real answer here, not
+	// a missing one, so there is nothing to validate.
+	const appliesSocialCharge = formData.get('appliesSocialCharge') === 'on';
 	if (requiresExpensePreAuthorisation && expensePolicyKind === 'not_reimbursed') {
 		errors.requiresExpensePreAuthorisation =
 			m.contract_validation_expense_preauth_requires_reimbursement();
@@ -198,6 +203,7 @@ export function parseContractForm(formData: FormData): ContractFormResult {
 		expensePolicyKind,
 		expensePolicyCapAmount: expensePolicyCapAmountRaw,
 		requiresExpensePreAuthorisation,
+		appliesSocialCharge,
 		templateLanguage: templateLanguageRaw,
 		status: statusRaw
 	};
@@ -229,6 +235,7 @@ export function parseContractForm(formData: FormData): ContractFormResult {
 			requiresPriorApproval,
 			expensePolicy,
 			requiresExpensePreAuthorisation,
+			appliesSocialCharge,
 			templateLanguage: templateLanguageRaw as ContractTemplateLanguage,
 			status: statusRaw as ContractStatus
 		}

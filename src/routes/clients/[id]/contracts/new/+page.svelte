@@ -28,6 +28,8 @@
 			expensePolicyKind: 'not_reimbursed',
 			expensePolicyCapAmount: '',
 			requiresExpensePreAuthorisation: false,
+			// #379: nobody is charged a surcharge they were not asked about.
+			appliesSocialCharge: false,
 			templateLanguage: defaultTemplateLanguageForCountry(data.client.country),
 			// #211: a contract created here is usable immediately. `day/new`'s
 			// own loader (loadActiveContracts) only ever offers `active`
@@ -53,5 +55,6 @@
 		client={data.client}
 		errors={form?.errors ?? {}}
 		submitLabel={m.contract_form_submit_create()}
+		socialChargeLabel={data.socialChargeLabel}
 	/>
 </Page>
