@@ -13,19 +13,23 @@
 #   1. rsync the checked-out tag into $MASTRO_DEPLOY_DIR, excluding (and
 #      thereby protecting) everything that only exists on the box.
 #   2. Remember the image currently serving, so there is something to roll
-#      back to, then build the new one.
+#      back to, then build every service that builds. Not a hand-written
+#      list: naming `web` and `runner` here, and forgetting `scheduler`
+#      when #222 added it, is how six releases of scheduler code never
+#      reached production.
 #   3. Bring the stack up and wait for it to be healthy. If that recreated
 #      `web`, recreate `scheduler` too (#384): compose only recreates a
 #      container whose own inputs changed, and scheduler's inputs don't
 #      change just because web's did, so left alone it would keep running
 #      against a network reference to a `web` container that no longer
 #      exists.
-#   4. Health-gate it: /health has to answer ok *and* the container that
-#      answered has to be running the image just built. A green /health on
-#      its own proves nothing about which build served it. Then confirm
-#      `scheduler` itself can reach `web` over the compose network (#384) —
-#      the loopback /health check above cannot see that path at all, since
-#      it never leaves the host.
+#   4. Health-gate it: /health has to answer ok *and* the containers that
+#      answered have to be running the images just built - `web` and
+#      `scheduler` both, since a scheduler running last week's build is
+#      precisely the failure that hid. A green /health on its own proves
+#      nothing about which build served it. Then confirm `scheduler` can
+#      reach `web` over the compose network (#384) - the loopback /health
+#      check cannot see that path at all, since it never leaves the host.
 #   5. On any failure from step 3 on, put the previous image back, bring
 #      the stack up on it, and exit non-zero. Before that, `set -e` is
 #      enough: nothing live has changed yet.
@@ -101,11 +105,24 @@ else
 fi
 
 echo "==> building"
-"${COMPOSE[@]}" build web runner
+# No service names: compose builds every service that has a `build:` stanza,
+# which is exactly `web`, `runner` and `scheduler` here (`db` and `proxy`
+# are pulled images). Naming them was the bug. This line read
+# `build web runner`, written in #137 before the scheduler existed; #222
+# added `scheduler` to the services that get started and recreated and
+# nobody added it here, so from #222 until v0.14.0 every deploy started a
+# scheduler container from whatever image had last been built by hand.
+# Measured on this host right after tagging v0.14.0: the web and runner
+# images were minutes old, the scheduler image was six days old and its
+# `/app/scripts/scheduler.ts` had no `drive/publish` job in it, so #346
+# shipped and could not run. Letting compose enumerate them means a
+# service added later is built without anyone remembering to come here.
+"${COMPOSE[@]}" build
 # The id of what was just built, read from the tag compose gives it
 # (<project>-<service>), in the same full-digest form `docker inspect` puts
 # on a container, so the two are actually comparable in the gate below.
 built_image="$(docker image inspect -f '{{.Id}}' mastro-prod-web)"
+built_scheduler_image="$(docker image inspect -f '{{.Id}}' mastro-prod-scheduler)"
 
 # --- 3. up ----------------------------------------------------------------
 #
@@ -216,6 +233,17 @@ if [ "$serving_image" != "$built_image" ]; then
   rollback
 fi
 echo "==> serving image: $serving_image (the one this run built)"
+
+# The same question asked of `scheduler`, because "the deploy succeeded and
+# the service is running last week's code" is exactly the failure that hid
+# for six releases. The reachability gate below proves the container can
+# talk to `web`; it cannot tell which build is doing the talking.
+running_scheduler_image="$(docker inspect --format '{{.Image}}' mastro-prod-scheduler-1)"
+if [ "$running_scheduler_image" != "$built_scheduler_image" ]; then
+  echo "::error::the scheduler runs $running_scheduler_image, not the image just built ($built_scheduler_image)" >&2
+  rollback
+fi
+echo "==> scheduler image: $running_scheduler_image (the one this run built)"
 
 # --- 4b. scheduler reachability gate (#384) --------------------------------
 #
