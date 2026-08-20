@@ -798,7 +798,24 @@ async function applyProposal(
 					templateLanguage: 'en',
 					expensePolicy: c.expensePolicy!,
 					requiresExpensePreAuthorisation: c.requiresExpensePreAuthorisation,
-					status: 'draft'
+					// Active, not draft (#365). This is the only creation path that
+					// produced a draft: a hand-made contract defaults to `'active'`
+					// (`clients/[id]/contracts/new/+page.svelte`, whose own comment
+					// says draft "is just no longer what a person gets without asking
+					// for it") and the invoice import creates active contracts too
+					// (`import/client-match.ts`). Draft here silently disabled four
+					// things at once, none of them explained on any screen: `/day/new`
+					// offers active contracts only, `import/day-import-request.ts`
+					// skips non-active rows, and both contract alerts - renewal and
+					// invoicing cadence - query `status = 'active'`.
+					//
+					// The same reasoning as a work_unit accept, which writes the day
+					// straight to `approved` rather than leaving it `proposed`: the
+					// proposal only exists because a human read a real document, and
+					// accepting it *is* the confirmation. Leaving the contract at
+					// draft asked for that same confirmation a second time, in a
+					// status select on another screen, and told nobody.
+					status: 'active'
 				},
 				executor
 			);

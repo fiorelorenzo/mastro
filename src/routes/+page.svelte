@@ -95,10 +95,20 @@
 
 <Page title={m.dashboard_today_heading()} subtitle={todayLabel} width="wide">
 	{#snippet actions()}
-		<Button href={resolve('/day/new')} variant="primary">
-			{m.home_record_day_cta()}
-			<KeyboardHint>N</KeyboardHint>
-		</Button>
+		<!--
+			Below 900px the bottom bar's floating "+" already goes to
+			`/day/new` (`nav/BottomBar.svelte`), and the sidebar is hidden at
+			exactly that width (`+layout.svelte`), so this button is the same
+			action a thumb's-reach away from itself (#366). Hidden there rather
+			than removed: above 900px there is no FAB, and the keyboard hint
+			belongs to a keyboard.
+		-->
+		<span class="wide-only">
+			<Button href={resolve('/day/new')} variant="primary">
+				{m.home_record_day_cta()}
+				<KeyboardHint>N</KeyboardHint>
+			</Button>
+		</span>
 		{#if data.pendingProposalsCount > 0}
 			<Button href={resolve('/proposals')} variant="secondary">
 				{m.dashboard_review_proposals_cta({ count: data.pendingProposalsCount })}
@@ -413,6 +423,15 @@
 	@media (max-width: 639px) {
 		.stat-grid {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+	}
+
+	/* 900px is the shell's own switch: the sidebar appears and the bottom
+	   bar with its "+" disappears at exactly this width
+	   (`routes/+layout.svelte`). Keep the two in step. */
+	@media (max-width: 899px) {
+		.wide-only {
+			display: none;
 		}
 	}
 </style>
