@@ -215,6 +215,7 @@ const realConfig: MailConfig = {
 		password: 'test-app-password',
 		sentMailbox: 'Sent',
 		inboxMailbox: 'INBOX',
+		inboxLookbackDays: 30,
 		maxMessageBytes: DEFAULT_IMAP_MAX_MESSAGE_BYTES
 	}
 };

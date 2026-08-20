@@ -10,6 +10,8 @@ import { client as pool } from '$lib/server/db';
 import { fiscalProfile } from '$lib/server/db/schema/fiscal';
 import { minorUnits, minorUnitsFromMajor } from '$lib/money';
 import { resolveActiveFiscalPack } from '$lib/server/fiscal/profile';
+import { itFlatRatePack } from '$lib/server/fiscal/packs/it-flat-rate';
+import { itStandardPack } from '$lib/server/fiscal/packs/it-standard';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import {
 	buildDayLines,
@@ -154,60 +156,41 @@ describe('resolveInvoiceTax against both real shipped packs (#216)', () => {
 
 	// #379: the pack declares the rivalsa INPS unconditionally, and says in
 	// its own comment that electing it is an invoicing-time decision. These
-	// three pin down that the election is what decides, and that nothing is
-	// charged unless a contract asked for it.
-	test('the pack social charge is not charged unless the contract elected it', async () => {
-		const charged = await inRolledBackTransaction(async (tx) => {
-			await tx.delete(fiscalProfile);
-			await tx.insert(fiscalProfile).values({
-				packId: 'it-flat-rate',
-				packVersion: '1',
-				validFrom: '1930-01-01',
-				validTo: null
-			});
-			const resolved = await resolveActiveFiscalPack(tx, '1930-06-01');
-			return {
-				unelected: resolveInvoiceTax(resolved?.pack ?? null, minorUnits(100_000), false),
-				elected: resolveInvoiceTax(resolved?.pack ?? null, minorUnits(100_000), true),
-				defaulted: resolveInvoiceTax(resolved?.pack ?? null, minorUnits(100_000))
-			};
-		});
+	// pin down that the election is what decides, and that nothing is charged
+	// unless a contract asked for it.
+	//
+	// Straight off the pack objects, with no fiscal_profile row: these test a
+	// pure function, and `fiscal_profile` carries a database-wide exclusion
+	// constraint on its validity period, so clearing that table to install a
+	// fixture is a lock every other test file contends on (AGENTS.md's #225).
+	// Two fewer clears is two fewer chances to make the suite flaky.
+	test('the pack social charge is not charged unless the contract elected it', () => {
+		const elected = resolveInvoiceTax(itFlatRatePack, minorUnits(100_000), true);
+		const unelected = resolveInvoiceTax(itFlatRatePack, minorUnits(100_000), false);
+		const defaulted = resolveInvoiceTax(itFlatRatePack, minorUnits(100_000));
 
-		if (charged.unelected.source !== 'pack') throw new Error('expected a pack outcome');
-		if (charged.elected.source !== 'pack') throw new Error('expected a pack outcome');
-		if (charged.defaulted.source !== 'pack') throw new Error('expected a pack outcome');
+		if (elected.source !== 'pack') throw new Error('expected a pack outcome');
+		if (unelected.source !== 'pack') throw new Error('expected a pack outcome');
+		if (defaulted.source !== 'pack') throw new Error('expected a pack outcome');
 
 		// 4% of 1000.00, the rate the pack fixes.
-		expect(charged.elected.socialCharge).toBe(minorUnits(4_000));
-		expect(charged.unelected.socialCharge).toBeNull();
+		expect(elected.socialCharge).toBe(minorUnits(4_000));
+		expect(unelected.socialCharge).toBeNull();
 		// Omitting the argument means unelected, never "charge it anyway".
-		expect(charged.defaulted.socialCharge).toBeNull();
-		// The election touches nothing else: stamp duty and the treatment are
-		// the pack's business either way.
-		expect(charged.elected.stampDuty).toBe(charged.unelected.stampDuty);
-		expect(charged.elected.treatmentCode).toBe(charged.unelected.treatmentCode);
+		expect(defaulted.socialCharge).toBeNull();
+		// The election touches nothing else.
+		expect(elected.stampDuty).toBe(unelected.stampDuty);
+		expect(elected.treatmentCode).toBe(unelected.treatmentCode);
 	});
 
-	test('electing a social charge under a pack that declares none changes nothing', async () => {
-		const resolved = await inRolledBackTransaction(async (tx) => {
-			await tx.delete(fiscalProfile);
-			await tx.insert(fiscalProfile).values({
-				packId: 'it-standard',
-				packVersion: '1',
-				validFrom: '1930-01-01',
-				validTo: null
-			});
-			const pack = await resolveActiveFiscalPack(tx, '1930-06-01');
-			return {
-				elected: resolveInvoiceTax(pack?.pack ?? null, minorUnits(100_000), true),
-				unelected: resolveInvoiceTax(pack?.pack ?? null, minorUnits(100_000), false)
-			};
-		});
+	test('electing a social charge under a pack that declares none changes nothing', () => {
+		const elected = resolveInvoiceTax(itStandardPack, minorUnits(100_000), true);
+		const unelected = resolveInvoiceTax(itStandardPack, minorUnits(100_000), false);
 
-		if (resolved.elected.source !== 'pack') throw new Error('expected a pack outcome');
-		if (resolved.unelected.source !== 'pack') throw new Error('expected a pack outcome');
-		expect(resolved.elected.socialCharge).toBeNull();
-		expect(resolved.unelected.socialCharge).toBeNull();
+		if (elected.source !== 'pack') throw new Error('expected a pack outcome');
+		if (unelected.source !== 'pack') throw new Error('expected a pack outcome');
+		expect(elected.socialCharge).toBeNull();
+		expect(unelected.socialCharge).toBeNull();
 	});
 
 	test('the same invoice under the standard pack resolves ordinary, standard-rate VAT, no code, no citation', async () => {

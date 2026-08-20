@@ -29,7 +29,11 @@ import {
 	recordSkippedInboundThread
 } from '$lib/server/repositories/inbound-thread';
 import { recordMailboxPollRun } from '$lib/server/repositories/mailbox-poll-run';
-import { DEFAULT_IMAP_MAX_MESSAGE_BYTES, type ImapConfig } from './config';
+import {
+	DEFAULT_IMAP_INBOX_LOOKBACK_DAYS,
+	DEFAULT_IMAP_MAX_MESSAGE_BYTES,
+	type ImapConfig
+} from './config';
 
 /** Connection retry/backoff (#84's "a provider outage is retried with
  * backoff"): exponential, capped at `CONNECT_MAX_ATTEMPTS` tries total
@@ -159,7 +163,8 @@ export async function pollMailboxTarget(
 	client: ImapFlow,
 	target: PollTarget,
 	executor: DbExecutor = db,
-	maxMessageBytes: number = DEFAULT_IMAP_MAX_MESSAGE_BYTES
+	maxMessageBytes: number = DEFAULT_IMAP_MAX_MESSAGE_BYTES,
+	lookbackDays: number = DEFAULT_IMAP_INBOX_LOOKBACK_DAYS
 ): Promise<ContractFolderResult> {
 	const mailbox = target.mailbox;
 	const folderContractId = target.kind === 'contract' ? target.contractId : null;
@@ -202,12 +207,27 @@ export async function pollMailboxTarget(
 		let skipped = 0;
 		let archivedUnknownSender = 0;
 
+		// A first pass over this mailbox is bounded by date, not by UID 1
+		// (#380). `1:*` on an account nobody had polled before archived nine
+		// years of mail on a real instance - 21,747 messages, no proposals,
+		// 3.7 GB. Once a cursor exists the UID range is the right and cheaper
+		// question; before there is one, ask the server for what is recent and
+		// let it do the filtering.
+		const firstPass = maxUid === null;
+		const since = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
+		const recentUids = firstPass
+			? ((await client.search({ since }, { uid: true })) as number[] | false) || []
+			: [];
+		if (firstPass && recentUids.length === 0) return empty;
+
 		for await (const message of client.fetch(
-			`${from}:*`,
+			firstPass ? recentUids : `${from}:*`,
 			{ uid: true, envelope: true, size: true, internalDate: true },
 			{ uid: true }
 		)) {
-			if (message.uid < from) continue; // the "n:*" gotcha, not a new message
+			// The "n:*" gotcha, not a new message. Never applies to the
+			// first pass, whose UID list is explicit.
+			if (!firstPass && message.uid < from) continue;
 
 			const messageId = message.envelope?.messageId ?? null;
 			if (messageId) {
@@ -403,7 +423,8 @@ export async function pollMailboxesOnce(
 				client,
 				{ kind: 'inbox', mailbox: imapConfig.inboxMailbox },
 				executor,
-				imapConfig.maxMessageBytes
+				imapConfig.maxMessageBytes,
+				imapConfig.inboxLookbackDays
 			)
 		);
 		for (const target of folderTargets) {
@@ -417,7 +438,8 @@ export async function pollMailboxesOnce(
 					client,
 					{ kind: 'contract', contractId: target.id, mailbox: target.mailFolder },
 					executor,
-					imapConfig.maxMessageBytes
+					imapConfig.maxMessageBytes,
+					imapConfig.inboxLookbackDays
 				)
 			);
 		}

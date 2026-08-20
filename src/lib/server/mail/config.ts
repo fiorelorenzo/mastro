@@ -26,6 +26,18 @@ export type ImapConfig = {
 	sentMailbox: string;
 	/** #380: the mailbox inbound polling watches, `INBOX` unless overridden. */
 	inboxMailbox: string;
+	/**
+	 * How far back a *first* pass over a mailbox reaches, in days (#380).
+	 *
+	 * Only ever consulted when there is no cursor yet for that mailbox and
+	 * UIDVALIDITY generation. Without it the first pass starts at UID 1 and
+	 * archives the entire history of the account: measured on a real
+	 * instance, 21,747 messages going back to 2017, none of which produced a
+	 * proposal because none of their senders were known contacts. A watched
+	 * mailbox is for catching what arrives, so the default is a short window
+	 * and not "everything".
+	 */
+	inboxLookbackDays: number;
 	// #306: the ceiling on one inbound message's RFC822 size, checked
 	// against `message.size` in the IMAP listing before `source` is ever
 	// fetched — an oversized message is never buffered whole. Optional in
@@ -79,6 +91,11 @@ function optionalPositiveInt(
 // email with a scanned PDF attached is never the thing that trips it.
 export const DEFAULT_IMAP_MAX_MESSAGE_BYTES = 25 * 1024 * 1024;
 
+/** #380: a first pass reaches back a month, never to the beginning of the
+ * account. Long enough to pick up an approval sent a few weeks ago, short
+ * enough that turning ingestion on does not archive years of unrelated mail. */
+export const DEFAULT_IMAP_INBOX_LOOKBACK_DAYS = 30;
+
 /**
  * The IMAP half alone, for the two callers that only ever poll: the cron
  * route and `/mail`'s poll-now action (#343).
@@ -106,6 +123,11 @@ export function readImapConfig(source: Record<string, string | undefined>): Imap
 		// whole point: monitoring should need no setup beyond credentials.
 		// Overridable for an account that filters client mail elsewhere.
 		inboxMailbox: source.IMAP_INBOX_MAILBOX?.trim() || 'INBOX',
+		inboxLookbackDays: optionalPositiveInt(
+			source,
+			'IMAP_INBOX_LOOKBACK_DAYS',
+			DEFAULT_IMAP_INBOX_LOOKBACK_DAYS
+		),
 		maxMessageBytes: optionalPositiveInt(
 			source,
 			'IMAP_MAX_MESSAGE_BYTES',
