@@ -29,6 +29,7 @@ const IMAP: ImapConfig = {
 	password: 'password',
 	sentMailbox: 'Sent',
 	inboxMailbox: 'INBOX',
+	inboxLookbackDays: 30,
 	maxMessageBytes: 1024
 };
 

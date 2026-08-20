@@ -37,6 +37,7 @@ const imapConfig: ImapConfig = {
 	password: 'test-app-password',
 	sentMailbox: 'Sent',
 	inboxMailbox: 'INBOX',
+	inboxLookbackDays: 30,
 	maxMessageBytes: DEFAULT_IMAP_MAX_MESSAGE_BYTES
 };
 
@@ -164,7 +165,13 @@ function testFolder(label: string): string {
 
 async function appendMessage(
 	folder: string,
-	options: { messageId: string; subject?: string; ensureFolder?: boolean; body?: string }
+	options: {
+		messageId: string;
+		subject?: string;
+		ensureFolder?: boolean;
+		body?: string;
+		internalDate?: Date;
+	}
 ) {
 	const appendClient = rawClient();
 	await appendClient.connect();
@@ -179,7 +186,7 @@ async function appendMessage(
 				`To: mastro@mastro.test\r\n\r\n` +
 				(options.body ?? `body for ${options.messageId}`)
 		);
-		await appendClient.append(folder, raw, []);
+		await appendClient.append(folder, raw, [], options.internalDate);
 	} finally {
 		await appendClient.logout();
 	}
@@ -500,6 +507,39 @@ test.skipIf(!mailboxAvailable)(
 // always records a run. The thing worth pinning down is what it does with a
 // mailbox full of mail from senders nobody knows, which is what a real inbox
 // is: it archives them and hands none of them to extraction.
+// #380's own regression, measured on a real instance before it was bounded:
+// a first pass over a mailbox nobody had polled started at UID 1 and archived
+// nine years of mail — 21,747 messages, 3.7 GB, not one proposal, because a
+// watched mailbox is for catching what arrives. The window is what stops that.
+test.skipIf(!mailboxAvailable)(
+	'a first pass reaches back only as far as the lookback window, not to the start of the account',
+	async () => {
+		const oldId = `<ancient-${crypto.randomUUID()}@example.com>`;
+		const freshId = `<fresh-${crypto.randomUUID()}@example.com>`;
+		const ancient = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000);
+
+		await appendMessage('INBOX', { messageId: oldId, internalDate: ancient });
+		await appendMessage('INBOX', { messageId: freshId });
+
+		// The window only governs a *first* pass: once a cursor exists the UID
+		// range is the bound, and an old message appended late legitimately
+		// has a high UID. So this has to be a first pass, which means no
+		// cursor for INBOX — the state a real instance is in the moment
+		// ingestion is switched on.
+		await db.delete(inboundThread).where(eq(inboundThread.mailbox, 'INBOX'));
+
+		await pollOnce();
+
+		const archivedIds = (
+			await db.select({ messageId: inboundThread.messageId }).from(inboundThread)
+		).map((row) => row.messageId);
+
+		// Scoped to the two ids this test appended: the mailbox is shared.
+		expect(archivedIds).toContain(freshId);
+		expect(archivedIds).not.toContain(oldId);
+	}
+);
+
 test.skipIf(!mailboxAvailable)(
 	'with no folder mapped the shared mailbox is still polled, and an unknown sender is archived but never extracted',
 	async () => {
