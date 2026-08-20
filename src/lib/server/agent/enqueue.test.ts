@@ -12,6 +12,10 @@ import {
 	type InboundThreadInput
 } from '$lib/server/repositories/inbound-thread';
 import { createProposal } from '$lib/server/repositories/proposal';
+import {
+	createExtractionRun,
+	getExtractionRunByJobId
+} from '$lib/server/repositories/extraction-run';
 import { listPendingJobs, readPendingJob } from '$lib/server/runner/queue';
 import { enqueueDayExtractions } from './enqueue';
 
@@ -191,15 +195,105 @@ test('enqueueDayExtractions never enqueues a second job for a document that alre
 			tx
 		);
 
-		// A limit generous enough to cover both threads if the guard did not
-		// hold: if the older, already-proposed message were ever re-offered,
-		// this call would enqueue it too.
-		const outcome = await enqueueDayExtractions(queueDir, 10, tx);
-		expect(outcome.enqueued).toBe(1);
+		// A limit far larger than this test needs, on purpose. The batch is
+		// ordered oldest-first and bounded, and a sibling test file working
+		// against a real mailbox commits threads of its own, so a tight limit
+		// lets those crowd this test's own thread out of the batch entirely -
+		// which fails as "the guard dropped it" when nothing of the sort
+		// happened. The bound itself has its own test above.
+		await enqueueDayExtractions(queueDir, 500, tx);
+
+		// Asserted by document id, not by count. `enqueueDayExtractions` reads
+		// every thread awaiting extraction, and a sibling test file working
+		// against a real mailbox commits threads of its own, so an absolute
+		// number here passes alone and fails in a full run.
+		const pending = await listPendingJobs(queueDir);
+		const queued = await Promise.all(pending.map((filename) => readPendingJob(queueDir, filename)));
+		const queuedDocumentIds = queued.map((job) => job.request.documentId);
+		expect(queuedDocumentIds).toContain(stillAwaiting.id);
+		expect(queuedDocumentIds).not.toContain(alreadyExtracted.id);
+	});
+});
+
+test('a message already extracted is never re-queued, even though it produced no proposal (#398)', async () => {
+	// The loop this closes, measured on the live instance rather than
+	// reasoned about: three newsletters that approve no days produce no
+	// proposal, ever, so a guard reading proposals answered "not extracted
+	// yet" for them on every pass. `queued 3` on every scheduler tick, five
+	// minutes apart, indefinitely, each one paying for a model call to
+	// re-learn the same nothing.
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const approvedNothing = await archiveMessage(tx, contractRow.id, 'newsletter, no days here');
+		const stillAwaiting = await archiveMessage(tx, contractRow.id, 'ok for this week');
+
+		await recordInboundThread(
+			threadInput(contractRow.id, approvedNothing.id, {
+				imapUid: 1,
+				messageId: null,
+				receivedAt: new Date('2026-08-01T09:00:00.000Z')
+			}),
+			tx
+		);
+		await recordInboundThread(
+			threadInput(contractRow.id, stillAwaiting.id, {
+				imapUid: 2,
+				messageId: null,
+				receivedAt: new Date('2026-08-02T09:00:00.000Z')
+			}),
+			tx
+		);
+
+		// A prior tick extracted it and it proposed nothing: a run exists,
+		// no proposal ever will.
+		await createExtractionRun(
+			{
+				jobId: crypto.randomUUID(),
+				documentId: approvedNothing.id,
+				targetType: 'work_unit',
+				enqueuedAt: new Date('2026-08-01T10:00:00.000Z')
+			},
+			tx
+		);
+
+		await enqueueDayExtractions(queueDir, 500, tx);
+
+		// By id, not by count: see the note in the test above.
+		const pending = await listPendingJobs(queueDir);
+		const queued = await Promise.all(pending.map((filename) => readPendingJob(queueDir, filename)));
+		const queuedDocumentIds = queued.map((job) => job.request.documentId);
+		expect(queuedDocumentIds).toContain(stillAwaiting.id);
+		expect(queuedDocumentIds).not.toContain(approvedNothing.id);
+	});
+});
+
+test('every job it queues gets an extraction run, so the registry can see it (#398)', async () => {
+	// #281's own claim - "every extraction is a run you can watch" - was
+	// false for exactly the extractions nobody watches. Only the hand-driven
+	// import created a run, so on the live instance the registry held two
+	// rows while the mailbox had produced eight jobs, and the registry that
+	// exists to make "a failure repeating every five minutes visible" could
+	// not see the failure repeating every five minutes.
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const message = await archiveMessage(tx, contractRow.id, 'ok for Monday');
+		await recordInboundThread(
+			threadInput(contractRow.id, message.id, { imapUid: 1, messageId: null }),
+			tx
+		);
+
+		await enqueueDayExtractions(queueDir, 500, tx);
 
 		const pending = await listPendingJobs(queueDir);
-		expect(pending).toHaveLength(1);
-		const [job] = await Promise.all(pending.map((filename) => readPendingJob(queueDir, filename)));
-		expect(job.request.documentId).toBe(stillAwaiting.id);
+		const queued = await Promise.all(pending.map((filename) => readPendingJob(queueDir, filename)));
+		const job = queued.find((candidate) => candidate.request.documentId === message.id);
+		expect(job).toBeDefined();
+
+		// Keyed by the job id the queue actually wrote, which is what ties
+		// the three views to the file on disk.
+		const run = await getExtractionRunByJobId(job!.id, tx);
+		expect(run?.documentId).toBe(message.id);
+		expect(run?.status).toBe('queued');
+		expect(run?.targetType).toBe('work_unit');
 	});
 });
