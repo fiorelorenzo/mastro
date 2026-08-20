@@ -90,7 +90,33 @@ function parseExtractionResult(text: string, request: ExtractionRequest): Propos
 		string,
 		unknown
 	>;
-	if (typeof excerpt !== 'string' || excerpt.trim() === '') {
+	// An excerpt is the evidence for a claim, so a response making no claim
+	// has nothing to quote. Requiring one unconditionally put the parser in
+	// direct contradiction with the prompt: `day-extraction.ts` tells the
+	// model, verbatim, `If the message approves no days, answer
+	// {"proposedFields":{"days":[]},"excerpt":"","confidence":1}` - and this
+	// line then recorded that exact answer as a model failure. Measured on
+	// the live instance: two of eight extractions from a real mailbox landed
+	// in `failed` for doing precisely what they were told, which also counts
+	// toward `agent_run_failure` and so reports a broken model where the
+	// truth is "this message approved nothing".
+	//
+	// Anything actually proposed still carries its own mandatory excerpt
+	// (`parseExtractedDays` refuses a day without one), so invariant 3's
+	// "the verbatim excerpt it rests on" is untouched: what is relaxed here
+	// is only the case where nothing rests on anything.
+	// "Proposes nothing" has to be said explicitly, not merely left out: at
+	// least one key, and every one of them an empty array. A bare `{}` stays
+	// an error, because for a work-unit extraction it means the `days` key
+	// never arrived, which is a model that answered the wrong shape rather
+	// than one reporting an empty result.
+	const proposesNothing =
+		typeof proposedFields === 'object' &&
+		proposedFields !== null &&
+		!Array.isArray(proposedFields) &&
+		Object.keys(proposedFields).length > 0 &&
+		Object.values(proposedFields).every((value) => Array.isArray(value) && value.length === 0);
+	if (typeof excerpt !== 'string' || (excerpt.trim() === '' && !proposesNothing)) {
 		throw new Error(`model response's excerpt is not a non-blank string: ${truncate(text)}`);
 	}
 	if (typeof confidence !== 'number' || confidence < 0 || confidence > 1) {
