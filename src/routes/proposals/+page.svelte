@@ -250,7 +250,9 @@
 
 								<p class="excerpt">{row.excerpt}</p>
 								{#if row.revised}
-									<Badge variant="info" label={m.proposal_queue_revised_badge()} size="sm" />
+									<p class="revised">
+										<Badge variant="info" label={m.proposal_queue_revised_badge()} size="sm" />
+									</p>
 								{/if}
 
 								<p class="judgement">
@@ -531,6 +533,16 @@
 		line-clamp: 3;
 		-webkit-box-orient: vertical;
 		overflow: hidden;
+	}
+	/* Wraps the badge instead of leaving it a bare flex child of `.proposal`
+	   (column direction, stretch by default): a lone `<Badge>` there took the
+	   cross-axis stretch onto its own coloured pill and rendered as a
+	   full-width bar. `.judgement` below never showed this because its own
+	   badge is one of ITS children, not `.proposal`'s directly — same fix,
+	   applied here for a lone badge with nothing else to wrap it. */
+	.revised {
+		display: flex;
+		margin: 0;
 	}
 	/* The terms, as a key/value grid that collapses to one column on a
 	   phone rather than squeezing both into 390px. */
