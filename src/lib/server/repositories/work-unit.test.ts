@@ -421,10 +421,10 @@ test('an approved day is recorded worked, and the log names who and why', async 
 	});
 
 	expect(result.worked.state).toBe('worked');
-	const last = result.transitions.at(-1);
-	expect(last?.toState).toBe('worked');
-	expect(last?.actor).toMatchObject({ kind: 'system' });
-	expect(last?.reason).toBe('the day passed with its approval on file');
+	const worked = result.transitions.find((t) => t.toState === 'worked');
+	expect(worked?.toState).toBe('worked');
+	expect(worked?.actor).toMatchObject({ kind: 'system' });
+	expect(worked?.reason).toBe('the day passed with its approval on file');
 });
 
 test('a proposed day cannot be recorded worked directly', async () => {

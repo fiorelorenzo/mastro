@@ -188,12 +188,11 @@ export async function markWorkUnitUnbillable(
 }
 
 /**
- * The edge the product was missing (#417's successor). `work_unit_enforce_
- * state_machine` has always allowed `approved -> worked`; nothing in the
- * application ever called it, so an accepted proposal parked a day at
- * `approved` and `listEligibleWorkUnitsForInvoicing` — which reads `worked`
- * and `disputed` — could never see it. Recording every day by hand was the
- * only road that arrived.
+ * The edge the product was missing (#417's successor). `work_unit_enforce_state_machine`
+ * has always allowed `approved -> worked`; nothing in the application ever called it,
+ * so an accepted proposal parked a day at `approved` and `listEligibleWorkUnitsForInvoicing`
+ * — which reads `worked` and `disputed` — could never see it. Recording every day by hand
+ * was the only road that arrived.
  *
  * Same shape as its six siblings: one field through `transitionWorkUnit`, and
  * an illegal source state is refused by the database rather than by a check
