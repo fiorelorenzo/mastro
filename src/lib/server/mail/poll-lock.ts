@@ -17,6 +17,8 @@
 // this flag does not already have and would outlive a poll that this
 // process no longer remembers starting after a restart, which is exactly
 // the state a lock must never be left in.
+import { finishPollProgress, startPollProgress } from './poll-progress';
+
 let pollInFlight = false;
 
 /** Thrown by {@link runExclusiveMailPoll} when a poll is already running.
@@ -41,9 +43,19 @@ export class MailPollAlreadyInFlightError extends Error {
 export async function runExclusiveMailPoll<T>(fn: () => Promise<T>): Promise<T> {
 	if (pollInFlight) throw new MailPollAlreadyInFlightError();
 	pollInFlight = true;
+	// The progress log starts here rather than in either caller (#405), so
+	// neither can forget it and a second press that loses the race above
+	// cannot wipe the log of the poll it lost to — it throws before this
+	// line. The terminal phase is reported by `pollMailboxesOnce`, which is
+	// the only thing that knows whether a pass succeeded (a connection
+	// failure is a returned status there, not a thrown error); the `finally`
+	// below is the net for `fn` throwing outright, which would otherwise
+	// leave a log that stops mid-phase and reads as a poll still running.
+	startPollProgress();
 	try {
 		return await fn();
 	} finally {
 		pollInFlight = false;
+		finishPollProgress('failed');
 	}
 }

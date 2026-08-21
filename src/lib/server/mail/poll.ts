@@ -18,6 +18,7 @@
 // whichever caller invokes this, the same way #74/#75's push/digest
 // interval lives in a crontab entry, never in this repository.
 import { ImapFlow } from 'imapflow';
+import { finishPollProgress, reportPollPhase } from './poll-progress';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
 	attributeBySender,
@@ -83,6 +84,13 @@ export async function connectWithRetry(
 
 	let lastError: unknown;
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		// Per attempt, not once before the loop (#405). A mailbox that refuses
+		// the connection takes the full backoff ladder to give up - measured
+		// at ~18s against a closed port - and a log that says "connecting"
+		// once and then nothing for eighteen seconds is indistinguishable
+		// from a poll that hung. The attempt number is the difference between
+		// "it is stuck" and "it is trying again".
+		reportPollPhase('connecting', attempt, maxAttempts);
 		const client = new ImapFlow({
 			host: config.host,
 			port: config.port,
@@ -196,10 +204,15 @@ export async function pollMailboxTarget(
 		// and presses "check now" is owed the recovery whether or not new mail
 		// happens to have arrived.
 		const recovered = await reattributeKnownSenders(executor);
+		reportPollPhase('reattributing', recovered);
 
 		const box = await client.mailboxOpen(mailbox);
 		const uidValidity = Number(box.uidValidity);
-		if (box.exists === 0) return { ...empty, recovered };
+		if (box.exists === 0) {
+			reportPollPhase('mailbox_opened', 0);
+			return { ...empty, recovered };
+		}
+		reportPollPhase('mailbox_opened', box.exists);
 
 		// Keyed on the mailbox: it has one UID sequence whoever the messages
 		// turn out to belong to.
@@ -235,8 +248,15 @@ export async function pollMailboxTarget(
 		const recentUids = firstPass
 			? ((await client.search({ since }, { uid: true })) as number[] | false) || []
 			: [];
-		if (firstPass && recentUids.length === 0) return empty;
+		if (firstPass && recentUids.length === 0) {
+			reportPollPhase('listing', 0, 0);
+			return empty;
+		}
 
+		// Counted here rather than derived from `kept.size` afterwards: the
+		// listing is the phase a reader is watching, and "seen 40, kept 3" is
+		// the sentence that explains why the fetch below is short.
+		let seen = 0;
 		for await (const message of client.fetch(
 			firstPass ? recentUids : `${from}:*`,
 			{ uid: true, envelope: true, size: true, internalDate: true },
@@ -245,6 +265,7 @@ export async function pollMailboxTarget(
 			// The "n:*" gotcha, not a new message. Never applies to the
 			// first pass, whose UID list is explicit.
 			if (!firstPass && message.uid < from) continue;
+			seen += 1;
 
 			const messageId = message.envelope?.messageId ?? null;
 			if (messageId) {
@@ -315,8 +336,11 @@ export async function pollMailboxTarget(
 			});
 		}
 
+		reportPollPhase('listing', kept.size, seen);
+
 		let handedOff = 0;
 		if (kept.size > 0) {
+			reportPollPhase('fetching', kept.size);
 			for await (const message of client.fetch(
 				[...kept.keys()],
 				{ uid: true, source: true },
@@ -389,6 +413,7 @@ export async function pollMailboxTarget(
 			}
 		}
 
+		reportPollPhase('archived', handedOff + archivedUnknownSender);
 		return {
 			mailbox,
 			handedOff,
@@ -437,6 +462,7 @@ export async function pollMailboxesOnce(
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error);
 		await recordMailboxPollRun({ status: 'failure', detail }, executor);
+		finishPollProgress('failed');
 		return {
 			status: 'failure',
 			mailbox: {
@@ -475,6 +501,11 @@ export async function pollMailboxesOnce(
 	const status = result.error === null ? 'success' : 'failure';
 	const detail = result.error === null ? null : `${result.mailbox}: ${result.error}`;
 	await recordMailboxPollRun({ status, detail }, executor);
+
+	// The count a reader cares about at the end is what actually landed, not
+	// what the mailbox held: `archived` above already said how many were
+	// written, and this closes the log so the client stops asking.
+	finishPollProgress(status === 'success' ? 'done' : 'failed', result.handedOff);
 
 	return { status, mailbox: result };
 }
