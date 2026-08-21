@@ -526,6 +526,20 @@
       "when": 1787350895347,
       "tag": "0075_proposal_pending_reading_is_mutable",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1787353026407,
+      "tag": "0076_day_reading_conflict",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1787353046306,
+      "tag": "0077_day_reading_conflict_touch",
+      "breakpoints": true
     }
   ]
 }

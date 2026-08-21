@@ -4,6 +4,7 @@ import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import {
 	client,
 	contract,
+	dayReadingConflict,
 	document,
 	proposal,
 	rateCard,
@@ -632,4 +633,104 @@ test('a date whose proposal was rejected can be proposed again', async () => {
 	// A new proposal, not a revision of the rejected one.
 	expect(result.proposals).toHaveLength(1);
 	expect(result.proposals[0].status).toBe('pending');
+});
+
+test('a reading that disagrees with a recorded day writes a conflict and no proposal, once, not on every re-read', async () => {
+	// A day already on the ledger is a human's decision (invariant 3): the
+	// producer must not re-propose it, but a reading that disagrees with
+	// what is recorded is still a fact worth a reviewer's attention, kept
+	// as a conflict row rather than silently dropped.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		await tx.insert(workUnit).values({
+			contractId: contractRow.id,
+			date: '2026-02-03',
+			quantity: 1,
+			scope: 'Analisi',
+			state: 'worked_without_approval'
+		});
+
+		const request = {
+			documentId: documentRow.id,
+			contractId: contractRow.id,
+			content: 'il 3 era mezza giornata',
+			messageDate: '2026-02-04',
+			startsOn: contractRow.startsOn,
+			endsOn: contractRow.endsOn
+		};
+		const scripted = answer({
+			days: [
+				{
+					date: '2026-02-03',
+					quantity: 0.5,
+					scope: 'Analisi',
+					excerpt: 'il 3 era mezza giornata',
+					messageIndex: 0
+				}
+			]
+		});
+
+		const outcome = await proposeDaysFromMessage(request, scripted, tx);
+		// A second, unchanged re-read of the same conversation must not pile
+		// a second row onto the same disagreement — the table is upserted
+		// on `(contract_id, date)`, not appended to.
+		const second = await proposeDaysFromMessage(request, scripted, tx);
+
+		const conflicts = await tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractRow.id));
+		return { outcome, second, conflicts };
+	});
+
+	expect(result.outcome.proposals).toHaveLength(0);
+	expect(result.second.proposals).toHaveLength(0);
+	expect(result.conflicts).toHaveLength(1);
+	expect(result.conflicts[0].proposedFields).toMatchObject({ quantity: 0.5 });
+	expect(result.conflicts[0].excerpt).toBe('il 3 era mezza giornata');
+});
+
+test('a reading that agrees with a recorded day writes no conflict', async () => {
+	// Agreement is not news: a table that fills up with confirmations is a
+	// table nobody reads.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		await tx.insert(workUnit).values({
+			contractId: contractRow.id,
+			date: '2026-02-03',
+			quantity: 1,
+			scope: 'Analisi',
+			state: 'worked_without_approval'
+		});
+
+		await proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'confermo la giornata del 3',
+				messageDate: '2026-02-04',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn
+			},
+			answer({
+				days: [
+					{
+						date: '2026-02-03',
+						quantity: 1,
+						scope: 'Analisi',
+						excerpt: 'confermo la giornata del 3',
+						messageIndex: 0
+					}
+				]
+			}),
+			tx
+		);
+
+		return tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractRow.id));
+	});
+
+	expect(result).toHaveLength(0);
 });

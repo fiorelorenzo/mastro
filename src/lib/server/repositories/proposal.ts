@@ -129,6 +129,16 @@ export async function listProposalsForDocuments(
 	return executor.select().from(proposal).where(inArray(proposal.documentId, documentIds));
 }
 
+/** One row `recordedDaysByDate` returns: the recorded day's id, quantity
+ * and state. Named so a consumer (`day-producer.ts`'s conflict check)
+ * imports the type instead of inferring it off the function that returns
+ * it. */
+export interface RecordedDay {
+	readonly id: string;
+	readonly quantity: number;
+	readonly state: WorkUnitState;
+}
+
 /**
  * Dates this contract already has a *recorded* day on (#403, revised).
  *
@@ -152,7 +162,7 @@ export async function recordedDaysByDate(
 	// `proposal.confidence` does — the brief's own literal type was written
 	// against the raw-numeric-as-string assumption drizzle's `mode` option
 	// exists to avoid.
-): Promise<Map<string, { id: string; quantity: number; state: WorkUnitState }>> {
+): Promise<Map<string, RecordedDay>> {
 	const rows = await executor
 		.select({
 			id: workUnit.id,

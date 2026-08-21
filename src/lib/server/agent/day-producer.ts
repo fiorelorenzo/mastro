@@ -20,8 +20,13 @@ import {
 	pendingDayProposalsByDate,
 	recordedDaysByDate,
 	reviseDayProposal,
-	type ProposalRow
+	type ProposalRow,
+	type RecordedDay
 } from '$lib/server/repositories/proposal';
+import {
+	clearDayReadingConflict,
+	recordDayReadingConflict
+} from '$lib/server/repositories/day-reading-conflict';
 import type { DbExecutor } from '$lib/server/db';
 import type { ProposalCandidate } from '$lib/server/runner/types';
 import type { ConversationMessage } from '$lib/server/mail/conversation';
@@ -131,8 +136,9 @@ export async function writeDayProposals(
 	candidate: ProposalCandidate,
 	executor?: DbExecutor
 ): Promise<DayProposalOutcome> {
+	const { recordedByDate, ...extractionCtx } = await extractionContext(source, executor);
 	const context = {
-		...(await extractionContext(source, executor)),
+		...extractionCtx,
 		fallbackExcerpt: candidate.excerpt
 	};
 	const { accepted, rejected: rejectedByValidation } = validateDays(
@@ -235,13 +241,58 @@ export async function writeDayProposals(
 			)
 		);
 	}
+
+	// A reading that disagrees with a day already on the ledger is not
+	// suppressed information, it is a thing a reviewer needs to know: the
+	// ledger is not touched (that decision was theirs) and the disagreement
+	// is written down for the alert engine, which cannot re-invoke the
+	// model to rediscover it.
+	for (const entry of rejected) {
+		if (!entry.reason.endsWith('is already recorded on this contract')) continue;
+		const recorded = recordedByDate.get(entry.day.date);
+		if (recorded && recorded.quantity === entry.day.quantity) {
+			// A re-read that confirms what the ledger already holds is not
+			// news; clear any conflict an earlier, disagreeing reading left
+			// behind so a stale alert cannot outlive the disagreement it
+			// once described.
+			await clearDayReadingConflict(source.contractId, entry.day.date, executor);
+			continue;
+		}
+		const documentId =
+			source.conversation?.[entry.day.messageIndex]?.documentId ?? source.documentId;
+		await recordDayReadingConflict(
+			{
+				contractId: source.contractId,
+				date: entry.day.date,
+				documentId,
+				extractionRunId: null,
+				proposedFields: {
+					date: entry.day.date,
+					quantity: entry.day.quantity,
+					scope: entry.day.scope
+				},
+				excerpt: entry.day.excerpt
+			},
+			executor
+		);
+	}
+
 	return { proposals, rejected };
+}
+
+/** `DayExtractionContext` plus the recorded-day map itself, not just the
+ * keys `alreadyDecided` carries. Task 6's own conflict check needs the
+ * quantity: it is what tells a disagreeing re-read from one that merely
+ * confirms the ledger, and `validateDays` has no use for it, so it never
+ * enters `DayExtractionContext` itself. */
+interface ExtractionContext extends DayExtractionContext {
+	readonly recordedByDate: ReadonlyMap<string, RecordedDay>;
 }
 
 async function extractionContext(
 	source: DayProposalSource,
 	executor?: DbExecutor
-): Promise<DayExtractionContext> {
+): Promise<ExtractionContext> {
 	const rateCards = executor
 		? await listRateCards(source.contractId, executor)
 		: await listRateCards(source.contractId);
@@ -251,10 +302,6 @@ async function extractionContext(
 	const allowedQuantities = [
 		...new Set(rateCards.flatMap((card) => card.allowedFractions.map(Number)))
 	];
-	// Only the dates are used here; Task 6 gets the recorded quantities and
-	// states it needs (to tell a disagreement from a re-read that confirms
-	// the ledger) from its own call to `recordedDaysByDate`, not from this
-	// context.
 	const recorded = executor
 		? await recordedDaysByDate(source.contractId, executor)
 		: await recordedDaysByDate(source.contractId);
@@ -264,6 +311,7 @@ async function extractionContext(
 		messageDate: source.messageDate,
 		allowedQuantities,
 		alreadyDecided: new Set(recorded.keys()),
-		content: source.content
+		content: source.content,
+		recordedByDate: recorded
 	};
 }
