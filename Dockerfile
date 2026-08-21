@@ -67,6 +67,12 @@ COPY --from=build /app/drizzle ./drizzle
 COPY --from=build /app/scripts/migrate.ts ./scripts/migrate.ts
 COPY --from=build /app/scripts/check-storage.ts ./scripts/check-storage.ts
 COPY --from=build /app/scripts/record-backup-run.ts ./scripts/record-backup-run.ts
+# A one-off, run by hand once per instance (#407), not by the entrypoint:
+# it fills `in_reply_to` for mail archived before that column existed, so
+# extraction can group those messages into the conversations they came
+# from. In the image because the data it rebuilds from is the blob store,
+# which only exists inside the container.
+COPY --from=build /app/scripts/backfill-in-reply-to.ts ./scripts/backfill-in-reply-to.ts
 # migrate.ts imports this module to say which database it is about to
 # touch, and, with record-backup-run.ts, imports the structured-logging
 # module (`src/lib/server/log/logger.ts`, #317) both now log through.
@@ -77,6 +83,11 @@ COPY --from=build /app/scripts/record-backup-run.ts ./scripts/record-backup-run.
 # them they import almost nothing.
 COPY --from=build /app/src/lib/server/db/target.ts ./src/lib/server/db/target.ts
 COPY --from=build /app/src/lib/server/log/logger.ts ./src/lib/server/log/logger.ts
+# ...and the two the backfill above reads its source with: the poller's own
+# header parser and the blob store. Both import nothing but node builtins,
+# which is what makes shipping them two lines rather than a subtree.
+COPY --from=build /app/src/lib/server/mail/headers.ts ./src/lib/server/mail/headers.ts
+COPY --from=build /app/src/lib/server/documents/blob-store.ts ./src/lib/server/documents/blob-store.ts
 COPY --from=build /app/package.json ./package.json
 # `/app/data/runner-queue` (#222's compose service also mounts this as the
 # named volume `runner_queue`) has to exist, owned by `mastro`, before the
