@@ -445,6 +445,23 @@ export async function listWorkUnitsForContractOnDate(
 }
 
 /**
+ * Every day still `approved` whose date is strictly before `date` — the
+ * settle sweep's own read (`$lib/server/days/settle.ts`).
+ *
+ * Strictly before, never on: a day must not become billable while it is
+ * still in progress. `date` is the sweep's idea of today, passed in rather
+ * than read from the clock here, so a test can name the boundary and a
+ * future timezone decision has one place to change.
+ */
+export async function listApprovedDaysBefore(date: string, executor: DbExecutor = db) {
+	return executor
+		.select({ id: workUnit.id, date: workUnit.date })
+		.from(workUnit)
+		.where(and(eq(workUnit.state, 'approved'), lt(workUnit.date, date)))
+		.orderBy(asc(workUnit.date));
+}
+
+/**
  * Every state a day passes through once it has actually happened: `worked`
  * itself, its at-risk cousin `worked_without_approval`, every state
  * downstream of billing (`invoiced`, `paid`, `disputed`), and `unbillable`

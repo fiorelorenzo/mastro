@@ -197,7 +197,7 @@ jobs:
                 # and scripts/scheduler.ts's own route list are kept in step
                 # by scripts/scheduler.test.ts, which parses both files
                 # rather than trusting a fourth hand-maintained copy.
-                for job in mail/poll agent/run alerts/run/push alerts/run/digest drive/publish; do
+                for job in mail/poll agent/run alerts/run/push alerts/run/digest drive/publish days/settle; do
                   token=ci-not-a-real-token
                   [ "$job" = 'mail/poll' ] && token=ci-not-a-real-mail-token
                   [ "$job" = 'drive/publish' ] && token=ci-not-a-real-drive-token
