@@ -519,6 +519,13 @@
       "when": 1787318877542,
       "tag": "0074_inbound_thread_direction",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1787350895347,
+      "tag": "0075_proposal_pending_reading_is_mutable",
+      "breakpoints": true
     }
   ]
 }

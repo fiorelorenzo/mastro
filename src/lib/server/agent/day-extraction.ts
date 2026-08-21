@@ -71,17 +71,22 @@ export interface DayExtractionContext {
 	 */
 	readonly fallbackExcerpt?: string;
 	/**
-	 * Dates this contract already holds — a day waiting for a decision, or
-	 * one already recorded as worked. Optional because most callers extract
-	 * a conversation for the first time and there is nothing to collide
-	 * with; supplied by `writeDayProposals`, which reads the ledger.
+	 * Dates this contract already has a *recorded* day on. Optional because
+	 * most callers extract a conversation for the first time and there is
+	 * nothing to collide with; supplied by `writeDayProposals`, which reads
+	 * `recordedDaysByDate` off the ledger.
 	 *
 	 * A re-read of a conversation is now normal (#403): a reply arriving in
 	 * an exchange already extracted re-reads the whole thing, because that
 	 * is the only way the new day is understood beside the offer it
 	 * answers. Everything the earlier pass got right therefore comes back,
-	 * and `seen` below only dedupes within one extraction. The ledger is
-	 * the only thing that knows across them.
+	 * and `seen` below only dedupes within one extraction. The ledger is the
+	 * only thing that knows across them.
+	 *
+	 * A day with a *pending* proposal is deliberately not in here (Task 5):
+	 * suppressing it kept a stale reading on screen, so it is now let
+	 * through and `writeDayProposals` rewrites the existing proposal in
+	 * place instead of suppressing or duplicating it.
 	 */
 	readonly alreadyDecided?: ReadonlySet<string>;
 }
@@ -362,7 +367,7 @@ function rejectionReason(
 	// (#403). Reported rather than dropped: the run's own outcome names it,
 	// so a re-read that found nothing new says so instead of looking idle.
 	if (context.alreadyDecided?.has(day.date)) {
-		return `${day.date} is already proposed or recorded on this contract`;
+		return `${day.date} is already recorded on this contract`;
 	}
 	if (day.date < context.startsOn) return `${day.date} is before the contract starts`;
 	if (context.endsOn !== null && day.date > context.endsOn) {

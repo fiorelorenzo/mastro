@@ -36,7 +36,8 @@ import {
 	proposal,
 	workUnit,
 	type ProposalStatus,
-	type ProposalTargetType
+	type ProposalTargetType,
+	type WorkUnitState
 } from '$lib/server/db/schema';
 import { parseMessage } from '$lib/server/mail/headers';
 import {
@@ -129,46 +130,116 @@ export async function listProposalsForDocuments(
 }
 
 /**
- * Which dates this contract already holds, so a second extraction of the
- * same conversation does not offer them again (#403).
+ * Dates this contract already has a *recorded* day on (#403, revised).
  *
- * Re-reading a conversation is now normal: a reply arriving in an exchange
- * that was already read re-extracts the whole thing, because that is the
- * only way the model sees the new day beside the offer it answers. The
- * cost is that everything the earlier pass got right comes back too, and
- * `validateDays`' own duplicate check only sees one extraction at a time.
- * So the ledger answers instead of the prompt: a day already waiting for a
- * decision, or already recorded as a work unit, is not news.
+ * The half of the old `datesAlreadyDecided` that still suppresses: a day on
+ * the ledger is a decision a human made, and a re-read must not offer it
+ * again. The other half — a pending proposal — is no longer suppressed but
+ * rewritten in place, which is what `pendingDayProposalsByDate` below is for:
+ * suppressing it kept a stale reading on screen and put the newer one only in
+ * the extraction run's transcript.
  *
- * A **rejected** proposal is deliberately not in here. A rejection says
- * "not this proposal", not "never this day": the reason this query exists
- * is a re-read that understands the conversation better than the first
- * pass did, and suppressing the improved proposal for a day a human had
- * already turned down once would hide exactly the correction they were
- * owed. What stops a rejected day from returning every five minutes is
- * the enqueue guard, which needs a new message before it re-reads at all.
+ * A **rejected** date is deliberately in neither: a rejection says "not this
+ * proposal", not "never this day", and a re-read that understands the
+ * conversation better is exactly the correction the reviewer is owed.
  */
-export async function datesAlreadyDecided(
+export async function recordedDaysByDate(
 	contractId: string,
 	executor: DbExecutor = db
-): Promise<Set<string>> {
-	const [pending, recorded] = await Promise.all([
-		executor
-			.select({ fields: proposal.proposedFields })
-			.from(proposal)
-			.where(and(eq(proposal.contractId, contractId), eq(proposal.status, 'pending'))),
-		executor
-			.select({ date: workUnit.date })
-			.from(workUnit)
-			.where(eq(workUnit.contractId, contractId))
-	]);
-	const dates = new Set<string>();
-	for (const row of recorded) dates.add(row.date);
-	for (const row of pending) {
-		const date = (row.fields as { date?: unknown } | null)?.date;
-		if (typeof date === 'string') dates.add(date);
+	// `quantity: number`, not `string`: `work_unit.quantity` is declared
+	// `numeric(6, 2)` with drizzle's `mode: 'number'` (see
+	// `db/schema/work-unit.ts`), which decodes to a JS number the same way
+	// `proposal.confidence` does — the brief's own literal type was written
+	// against the raw-numeric-as-string assumption drizzle's `mode` option
+	// exists to avoid.
+): Promise<Map<string, { id: string; quantity: number; state: WorkUnitState }>> {
+	const rows = await executor
+		.select({
+			id: workUnit.id,
+			date: workUnit.date,
+			quantity: workUnit.quantity,
+			state: workUnit.state
+		})
+		.from(workUnit)
+		.where(eq(workUnit.contractId, contractId));
+	// Keyed by date. Two days on one date is legal (different activities), and
+	// then either is enough to answer "this date is already recorded" — the
+	// last one wins, which no caller can tell apart from the first.
+	return new Map(rows.map((row) => [row.date, row]));
+}
+
+/** The pending day proposals this contract holds, keyed by the date each one
+ * proposes. A re-read rewrites the row it finds here rather than writing a
+ * second proposal for the same day. */
+export async function pendingDayProposalsByDate(
+	contractId: string,
+	executor: DbExecutor = db
+): Promise<Map<string, ProposalRow>> {
+	const rows = await executor
+		.select()
+		.from(proposal)
+		.where(
+			and(
+				eq(proposal.contractId, contractId),
+				eq(proposal.status, 'pending'),
+				eq(proposal.targetType, 'work_unit')
+			)
+		);
+	const byDate = new Map<string, ProposalRow>();
+	for (const row of rows) {
+		const date = (row.proposedFields as { date?: unknown } | null)?.date;
+		if (typeof date === 'string') byDate.set(date, row);
 	}
-	return dates;
+	return byDate;
+}
+
+/**
+ * Rewrites a pending proposal's reading in place, keeping its id so a link a
+ * reviewer already has open still resolves. Never touches `status`: a
+ * revision is not a decision, only a better one of the same undecided
+ * question.
+ *
+ * `documentId` is part of the reading, not the identity, and is rewritten
+ * along with it (0075_proposal_pending_reading_is_mutable.sql): a re-read of
+ * a multi-message thread can attribute a day's evidence to a different
+ * message than the first pass did, and `excerpt` moving without `documentId`
+ * moving with it would leave a row whose quotation cannot be found in the
+ * document it names — invariant 4's exact failure. When that happens the
+ * review queue (`src/routes/proposals/+page.server.ts`), which groups
+ * pending rows by `documentId`, moves this row to a different card; the
+ * "Revised" badge (`proposalRevised` in `src/routes/proposals/queue-fields.ts`)
+ * is what tells the reviewer it moved, which is correct — not a bug to
+ * paper over.
+ *
+ * The `WHERE status = 'pending'` guard is belt-and-braces: the trigger
+ * refuses this same write once a proposal is decided, but failing the
+ * update quietly (`null`) rather than as a raised exception lets a caller
+ * that raced a human's decision fall back to `createProposal` instead of
+ * crashing the whole extraction run over one day.
+ */
+export async function reviseDayProposal(
+	id: string,
+	input: {
+		proposedFields: Record<string, unknown>;
+		excerpt: string;
+		confidence: number;
+		confidenceReason: string | null;
+		documentId: string;
+	},
+	executor: DbExecutor = db
+): Promise<ProposalRow | null> {
+	const [row] = await executor
+		.update(proposal)
+		.set({
+			proposedFields: input.proposedFields,
+			excerpt: input.excerpt,
+			confidence: input.confidence,
+			confidenceReason: input.confidenceReason,
+			documentId: input.documentId
+		})
+		.where(and(eq(proposal.id, id), eq(proposal.status, 'pending')))
+		.returning();
+	return row ?? null;
 }
 
 /** Every proposal, most recent first, optionally narrowed to one status —

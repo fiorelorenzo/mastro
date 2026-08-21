@@ -17,7 +17,9 @@
 import { listRateCards } from '$lib/server/repositories/rate-card';
 import {
 	createProposal,
-	datesAlreadyDecided,
+	pendingDayProposalsByDate,
+	recordedDaysByDate,
+	reviseDayProposal,
 	type ProposalRow
 } from '$lib/server/repositories/proposal';
 import type { DbExecutor } from '$lib/server/db';
@@ -138,6 +140,15 @@ export async function writeDayProposals(
 		context
 	);
 
+	// Fetched once per run, not once per day: a re-read of a conversation
+	// with several days in it must see all of them, since two of `accepted`
+	// can land on the same pre-existing pending proposal's date only if the
+	// model itself repeated a date, which `seen` in `day-extraction.ts`
+	// already refuses.
+	const pendingByDate = executor
+		? await pendingDayProposalsByDate(source.contractId, executor)
+		: await pendingDayProposalsByDate(source.contractId);
+
 	const proposals: ProposalRow[] = [];
 	for (const day of accepted) {
 		// The model's own confidence and reason, folded together with the
@@ -149,32 +160,50 @@ export async function writeDayProposals(
 			candidate.confidence,
 			candidate.confidenceReason
 		);
+		// Exactly the fields `applyProposal` reads when a human accepts, and
+		// nothing else: a proposal carrying more than the target row needs
+		// invites a reviewer to edit something that will be ignored.
+		const proposedFields = {
+			date: day.date,
+			quantity: day.quantity,
+			scope: day.scope,
+			...(day.notes === undefined ? {} : { notes: day.notes })
+		};
+		// The message the day's own evidence actually came from (#400), not
+		// always the newest one: the Polymarket allocation's offer is
+		// message 0, the owner's "confermo" is message 1, and the proposal
+		// has to archive against the offer. Falls back to the top-level
+		// document when there is no conversation array to resolve against.
+		const documentId = source.conversation?.[day.messageIndex]?.documentId ?? source.documentId;
+
+		const existing = pendingByDate.get(day.date);
+		if (existing) {
+			// Rewritten, not replaced (Task 5): the id is what a link a
+			// reviewer already has open resolves to, and `status` stays
+			// `pending` because a revision is not a decision. `documentId`
+			// moves with `excerpt` even when they differ from `existing`'s —
+			// see `reviseDayProposal`'s own doc comment for why re-attributing
+			// the evidence to a different message is correct here, not a bug,
+			// and why the queue card it lands on is expected to change too.
+			const revised = await reviseDayProposal(
+				existing.id,
+				{ proposedFields, excerpt: day.excerpt, confidence, confidenceReason, documentId },
+				executor
+			);
+			if (revised) proposals.push(revised);
+			continue;
+		}
 		proposals.push(
 			await createProposal(
 				{
-					// The message the day's own evidence actually came from
-					// (#400), not always the newest one: the Polymarket
-					// allocation's offer is message 0, the owner's "confermo"
-					// is message 1, and the proposal has to archive against
-					// the offer. Falls back to the top-level document when
-					// there is no conversation array to resolve against.
-					documentId: source.conversation?.[day.messageIndex]?.documentId ?? source.documentId,
+					documentId,
 					contractId: source.contractId,
 					targetType: 'work_unit',
-					// Exactly the fields `applyProposal` reads when a human
-					// accepts, and nothing else: a proposal carrying more than
-					// the target row needs invites a reviewer to edit something
-					// that will be ignored.
-					proposedFields: {
-						date: day.date,
-						quantity: day.quantity,
-						scope: day.scope,
-						...(day.notes === undefined ? {} : { notes: day.notes })
-					},
 					// The day's own span, not the message-level one: the review
 					// screen shows this next to the day, and a reviewer checking
 					// a Friday should not have to read the sentence about
 					// Thursday to do it.
+					proposedFields,
 					excerpt: day.excerpt,
 					confidence,
 					confidenceReason
@@ -199,15 +228,18 @@ async function extractionContext(
 	const allowedQuantities = [
 		...new Set(rateCards.flatMap((card) => card.allowedFractions.map(Number)))
 	];
-	const alreadyDecided = executor
-		? await datesAlreadyDecided(source.contractId, executor)
-		: await datesAlreadyDecided(source.contractId);
+	// The map itself is kept for Task 6, which needs the recorded quantity
+	// to tell a disagreement from a re-read that confirms the ledger; the
+	// validator here only ever needs the dates.
+	const recorded = executor
+		? await recordedDaysByDate(source.contractId, executor)
+		: await recordedDaysByDate(source.contractId);
 	return {
 		startsOn: source.startsOn,
 		endsOn: source.endsOn,
 		messageDate: source.messageDate,
 		allowedQuantities,
-		alreadyDecided,
+		alreadyDecided: new Set(recorded.keys()),
 		content: source.content
 	};
 }
