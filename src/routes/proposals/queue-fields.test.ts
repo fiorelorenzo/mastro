@@ -150,6 +150,16 @@ describe('proposalRevised', () => {
 		);
 	});
 
+	// The tolerance is the whole reason the comparison is not `> 0`: both
+	// timestamps default to `now()` on one INSERT and can land a clock
+	// sliver apart. Without this case, narrowing the rule to `> 0` would
+	// keep every other test green and light the badge on every fresh row.
+	test('a pending proposal whose two timestamps differ by a sliver is not revised', () => {
+		const createdAt = new Date('2026-08-20T09:00:00.000Z');
+		const updatedAt = new Date(createdAt.getTime() + 300);
+		expect(proposalRevised({ status: 'pending', createdAt, updatedAt })).toBe(false);
+	});
+
 	test('a pending proposal whose updatedAt moved well past createdAt is revised', () => {
 		const createdAt = new Date('2026-08-20T09:00:00.000Z');
 		const updatedAt = new Date(createdAt.getTime() + 2 * 60 * 60 * 1000);
