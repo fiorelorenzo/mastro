@@ -211,6 +211,17 @@ jobs:
                     exit 1
                   }
                 done
+                # The hand-run script, exercised here for the same reason as
+                # the routes above: nothing else ever loads it, and what
+                # breaks a plain-node script is an import this image does not
+                # carry - which is invisible to every local command, because
+                # locally the whole tree is there. An empty mailbox means it
+                # considers nothing and exits 0; a missing file would exit
+                # non-zero with ERR_MODULE_NOT_FOUND.
+                docker exec mastro-ci node scripts/backfill-in-reply-to.ts || {
+                  echo "::error::scripts/backfill-in-reply-to.ts failed inside the runtime image"
+                  exit 1
+                }
                 exit 0 ;;
             esac
             echo "waiting for /health (attempt $attempt): ${health:-no answer}"
