@@ -20,6 +20,7 @@ import {
 	listInboundThreadsMissingSenderAddress,
 	listSkippedInboundThreadsForContract,
 	listUnknownSenderAddresses,
+	loadConversations,
 	maxImapUidForMailbox,
 	recordInboundThread,
 	recordSkippedInboundThread,
@@ -765,4 +766,90 @@ test('an address at a domain some contact already uses sorts first, ahead of a l
 	expect(stranger?.messageCount).toBe(3);
 	// Fewer messages, older, and still first.
 	expect(result.senderIndex).toBeLessThan(result.strangerIndex);
+});
+
+test('a conversation whose middle message was never archived is still one conversation (#410)', async () => {
+	// The real shape of the first approval on this ledger. Leo offers, I
+	// answer, Leo says thanks - and my answer is outbound, so nothing
+	// archives it (#409). The mailbox holds the first and the third with a
+	// hole between them, and `in_reply_to` alone cannot bridge it: the third
+	// names my answer, which is not a row here. Its `References` names the
+	// offer directly, which is what does bridge it.
+	const conversations = await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const offerId = `<offer-${crypto.randomUUID()}@visumlabs.example>`;
+		const mineId = `<mine-${crypto.randomUUID()}@gmail.example>`;
+		const thanksId = `<thanks-${crypto.randomUUID()}@visumlabs.example>`;
+
+		const offerDocument = await archiveMessage(tx, contractRow.id);
+		const thanksDocument = await archiveMessage(tx, contractRow.id);
+
+		await recordInboundThread(
+			threadInput(contractRow.id, offerDocument.id, {
+				imapUid: 41,
+				messageId: offerId,
+				inReplyTo: null,
+				referenceIds: [],
+				receivedAt: new Date('2026-08-05T16:38:00.000Z')
+			}),
+			tx
+		);
+		const thanks = await recordInboundThread(
+			threadInput(contractRow.id, thanksDocument.id, {
+				imapUid: 42,
+				messageId: thanksId,
+				// Replies to a message that is not in this table.
+				inReplyTo: mineId,
+				referenceIds: [offerId, mineId],
+				receivedAt: new Date('2026-08-05T16:41:00.000Z')
+			}),
+			tx
+		);
+
+		// Seeded from the reply alone, the way the enqueue pass reaches it.
+		return loadConversations([thanks as Parameters<typeof loadConversations>[0][number]], tx);
+	});
+
+	expect(conversations).toHaveLength(1);
+	expect(conversations[0]).toHaveLength(2);
+	// Oldest first: the offer has to arrive at the model before the answer to
+	// it, or the answer reads as a statement of its own.
+	expect(conversations[0][0].messageId).toContain('offer-');
+	expect(conversations[0][1].messageId).toContain('thanks-');
+});
+
+test('two threads that merely share a subject stay apart (#410)', async () => {
+	// The line `References` must not cross. Widening the walk to a second
+	// header kind is safe because both are identifiers; widening it to
+	// subjects would merge two unrelated "Re: Conferma" negotiations and
+	// judge their days as one exchange.
+	const conversations = await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const firstDocument = await archiveMessage(tx, contractRow.id);
+		const secondDocument = await archiveMessage(tx, contractRow.id);
+
+		const first = await recordInboundThread(
+			threadInput(contractRow.id, firstDocument.id, {
+				imapUid: 51,
+				subject: 'Re: Conferma allocazione',
+				referenceIds: [`<unrelated-a-${crypto.randomUUID()}@example.com>`],
+				receivedAt: new Date('2026-08-06T09:00:00.000Z')
+			}),
+			tx
+		);
+		const second = await recordInboundThread(
+			threadInput(contractRow.id, secondDocument.id, {
+				imapUid: 52,
+				subject: 'Re: Conferma allocazione',
+				referenceIds: [`<unrelated-b-${crypto.randomUUID()}@example.com>`],
+				receivedAt: new Date('2026-08-06T10:00:00.000Z')
+			}),
+			tx
+		);
+
+		return loadConversations([first, second] as Parameters<typeof loadConversations>[0], tx);
+	});
+
+	expect(conversations).toHaveLength(2);
+	expect(conversations.every((conversation) => conversation.length === 1)).toBe(true);
 });

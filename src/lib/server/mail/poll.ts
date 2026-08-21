@@ -18,6 +18,7 @@
 // whichever caller invokes this, the same way #74/#75's push/digest
 // interval lives in a crontab entry, never in this repository.
 import { ImapFlow } from 'imapflow';
+import { parseReferences } from './headers';
 import { finishPollProgress, reportPollPhase } from './poll-progress';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
@@ -385,6 +386,14 @@ export async function pollMailboxTarget(
 							contractId: meta.contractId,
 							senderAddress: meta.senderAddress,
 							inReplyTo: meta.inReplyTo,
+							// Read from the bytes this loop already holds (#410).
+							// An envelope does not carry `References`, but the
+							// source of every kept message is fetched anyway, so
+							// the whole ancestry costs no round trip. It is what
+							// rebuilds a conversation with a hole in it, and the
+							// hole is normal: the middle message of the first real
+							// approval here is one I sent, which nothing archives.
+							referenceIds: parseReferences(source),
 							documentId: archived.id,
 							mailbox,
 							imapUidValidity: uidValidity,
