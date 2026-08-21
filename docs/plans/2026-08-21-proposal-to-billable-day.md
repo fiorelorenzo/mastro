@@ -687,14 +687,36 @@ git commit -m "feat(web): a queue row carries the words it rests on"
   the failure arrives as a raised exception at runtime, not at build time.
 
   The relaxation is narrow, and the reasoning is the one the product already
-  holds: **a decision is final, a reading is not**. The identity columns
-  (`document_id`, `contract_id`, `target_type`) stay immutable always, so a
-  proposal can never be retargeted at another document or contract, and
-  invariant 4 keeps its source. The second rule stays exactly as it is: once
-  `OLD.status` is anything but `pending`, every UPDATE is still refused, so an
-  accepted or rejected proposal is frozen with the words it was decided on.
-  What becomes mutable is only the agent's current reading of an undecided
-  proposal, which is what a re-read is. Write that reasoning into the
+  holds: **a decision is final, a reading is not**. The line runs between what
+  a proposal _is about_ and what it _rests on_, not between "identity" and
+  "fields" — the first draft of this amendment said `document_id` was immutable
+  and was wrong, which Task 5's implementer caught before writing the SQL:
+
+  - **Immutable always**, because it is what the proposal is about:
+    `contract_id`, `target_type`. A proposal can never be retargeted at another
+    contract, nor turned from a day into a contract. `reviseDayProposal`'s input
+    carries neither, so the shape already respects this.
+  - **Mutable only while `status = 'pending'`**, because it is the reading and
+    the message that reading rests on: `document_id`, `excerpt`,
+    `proposed_fields`, `confidence`, `confidence_reason`, `validation_issue`.
+    `excerpt` and `document_id` must move **together**: a re-read may
+    re-attribute a day to a different message of the same conversation, and a
+    row whose quotation cannot be found in the document it names is exactly the
+    failure invariant 4 exists to prevent ("if a client disputes a day, what
+    counts is the original message, not the row"). Freezing the document while
+    letting the excerpt move would have produced that row rather than
+    preventing it.
+  - **Unchanged**: once `OLD.status` is anything but `pending`, every UPDATE is
+    still refused, so an accepted or rejected proposal stays frozen with the
+    words it was decided on and the document they came from.
+
+  Structurally this is safe: `proposal` has no unique index involving
+  `document_id` (only `proposal_pkey`, `proposal_status_idx` and a plain
+  `proposal_document_id_idx`) and the FK is `ON DELETE restrict`, so
+  re-pointing a pending row violates nothing and orphans nothing. The visible
+  consequence is that a re-attributed row moves to another card in the queue,
+  which groups by document — correct behaviour, marked by Task 4's "Revised"
+  badge, and not to be smoothed over later. Write this reasoning into the
   migration's own comment, since in this repo a constraint is reviewed as SQL.
 
 - Modify: `src/lib/server/repositories/proposal.ts` (replace
