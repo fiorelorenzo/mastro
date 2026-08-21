@@ -1,4 +1,5 @@
-import { db, type DbExecutor } from '$lib/server/db';
+import type { DbExecutor } from '$lib/server/db';
+import { log } from '$lib/server/log/logger';
 import { listApprovedDaysBefore, markWorkUnitWorked } from '$lib/server/repositories/work-unit';
 
 export interface SettleOutcome {
@@ -31,13 +32,25 @@ export interface SettleOutcome {
  */
 export async function settleApprovedDays(
 	today: string,
-	executor: DbExecutor = db
+	executor?: DbExecutor
 ): Promise<SettleOutcome> {
 	const due = await listApprovedDaysBefore(today, executor);
 	let settled = 0;
 	let failed = 0;
 	for (const day of due) {
 		try {
+			// No `executor` forwarded here on the production path (`executor`
+			// undefined): each day gets its own transaction from
+			// `withActorAndReason`, so `set_config('mastro.actor', ..., true)`
+			// and the UPDATE it scopes land in the same transaction. Forwarding
+			// the pool itself would run them as two independent statements —
+			// the setting would be gone before the UPDATE fires, and the
+			// trigger would record 'no reason supplied' instead of the reason
+			// below. Also what makes "one day's failure does not stop the
+			// rest" true rather than aspirational: a caller-supplied `tx`
+			// (tests) still shares one transaction, so a throw there aborts
+			// every later call in the same batch, same as any other write
+			// under that `tx`.
 			await markWorkUnitWorked(
 				day.id,
 				{ kind: 'system' },
@@ -45,7 +58,11 @@ export async function settleApprovedDays(
 				executor
 			);
 			settled += 1;
-		} catch {
+		} catch (error) {
+			log.error('settleApprovedDays: a day could not be recorded worked', {
+				workUnitId: day.id,
+				error
+			});
 			failed += 1;
 		}
 	}

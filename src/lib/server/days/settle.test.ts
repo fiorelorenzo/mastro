@@ -110,7 +110,13 @@ test('a day whose date has passed settles; today and tomorrow do not', async () 
 	});
 
 	expect(result.states).toEqual(['worked', 'approved', 'approved']);
-	expect(result.outcome.settled).toBe(1);
+	// Not `toBe(1)`: `settleApprovedDays` sweeps every approved day before the
+	// cutoff, not only this contract's, and the database already holds data
+	// (a demo seed, other files' committed rows) this test did not create.
+	// The lower bound is the one fact this test itself guarantees — the
+	// `states` assertion above is what actually proves *this* day was the
+	// one settled.
+	expect(result.outcome.settled).toBeGreaterThanOrEqual(1);
 });
 
 test('the sweep leaves alone every state that is not approved', async () => {
@@ -129,6 +135,10 @@ test('the sweep leaves alone every state that is not approved', async () => {
 		return { settled, state: row.state };
 	});
 
+	// Not asserting `settled.settled === 0`: the sweep runs against a
+	// database that may already hold other approved days due before the
+	// cutoff (a demo seed, other files' committed rows), so a positive count
+	// here would not be this test's bug. The state of the one day this test
+	// created is the whole claim.
 	expect(result.state).toBe('proposed');
-	expect(result.settled.settled).toBe(0);
 });
