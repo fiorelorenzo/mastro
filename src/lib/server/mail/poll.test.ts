@@ -46,6 +46,7 @@ import {
 	type PaymentTerms
 } from '$lib/server/db/schema';
 import { connectWithRetry, pollMailboxesOnce, pollMailboxTarget } from './poll';
+import { finishPollProgress, readPollProgress, startPollProgress } from './poll-progress';
 import { DEFAULT_IMAP_MAX_MESSAGE_BYTES, type ImapConfig } from './config';
 
 const imapConfig: ImapConfig = {
@@ -762,5 +763,101 @@ test.skipIf(!mailboxAvailable)(
 
 		const queued = await listInboundThreadsAwaitingExtraction(500);
 		expect(queued.map((row) => row.id)).toContain(threadRow.id);
+	}
+);
+
+test.skipIf(!mailboxAvailable)('a poll reports the phases it passes through (#405)', async () => {
+	// Against the real mailbox, because the phase boundaries are exactly the
+	// IMAP round trips: a mock would report whatever the mock decided to.
+	// The log is what the mail page shows while the button spins, and it is
+	// only worth anything if the counts in it are the poll's real ones.
+	const folder = testFolder('progress');
+	const { clientId } = await createTestContract();
+	await addContact(clientId, 'known@example.com');
+	await appendMessage(folder, { messageId: '<progress-1@example.com>', from: 'known@example.com' });
+	await appendMessage(folder, {
+		messageId: '<progress-2@example.com>',
+		from: 'stranger@example.com',
+		ensureFolder: false
+	});
+
+	startPollProgress();
+	const result = await pollIsolatedMailbox(folder);
+	finishPollProgress('done', result.handedOff);
+
+	const progress = readPollProgress();
+	expect(progress.running).toBe(false);
+	expect(progress.steps.map((step) => step.phase)).toEqual([
+		'reattributing',
+		'mailbox_opened',
+		'listing',
+		'fetching',
+		'archived',
+		'done'
+	]);
+
+	// The counts, not just the order: two messages in the mailbox, both kept
+	// (one known sender, one archived unattributed), both read and archived.
+	const byPhase = new Map(progress.steps.map((step) => [step.phase, step]));
+	expect(byPhase.get('mailbox_opened')?.count).toBe(2);
+	expect(byPhase.get('listing')).toMatchObject({ count: 2, of: 2 });
+	expect(byPhase.get('fetching')?.count).toBe(2);
+	expect(byPhase.get('archived')?.count).toBe(2);
+	expect(byPhase.get('done')?.count).toBe(result.handedOff);
+});
+
+test.skipIf(!mailboxAvailable)(
+	'a poll that keeps nothing still says what it saw (#405)',
+	async () => {
+		// The shape every routine poll has once a mailbox is caught up: the
+		// listing runs, keeps nothing, and there is no fetch phase at all. A log
+		// that just stopped after `mailbox_opened` would read as a poll that
+		// hung.
+		const folder = testFolder('progress-empty');
+		await appendMessage(folder, { messageId: '<progress-seen@example.com>' });
+		await pollIsolatedMailbox(folder);
+
+		startPollProgress();
+		const result = await pollIsolatedMailbox(folder);
+		finishPollProgress('done', result.handedOff);
+
+		const progress = readPollProgress();
+		expect(progress.steps.map((step) => step.phase)).toEqual([
+			'reattributing',
+			'mailbox_opened',
+			'listing',
+			'archived',
+			'done'
+		]);
+		const listing = progress.steps.find((step) => step.phase === 'listing');
+		expect(listing).toMatchObject({ count: 0, of: 0 });
+	}
+);
+
+test.skipIf(!mailboxAvailable)(
+	'a mailbox that refuses the connection reports each attempt (#405)',
+	async () => {
+		// The case the log was written for. A closed port takes the whole backoff
+		// ladder to give up - ~18s in the browser against the real one - and the
+		// difference between "stuck" and "trying again" is the attempt number.
+		// Without this the log said "connecting" once and then nothing.
+		const unreachableConfig: ImapConfig = { ...imapConfig, port: 1 };
+		startPollProgress();
+		await expect(
+			connectWithRetry(unreachableConfig, {
+				maxAttempts: 3,
+				backoffBaseMs: 1,
+				delay: async () => {}
+			})
+		).rejects.toThrow();
+		finishPollProgress('failed');
+
+		const progress = readPollProgress();
+		expect(progress.steps.map((step) => [step.phase, step.count, step.of])).toEqual([
+			['connecting', 1, 3],
+			['connecting', 2, 3],
+			['connecting', 3, 3],
+			['failed', undefined, undefined]
+		]);
 	}
 );

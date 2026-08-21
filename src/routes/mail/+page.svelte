@@ -1,14 +1,15 @@
 <script lang="ts">
+	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
 	import { getLocale } from '$lib/paraglide/runtime';
 	import Page from '$lib/layout/Page.svelte';
 	import Section from '$lib/layout/Section.svelte';
 	import { Badge, Banner, Button, EmptyState, toasts } from '$lib/design';
-	import { submitting } from '$lib/design/submitting.svelte';
 	import Table from '$lib/design/Table.svelte';
 	import type { TableColumn } from '$lib/design/table';
 	import { formatDateTime, formatNumber } from '$lib/i18n/format';
+	import type { PollProgress } from '$lib/mail/poll-phase';
 	import { mailPollBadge, mailPollMeta } from './poll-status';
 	import type { ActionData, PageData } from './$types';
 
@@ -81,20 +82,108 @@
 	// "configured but nothing mapped" state this button used to also cover
 	// (#351): an account with credentials always has a mailbox to watch now,
 	// so `accountConfigured` is the only gate left.
-	const pollNow = submitting();
+	// Not `submitting()`, and its own doc comment says why: that helper never
+	// lowers the flag, because everywhere else a submit navigates and the
+	// re-mount resets it. This form is enhanced (see the note further down),
+	// so the component outlives its own submit and something has to lower it.
+	let polling = $state(false);
 
-	// Full-page navigation (no `use:enhance`, matching the rest of this
-	// app), so `form` is fresh SSR output from the submit that produced it
-	// and `data.mailPoll` above is already the post-poll state — the toast
-	// is the only thing this effect has to do. `announcedPollNow` guards it
-	// defensively against Svelte re-running the effect within one mount,
-	// the same shape `proposals/[id]/+page.svelte` uses for its own
-	// decision toast.
-	let announcedPollNow = false;
+	// The phases of the poll in flight, read from `poll-progress/+server.ts`
+	// while the submit above is open (#405). Polled rather than streamed: the
+	// whole log is four to six short rows and refetching all of it is cheaper
+	// than holding an SSE connection open for the seconds it lives, which is
+	// the trade the extraction registry makes the other way round because a
+	// run there can last minutes and nobody is watching a button.
+	const PROGRESS_INTERVAL_MS = 700;
+	let progress = $state<PollProgress | null>(null);
+	let progressTimer: ReturnType<typeof setInterval> | null = null;
+
+	async function readProgress() {
+		try {
+			const response = await fetch(resolve('/mail/poll-progress'), { cache: 'no-store' });
+			if (response.ok) progress = (await response.json()) as PollProgress;
+		} catch {
+			// A failed progress read says nothing about the poll itself, which
+			// is running server-side either way. Leaving the last phases on
+			// screen is a better answer than replacing them with an error
+			// about a request nobody asked for.
+		}
+	}
+
+	function watchProgress() {
+		progress = null;
+		void readProgress();
+		progressTimer = setInterval(() => void readProgress(), PROGRESS_INTERVAL_MS);
+	}
+
+	function stopWatchingProgress() {
+		if (progressTimer !== null) clearInterval(progressTimer);
+		progressTimer = null;
+		// One last read, because the terminal phase is written between the
+		// previous tick and the response arriving: without this the log ends
+		// on `fetching` and reads as unfinished for as long as it stays up.
+		void readProgress();
+	}
+
+	// A tab closed or navigated away mid-poll must not leave a timer behind.
+	$effect(() => () => {
+		if (progressTimer !== null) clearInterval(progressTimer);
+	});
+
+	/** The phase list, as sentences. Structured server-side on purpose
+	 * (`poll-progress.ts`): the server reports a phase and a count, and the
+	 * words are chosen here, in the reader's own language (#286). */
+	const progressLines = $derived(
+		(progress?.steps ?? []).map((step) => {
+			switch (step.phase) {
+				case 'connecting':
+					// The first attempt is just "connecting"; the retries are the
+					// ones worth numbering, because that is when a reader starts
+					// wondering whether anything is happening at all.
+					return (step.count ?? 1) > 1
+						? m.mail_poll_progress_connecting_retry({
+								attempt: step.count ?? 1,
+								of: step.of ?? 1
+							})
+						: m.mail_poll_progress_connecting();
+				case 'reattributing':
+					return m.mail_poll_progress_reattributing({ count: step.count ?? 0 });
+				case 'mailbox_opened':
+					return m.mail_poll_progress_mailbox_opened({ count: step.count ?? 0 });
+				case 'listing':
+					return m.mail_poll_progress_listing({ count: step.count ?? 0, of: step.of ?? 0 });
+				case 'fetching':
+					return m.mail_poll_progress_fetching({ count: step.count ?? 0 });
+				case 'archived':
+					return m.mail_poll_progress_archived({ count: step.count ?? 0 });
+				case 'done':
+					return m.mail_poll_progress_done({ count: step.count ?? 0 });
+				case 'failed':
+					return m.mail_poll_progress_failed();
+			}
+		})
+	);
+
+	// The poll is submitted with `use:enhance` (#405), which is the exception
+	// this app makes to the rule stated in `submitting.svelte.ts`: everything
+	// else navigates on submit, because a re-mount with the server's values
+	// is what makes several forms' `$state` initialisers correct. Nothing on
+	// this page initialises `$state` from a prop, and a mailbox poll is the
+	// one submit here that routinely takes tens of seconds — long enough that
+	// replacing the whole page with a spinner, button included, is the wrong
+	// answer. The progress log below is what fills that time instead.
+	//
+	// So the component stays mounted across a submit, and the announcement
+	// below can no longer assume it runs once per mount. It compares the
+	// outcome by reference: every submit deserialises a fresh object, so the
+	// second poll of one mount announces, and a re-render with the same
+	// object does not. That also keeps the un-enhanced path (no JS, a real
+	// navigation) announcing exactly as it did before.
+	let announced: unknown = null;
 	$effect(() => {
 		const outcome = form?.pollNow;
-		if (!outcome || announcedPollNow) return;
-		announcedPollNow = true;
+		if (!outcome || outcome === announced) return;
+		announced = outcome;
 		if (!outcome.ok) {
 			toasts.push(
 				'danger',
@@ -181,12 +270,30 @@
 		<div class="poll-status">
 			<Badge variant={pollBadge.variant} label={pollBadge.label} size="sm" />
 			<p>{pollMeta}</p>
-			<form method="POST" action="?/pollNow" onsubmit={pollNow.onsubmit}>
+			<form
+				method="POST"
+				action="?/pollNow"
+				use:enhance={() => {
+					polling = true;
+					watchProgress();
+					return async ({ update }) => {
+						stopWatchingProgress();
+						polling = false;
+						// The default `update()` behaviour, spelled out: apply the
+						// action result (which the announcement effect above reads)
+						// and invalidate, so the status badge, the contract table and
+						// the unknown-senders panel all show the post-poll state
+						// without the page having navigated. `reset: false` because
+						// there is nothing in this form to reset.
+						await update({ reset: false, invalidateAll: true });
+					};
+				}}
+			>
 				<Button
 					type="submit"
 					variant="secondary"
 					size="sm"
-					loading={pollNow.busy}
+					loading={polling}
 					disabled={!data.mailPoll.accountConfigured}
 					title={!data.mailPoll.accountConfigured
 						? m.mail_poll_status_not_configured_meta()
@@ -196,6 +303,20 @@
 				</Button>
 			</form>
 		</div>
+		{#if polling || progressLines.length > 0}
+			<!-- #405: what fills the tens of seconds a real mailbox takes. It
+			     stays on screen after the poll ends, because the last thing a
+			     reader saw should not vanish at the moment it becomes the
+			     answer. -->
+			<ol class="poll-log" aria-live="polite">
+				{#each progressLines as line, index (index)}
+					<li>{line}</li>
+				{/each}
+				{#if polling}
+					<li class="poll-log-waiting">{m.mail_poll_progress_working()}</li>
+				{/if}
+			</ol>
+		{/if}
 		{#if data.unknownSenderArchivedCount > 0}
 			<!-- #385: on the live instance 390 messages were archived and none
 			     was ever going to be extracted, and nothing on this screen said
@@ -269,6 +390,30 @@
 		margin: 0;
 		font-size: var(--text-sm);
 		color: var(--text-secondary);
+	}
+	/* A log, not body copy (#405). It sits directly under the status row it
+	   belongs to, so it is indented against that row's own left edge and set
+	   in the same secondary colour as the status sentence: what a reader
+	   wants from it is the last line, and the ones above it only matter as
+	   the reason that line makes sense. Numerals are tabular so the counts
+	   line up as they arrive rather than dancing left and right. */
+	.poll-log {
+		margin: var(--space-3) 0 0;
+		padding: 0 0 0 var(--space-3);
+		border-left: 1px solid var(--border-hairline);
+		list-style: none;
+		display: grid;
+		gap: 2px;
+		font-size: var(--text-sm);
+		font-variant-numeric: tabular-nums;
+		color: var(--text-secondary);
+	}
+	/* The phase still running, which is the only row whose text is not yet
+	   an outcome. Dimmer than the settled ones on purpose: it is the one
+	   line that will be replaced rather than added to. */
+	.poll-log-waiting {
+		color: var(--text-muted);
+		font-style: italic;
 	}
 	/* The Banner has no margins of its own, deliberately: one placed first
 	   inside a Section should not be pushed off its heading. Here it follows
