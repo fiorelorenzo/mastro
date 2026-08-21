@@ -10,6 +10,7 @@
 import { db, type DbExecutor } from '$lib/server/db';
 import { readDocumentBytes, setDocumentRemoteFileId } from '$lib/server/repositories/document';
 import {
+	DEFAULT_MIRROR_BATCH_LIMIT,
 	getDocumentMirrorContext,
 	listUnmirroredDocuments,
 	recordMirrorRun
@@ -73,17 +74,24 @@ export async function publishDocument(
 	}
 }
 
-/** Publishes every document not yet mirrored. One document's failure
- * (already turned into a `failure` run row by `publishDocument`) never
- * stops the rest — a self-hoster whose Drive quota is briefly exhausted
- * on one file should not also lose every other pending publish in the
- * same run. */
+/** Publishes documents not yet mirrored, oldest first, up to
+ * `DEFAULT_MIRROR_BATCH_LIMIT` per pass. One document's failure (already
+ * turned into a `failure` run row by `publishDocument`) never stops the
+ * rest — a self-hoster whose Drive quota is briefly exhausted on one file
+ * should not also lose every other pending publish in the same run.
+ *
+ * Bounded for the same reason the extraction enqueuer is (#308): this runs
+ * on a timer, and an unbounded loop over every document a ledger has ever
+ * held is a pass whose cost grows forever and whose first run on a real
+ * archive is unbounded. A backlog larger than one batch is caught up over
+ * several ticks, which is what a five-minute timer is for. */
 export async function publishAllPending(
 	target: MirrorTarget,
 	folderConfig: MirrorFolderConfig,
-	executor: DbExecutor = db
+	executor: DbExecutor = db,
+	limit = DEFAULT_MIRROR_BATCH_LIMIT
 ): Promise<PublishOutcome[]> {
-	const pending = await listUnmirroredDocuments(executor);
+	const pending = await listUnmirroredDocuments(limit, executor);
 	const outcomes: PublishOutcome[] = [];
 	for (const row of pending) {
 		try {

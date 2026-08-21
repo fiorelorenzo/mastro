@@ -96,24 +96,12 @@ function isAttributionLine(line: string): boolean {
 }
 
 /** One message of a conversation, in the order it was sent. */
-export interface ConversationMessage {
-	readonly documentId: string;
-	/** ISO date, the day the message was sent. */
-	readonly sentAt: string;
-	readonly from: string;
-	readonly body: string;
-	/**
-	 * Whether the consultant wrote this one (#409). Absent means no, which is
-	 * every message archived before the sent mailbox was polled.
-	 *
-	 * The model has to know. "An offer met by the other side's agreement" is
-	 * the shape the prompt raises confidence for, and with my own replies in
-	 * the conversation there is now a side to get wrong: a day resting only
-	 * on what I wrote is me approving my own work, which invariant 3 says a
-	 * human decides rather than an agent.
-	 */
-	readonly mine?: boolean;
-}
+// The shape itself lives in `$lib/server/runner/types` - the wire contract
+// the runner reads - and is re-exported here because this module is where
+// callers building a conversation already look (#409).
+import type { ConversationMessage } from '$lib/server/runner/types';
+
+export type { ConversationMessage };
 
 /**
  * Renders a conversation as the single `content` string the runner passes

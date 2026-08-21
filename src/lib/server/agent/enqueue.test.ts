@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
@@ -253,7 +254,13 @@ test('a message already extracted is never re-queued, even though it produced no
 				jobId: crypto.randomUUID(),
 				documentId: approvedNothing.id,
 				targetType: 'work_unit',
-				enqueuedAt: new Date('2026-08-01T10:00:00.000Z')
+				// After the rows above were learned, which is what "already
+				// extracted" means. A fixed past date would say the extraction
+				// happened before the message was archived - impossible, and
+				// under the staleness rule it reads as "learned since", so the
+				// guard would correctly re-read and this test would be asserting
+				// the wrong thing (#409).
+				enqueuedAt: new Date()
 			},
 			tx
 		);
@@ -439,7 +446,9 @@ test('a conversation already extracted is not re-enqueued from one of its other 
 				jobId: crypto.randomUUID(),
 				documentId: offerDocument.id,
 				targetType: 'work_unit',
-				enqueuedAt: new Date('2026-08-05T17:00:00.000Z')
+				// See the note on the run in the #398 test above: after the rows,
+				// not before them.
+				enqueuedAt: new Date()
 			},
 			tx
 		);
@@ -494,6 +503,16 @@ test('a new reply in an already-extracted conversation is extracted (#403)', asy
 			tx
 		);
 
+		// Pinned, because inside one rolled-back transaction every `created_at`
+		// is the transaction's own start time (AGENTS.md), and the whole point
+		// here is that these two were known *before* the extraction and the
+		// third only after it. Without this the test passes whether or not the
+		// third message exists, which is the wrong reason.
+		await tx.execute(
+			sql`update inbound_thread set created_at = timestamptz '2026-08-05T10:06:00Z'
+				where document_id in (${offerDocument.id}::uuid, ${replyDocument.id}::uuid)`
+		);
+
 		// Yesterday's extraction of the first two messages.
 		await createExtractionRun(
 			{
@@ -537,4 +556,71 @@ test('a new reply in an already-extracted conversation is extracted (#403)', asy
 	expect(result.ours[0].request.conversation?.map((message) => message.documentId)).toContain(
 		result.laterDocument.id
 	);
+});
+
+test('a conversation that gains an old message is re-read (#409)', async () => {
+	// What archiving the sent mailbox does to an exchange already extracted:
+	// it adds my side of it, dated weeks ago. Comparing message dates would
+	// call the existing run fresh and never look again, so the day the
+	// conversation now approves would never be proposed - silently, since
+	// nothing about that reads as a failure.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const suffix = crypto.randomUUID();
+		const offerId = `<offer-${suffix}@client.example>`;
+
+		const offerDocument = await archiveMessage(tx, contractRow.id, 'mezza giornata il 5');
+		const mineDocument = await archiveMessage(tx, contractRow.id, 'tutto ok, confermo');
+
+		await recordInboundThread(
+			threadInput(contractRow.id, offerDocument.id, {
+				imapUid: 81,
+				messageId: offerId,
+				receivedAt: new Date('2026-08-05T10:00:00.000Z')
+			}),
+			tx
+		);
+		// Pinned for the same reason as the #403 test above: the offer was known
+		// before the extraction, my answer only after it.
+		await tx.execute(
+			sql`update inbound_thread set created_at = timestamptz '2026-08-05T10:01:00Z'
+				where document_id = ${offerDocument.id}::uuid`
+		);
+
+		// Extracted a week later, and it proposed nothing: the offer alone had
+		// nothing agreeing to it.
+		await createExtractionRun(
+			{
+				jobId: crypto.randomUUID(),
+				documentId: offerDocument.id,
+				targetType: 'work_unit',
+				enqueuedAt: new Date('2026-08-12T09:00:00.000Z')
+			},
+			tx
+		);
+
+		// Then the sent mailbox is polled for the first time, and my answer -
+		// sent on the 5th, learned about today - joins the conversation.
+		await recordInboundThread(
+			threadInput(contractRow.id, mineDocument.id, {
+				imapUid: 82,
+				mailbox: 'Sent',
+				direction: 'outbound',
+				messageId: `<mine-${suffix}@me.example>`,
+				inReplyTo: offerId,
+				receivedAt: new Date('2026-08-05T10:05:00.000Z')
+			}),
+			tx
+		);
+
+		await enqueueDayExtractions(queueDir, 500, tx);
+		const pending = await listPendingJobs(queueDir);
+		const queued = await Promise.all(pending.map((filename) => readPendingJob(queueDir, filename)));
+		return queued.filter((job) => job.request.documentId === offerDocument.id);
+	});
+
+	// One job, carrying both sides of the exchange.
+	expect(result).toHaveLength(1);
+	expect(result[0].request.conversation).toHaveLength(2);
+	expect(result[0].request.conversation?.map((message) => message.mine)).toEqual([false, true]);
 });

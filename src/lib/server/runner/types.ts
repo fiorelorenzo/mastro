@@ -7,6 +7,37 @@
 // `createProposal` (`repositories/proposal.ts`) — this module never calls
 // that itself, since it has no write access to do so.
 
+/**
+ * One message of a conversation, as it travels to the runner.
+ *
+ * Defined here rather than beside the mail code that builds it, and
+ * re-exported from there (`$lib/server/mail/conversation`), because this
+ * file is the wire contract and the runner resolves its imports without the
+ * `$lib` alias inside its own image. It used to be declared inline in the
+ * request below and separately in the mail module - two structural copies of
+ * one shape, which is a drift waiting to happen and did: adding `mine`
+ * (#409) type-checked on one side and not the other, and only `pnpm check`
+ * saw it, since vitest does not type-check.
+ */
+export interface ConversationMessage {
+	readonly documentId: string;
+	/** ISO date, the day the message was sent. */
+	readonly sentAt: string;
+	readonly from: string;
+	readonly body: string;
+	/**
+	 * Whether the consultant wrote this one (#409). Absent means no, which is
+	 * every message archived before the sent mailbox was polled.
+	 *
+	 * The model has to know. "An offer met by the other side's agreement" is
+	 * the shape the prompt raises confidence for, and with my own replies in
+	 * the conversation there is now a side to get wrong: a day resting only
+	 * on what I wrote is me approving my own work, which invariant 3 says a
+	 * human decides rather than an agent.
+	 */
+	readonly mine?: boolean;
+}
+
 export interface ExtractionRequest {
 	/** The document the extraction reads. The runner re-derives this
 	 * document's `contractId` from its own scoped database read and
@@ -51,12 +82,7 @@ export interface ExtractionRequest {
 	 * and `instructions`. It has no read access to any of these documents
 	 * beyond the anchor, and does not try to.
 	 */
-	conversation?: readonly {
-		readonly documentId: string;
-		readonly sentAt: string;
-		readonly from: string;
-		readonly body: string;
-	}[];
+	conversation?: readonly ConversationMessage[];
 }
 
 /** What a model call is expected to answer with once its response text is

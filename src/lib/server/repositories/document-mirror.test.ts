@@ -143,7 +143,7 @@ test('listUnmirroredDocuments only returns documents with no remote_file_id, old
 			.set({ createdAt: new Date('2026-01-02T00:00:00Z') })
 			.where(eq(document.id, second.id));
 
-		const pending = await listUnmirroredDocuments(tx);
+		const pending = await listUnmirroredDocuments(500, tx);
 		const pendingIds = pending.map((row) => row.id);
 		expect(pendingIds).toContain(first.id);
 		expect(pendingIds).toContain(second.id);
