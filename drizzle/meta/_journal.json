@@ -512,6 +512,13 @@
       "when": 1787315542557,
       "tag": "0073_inbound_thread_references",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1787318877542,
+      "tag": "0074_inbound_thread_direction",
+      "breakpoints": true
     }
   ]
 }

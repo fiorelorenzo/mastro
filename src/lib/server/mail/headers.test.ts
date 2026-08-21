@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { decodeMessageBody, parseMessage, parseReferences } from './headers';
+import { decodeMessageBody, parseHeaderBlock, parseMessage, parseReferences } from './headers';
 
 /** Joins RFC 822 header lines and a body with the required blank-line
  *  separator, so no test call site has to get the newline count right by hand. */
@@ -87,7 +87,10 @@ describe('parseReferences', () => {
 			'Message-ID: <c@example.com>\r\n' +
 				'References: <root@example.com> <middle@example.com>\r\n\r\nbody'
 		);
-		expect(parseReferences(raw)).toEqual(['<root@example.com>', '<middle@example.com>']);
+		expect(parseReferences(parseMessage(raw).headers.get('references'))).toEqual([
+			'<root@example.com>',
+			'<middle@example.com>'
+		]);
 	});
 
 	test('a folded ancestry is read whole', () => {
@@ -97,7 +100,7 @@ describe('parseReferences', () => {
 		const raw = Buffer.from(
 			'References: <root@example.com>\r\n <middle@example.com>\r\n\t<last@example.com>\r\n\r\nbody'
 		);
-		expect(parseReferences(raw)).toEqual([
+		expect(parseReferences(parseMessage(raw).headers.get('references'))).toEqual([
 			'<root@example.com>',
 			'<middle@example.com>',
 			'<last@example.com>'
@@ -107,7 +110,11 @@ describe('parseReferences', () => {
 	test('a message with no ancestry answers with an empty list, never a null', () => {
 		// A conversation's first message. Empty rather than absent, so the
 		// column and every reader have one shape to handle.
-		expect(parseReferences(Buffer.from('Message-ID: <a@b>\r\n\r\nbody'))).toEqual([]);
+		expect(
+			parseReferences(
+				parseMessage(Buffer.from('Message-ID: <a@b>\r\n\r\nbody')).headers.get('references')
+			)
+		).toEqual([]);
 	});
 
 	test('comments and stray text between ids are not mistaken for ids', () => {
@@ -115,6 +122,39 @@ describe('parseReferences', () => {
 		// brackets - which is why this matches on brackets rather than
 		// splitting on whitespace.
 		const raw = Buffer.from('References: <a@x> (a comment) <b@x>\r\n\r\nbody');
-		expect(parseReferences(raw)).toEqual(['<a@x>', '<b@x>']);
+		expect(parseReferences(parseMessage(raw).headers.get('references'))).toEqual([
+			'<a@x>',
+			'<b@x>'
+		]);
+	});
+});
+
+describe('parseHeaderBlock', () => {
+	test('reads a block that is only headers, with no blank line to find', () => {
+		// What `BODY.PEEK[HEADER.FIELDS (...)]` hands back. `parseMessage`
+		// requires a blank line before it treats anything as a header, which
+		// is right for a whole message and returns an empty map here - the
+		// bug this function exists to remove, and it was silent: the poll read
+		// `In-Reply-To` as absent from a block that plainly contained it.
+		const block = Buffer.from(
+			'In-Reply-To: <offer@example.com>\r\nReferences: <root@example.com>\r\n <offer@example.com>\r\n'
+		);
+		expect(parseMessage(block).headers.size).toBe(0);
+
+		const headers = parseHeaderBlock(block);
+		expect(headers.get('in-reply-to')).toBe('<offer@example.com>');
+		expect(parseReferences(headers.get('references'))).toEqual([
+			'<root@example.com>',
+			'<offer@example.com>'
+		]);
+	});
+
+	test('a trailing blank line, which some servers send, changes nothing', () => {
+		const headers = parseHeaderBlock(Buffer.from('In-Reply-To: <a@x>\r\n\r\n'));
+		expect(headers.get('in-reply-to')).toBe('<a@x>');
+	});
+
+	test('an empty block is an empty map, not a throw', () => {
+		expect(parseHeaderBlock(Buffer.alloc(0)).size).toBe(0);
 	});
 });

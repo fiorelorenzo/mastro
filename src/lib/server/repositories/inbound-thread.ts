@@ -5,7 +5,8 @@ import {
 	document,
 	inboundThread,
 	proposal,
-	type InboundThreadSkipReason
+	type InboundThreadSkipReason,
+	type MailDirection
 } from '$lib/server/db/schema';
 
 export type InboundThreadRow = typeof inboundThread.$inferSelect;
@@ -33,6 +34,8 @@ export type InboundThreadInput = {
 	 * exchange where the answer came from me.
 	 */
 	referenceIds?: string[];
+	/** Which way it travelled (#409). Optional, defaulting to `inbound`. */
+	direction?: MailDirection;
 	subject: string | null;
 	/**
 	 * The `From` address, normalised, or null when the envelope carried none
@@ -93,8 +96,16 @@ export type InboundThreadSkipInput = {
 	 * rest rather than being the one shape nobody can account for. */
 	senderAddress: string | null;
 	receivedAt: Date;
-	/** Only `'oversized'` reaches here: it is the reason the bytes are absent. */
-	skipReason: Extract<InboundThreadSkipReason, 'oversized'>;
+	/** Which way it travelled (#409). Optional, defaulting to `inbound` in
+	 * the column, which is what every caller before the sent pass meant. */
+	direction?: MailDirection;
+	/**
+	 * Why the bytes are absent. `oversized` is the ceiling (#306);
+	 * `recipient_unknown` is the sent mailbox's cost guard (#409) - a message
+	 * I wrote to nobody this ledger knows, recorded as having existed so the
+	 * UID cursor moves, with its bytes never read.
+	 */
+	skipReason: Extract<InboundThreadSkipReason, 'oversized' | 'recipient_unknown'>;
 	messageSize: number;
 };
 
@@ -164,7 +175,18 @@ export async function listInboundThreadsAwaitingExtraction(
 				// reads, rather than at each caller: this is the only door into
 				// extraction, so it is the only place the guard can be
 				// forgotten - and it cannot be forgotten here.
-				isNull(inboundThread.skipReason)
+				isNull(inboundThread.skipReason),
+				// Inbound only, as a *seed* (#409). A message I sent travels in
+				// its conversation - `loadConversations` returns it, and the
+				// model needs it, since the approval is often mine - but it must
+				// never be the thing that starts an extraction. Two reasons, and
+				// the second is the one that matters. My own mail arrives in
+				// bulk and most of it approves nothing, so seeding from it would
+				// pay for a model call per sent message; and a day resting only
+				// on what I wrote, with nothing from the client in the same
+				// exchange, is me approving my own work, which is exactly what
+				// invariant 3 says a human has to be shown rather than told.
+				eq(inboundThread.direction, 'inbound')
 			)
 		)
 		.orderBy(inboundThread.receivedAt)
@@ -319,7 +341,20 @@ export async function loadConversations(
 	}
 
 	return [...grouped.values()].map((group) =>
-		[...group].sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime())
+		[...group].sort(
+			(a, b) =>
+				a.receivedAt.getTime() - b.receivedAt.getTime() ||
+				// A deterministic tie-break, because arrival timestamps collide:
+				// IMAP's own INTERNALDATE has second granularity, and two
+				// messages of one exchange can share a second. Real mail rarely
+				// does, a test fixture does it constantly, and either way the
+				// model is told these are oldest first - so the order it sees
+				// must not depend on what Postgres happened to return. The
+				// mailbox name makes it stable across two mailboxes, where UIDs
+				// are not comparable at all.
+				a.mailbox.localeCompare(b.mailbox) ||
+				a.imapUid - b.imapUid
+		)
 	);
 }
 
@@ -403,6 +438,30 @@ export async function listInboundThreadsForContract(contractId: string, executor
 		.from(inboundThread)
 		.where(eq(inboundThread.contractId, contractId))
 		.orderBy(desc(inboundThread.receivedAt));
+}
+
+/**
+ * The archived message with this `Message-ID`, in whichever mailbox it
+ * landed (#409).
+ *
+ * Deliberately not scoped to a mailbox, unlike
+ * {@link findByMailboxAndMessageId} above, because the question it answers
+ * crosses them: the sent pass asks "is the message I replied to already on
+ * the ledger", and the answer lives in the inbox. That is what lets a
+ * message I wrote be kept even when its recipients match no contact - it is
+ * part of an exchange somebody already decided was worth archiving.
+ *
+ * `message_id` is unique per mailbox, not globally, so a message appearing
+ * in two watched mailboxes could match twice; the first is enough for this
+ * caller, which only needs "does one exist, and whose is it".
+ */
+export async function findByMessageId(messageId: string, executor: DbExecutor = db) {
+	const [row] = await executor
+		.select()
+		.from(inboundThread)
+		.where(eq(inboundThread.messageId, messageId))
+		.limit(1);
+	return row ?? null;
 }
 
 /** Recent skipped messages for one contract (#306), newest first — the

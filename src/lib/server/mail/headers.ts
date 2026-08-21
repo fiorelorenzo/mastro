@@ -49,15 +49,7 @@ export function parseMessage(raw: Buffer): ParsedMessage {
 	const text = raw.toString('latin1');
 	const separator = text.match(/\r?\n\r?\n/);
 	const headerBlock = separator ? text.slice(0, separator.index) : text;
-
-	const unfolded: string[] = [];
-	for (const line of headerBlock.split(/\r?\n/)) {
-		if (/^[ \t]/.test(line) && unfolded.length > 0) {
-			unfolded[unfolded.length - 1] += ' ' + line.trim();
-		} else {
-			unfolded.push(line);
-		}
-	}
+	const unfolded = unfoldLines(headerBlock);
 
 	const isHeaderBlock =
 		separator !== null && unfolded.length > 0 && unfolded.every((line) => HEADER_LINE.test(line));
@@ -65,16 +57,52 @@ export function parseMessage(raw: Buffer): ParsedMessage {
 		return { headers: new Map(), body: raw.length > 0 ? raw : null };
 	}
 
+	const bodyStart = separator!.index! + separator![0].length;
+	return { headers: headersFrom(unfolded), body: raw.subarray(bodyStart) };
+}
+
+/**
+ * The headers out of a block that is *only* headers — what IMAP hands back
+ * for a `BODY.PEEK[HEADER.FIELDS (...)]` fetch (#409).
+ *
+ * Separate from {@link parseMessage} because that one requires a blank line
+ * before it will read anything as a header, deliberately: a whole message
+ * whose body happens to start with a blank line would otherwise have its
+ * first body line read as a header. A header-only block has no body and so
+ * no blank line to find, which made `parseMessage` return an empty map for
+ * it - silently, and it cost an afternoon: the poll read `In-Reply-To` as
+ * absent from a block that plainly contained it.
+ */
+export function parseHeaderBlock(raw: Buffer): ReadonlyMap<string, string> {
+	const unfolded = unfoldLines(raw.toString('latin1')).filter((line) => HEADER_LINE.test(line));
+	return headersFrom(unfolded);
+}
+
+/** RFC 5322 folding: a line starting with space or tab continues the one
+ * above it. Shared, because a header block read on its own has to unfold
+ * exactly the way one read from a whole message does. */
+function unfoldLines(block: string): string[] {
+	const unfolded: string[] = [];
+	for (const line of block.split(/\r?\n/)) {
+		if (/^[ \t]/.test(line) && unfolded.length > 0) {
+			unfolded[unfolded.length - 1] += ' ' + line.trim();
+		} else {
+			unfolded.push(line);
+		}
+	}
+	return unfolded;
+}
+
+/** First occurrence of each name wins, matching `ParsedMessage.headers`. */
+function headersFrom(unfolded: readonly string[]): Map<string, string> {
 	const headers = new Map<string, string>();
 	for (const line of unfolded) {
 		const idx = line.indexOf(':');
+		if (idx < 0) continue;
 		const name = line.slice(0, idx).trim().toLowerCase();
-		const value = line.slice(idx + 1).trim();
-		if (!headers.has(name)) headers.set(name, value);
+		if (!headers.has(name)) headers.set(name, line.slice(idx + 1).trim());
 	}
-
-	const bodyStart = separator!.index! + separator![0].length;
-	return { headers, body: raw.subarray(bodyStart) };
+	return headers;
 }
 
 /** The `charset=` parameter off a `Content-Type` header value, lowercased.
@@ -161,19 +189,18 @@ export function decodeMessageBody(message: ParsedMessage): string {
  * names them — oldest ancestor first, which is the order RFC 5322 requires
  * (#410).
  *
- * Takes the raw bytes rather than a `ParsedMessage` so the one caller that
- * has only bytes — the backfill, reading an archived original — needs no
- * second parse. `parseMessage` already unfolds, which matters: a long
- * ancestry is exactly the header a client wraps, and a line-at-a-time read
- * would keep the first ids and silently drop the rest.
+ * Takes the header value, so it works the same whether it came from a whole
+ * message or from a header-only IMAP fetch. Unfolding happens before this,
+ * in whichever parser read the block, and it matters: a long ancestry is
+ * exactly the header a client wraps, and a line-at-a-time read would keep
+ * the first ids and silently drop the rest.
  *
  * Matched by angle brackets rather than split on whitespace. The grammar
  * allows comments and folding between ids, and an id itself cannot contain
  * `<` or `>`, so the brackets are the reliable delimiter. Empty array when
  * the header is absent, which is a conversation's first message.
  */
-export function parseReferences(raw: Buffer): string[] {
-	const value = parseMessage(raw).headers.get('references');
+export function parseReferences(value: string | undefined): string[] {
 	if (!value) return [];
 	return [...value.matchAll(/<[^<>]+>/g)].map((match) => match[0]);
 }

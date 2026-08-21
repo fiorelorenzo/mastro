@@ -547,6 +547,12 @@ export const load: PageServerLoad = async ({ params }) => {
 		// same way or one proposal reads two ways.
 		fromMessage: thread !== null,
 		message: {
+			// Whose message the evidence is (#409). A day confirmed by the
+			// client and a day resting on my own reply are not the same claim,
+			// and a reviewer looking at an excerpt cannot tell them apart from
+			// an address alone - the excerpt is the client's words in one case
+			// and mine in the other.
+			mine: thread?.direction === 'outbound',
 			from: parsedMessage?.headers.get('from') ?? null,
 			to: parsedMessage?.headers.get('to') ?? null,
 			subject: thread?.subject ?? null,

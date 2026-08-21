@@ -1,4 +1,4 @@
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import { client, clientContact, contract, document, inboundThread } from '$lib/server/db/schema';
 import { claimDocumentForContract } from '$lib/server/repositories/document';
@@ -176,4 +176,44 @@ export async function reattributeKnownSenders(executor: DbExecutor = db): Promis
 		}
 	}
 	return recovered;
+}
+
+/**
+ * Which contract a message I sent belongs to, worked out from who I sent it
+ * to (#409).
+ *
+ * The mirror image of {@link attributeBySender}, and deliberately the same
+ * rule rather than a looser one: for inbound mail the counterparty is the
+ * sender, for outbound it is the recipient, and in both cases exactly one
+ * active contract has to be reachable or the answer is null and a human
+ * decides. `To` and `Cc` are one list here - a confirmation copied to a
+ * second address at the same client is the same confirmation.
+ *
+ * Ambiguity is the case worth stating. A message addressed to contacts of
+ * two different clients, or to a client with two active contracts, resolves
+ * to null: picking one would be a guess presented as a fact, and this is
+ * exactly where that would be least visible, since nobody reviews their own
+ * sent mail.
+ */
+export async function attributeByRecipients(
+	addresses: readonly (string | null)[],
+	executor: DbExecutor = db
+): Promise<{ contractId: string; clientId: string } | null> {
+	const normalised = [
+		...new Set(
+			addresses.map((address) => normaliseAddress(address)).filter((a): a is string => a !== null)
+		)
+	];
+	if (normalised.length === 0) return null;
+
+	const rows = await executor
+		.select({ contractId: contract.id, clientId: client.id })
+		.from(clientContact)
+		.innerJoin(client, eq(clientContact.clientId, client.id))
+		.innerJoin(contract, eq(contract.clientId, client.id))
+		.where(and(inArray(clientContact.email, normalised), eq(contract.status, 'active')));
+
+	const distinct = new Map(rows.map((row) => [row.contractId, row]));
+	if (distinct.size !== 1) return null;
+	return [...distinct.values()][0];
 }

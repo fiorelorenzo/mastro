@@ -203,7 +203,12 @@ export function dayConfidence(
  */
 export function dayExtractionInstructions(messages: readonly ConversationMessage[]): string {
 	const roster = messages
-		.map((m, i) => `  message ${i}, sent ${m.sentAt}${m.from ? ` by ${m.from}` : ''}`)
+		.map(
+			(m, i) =>
+				`  message ${i}, sent ${m.sentAt}${m.from ? ` by ${m.from}` : ''}${
+					m.mine ? ' (the consultant, whose ledger this is)' : ''
+				}`
+		)
 		.join('\n');
 	const plural = messages.length === 1 ? '' : 's';
 	return [
@@ -217,6 +222,7 @@ export function dayExtractionInstructions(messages: readonly ConversationMessage
 		'- Quoting is not a new statement. A reply that echoes an earlier message underneath a signature, or a later message that quotes everything above it ("Grazie!" followed by the whole thread so far), is history reappearing, not a second approval. If wording you already used for a day appears again later in the conversation, that is why — do not report the day again.',
 		'- An allocation is a date or period, an activity, and an agreement. All three have to be there. A message that only names a date, or only an activity, with nothing that agrees to it, approves nothing: "a domani per la kickoff call" and the reply "A domani per il kickoff!" name no allocation and confirm nothing, however specific they read.',
 		'- The strongest evidence this product can get is an offer that names a date (or period) and an activity, met by the other side\u2019s own agreement in a later message ("confermo", "tutto ok", "ok"). When you see that shape, raise your confidence rather than lowering it — a written offer plus a written acceptance is exactly the mechanism a billing-by-confirmation contract is built on. If the date itself is the only loose part (a week rather than a single day, a range rather than a date), say so in confidenceReason instead of lowering confidence over an allocation that was, in every other respect, agreed to in writing.',
+		'- Some messages are the consultant\u2019s own, marked above. They are here because an approval often needs them - a client who writes "confermo l\u2019allocazione, rispondi con un ok" is approving the day, and the consultant\u2019s "tutto ok, confermo" is the ok that was asked for - so read them as part of the agreement. But the consultant cannot approve their own work: a day named only in the consultant\u2019s own messages, with nothing from the client agreeing to it anywhere in the conversation, approves nothing. Report it only when the client\u2019s own words are part of the evidence.',
 		'- An assignment that is confirmed but open-ended is worth exactly one day, at low confidence, not silence. A message confirming work "effective from your next working day following your onboarding on Thursday, August 13th" names no count and no end, but it does confirm that work starts, and the first working day after the named date is a real, checkable guess. Propose that one day, put the reason it is uncertain in confidenceReason, and stop there: a reviewer can correct one low-confidence day, and cannot correct a day nobody proposed. Do not extrapolate a second, a week, or a month from it.',
 		'',
 		'Answer with JSON and nothing else, in exactly this shape:',

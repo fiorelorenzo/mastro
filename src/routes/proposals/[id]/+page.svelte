@@ -533,7 +533,18 @@
 		<div class="card evidence">
 			<div class="card-head">
 				<h2>{evidenceHeading(data.fromMessage)}</h2>
-				<Badge variant="info" label={m.proposal_evidence_source_badge()} size="sm" />
+				<!-- #409: a day confirmed by the client and a day resting on my
+				     own reply are not the same claim, and an address alone does
+				     not say which one a reviewer is looking at. The badge next to
+				     the heading is where that belongs, beside the word
+				     "evidence" rather than buried in the pairs below. -->
+				<Badge
+					variant={data.message.mine ? 'warning' : 'info'}
+					label={data.message.mine
+						? m.proposal_evidence_source_mine_badge()
+						: m.proposal_evidence_source_badge()}
+					size="sm"
+				/>
 			</div>
 
 			<dl class="pairs">

@@ -2,8 +2,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
+import { rejection } from '$lib/server/db/pg-error';
 import { client as pool, db } from '$lib/server/db';
 import { client, clientContact, contract } from '$lib/server/db/schema';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
@@ -852,4 +853,98 @@ test('two threads that merely share a subject stay apart (#410)', async () => {
 
 	expect(conversations).toHaveLength(2);
 	expect(conversations.every((conversation) => conversation.length === 1)).toBe(true);
+});
+
+test('a message I sent never seeds an extraction, but does travel in the conversation (#409)', async () => {
+	// Invariant 3, in the one place it could quietly break. My own reply has
+	// to reach the model - the approval is often mine - but a day resting on
+	// nothing but what I wrote would be me approving my own work. So an
+	// outbound row is never a seed, and is always part of its conversation.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const offerId = `<offer-${crypto.randomUUID()}@client.example>`;
+		const offerDocument = await archiveMessage(tx, contractRow.id);
+		const mineDocument = await archiveMessage(tx, contractRow.id);
+
+		const offer = await recordInboundThread(
+			threadInput(contractRow.id, offerDocument.id, {
+				imapUid: 61,
+				messageId: offerId,
+				receivedAt: new Date('2026-08-05T16:38:00.000Z')
+			}),
+			tx
+		);
+		const mine = await recordInboundThread(
+			threadInput(contractRow.id, mineDocument.id, {
+				imapUid: 62,
+				mailbox: 'Sent',
+				messageId: `<mine-${crypto.randomUUID()}@me.example>`,
+				inReplyTo: offerId,
+				direction: 'outbound',
+				receivedAt: new Date('2026-08-05T16:40:00.000Z')
+			}),
+			tx
+		);
+
+		const awaiting = await listInboundThreadsAwaitingExtraction(50, tx);
+		const conversations = await loadConversations(
+			[offer as Parameters<typeof loadConversations>[0][number]],
+			tx
+		);
+		return { awaiting, conversations, offerId: offer.id, mineId: mine.id };
+	});
+
+	// The offer is a seed; my reply is not.
+	const seedIds = result.awaiting.map((row) => row.id);
+	expect(seedIds).toContain(result.offerId);
+	expect(seedIds).not.toContain(result.mineId);
+
+	// And it is in the conversation the offer belongs to, second, because it
+	// came second.
+	expect(result.conversations).toHaveLength(1);
+	expect(result.conversations[0].map((row) => row.id)).toEqual([result.offerId, result.mineId]);
+});
+
+test('the database refuses a skip reason that contradicts the direction (#409)', async () => {
+	// Both fields are written by one code path whose only difference is the
+	// direction, so getting them the wrong way round is the plausible bug:
+	// an inbound message refused for an unknown *recipient*, or a message I
+	// sent blamed on an unknown *sender*. Neither is a thing that can happen.
+	const errors = await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const outboundBlamedOnSender = await rejection(
+			() =>
+				recordSkippedInboundThread(
+					{
+						...skippedInput(contractRow.id, { imapUid: 71, direction: 'outbound' }),
+						skipReason: 'oversized'
+					},
+					tx
+				).then(() =>
+					tx.execute(
+						sql`update inbound_thread set skip_reason = 'sender_unknown' where imap_uid = 71`
+					)
+				),
+			tx
+		);
+		const inboundBlamedOnRecipient = await rejection(
+			() =>
+				recordSkippedInboundThread(
+					{
+						...skippedInput(contractRow.id, { imapUid: 72 }),
+						skipReason: 'recipient_unknown'
+					},
+					tx
+				),
+			tx
+		);
+		return { outboundBlamedOnSender, inboundBlamedOnRecipient };
+	});
+
+	expect(errors.outboundBlamedOnSender.constraint_name).toBe(
+		'inbound_thread_skip_reason_matches_direction'
+	);
+	expect(errors.inboundBlamedOnRecipient.constraint_name).toBe(
+		'inbound_thread_skip_reason_matches_direction'
+	);
 });
