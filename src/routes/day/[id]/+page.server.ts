@@ -181,9 +181,14 @@ export const actions: Actions = {
 	// The manual half of the settle sweep (Task 2's automatic half fires
 	// once the date has passed): a day approved for today that the
 	// consultant has already finished should not have to wait for the
-	// night. Legal only from `approved` — the trigger enforces that,
-	// this action does not re-check the day's current state first.
+	// night. The trigger admits `approved -> worked` and also
+	// `worked_without_approval -> worked`; the button above only ever
+	// renders for `approved`, which is what actually keeps this action on
+	// the one edge that matters here.
 	worked: async ({ params, locals }) => {
+		const workUnit = await getWorkUnit(params.id);
+		if (!workUnit) error(404, m.day_detail_not_found());
+
 		await markWorkUnitWorked(
 			params.id,
 			{ kind: 'human', email: locals.user!.email },

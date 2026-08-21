@@ -236,7 +236,7 @@
 		<div class="lifecycle-actions">
 			<form method="POST" action="?/worked" onsubmit={worked.onsubmit}>
 				<Button type="submit" variant="primary" size="sm" loading={worked.busy}>
-					{m.day_mark_worked_submit()}
+					{m.day_detail_mark_worked_action()}
 				</Button>
 			</form>
 			<Button
