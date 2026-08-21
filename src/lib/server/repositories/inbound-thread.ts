@@ -17,6 +17,13 @@ export type InboundThreadInput = {
 	imapUidValidity: number;
 	imapUid: number;
 	messageId: string | null;
+	/**
+	 * The `Message-ID` this message replies to, verbatim (#400). Null for the
+	 * first message of a conversation, and for a client that dropped the
+	 * header. What groups archived messages back into the exchange they came
+	 * from, so extraction can read an offer together with its acceptance.
+	 */
+	inReplyTo: string | null;
 	subject: string | null;
 	/**
 	 * The `From` address, normalised, or null when the envelope carried none
@@ -67,6 +74,10 @@ export type InboundThreadSkipInput = {
 	imapUidValidity: number;
 	imapUid: number;
 	messageId: string | null;
+	/** As `InboundThreadInput.inReplyTo` (#400). Recorded even for a message
+	 *  whose bytes were refused, so a conversation is not silently missing a
+	 *  link it can be told about. */
+	inReplyTo: string | null;
 	subject: string | null;
 	/** As `InboundThreadInput.senderAddress` (#394): recorded even here, so
 	 * an oversized message from an unknown address is visible alongside the
@@ -152,6 +163,126 @@ export async function listInboundThreadsAwaitingExtraction(
 	// `inbound_thread_archived_shape` is what actually guarantees this,
 	// not a runtime check here — see the type's own doc comment.
 	return rows.map((row) => row.thread as ArchivedInboundThreadRow);
+}
+
+/**
+ * Every archived message belonging to the same conversations as `seeds`,
+ * `seeds` included, oldest first (#400).
+ *
+ * Extraction is per conversation now, so the enqueuer needs the whole
+ * exchange and not only the messages that happen to be awaiting: the
+ * Polymarket half-day is offered in one message and accepted in the next,
+ * and a model shown only the acceptance sees a bare "tutto ok, confermo"
+ * with nothing to confirm.
+ *
+ * Closure by iteration rather than a recursive CTE, and that is a
+ * deliberate trade. Both directions have to be followed - a seed's parents
+ * *and* its replies - so the recursive form needs two unions over a table
+ * with two nullable text keys, which is harder to read than it is to run.
+ * The loop below is bounded by conversation depth, which is single digits
+ * in mail written by people, and each round is one indexed lookup. It also
+ * stops on its own: a round that adds nothing ends it.
+ *
+ * Grouping is by `in_reply_to` alone, never by subject. `Re:` on a subject
+ * line is a convention, not a link: two unrelated "Re: Conferma" threads
+ * would collapse into one conversation and their days would be judged as
+ * one exchange. A missing header degrades to two conversations, which is a
+ * duplicate a human can see, where a wrong merge is an approval attributed
+ * to the wrong offer.
+ */
+export async function loadConversations(
+	seeds: readonly ArchivedInboundThreadRow[],
+	executor: DbExecutor = db
+): Promise<ArchivedInboundThreadRow[][]> {
+	if (seeds.length === 0) return [];
+
+	const byId = new Map<string, ArchivedInboundThreadRow>(seeds.map((row) => [row.id, row]));
+	let frontier = seeds;
+
+	// Ten rounds is not a policy, it is a guard against a cycle a malformed
+	// header could otherwise turn into a loop: `In-Reply-To` is chosen by the
+	// sender, so nothing stops two messages naming each other.
+	for (let round = 0; round < 10; round += 1) {
+		const parentIds = [
+			...new Set(
+				frontier.map((row) => row.inReplyTo).filter((value): value is string => value !== null)
+			)
+		];
+		const ownIds = [
+			...new Set(
+				frontier.map((row) => row.messageId).filter((value): value is string => value !== null)
+			)
+		];
+		if (parentIds.length === 0 && ownIds.length === 0) break;
+
+		const [parents, replies] = await Promise.all([
+			parentIds.length > 0
+				? executor
+						.select()
+						.from(inboundThread)
+						.where(
+							and(eq(inboundThread.archived, true), inArray(inboundThread.messageId, parentIds))
+						)
+				: Promise.resolve([]),
+			ownIds.length > 0
+				? executor
+						.select()
+						.from(inboundThread)
+						.where(and(eq(inboundThread.archived, true), inArray(inboundThread.inReplyTo, ownIds)))
+				: Promise.resolve([])
+		]);
+
+		const added: ArchivedInboundThreadRow[] = [];
+		for (const row of [...parents, ...replies]) {
+			// `archived = true` is in both queries, so `inbound_thread_archived_shape`
+			// guarantees the document id the type promises.
+			if (row.documentId === null || byId.has(row.id)) continue;
+			const archivedRow = row as ArchivedInboundThreadRow;
+			byId.set(row.id, archivedRow);
+			added.push(archivedRow);
+		}
+		if (added.length === 0) break;
+		frontier = added;
+	}
+
+	// Union-find over the links now that every member is in memory: a
+	// conversation is a connected component, and doing it here rather than in
+	// SQL keeps the "who is related to whom" rule in one readable place.
+	const rows = [...byId.values()];
+	const idByMessageId = new Map<string, string>();
+	for (const row of rows) if (row.messageId) idByMessageId.set(row.messageId, row.id);
+
+	const parentOf = new Map<string, string>();
+	const find = (id: string): string => {
+		let current = id;
+		while (parentOf.has(current) && parentOf.get(current) !== current) {
+			current = parentOf.get(current)!;
+		}
+		return current;
+	};
+	const union = (a: string, b: string) => {
+		const rootA = find(a);
+		const rootB = find(b);
+		if (rootA !== rootB) parentOf.set(rootA, rootB);
+	};
+	for (const row of rows) parentOf.set(row.id, row.id);
+	for (const row of rows) {
+		if (!row.inReplyTo) continue;
+		const parentRowId = idByMessageId.get(row.inReplyTo);
+		if (parentRowId) union(row.id, parentRowId);
+	}
+
+	const grouped = new Map<string, ArchivedInboundThreadRow[]>();
+	for (const row of rows) {
+		const key = find(row.id);
+		const group = grouped.get(key);
+		if (group) group.push(row);
+		else grouped.set(key, [row]);
+	}
+
+	return [...grouped.values()].map((group) =>
+		[...group].sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime())
+	);
 }
 
 /** The thread one archived message belongs to (#85). The drain needs its

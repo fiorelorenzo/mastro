@@ -37,6 +37,26 @@ export interface ExtractionRequest {
 	 * substrate every producer shares; it hardcodes no extraction prompt
 	 * of its own. */
 	instructions: string;
+	/**
+	 * The conversation behind `content`, oldest first (#400).
+	 *
+	 * The index into this array is the `messageIndex` a proposed day answers
+	 * with, which is how a conversation-level extraction still produces
+	 * proposals that each point at one archived message. Optional, and that
+	 * is not laziness: a contract PDF and an invoice are genuinely one
+	 * document, and a one-element array for them would be a shape claiming a
+	 * conversation exists where none does.
+	 *
+	 * The runner passes this through untouched, exactly as it does `content`
+	 * and `instructions`. It has no read access to any of these documents
+	 * beyond the anchor, and does not try to.
+	 */
+	conversation?: readonly {
+		readonly documentId: string;
+		readonly sentAt: string;
+		readonly from: string;
+		readonly body: string;
+	}[];
 }
 
 /** What a model call is expected to answer with once its response text is

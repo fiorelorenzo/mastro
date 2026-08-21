@@ -18,6 +18,7 @@ import { listRateCards } from '$lib/server/repositories/rate-card';
 import { createProposal, type ProposalRow } from '$lib/server/repositories/proposal';
 import type { DbExecutor } from '$lib/server/db';
 import type { ProposalCandidate } from '$lib/server/runner/types';
+import type { ConversationMessage } from '$lib/server/mail/conversation';
 import {
 	dayConfidence,
 	dayExtractionInstructions,
@@ -31,14 +32,29 @@ export interface DayProposalSource {
 	readonly documentId: string;
 	readonly contractId: string;
 	/** The message body, already read from the blob store by the caller —
-	 * the runner cannot read it, by design. */
+	 * the runner cannot read it, by design. For a conversation this is
+	 * `renderConversation`'s output (`$lib/server/mail/conversation`):
+	 * every message the thread holds, oldest first, already separated by
+	 * the header the model is told to expect. */
 	readonly content: string;
-	/** When the message was sent. Every relative date in it resolves
-	 * against this, so it comes from the envelope rather than from the
-	 * model's idea of today. */
+	/** When the (newest) message was sent. Every relative date in a
+	 * message with no conversation array below resolves against this, so
+	 * it comes from the envelope rather than from the model's idea of
+	 * today. */
 	readonly messageDate: string;
 	readonly startsOn: string;
 	readonly endsOn: string | null;
+	/**
+	 * Every message `content` above renders, oldest first, so a day's
+	 * `messageIndex` can be resolved back to the document that actually
+	 * carries it (#400) — the Polymarket allocation's offer and its
+	 * acceptance are two different messages, and the offer is the one a
+	 * proposal has to point at. Optional: a hand-uploaded single message
+	 * and a candidate drained before this field existed both legitimately
+	 * have no array, and `writeDayProposals` falls back to `documentId`
+	 * above for either.
+	 */
+	readonly conversation?: readonly ConversationMessage[];
 }
 
 /** How the extraction is actually run. Injected so this module can be
@@ -78,9 +94,25 @@ export async function proposeDaysFromMessage(
 		contractId: source.contractId,
 		targetType: 'work_unit',
 		content: source.content,
-		instructions: dayExtractionInstructions(source.messageDate)
+		instructions: dayExtractionInstructions(conversationMessages(source))
 	});
 	return writeDayProposals(source, candidate, executor);
+}
+
+/**
+ * The conversation `dayExtractionInstructions` describes and `messageIndex`
+ * below is resolved against. `source.conversation` when the caller built
+ * one; otherwise a single-element stand-in built from `source` itself, so
+ * a caller that only ever knew about one message — every test in this
+ * file's own suite, and any candidate drained from before #400 — keeps
+ * getting exactly the single-message prompt this file used to hardcode.
+ */
+function conversationMessages(source: DayProposalSource): readonly ConversationMessage[] {
+	return (
+		source.conversation ?? [
+			{ documentId: source.documentId, sentAt: source.messageDate, from: '', body: source.content }
+		]
+	);
 }
 
 /**
@@ -98,7 +130,7 @@ export async function writeDayProposals(
 		fallbackExcerpt: candidate.excerpt
 	};
 	const { accepted, rejected } = validateDays(
-		parseExtractedDays(candidate.proposedFields),
+		parseExtractedDays(candidate.proposedFields, source.conversation?.length ?? 1),
 		context
 	);
 
@@ -116,7 +148,13 @@ export async function writeDayProposals(
 		proposals.push(
 			await createProposal(
 				{
-					documentId: source.documentId,
+					// The message the day's own evidence actually came from
+					// (#400), not always the newest one: the Polymarket
+					// allocation's offer is message 0, the owner's "confermo"
+					// is message 1, and the proposal has to archive against
+					// the offer. Falls back to the top-level document when
+					// there is no conversation array to resolve against.
+					documentId: source.conversation?.[day.messageIndex]?.documentId ?? source.documentId,
 					contractId: source.contractId,
 					targetType: 'work_unit',
 					// Exactly the fields `applyProposal` reads when a human

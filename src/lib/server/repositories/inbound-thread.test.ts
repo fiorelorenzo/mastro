@@ -113,6 +113,7 @@ function threadInput(
 		imapUid: 1,
 		messageId: `<${crypto.randomUUID()}@example.com>`,
 		subject: 'Re: approval for next week',
+		inReplyTo: null,
 		senderAddress: null,
 		receivedAt: new Date('2026-08-01T09:00:00.000Z'),
 		...overrides
@@ -130,6 +131,7 @@ function skippedInput(
 		imapUid: 1,
 		messageId: `<${crypto.randomUUID()}@example.com>`,
 		subject: 'A message too large to archive',
+		inReplyTo: null,
 		senderAddress: null,
 		receivedAt: new Date('2026-08-01T09:00:00.000Z'),
 		skipReason: 'oversized',

@@ -21,6 +21,16 @@ import { retryEligibility, type RetryBlockReason } from '$lib/extraction/retry-e
 import { contractExtractionInstructions } from './contract-extraction';
 import { invoiceExtractionInstructions } from './invoice-extraction';
 import { dayExtractionInstructions } from './day-extraction';
+import {
+	loadConversations,
+	type ArchivedInboundThreadRow
+} from '$lib/server/repositories/inbound-thread';
+import {
+	renderConversation,
+	stripQuotedHistory,
+	type ConversationMessage
+} from '$lib/server/mail/conversation';
+import { decodeMessageBody, parseMessage } from '$lib/server/mail/headers';
 import { extractPdfText } from './invoice-producer';
 import {
 	countExtractionRunsForDocument,
@@ -30,6 +40,7 @@ import {
 import { listProposalsForDocument } from '$lib/server/repositories/proposal';
 import {
 	getDocument,
+	getDocuments,
 	readDocumentBytes,
 	type DocumentRow
 } from '$lib/server/repositories/document';
@@ -145,13 +156,49 @@ async function buildRetryRequest(
 		case 'work_unit': {
 			const thread = await getInboundThreadForDocument(run.documentId, executor);
 			if (!thread) return null;
-			const bytes = await readDocumentBytes(document);
+			if (thread.documentId === null) return null;
+			// Narrowed once, here, rather than asserted at each use: `documentId`
+			// is nullable on the row and non-null for an archived one, which the
+			// `inbound_thread_archived_shape` check guarantees and the type
+			// cannot express.
+			const archivedThread: ArchivedInboundThreadRow = {
+				...thread,
+				documentId: thread.documentId
+			};
+			// The same conversation a first attempt would have seen (#400).
+			// Retrying a mid-thread message against itself alone would give the
+			// model strictly less than the run being retried had, which is the
+			// opposite of what a retry is for: the Polymarket acceptance on its
+			// own reads "tutto ok, confermo" with nothing to confirm.
+			const [conversationRows = [archivedThread]] = await loadConversations(
+				[archivedThread],
+				executor
+			);
+			const documents = await getDocuments(
+				conversationRows.map((row) => row.documentId),
+				executor
+			);
+			const documentsById = new Map<string, DocumentRow>(documents.map((row) => [row.id, row]));
+			const conversation: ConversationMessage[] = [];
+			for (const row of conversationRows) {
+				const archived = documentsById.get(row.documentId);
+				if (!archived) continue;
+				const bytes = await readDocumentBytes(archived);
+				conversation.push({
+					documentId: row.documentId,
+					sentAt: row.receivedAt.toISOString().slice(0, 10),
+					from: row.senderAddress ?? 'unknown',
+					body: stripQuotedHistory(decodeMessageBody(parseMessage(bytes)))
+				});
+			}
+			if (conversation.length === 0) return null;
 			return {
 				documentId: run.documentId,
 				contractId: thread.contractId,
 				targetType: 'work_unit',
-				content: bytes.toString('utf8'),
-				instructions: dayExtractionInstructions(thread.receivedAt.toISOString().slice(0, 10))
+				content: renderConversation(conversation),
+				conversation,
+				instructions: dayExtractionInstructions(conversation)
 			};
 		}
 	}

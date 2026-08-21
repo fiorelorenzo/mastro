@@ -110,6 +110,29 @@ export const inboundThread = pgTable(
 		messageId: text('message_id'),
 		subject: text('subject'),
 		/**
+		 * The `Message-ID` this message replies to, verbatim (#400).
+		 *
+		 * What turns a pile of messages back into the conversation they came
+		 * from. Extraction reads one message at a time without it, which on
+		 * the first real mailbox produced three proposals for one day: a
+		 * reply quoting its parent re-stated the parent's sentence, and each
+		 * message was judged with no knowledge of the answer it got. The
+		 * Polymarket half-day is the case that makes it plain - the offer is
+		 * in one message and the acceptance in the next, so no single message
+		 * contains the approval.
+		 *
+		 * `In-Reply-To` only, not `References`. An IMAP envelope carries the
+		 * first for free and not the second, and a second fetch per message
+		 * to reconstruct a fuller chain buys nothing here: following
+		 * `in_reply_to` to a message with none reaches the same root, and a
+		 * broken chain (a client that dropped the header) degrades to two
+		 * conversations rather than a wrong one.
+		 *
+		 * Null for a conversation's first message, and for every row archived
+		 * before this column existed.
+		 */
+		inReplyTo: text('in_reply_to'),
+		/**
 		 * The `From` address, lower-cased and trimmed, as it arrived (#394).
 		 *
 		 * The poll already read this to decide attribution and then threw it

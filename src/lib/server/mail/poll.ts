@@ -212,6 +212,7 @@ export async function pollMailboxTarget(
 
 		type KeptMeta = {
 			messageId: string | null;
+			inReplyTo: string | null;
 			subject: string | null;
 			internalDate: Date;
 			/** Null when nothing in the ledger claims this sender. */
@@ -260,6 +261,9 @@ export async function pollMailboxTarget(
 					? message.internalDate
 					: new Date(message.internalDate ?? Date.now());
 			const subject = message.envelope?.subject ?? null;
+			// What this message answers (#400). The envelope carries it, so
+			// grouping a conversation costs no extra fetch.
+			const inReplyTo = message.envelope?.inReplyTo ?? null;
 			const uid = message.uid;
 			const size = message.size ?? null;
 
@@ -283,6 +287,7 @@ export async function pollMailboxTarget(
 						{
 							contractId: attributed,
 							senderAddress,
+							inReplyTo,
 							mailbox,
 							imapUidValidity: uidValidity,
 							imapUid: uid,
@@ -301,6 +306,7 @@ export async function pollMailboxTarget(
 
 			kept.set(uid, {
 				messageId,
+				inReplyTo,
 				subject,
 				internalDate,
 				contractId: attributed,
@@ -354,6 +360,7 @@ export async function pollMailboxTarget(
 						{
 							contractId: meta.contractId,
 							senderAddress: meta.senderAddress,
+							inReplyTo: meta.inReplyTo,
 							documentId: archived.id,
 							mailbox,
 							imapUidValidity: uidValidity,

@@ -74,6 +74,32 @@ export function isCacheableDataResponse(response: {
 }
 
 /**
+ * Whether a revalidated data response actually differs from the copy it
+ * is about to replace in `DATA_CACHE`, compared as body text rather than
+ * headers — `x-mastro-cached-at` is stamped fresh on every write by
+ * construction (see `processNetworkDataResponse`), so a header comparison
+ * would report every single revalidation as a change regardless of
+ * payload, which is no better than the `stale`-flag proxy this replaces.
+ *
+ * `previousBody === null` means there was nothing cached for this URL
+ * yet, so nothing stale was ever on screen for it: the page is about to
+ * render the very payload that just arrived, not something older, so
+ * that case reports unchanged.
+ *
+ * This is the real criterion behind #401: a home screen and a list page
+ * disagreeing on proposal counts, traced to a revalidation that
+ * returned a genuinely different payload inside the stale-announce grace
+ * period, so nothing ever told the page to re-read it. See
+ * `freshness-policy.ts`'s `shouldRefreshAfterFreshData` for how the
+ * result of this comparison is turned into a re-read decision, and its
+ * doc comment for why re-reading here cannot loop the way #340 did.
+ */
+export function dataPayloadChanged(previousBody: string | null, nextBody: string): boolean {
+	if (previousBody === null) return false;
+	return previousBody !== nextBody;
+}
+
+/**
  * Whether a request is a write that invalidates every cached read.
  *
  * Measured before it was written: rejecting a proposal and clicking back to

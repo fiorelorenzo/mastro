@@ -15,7 +15,7 @@ import {
 	recordRevalidated,
 	recordSessionInvalid,
 	recordStaleServe,
-	shouldRefreshAfterRevalidation,
+	shouldRefreshAfterFreshData,
 	type FreshnessState
 } from './freshness-policy';
 
@@ -23,6 +23,7 @@ interface ServiceWorkerMessage {
 	readonly type: string;
 	readonly url?: string;
 	readonly cachedAt?: string | null;
+	readonly changed?: boolean;
 }
 
 function isServiceWorkerMessage(data: unknown): data is ServiceWorkerMessage {
@@ -61,15 +62,25 @@ class ServiceWorkerClient {
 				// Read the decision before recording, since recording clears the
 				// entry it depends on.
 				//
-				// Re-reading here closes the half that was missing: a stale
-				// serve followed by a fresh copy used to take the banner down
-				// and leave the old rows on screen. What it must not do is
-				// re-read on *every* fresh message: a re-read refetches the
-				// same URL, a successful refetch posts another `data-fresh`,
-				// and the tab never stops (#340 — measured at about 30 a
-				// second on an untouched page). So this asks only when this
-				// URL had actually been announced stale.
-				const refresh = shouldRefreshAfterRevalidation(this.#entries, message.url);
+				// Re-reading here closes two different gaps, either sufficient
+				// on its own (#401): a stale serve followed by a fresh copy,
+				// which used to take the banner down and leave the old rows on
+				// screen, and a fresh copy that never got announced stale at
+				// all because the revalidation both succeeded inside the
+				// grace period AND returned different data — `message.changed`,
+				// computed by the worker against the cache entry it just
+				// replaced. What it must not do is re-read on every fresh
+				// message unconditionally: a re-read refetches the same URL,
+				// a successful refetch posts another `data-fresh`, and an
+				// untouched tab never stopped (#340 — measured at about 30 a
+				// second). That still holds here: the refetch this re-read
+				// causes is diffed against the copy that write just produced,
+				// so `changed` comes back false and nothing asks again.
+				const refresh = shouldRefreshAfterFreshData(
+					this.#entries,
+					message.url,
+					message.changed === true
+				);
 				this.#entries = recordRevalidated(this.#entries, message.url);
 				if (refresh) void invalidateAll();
 			} else if (message.type === 'mastro:data-written') {

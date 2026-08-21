@@ -564,6 +564,7 @@ async function seedNordwind() {
 		imapUid: 4821,
 		messageId: '<giornate-fine-agosto@nordwindlogistics.example>',
 		subject: 'Giornate fine agosto',
+		inReplyTo: null,
 		senderAddress: 'elena.marchetti@nordwindlogistics.example',
 		receivedAt: new Date('2026-08-20T07:05:00Z')
 	});

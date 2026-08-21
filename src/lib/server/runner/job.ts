@@ -54,10 +54,28 @@ export async function processExtractionJob(
  * prompt, so it is unwrapped here rather than in each of #85/#86/#87. A
  * job that failed on this answered correctly and was thrown away, which
  * is the worst kind of failure: it looks like the model got it wrong.
+ *
+ * The fence is no longer required to wrap the whole answer (#400). Given a
+ * conversation to weigh rather than one message to read, the agent started
+ * reasoning out loud first and fencing its answer at the end: measured on
+ * the real friday-13th message, 1811 characters of which the last 400 were
+ * the JSON. Under the old anchored pattern that parsed as "not valid JSON"
+ * - a correct answer discarded, and reported as a model failure.
+ *
+ * The last fenced block wins, not the first, because an agent that shows
+ * its work sometimes quotes the shape it was asked for before filling it
+ * in. Locating the answer inside a response is not the "best-effort guess"
+ * `parseExtractionResult` refuses to make: nothing here repairs or infers a
+ * field, and a response with no fence at all is still handed on whole to
+ * fail honestly on its own merits.
  */
 export function stripCodeFence(text: string): string {
-	const fenced = /^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/.exec(text);
-	return fenced ? fenced[1] : text;
+	const anchored = /^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/.exec(text);
+	if (anchored) return anchored[1];
+
+	const blocks = [...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)];
+	const last = blocks[blocks.length - 1];
+	return last ? last[1].trim() : text;
 }
 
 /**

@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
 import {
 	dayConfidence,
+	dayExtractionInstructions,
 	parseExtractedDays,
 	validateDays,
 	yearRolloverFlag,
@@ -25,25 +26,51 @@ const day = (over: Partial<ExtractedDay> = {}): ExtractedDay => ({
 	quantity: 1,
 	scope: 'Analisi requisiti',
 	excerpt: 'ti confermo il 3 febbraio',
+	messageIndex: 0,
 	...over
 });
 
-test('a well-formed answer parses, including the optional notes', () => {
-	const days = parseExtractedDays({
-		days: [
-			{
-				date: '2026-02-03',
-				quantity: 1,
-				scope: ' Analisi ',
-				excerpt: ' il 3 ',
-				notes: ' da remoto '
-			},
-			{ date: '2026-02-04', quantity: 0.5, scope: 'Revisione', excerpt: 'il 4 mezza' }
-		]
-	});
+test('a well-formed answer parses, including the optional notes and each day\u2019s message index', () => {
+	// Two messages, so the second day's messageIndex actually says
+	// something: it points at the reply, not the offer.
+	const days = parseExtractedDays(
+		{
+			days: [
+				{
+					date: '2026-02-03',
+					quantity: 1,
+					scope: ' Analisi ',
+					excerpt: ' il 3 ',
+					notes: ' da remoto ',
+					messageIndex: 0
+				},
+				{
+					date: '2026-02-04',
+					quantity: 0.5,
+					scope: 'Revisione',
+					excerpt: 'il 4 mezza',
+					messageIndex: 1
+				}
+			]
+		},
+		2
+	);
 	expect(days).toEqual([
-		{ date: '2026-02-03', quantity: 1, scope: 'Analisi', excerpt: 'il 3', notes: 'da remoto' },
-		{ date: '2026-02-04', quantity: 0.5, scope: 'Revisione', excerpt: 'il 4 mezza' }
+		{
+			date: '2026-02-03',
+			quantity: 1,
+			scope: 'Analisi',
+			excerpt: 'il 3',
+			notes: 'da remoto',
+			messageIndex: 0
+		},
+		{
+			date: '2026-02-04',
+			quantity: 0.5,
+			scope: 'Revisione',
+			excerpt: 'il 4 mezza',
+			messageIndex: 1
+		}
 	]);
 });
 
@@ -51,20 +78,41 @@ test('a malformed answer throws naming the day, rather than being repaired', () 
 	// Every one of these is something a model actually does, and none of
 	// them is safe to guess at: a day shown to a human has to be what the
 	// message said, not what the parser assumed it meant.
-	expect(() => parseExtractedDays({})).toThrow(/days is not an array/);
-	expect(() => parseExtractedDays({ days: [{ ...day(), date: '3 February' }] })).toThrow(
+	expect(() => parseExtractedDays({}, 1)).toThrow(/days is not an array/);
+	expect(() => parseExtractedDays({ days: [{ ...day(), date: '3 February' }] }, 1)).toThrow(
 		/day 0 has no YYYY-MM-DD date/
 	);
-	expect(() => parseExtractedDays({ days: [{ ...day(), quantity: 'one' }] })).toThrow(
+	expect(() => parseExtractedDays({ days: [{ ...day(), quantity: 'one' }] }, 1)).toThrow(
 		/day 0 has no numeric quantity/
 	);
-	expect(() => parseExtractedDays({ days: [{ ...day(), excerpt: '  ' }] })).toThrow(
+	expect(() => parseExtractedDays({ days: [{ ...day(), excerpt: '  ' }] }, 1)).toThrow(
 		/day 0 has no excerpt/
 	);
 	// A missing scope is not malformed: plenty of approvals say only "ok
 	// for Thursday", and a scope invented to fill the field is worse than
 	// an empty one a reviewer completes.
-	expect(parseExtractedDays({ days: [{ ...day(), scope: undefined }] })[0].scope).toBe('');
+	expect(parseExtractedDays({ days: [{ ...day(), scope: undefined }] }, 1)[0].scope).toBe('');
+});
+
+test('a message index out of range for the conversation given is rejected, not clamped', () => {
+	// #400: the model naming a message that does not exist has not
+	// understood the conversation it was given, the same failure this
+	// function already refuses to paper over for every other field.
+	// Negative, non-integer and beyond-range all count as invalid.
+	expect(() => parseExtractedDays({ days: [{ ...day(), messageIndex: 2 }] }, 2)).toThrow(
+		/day 0 has no valid messageIndex \(0\.\.1\)/
+	);
+	expect(() => parseExtractedDays({ days: [{ ...day(), messageIndex: -1 }] }, 1)).toThrow(
+		/no valid messageIndex/
+	);
+	expect(() => parseExtractedDays({ days: [{ ...day(), messageIndex: 0.5 }] }, 1)).toThrow(
+		/no valid messageIndex/
+	);
+	expect(() => parseExtractedDays({ days: [{ ...day(), messageIndex: undefined }] }, 1)).toThrow(
+		/no valid messageIndex/
+	);
+	// In range for the conversation actually given still passes.
+	expect(parseExtractedDays({ days: [{ ...day(), messageIndex: 1 }] }, 2)[0].messageIndex).toBe(1);
 });
 
 test('a day that is not a real date is refused, shape notwithstanding', () => {
@@ -117,7 +165,9 @@ test('the same date twice keeps the first and refuses the second', () => {
 });
 
 test('a message that approves nothing yields nothing, not an empty proposal', () => {
-	expect(validateDays(parseExtractedDays({ days: [] }), context)).toEqual({
+	// The documented no-days answer #397 made the parser accept:
+	// {"proposedFields":{"days":[]},"excerpt":"","confidence":1}.
+	expect(validateDays(parseExtractedDays({ days: [] }, 1), context)).toEqual({
 		accepted: [],
 		rejected: []
 	});
@@ -226,4 +276,61 @@ test('dayConfidence never raises confidence, and folds the guard reason onto the
 		confidence: 0.1,
 		confidenceReason: 'model doubt; a reason from the guard'
 	});
+});
+
+test('a one-message conversation still anchors relative dates on that message\u2019s own date', () => {
+	// #400: rewritten to describe a conversation, but a list of one has to
+	// keep producing what the prompt produced before this change.
+	const prompt = dayExtractionInstructions([
+		{ documentId: 'doc-1', sentAt: '2026-02-02', from: 'leo@example.com', body: message }
+	]);
+	expect(prompt).toMatch(/conversation of 1 message,/);
+	expect(prompt).toMatch(/message 0, sent 2026-02-02 by leo@example\.com/);
+	expect(prompt).toMatch(/--- message N, DATE, FROM ---/);
+	expect(prompt).toMatch(/"messageIndex":0/);
+});
+
+test('the prompt describes every message of a longer conversation, 0-based', () => {
+	const prompt = dayExtractionInstructions([
+		{ documentId: 'doc-1', sentAt: '2026-08-03', from: 'client@example.com', body: 'offer' },
+		{ documentId: 'doc-2', sentAt: '2026-08-04', from: 'owner@example.com', body: 'confermo' },
+		{ documentId: 'doc-3', sentAt: '2026-08-04', from: 'client@example.com', body: 'grazie' }
+	]);
+	expect(prompt).toMatch(/conversation of 3 messages,/);
+	expect(prompt).toMatch(/message 0, sent 2026-08-03 by client@example\.com/);
+	expect(prompt).toMatch(/message 1, sent 2026-08-04 by owner@example\.com/);
+	expect(prompt).toMatch(/message 2, sent 2026-08-04 by client@example\.com/);
+});
+
+test('the prompt teaches a day mentioned twice is reported once, against the message that establishes it', () => {
+	const prompt = dayExtractionInstructions([
+		{ documentId: 'doc-1', sentAt: '2026-08-03', from: 'a@example.com', body: 'x' }
+	]);
+	expect(prompt).toMatch(/A day mentioned in more than one message is one day/);
+	expect(prompt).toMatch(/Quoting is not a new statement/);
+});
+
+test('the prompt teaches that a passing mention names no allocation, and that a written acceptance raises confidence', () => {
+	const prompt = dayExtractionInstructions([
+		{ documentId: 'doc-1', sentAt: '2026-08-03', from: 'a@example.com', body: 'x' }
+	]);
+	expect(prompt).toMatch(/An allocation is a date or period, an activity, and an agreement/);
+	expect(prompt).toMatch(/a domani per la kickoff call/);
+	expect(prompt).toMatch(/raise your confidence rather than lowering it/);
+});
+
+test('the prompt keeps every rule that was already right', () => {
+	const prompt = dayExtractionInstructions([
+		{ documentId: 'doc-1', sentAt: '2026-08-03', from: 'a@example.com', body: 'x' }
+	]);
+	// Year-rollover caution, still there.
+	expect(prompt).toMatch(/a date whose year you had to guess/);
+	// "Next week" semantics, still there.
+	expect(prompt).toMatch(/"Next week" means the week after the one containing that message/);
+	// An excluded day is still not reported.
+	expect(prompt).toMatch(/A day the conversation excludes/);
+	// Never invent a day, still there.
+	expect(prompt).toMatch(/Never invent a day the conversation does not mention/);
+	// The documented no-days answer #397 made the parser accept.
+	expect(prompt).toContain('{"proposedFields":{"days":[]},"excerpt":"","confidence":1}');
 });

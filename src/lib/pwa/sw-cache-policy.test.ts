@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
 	dataCacheKey,
+	dataPayloadChanged,
 	isCacheInvalidatingWrite,
 	dataCacheName,
 	dayEntryDataUrl,
@@ -91,6 +92,31 @@ describe('isCacheableDataResponse', () => {
 		expect(
 			isCacheableDataResponse({ offlineMarker: documentHeaders.get(OFFLINE_CACHE_HEADER) })
 		).toBe(false);
+	});
+});
+
+/*
+ * #401: a home screen showed "5 proposals to review" while /proposals
+ * showed none, until a manual refresh. `shouldRefreshAfterRevalidation`
+ * asked whether the URL had been announced stale, which only happens on
+ * revalidation failure or after the grace period — so a revalidation
+ * that both succeeded quickly AND returned different bytes updated
+ * DATA_CACHE while the screen kept the old rows, with no announcement to
+ * ever trigger a re-read. `dataPayloadChanged` is the real criterion:
+ * whether the bytes actually differ, independent of grace-period timing.
+ */
+describe('dataPayloadChanged', () => {
+	test('no previous cache entry means nothing stale was on screen, so nothing changed', () => {
+		expect(dataPayloadChanged(null, '{"proposals":[]}')).toBe(false);
+	});
+
+	test('an identical body is not a change, even though the cache entry was just rewritten', () => {
+		const body = '{"proposals":[{"id":1}]}';
+		expect(dataPayloadChanged(body, body)).toBe(false);
+	});
+
+	test('a body that differs from what was cached is a change', () => {
+		expect(dataPayloadChanged('{"proposals":[]}', '{"proposals":[{"id":1}]}')).toBe(true);
 	});
 });
 
