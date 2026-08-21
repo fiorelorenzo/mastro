@@ -1027,3 +1027,41 @@ test.skipIf(!mailboxAvailable)(
 		expect(ours[0].map((row) => row.direction)).toEqual(['inbound', 'outbound', 'inbound']);
 	}
 );
+
+test.skipIf(!mailboxAvailable)(
+	'my reply to a newsletter is recorded, never archived (#409)',
+	async () => {
+		// The measurement that produced this test: on the day the sent pass
+		// shipped, 14 of the 17 sent messages it kept were my own replies to
+		// form-submission notifications, every one attributed to nobody. The
+		// inbox archives everything and marks what no contract claims
+		// `sender_unknown`, so "answers something archived" was letting my
+		// personal correspondence into the blob store - the exact thing the
+		// cost guard exists to keep out.
+		const inbox = testFolder('newsletter-inbox');
+		const sent = testFolder('newsletter-sent');
+		const noticeId = `<notice-${crypto.randomUUID()}@forms.example>`;
+
+		// Nobody in the ledger sent this, so the inbox keeps it and marks it.
+		await appendMessage(inbox, { messageId: noticeId, from: 'noreply@forms.example' });
+		await pollIsolatedMailbox(inbox);
+		const [notice] = await db.select().from(inboundThread).where(eq(inboundThread.mailbox, inbox));
+		expect(notice.skipReason).toBe('sender_unknown');
+
+		await appendRawMessage(
+			sent,
+			`Message-ID: <fwd-${crypto.randomUUID()}@me.example>\r\nIn-Reply-To: ${noticeId}\r\n` +
+				`Subject: Fwd: a new submission\r\nFrom: me@example.com\r\n` +
+				`To: somebody@nobody.example\r\n\r\ngiro questo`
+		);
+
+		const result = await pollIsolatedMailbox(sent, { direction: 'outbound' });
+		expect(result.handedOff).toBe(0);
+		expect(result.skipped).toBe(1);
+
+		const [mine] = await db.select().from(inboundThread).where(eq(inboundThread.mailbox, sent));
+		expect(mine.archived).toBe(false);
+		expect(mine.documentId).toBeNull();
+		expect(mine.skipReason).toBe('recipient_unknown');
+	}
+);
