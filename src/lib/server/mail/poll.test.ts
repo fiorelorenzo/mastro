@@ -727,6 +727,7 @@ test.skipIf(!mailboxAvailable)(
 			imapUid: 1,
 			messageId: `<older-${crypto.randomUUID()}@example.com>`,
 			subject: 'an older approval',
+			inReplyTo: null,
 			senderAddress: senderEmail,
 			receivedAt: new Date('2026-08-01T09:00:00.000Z'),
 			skipReason: 'sender_unknown'

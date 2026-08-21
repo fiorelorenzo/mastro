@@ -35,6 +35,7 @@ import {
 	yearRolloverFlag,
 	type AcceptedDay
 } from '../src/lib/server/agent/day-extraction.ts';
+import type { ConversationMessage } from '../src/lib/server/mail/conversation.ts';
 import { loadRunnerConfig } from '../src/lib/server/runner/config.ts';
 import { stripCodeFence } from '../src/lib/server/runner/job.ts';
 import { AcpAgentModel } from '../src/lib/server/runner/model.ts';
@@ -65,8 +66,14 @@ const flaggedCases: string[] = [];
 for (const testCase of corpus) {
 	const started = Date.now();
 	try {
+		// #400: the corpus is single-message cases, so this is exactly the
+		// one-element conversation `day-producer.ts` falls back to for a
+		// caller that has not gathered a whole thread.
+		const conversation: ConversationMessage[] = [
+			{ documentId: testCase.name, sentAt: testCase.messageDate, from: '', body: testCase.content }
+		];
 		const { text } = await model.call({
-			instructions: dayExtractionInstructions(testCase.messageDate),
+			instructions: dayExtractionInstructions(conversation),
 			content: testCase.content
 		});
 		const parsed = JSON.parse(stripCodeFence(text)) as {
@@ -74,7 +81,7 @@ for (const testCase of corpus) {
 			confidence: number;
 			confidenceReason?: string;
 		};
-		const extracted = parseExtractedDays(parsed.proposedFields);
+		const extracted = parseExtractedDays(parsed.proposedFields, conversation.length);
 		const days = extracted.map((day) => ({ date: day.date, quantity: day.quantity }));
 
 		// The same fold `writeDayProposals` applies to every accepted day: the

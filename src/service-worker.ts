@@ -62,6 +62,7 @@ import { base, build, files, prerendered, version } from '$service-worker';
 import {
 	dataCacheKey,
 	dataCacheName,
+	dataPayloadChanged,
 	isCacheInvalidatingWrite,
 	dayEntryDataUrl,
 	isCacheableDataRequest,
@@ -386,6 +387,26 @@ function handleDataRequest(event: FetchEvent): Promise<Response> {
  * `hooks.server.ts`) may be kept, whatever it claims to contain, and a
  * future content-type branch added to this function must not be able to
  * skip past it (#305, corrected in #341).
+ *
+ * `mastro:data-fresh` carries `changed`: whether this response's body
+ * actually differs from the entry it is about to overwrite in
+ * `DATA_CACHE` (`dataPayloadChanged`, compared as text so the
+ * `x-mastro-cached-at` header this function stamps on every write never
+ * counts as a difference). `handleDataRequest` used to leave the page with
+ * no way to learn that: it served the cached copy immediately and this
+ * function updated the cache in the background, so a revalidation that
+ * both succeeded quickly (before the stale-announce grace period) AND
+ * returned different data updated Cache Storage while the page kept
+ * showing what it already had, with nothing ever telling it to re-read.
+ * That is what a home screen showing five proposals to review while
+ * `/proposals` showed none was: the scheduler had written five proposals
+ * server-side after the queue's copy was cached, and the tab had no way
+ * to know.
+ *
+ * A previous cache entry is read here, before it is overwritten, purely
+ * to diff it — this function has no other use for it. Comparing bytes
+ * rather than trusting the earlier stale/fresh bookkeeping is what makes
+ * `changed` correct regardless of whether the grace timer ever fired.
  */
 async function processNetworkDataResponse(cacheKey: string, response: Response): Promise<Response> {
 	if (!response.ok) return response;
@@ -404,18 +425,23 @@ async function processNetworkDataResponse(cacheKey: string, response: Response):
 		return response;
 	}
 
+	const cache = await caches.open(DATA_CACHE);
+	const previous = await cache.match(cacheKey);
+	const previousBody = previous ? await previous.text() : null;
+	const nextBody = await response.clone().text();
+	const changed = dataPayloadChanged(previousBody, nextBody);
+
 	const cachedAt = new Date().toISOString();
 	const taggedHeaders = new Headers(response.headers);
 	taggedHeaders.set('x-mastro-cached-at', cachedAt);
-	const cache = await caches.open(DATA_CACHE);
 	await cache.put(
 		cacheKey,
-		new Response(await response.clone().arrayBuffer(), {
+		new Response(nextBody, {
 			status: response.status,
 			headers: taggedHeaders
 		})
 	);
-	notifyClients({ type: 'mastro:data-fresh', url: cacheKey });
+	notifyClients({ type: 'mastro:data-fresh', url: cacheKey, changed });
 	return response;
 }
 

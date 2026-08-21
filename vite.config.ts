@@ -68,6 +68,24 @@ export default defineConfig(({ mode }) => ({
 	],
 	test: {
 		expect: { requireAssertions: true },
+		// Vitest's default is 5000ms, which is wrong for this suite in a way
+		// that only shows up under load. Almost every test here talks to a
+		// real Postgres inside a transaction, a few spawn a real process or
+		// parse a real PDF, and 240 files run in parallel on 8 cores: the work
+		// per test is milliseconds, the wall clock under contention is not.
+		// Three separate tests tripped 5000ms on this box in one day
+		// (`runner/model.test.ts`, `agent/invoice-producer.test.ts`,
+		// `drive/publish.test.ts`), each passing alone every time, and the
+		// honest reading is that the number was too small rather than that
+		// three unrelated tests are slow.
+		//
+		// Bounded, not removed. A genuine hang - a deadlocked IMAP fetch, a
+		// model that never answers - still fails, just after twenty seconds
+		// instead of five. `hookTimeout` matches it, because the `beforeEach`
+		// hooks that open a transaction and seed fixtures do the same kind of
+		// work as the tests they set up.
+		testTimeout: 20_000,
+		hookTimeout: 20_000,
 		projects: [
 			{
 				extends: './vite.config.ts',

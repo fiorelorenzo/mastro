@@ -7,6 +7,8 @@
 // a quantity the contract's rate card does not sell, or a date six months
 // outside the contract's term. None of those are prompt problems.
 
+import type { ConversationMessage } from '$lib/server/mail/conversation';
+
 /** One day as the model reports it, before anything has been checked. */
 export interface ExtractedDay {
 	readonly date: string;
@@ -14,6 +16,15 @@ export interface ExtractedDay {
 	readonly scope: string;
 	readonly excerpt: string;
 	readonly notes?: string;
+	/**
+	 * Which message of the conversation this day's evidence rests on,
+	 * 0-based into the list `dayExtractionInstructions` described (#400).
+	 * The Polymarket allocation is the case that makes this necessary: the
+	 * offer naming the date and the activity is message 0, the owner's
+	 * "confermo" is message 1, and a proposal has to point at the offer,
+	 * not always at whichever message is newest.
+	 */
+	readonly messageIndex: number;
 }
 
 /** The shortest excerpt that can still be read as evidence. A model asked
@@ -153,35 +164,63 @@ export function dayConfidence(
 
 /**
  * The instructions the model is given. Absolute dates only: resolving
- * "Thursday" against the message date is the one piece of reasoning a
- * model does better than a regex, and the one piece this file cannot
- * check afterwards, so it happens there and is verified by the corpus
- * rather than by a unit test.
+ * "Thursday" against the message it appears in is the one piece of
+ * reasoning a model does better than a regex, and the one piece this file
+ * cannot check afterwards, so it happens there and is verified by the
+ * corpus rather than by a unit test.
  *
- * `messageDate` is interpolated rather than left to the model to infer,
- * because an email's own date is a fact the producer already holds and a
- * model asked to guess "today" will use its training cutoff.
+ * `messages` is the conversation `content` renders, oldest first, each
+ * with its own `sentAt` interpolated here rather than left to the model
+ * to infer — an email's own date is a fact the producer already holds and
+ * a model asked to guess "today" will use its training cutoff. A
+ * one-message conversation is just a list of one: nothing below changes
+ * shape when `messages.length === 1`.
+ *
+ * #400: the first real ingestion read three conversations one message at
+ * a time and got it wrong in both directions on the same afternoon — "a
+ * domani per la kickoff call" read as an approval because nothing told
+ * the model a reply naming no date and no activity confirms nothing, and
+ * a written offer answered by a written "confermo" scored no higher than
+ * a guess because nothing told the model that a second party's agreement
+ * is what turns an offer into an approval. A reply quoting its parent
+ * also re-stated the parent's own sentence, which is where the duplicate
+ * came from. All three are taught below rather than left for the model to
+ * infer on its own.
  */
-export function dayExtractionInstructions(messageDate: string): string {
+export function dayExtractionInstructions(messages: readonly ConversationMessage[]): string {
+	const roster = messages
+		.map((m, i) => `  message ${i}, sent ${m.sentAt}${m.from ? ` by ${m.from}` : ''}`)
+		.join('\n');
+	const plural = messages.length === 1 ? '' : 's';
 	return [
-		'You read one message and report the working days it approves, for a consultant who bills by the day.',
-		`The message was sent on ${messageDate}. Resolve every relative date ("Thursday", "next week", "tomorrow") against that date.`,
+		`You read a conversation of ${messages.length} message${plural}, oldest first, and report the working days it approves, for a consultant who bills by the day.`,
+		'The content you were given renders the whole conversation as one text. Each message starts with a line in exactly this form: "--- message N, DATE, FROM ---", where N is its 0-based position below:',
+		roster,
+		'Resolve every relative date ("Thursday", "next week", "tomorrow") a message contains against that message\'s own DATE above, never a different message\'s.',
+		'',
+		'Treat the conversation as one thing to understand, not one message judged at a time:',
+		'- A day mentioned in more than one message is one day. Report it once, against the message whose own wording actually establishes it — normally the first message to name it — not once per message that repeats or quotes it.',
+		'- Quoting is not a new statement. A reply that echoes an earlier message underneath a signature, or a later message that quotes everything above it ("Grazie!" followed by the whole thread so far), is history reappearing, not a second approval. If wording you already used for a day appears again later in the conversation, that is why — do not report the day again.',
+		'- An allocation is a date or period, an activity, and an agreement. All three have to be there. A message that only names a date, or only an activity, with nothing that agrees to it, approves nothing: "a domani per la kickoff call" and the reply "A domani per il kickoff!" name no allocation and confirm nothing, however specific they read.',
+		'- The strongest evidence this product can get is an offer that names a date (or period) and an activity, met by the other side\u2019s own agreement in a later message ("confermo", "tutto ok", "ok"). When you see that shape, raise your confidence rather than lowering it — a written offer plus a written acceptance is exactly the mechanism a billing-by-confirmation contract is built on. If the date itself is the only loose part (a week rather than a single day, a range rather than a date), say so in confidenceReason instead of lowering confidence over an allocation that was, in every other respect, agreed to in writing.',
+		'- An assignment that is confirmed but open-ended is worth exactly one day, at low confidence, not silence. A message confirming work "effective from your next working day following your onboarding on Thursday, August 13th" names no count and no end, but it does confirm that work starts, and the first working day after the named date is a real, checkable guess. Propose that one day, put the reason it is uncertain in confidenceReason, and stop there: a reviewer can correct one low-confidence day, and cannot correct a day nobody proposed. Do not extrapolate a second, a week, or a month from it.',
 		'',
 		'Answer with JSON and nothing else, in exactly this shape:',
-		'{"proposedFields":{"days":[{"date":"YYYY-MM-DD","quantity":1,"scope":"...","excerpt":"..."}]},"excerpt":"...","confidence":0.0,"confidenceReason":"..."}',
+		'{"proposedFields":{"days":[{"date":"YYYY-MM-DD","quantity":1,"scope":"...","excerpt":"...","messageIndex":0}]},"excerpt":"...","confidence":0.0,"confidenceReason":"..."}',
 		'',
 		'Rules:',
 		'- One entry per day. A range covers every working day in it, Monday to Friday, one entry each.',
+		'- messageIndex is the 0-based position, from the list above, of the message whose own wording is this day\u2019s evidence — the message that names the date and the activity, even when a later message is the one that agrees to it.',
 		'- quantity is the fraction of a day: 1 for a full day, 0.5 for a half day.',
 		'- scope is what the day is for, in the message\u2019s own words, short.',
-		'- Each day\u2019s excerpt is the shortest verbatim span from the message that justifies both its date and its quantity. Copy it exactly, do not paraphrase.',
-		'- The top-level excerpt is the verbatim span covering the whole approval.',
-		'- confidence is your own, between 0 and 1. Lower it \u2014 well below 0.5 \u2014 whenever you are not sure the days above are what actually happened: a date whose year you had to guess (a bare day-and-month far from the message date, a range that could cross into a different year), a relative reference ("next week", "gioved\u00ec") with nothing in the message to anchor it against the message date, or wording that reads as non-committal rather than a firm approval ("vediamo come va", "we\u2019ll see", "ti aggiorno io") even if a day is mentioned nearby.',
+		"- Each day's excerpt is the shortest verbatim span, from the message messageIndex points at, that justifies both its date and its quantity. Copy it exactly, do not paraphrase.",
+		'- The top-level excerpt is the verbatim span covering the whole approval; when the offer and the agreement are in different messages, quote enough of both to show the exchange.',
+		'- confidence is your own, between 0 and 1. Lower it \u2014 well below 0.5 \u2014 whenever you are not sure the days above are what actually happened: a date whose year you had to guess (a bare day-and-month far from the message date, a range that could cross into a different year), a relative reference ("next week", "gioved\u00ec") with nothing in the message to anchor it against that message\u2019s own date, or wording that reads as non-committal rather than a firm approval ("vediamo come va", "we\u2019ll see", "ti aggiorno io") even if a day is mentioned nearby.',
 		'- confidenceReason is a short, specific reason for a lowered confidence \u2014 what exactly made you unsure, not a restatement of the number. Omit it, or leave it empty, when confidence is high.',
-		'- "Next week" means the week after the one containing the message date, even when the message was sent early in the week. "This week" means the one containing it.',
-		'- A day the message excludes ("except Wednesday", "not Friday") is not reported at all.',
-		'- If the message approves no days, answer {"proposedFields":{"days":[]},"excerpt":"","confidence":1}.',
-		'- Never invent a day the message does not mention.'
+		'- "Next week" means the week after the one containing that message\u2019s own date, even when the message was sent early in the week. "This week" means the one containing it.',
+		'- A day the conversation excludes ("except Wednesday", "not Friday") is not reported at all.',
+		'- If the conversation approves no days, answer {"proposedFields":{"days":[]},"excerpt":"","confidence":1}.',
+		'- Never invent a day the conversation does not mention.'
 	].join('\n');
 }
 
@@ -190,8 +229,17 @@ export function dayExtractionInstructions(messageDate: string): string {
  * wrong. Never repairs: a model that answered the wrong shape has not
  * understood the task, and guessing on its behalf is how a wrong day
  * reaches a human looking plausible.
+ *
+ * `messageCount` is the length of the conversation `dayExtractionInstructions`
+ * described — the valid range for each day's `messageIndex`. A model that
+ * names a message outside it has not understood the conversation it was
+ * given, the same failure this function already refuses to paper over for
+ * every other field (#400).
  */
-export function parseExtractedDays(proposedFields: Record<string, unknown>): ExtractedDay[] {
+export function parseExtractedDays(
+	proposedFields: Record<string, unknown>,
+	messageCount: number
+): ExtractedDay[] {
 	const { days } = proposedFields;
 	if (!Array.isArray(days)) throw new Error("model response's proposedFields.days is not an array");
 
@@ -199,7 +247,7 @@ export function parseExtractedDays(proposedFields: Record<string, unknown>): Ext
 		if (typeof raw !== 'object' || raw === null) {
 			throw new Error(`day ${index} is not an object`);
 		}
-		const { date, quantity, scope, excerpt, notes } = raw as Record<string, unknown>;
+		const { date, quantity, scope, excerpt, notes, messageIndex } = raw as Record<string, unknown>;
 		if (typeof date !== 'string' || !ISO_DATE.test(date)) {
 			throw new Error(`day ${index} has no YYYY-MM-DD date`);
 		}
@@ -218,11 +266,20 @@ export function parseExtractedDays(proposedFields: Record<string, unknown>): Ext
 		if (notes !== undefined && notes !== null && typeof notes !== 'string') {
 			throw new Error(`day ${index} has a non-string notes`);
 		}
+		if (
+			typeof messageIndex !== 'number' ||
+			!Number.isInteger(messageIndex) ||
+			messageIndex < 0 ||
+			messageIndex >= messageCount
+		) {
+			throw new Error(`day ${index} has no valid messageIndex (0..${messageCount - 1})`);
+		}
 		return {
 			date,
 			quantity,
 			scope: typeof scope === 'string' ? scope.trim() : '',
 			excerpt: excerpt.trim(),
+			messageIndex,
 			...(typeof notes === 'string' && notes.trim() !== '' ? { notes: notes.trim() } : {})
 		};
 	});

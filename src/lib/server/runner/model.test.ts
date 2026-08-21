@@ -27,17 +27,16 @@ test('a configured agent speaks real ACP and returns its text', async () => {
 				})
 			}
 		},
-		// Generous on purpose, and not a claim about how fast the handshake is.
-		// This test spawns a real Node process and speaks ACP to it over stdio,
-		// so unlike almost everything else in this suite its budget is wall
-		// clock on a shared machine. At 5000 it failed once in a full
-		// `pnpm test` and passed alone every time, on a box sitting at load
-		// average 34 on 8 cores because several agents were building at the
-		// same time. The number was arbitrary and the machine was the cause,
-		// so widen the number. The timeout *behaviour* is covered by the last
-		// test in this file, which keeps a deliberate 200ms against a 2000ms
-		// delay, so nothing here stops being tested.
-		30_000
+		// This is the *model's* own budget, not the test's, and it is
+		// deliberately below vitest's `testTimeout` (20s, `vite.config.ts`):
+		// if the model were allowed longer than the test, a stuck handshake
+		// would surface as "test timed out" rather than as the model's own
+		// error, which is the less useful of the two failures. Generous within
+		// that, because this spawns a real Node process and speaks ACP to it
+		// over stdio, so its wall clock is shared-machine wall clock. The
+		// timeout *behaviour* is covered by the last test in this file, which
+		// keeps a deliberate 200ms against a 2000ms delay.
+		15_000
 	);
 	const { text } = await model.call({
 		instructions: 'extract the day',

@@ -118,8 +118,20 @@ const answer = (documentId: string, contractId: string): ProposalCandidate => ({
 	targetType: 'work_unit',
 	proposedFields: {
 		days: [
-			{ date: '2026-02-03', quantity: 1, scope: 'Analisi', excerpt: 'Confermo il 3' },
-			{ date: '2026-02-04', quantity: 0.5, scope: 'Analisi', excerpt: 'la seconda mezza' }
+			{
+				date: '2026-02-03',
+				quantity: 1,
+				scope: 'Analisi',
+				excerpt: 'Confermo il 3',
+				messageIndex: 0
+			},
+			{
+				date: '2026-02-04',
+				quantity: 0.5,
+				scope: 'Analisi',
+				excerpt: 'la seconda mezza',
+				messageIndex: 0
+			}
 		]
 	},
 	excerpt: 'Confermo il 3 e il 4 febbraio, la seconda mezza.',

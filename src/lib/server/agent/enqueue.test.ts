@@ -14,6 +14,7 @@ import {
 import { createProposal } from '$lib/server/repositories/proposal';
 import {
 	createExtractionRun,
+	documentIdsWithExtractionRun,
 	getExtractionRunByJobId
 } from '$lib/server/repositories/extraction-run';
 import { listPendingJobs, readPendingJob } from '$lib/server/runner/queue';
@@ -109,6 +110,7 @@ function threadInput(
 		imapUid: 1,
 		messageId: `<${crypto.randomUUID()}@example.com>`,
 		subject: 'Re: approval for next week',
+		inReplyTo: null,
 		senderAddress: null,
 		receivedAt: new Date('2026-08-01T09:00:00.000Z'),
 		...overrides
@@ -296,4 +298,163 @@ test('every job it queues gets an extraction run, so the registry can see it (#3
 		expect(run?.status).toBe('queued');
 		expect(run?.targetType).toBe('work_unit');
 	});
+});
+
+test('a conversation is one job, not one per message, and every message of it is marked extracted (#400)', async () => {
+	// The defect, measured on the first real mailbox: a five-message contract
+	// negotiation produced five extractions, and because each reply quoted its
+	// parent, the same sentence was read as new every time - three proposals
+	// for one day. The conversation is the unit of meaning, so it is the unit
+	// of extraction.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+
+		// Three messages linked by In-Reply-To, exactly as the Polymarket
+		// exchange is: an offer, an acceptance, a thank-you quoting both.
+		// Unique per run. A literal `Message-ID` in a shared table is a
+		// collision waiting to happen: `inbound_thread_mailbox_message_id_key`
+		// is unique on (mailbox, message_id), and `loadConversations` groups by
+		// these values across the whole table, so a sibling file's committed
+		// row carrying the same id would merge two unrelated conversations.
+		const suffix = crypto.randomUUID();
+		const offerId = `<offer-${suffix}@visumlabs.example>`;
+		const replyId = `<reply-${suffix}@example.com>`;
+		const thanksId = `<thanks-${suffix}@visumlabs.example>`;
+
+		const offerDocument = await archiveMessage(
+			tx,
+			contractRow.id,
+			"ti confermo l'allocazione di mezza giornata per i meeting"
+		);
+		const replyDocument = await archiveMessage(tx, contractRow.id, 'tutto ok, confermo');
+		const thanksDocument = await archiveMessage(tx, contractRow.id, 'Grazie!');
+
+		await recordInboundThread(
+			threadInput(contractRow.id, offerDocument.id, {
+				imapUid: 1,
+				messageId: offerId,
+				inReplyTo: null,
+				receivedAt: new Date('2026-08-05T16:38:00.000Z')
+			}),
+			tx
+		);
+		await recordInboundThread(
+			threadInput(contractRow.id, replyDocument.id, {
+				imapUid: 2,
+				messageId: replyId,
+				inReplyTo: offerId,
+				receivedAt: new Date('2026-08-05T16:40:00.000Z')
+			}),
+			tx
+		);
+		await recordInboundThread(
+			threadInput(contractRow.id, thanksDocument.id, {
+				imapUid: 3,
+				messageId: thanksId,
+				inReplyTo: replyId,
+				receivedAt: new Date('2026-08-05T16:41:00.000Z')
+			}),
+			tx
+		);
+
+		await enqueueDayExtractions(queueDir, 500, tx);
+
+		const pending = await listPendingJobs(queueDir);
+		const queued = await Promise.all(pending.map((filename) => readPendingJob(queueDir, filename)));
+		const ours = queued.filter((job) =>
+			[offerDocument.id, replyDocument.id, thanksDocument.id].includes(job.request.documentId)
+		);
+		const runs = await documentIdsWithExtractionRun(
+			[offerDocument.id, replyDocument.id, thanksDocument.id],
+			tx
+		);
+		return { ours, runs, offerDocument, replyDocument, thanksDocument };
+	});
+
+	// One job for the three messages, where the old shape produced three.
+	expect(result.ours).toHaveLength(1);
+	const [job] = result.ours;
+
+	// The whole exchange travels in it, oldest first, and the anchor is the
+	// message that was awaiting.
+	expect(job.request.conversation).toHaveLength(3);
+	expect(job.request.conversation?.map((message) => message.documentId)).toEqual([
+		result.offerDocument.id,
+		result.replyDocument.id,
+		result.thanksDocument.id
+	]);
+
+	// The offer and the acceptance are both readable in one payload, which is
+	// the thing no single message could give.
+	expect(job.request.content).toContain('mezza giornata');
+	expect(job.request.content).toContain('tutto ok, confermo');
+	// 0-based headers, matching the `messageIndex` the model answers with.
+	expect(job.request.content).toContain('--- message 0,');
+	expect(job.request.content).toContain('--- message 2,');
+
+	// One run, against the anchor. `extraction_run` is one row per job by
+	// unique index, so the siblings deliberately have none: what stops them
+	// being re-enqueued is the guard asking about the conversation, which the
+	// next test pins.
+	expect(result.runs.has(result.offerDocument.id)).toBe(true);
+	expect(result.runs.size).toBe(1);
+});
+
+test('a conversation already extracted is not re-enqueued from one of its other messages (#400)', async () => {
+	// The half that has to hold across ticks. `extraction_run` is keyed to a
+	// job, so extracting a three-message exchange leaves a row against one
+	// document; a guard reading per message would see the other two as never
+	// attempted and queue the same exchange twice more.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const suffix = crypto.randomUUID();
+		const offerId = `<offer-${suffix}@visumlabs.example>`;
+		const replyId = `<reply-${suffix}@example.com>`;
+
+		const offerDocument = await archiveMessage(tx, contractRow.id, 'mezza giornata');
+		const replyDocument = await archiveMessage(tx, contractRow.id, 'confermo');
+		await recordInboundThread(
+			threadInput(contractRow.id, offerDocument.id, {
+				imapUid: 11,
+				messageId: offerId,
+				inReplyTo: null,
+				receivedAt: new Date('2026-08-05T16:38:00.000Z')
+			}),
+			tx
+		);
+		await recordInboundThread(
+			threadInput(contractRow.id, replyDocument.id, {
+				imapUid: 12,
+				messageId: replyId,
+				inReplyTo: offerId,
+				receivedAt: new Date('2026-08-05T16:40:00.000Z')
+			}),
+			tx
+		);
+
+		// A prior tick extracted the conversation, leaving its one run row
+		// against the offer.
+		await createExtractionRun(
+			{
+				jobId: crypto.randomUUID(),
+				documentId: offerDocument.id,
+				targetType: 'work_unit',
+				enqueuedAt: new Date('2026-08-05T17:00:00.000Z')
+			},
+			tx
+		);
+
+		await enqueueDayExtractions(queueDir, 500, tx);
+
+		const pending = await listPendingJobs(queueDir);
+		const queued = await Promise.all(pending.map((filename) => readPendingJob(queueDir, filename)));
+		return {
+			ours: queued.filter((job) =>
+				[offerDocument.id, replyDocument.id].includes(job.request.documentId)
+			)
+		};
+	});
+
+	// Nothing, even though the reply itself has no run of its own.
+	expect(result.ours).toEqual([]);
 });

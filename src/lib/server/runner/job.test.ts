@@ -2,7 +2,7 @@ import { afterAll, afterEach, expect, test } from 'vitest';
 import { env } from '$env/dynamic/private';
 import { client as pool } from '$lib/server/db';
 import { connectRunnerDb, type RunnerDb } from './db.ts';
-import { processExtractionJob } from './job.ts';
+import { processExtractionJob, stripCodeFence } from './job.ts';
 import type { ExtractionModel } from './model.ts';
 import type { ExtractionRequest } from './types.ts';
 import {
@@ -285,3 +285,60 @@ test.each([
 		).rejects.toThrow(new RegExp(expectedMessage));
 	}
 );
+
+test('an answer with the model thinking out loud before its fenced JSON still parses (#400)', () => {
+	// Measured, not imagined. Handed a conversation to weigh rather than one
+	// message to read, the configured agent started reasoning first and fenced
+	// its answer at the end: 1811 characters on the real friday-13th message,
+	// of which the last 400 were the JSON. The old anchored pattern required
+	// the fence to wrap the whole answer, so this parsed as "not valid JSON" -
+	// a correct answer thrown away and reported as a model failure.
+	const answer = [
+		'I need to analyze this carefully.',
+		'',
+		'The message confirms an assignment but names no end date.',
+		'',
+		'```json',
+		'{"proposedFields":{"days":[]},"excerpt":"","confidence":0.8}',
+		'```'
+	].join('\n');
+
+	expect(JSON.parse(stripCodeFence(answer))).toEqual({
+		proposedFields: { days: [] },
+		excerpt: '',
+		confidence: 0.8
+	});
+});
+
+test('the last fenced block wins, so a quoted example shape does not (#400)', () => {
+	// An agent showing its work sometimes restates the shape it was asked for
+	// before filling it in. Taking the first block would hand the parser the
+	// template.
+	const answer = [
+		'The shape I have to answer with is:',
+		'```json',
+		'{"proposedFields":{"days":[{"date":"YYYY-MM-DD"}]},"excerpt":"...","confidence":0.0}',
+		'```',
+		'',
+		'Here is my answer:',
+		'```json',
+		'{"proposedFields":{"days":[]},"excerpt":"","confidence":1}',
+		'```'
+	].join('\n');
+
+	expect(JSON.parse(stripCodeFence(answer))).toEqual({
+		proposedFields: { days: [] },
+		excerpt: '',
+		confidence: 1
+	});
+});
+
+test('an answer that is only JSON, fenced or bare, is unchanged', () => {
+	// The two shapes that already worked, pinned so widening the search did
+	// not quietly change them.
+	expect(stripCodeFence('{"a":1}')).toBe('{"a":1}');
+	expect(stripCodeFence('```json\n{"a":1}\n```')).toBe('{"a":1}');
+	// And a response with no JSON at all is handed on whole, to fail honestly
+	// in the parser rather than silently here.
+	expect(stripCodeFence('I cannot answer that.')).toBe('I cannot answer that.');
+});

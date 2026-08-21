@@ -210,6 +210,7 @@ async function insertUnknownSenderThread(tx: Tx, documentId: string, senderAddre
 			imapUid: nextImapUid++,
 			messageId: `<${crypto.randomUUID()}@example.com>`,
 			subject: 'a message from before the contact existed',
+			inReplyTo: null,
 			senderAddress,
 			receivedAt: new Date('2026-08-01T09:00:00.000Z'),
 			skipReason: 'sender_unknown'
@@ -232,6 +233,7 @@ async function insertOversizedThread(tx: Tx, senderAddress: string | null) {
 			imapUid: nextImapUid++,
 			messageId: `<${crypto.randomUUID()}@example.com>`,
 			subject: 'an attachment too large to archive',
+			inReplyTo: null,
 			senderAddress,
 			receivedAt: new Date('2026-08-01T09:00:00.000Z'),
 			skipReason: 'oversized',

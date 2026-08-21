@@ -71,6 +71,27 @@ async function seed(tx: DbExecutor) {
 	return { contractRow, documentRow };
 }
 
+/** A second archived message on the same contract, for the tests that
+ * check `messageIndex` resolves a day to a specific message's document
+ * rather than always the newest one (#400). */
+async function seedDocument(tx: DbExecutor, contractId: string, originalName: string) {
+	const [row] = await tx
+		.insert(document)
+		.values({
+			hash: Buffer.from(originalName).toString('hex').padEnd(64, '0').slice(0, 64),
+			mime: 'message/rfc822',
+			size: 96,
+			originalName,
+			provenance: 'mail',
+			contractId,
+			confidential: false,
+			ownerType: 'contract',
+			ownerId: contractId
+		})
+		.returning();
+	return row;
+}
+
 const answer = (proposedFields: Record<string, unknown>): RunExtraction => {
 	return async (request) =>
 		({
@@ -102,13 +123,15 @@ test('one message with two days becomes two proposals, each carrying its own spa
 						date: '2026-02-03',
 						quantity: 1,
 						scope: 'Analisi',
-						excerpt: 'le giornate del 3'
+						excerpt: 'le giornate del 3',
+						messageIndex: 0
 					},
 					{
 						date: '2026-02-04',
 						quantity: 0.5,
 						scope: 'Analisi',
-						excerpt: 'la seconda mezza'
+						excerpt: 'la seconda mezza',
+						messageIndex: 0
 					}
 				]
 			}),
@@ -166,8 +189,20 @@ test('a day the contract cannot sell is reported, not written', async () => {
 			},
 			answer({
 				days: [
-					{ date: '2026-02-05', quantity: 0.33, scope: 'Call', excerpt: 'Un terzo di giornata' },
-					{ date: '2026-02-06', quantity: 1, scope: 'Sviluppo', excerpt: 'una piena venerdì' }
+					{
+						date: '2026-02-05',
+						quantity: 0.33,
+						scope: 'Call',
+						excerpt: 'Un terzo di giornata',
+						messageIndex: 0
+					},
+					{
+						date: '2026-02-06',
+						quantity: 1,
+						scope: 'Sviluppo',
+						excerpt: 'una piena venerdì',
+						messageIndex: 0
+					}
 				]
 			}),
 			tx
@@ -202,13 +237,15 @@ test('#244: a day the year-rollover guard catches is still written, capped at th
 						date: '2026-12-29',
 						quantity: 1,
 						scope: 'Analisi',
-						excerpt: 'confermo dal 29 dicembre'
+						excerpt: 'confermo dal 29 dicembre',
+						messageIndex: 0
 					},
 					{
 						date: '2027-01-01',
 						quantity: 1,
 						scope: 'Analisi',
-						excerpt: 'al 2 gennaio, giornata intera'
+						excerpt: 'al 2 gennaio, giornata intera',
+						messageIndex: 0
 					}
 				]
 			}),
@@ -224,5 +261,100 @@ test('#244: a day the year-rollover guard catches is still written, capped at th
 		// never left to read as settled just because the model was sure.
 		expect(proposals[1].confidence).toBeLessThanOrEqual(YEAR_ROLLOVER_CONFIDENCE_CAP);
 		expect(proposals[1].confidenceReason).toMatch(/different calendar year/);
+	});
+});
+
+test('#400: a day\u2019s messageIndex resolves to the message that actually carries it, not the newest one', () => {
+	return inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow: offerDocument } = await seed(tx);
+		// The owner's "confermo" is a second, later message — a real
+		// conversation, not a single archived email. `documentRow` above is
+		// the offer (message 0); this is the acceptance (message 1) and the
+		// one `documentId` points at per invariant, the newest.
+		const acceptanceDocument = await seedDocument(tx, contractRow.id, 'polymarket-acceptance.eml');
+
+		const { proposals, rejected } = await proposeDaysFromMessage(
+			{
+				documentId: acceptanceDocument.id,
+				contractId: contractRow.id,
+				content:
+					'--- message 0, 2026-08-03, client@example.com ---\n' +
+					'ti confermo l\u2019allocazione di mezza giornata per i meeting con Polymarket. ' +
+					'Attivit\u00e0: partecipazione ai meeting w/c 03/08. Allocazione: 0,5 giornata.\n\n' +
+					'--- message 1, 2026-08-04, owner@example.com ---\n' +
+					'tutto ok, confermo',
+				messageDate: '2026-08-04',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn,
+				conversation: [
+					{
+						documentId: offerDocument.id,
+						sentAt: '2026-08-03',
+						from: 'client@example.com',
+						body: 'ti confermo l\u2019allocazione di mezza giornata per i meeting con Polymarket. Attivit\u00e0: partecipazione ai meeting w/c 03/08. Allocazione: 0,5 giornata.'
+					},
+					{
+						documentId: acceptanceDocument.id,
+						sentAt: '2026-08-04',
+						from: 'owner@example.com',
+						body: 'tutto ok, confermo'
+					}
+				]
+			},
+			answer({
+				days: [
+					{
+						date: '2026-08-03',
+						quantity: 0.5,
+						scope: 'Meeting Polymarket',
+						excerpt: 'partecipazione ai meeting w/c 03/08',
+						messageIndex: 0
+					}
+				]
+			}),
+			tx
+		);
+
+		expect(rejected).toEqual([]);
+		expect(proposals).toHaveLength(1);
+		// The evidence is the offer, message 0, so the proposal has to
+		// archive against the offer's own document — not the acceptance,
+		// even though the acceptance is `documentId` above and the newest
+		// message of the two.
+		expect(proposals[0].documentId).toBe(offerDocument.id);
+	});
+});
+
+test('#400: with no conversation array, a day still archives against the source document', () => {
+	return inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+
+		const { proposals } = await proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'Ciao, ti confermo il 3 febbraio.',
+				messageDate: '2026-02-02',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn
+				// No `conversation`: a hand-uploaded single message, or a
+				// candidate drained from before #400 existed.
+			},
+			answer({
+				days: [
+					{
+						date: '2026-02-03',
+						quantity: 1,
+						scope: 'Analisi',
+						excerpt: 'ti confermo il 3 febbraio',
+						messageIndex: 0
+					}
+				]
+			}),
+			tx
+		);
+
+		expect(proposals).toHaveLength(1);
+		expect(proposals[0].documentId).toBe(documentRow.id);
 	});
 });
