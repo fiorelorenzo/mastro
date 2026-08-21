@@ -27,13 +27,14 @@
 // email approving several days), and #209's contract is one `approval`
 // per document, not one per accepted day.
 
-import { desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { validationIssue, type ProposalValidationIssue } from '$lib/proposals/validation-issue';
 import { minorUnits } from '$lib/money';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
 	document,
 	proposal,
+	workUnit,
 	type ProposalStatus,
 	type ProposalTargetType
 } from '$lib/server/db/schema';
@@ -125,6 +126,49 @@ export async function listProposalsForDocuments(
 ) {
 	if (documentIds.length === 0) return [];
 	return executor.select().from(proposal).where(inArray(proposal.documentId, documentIds));
+}
+
+/**
+ * Which dates this contract already holds, so a second extraction of the
+ * same conversation does not offer them again (#403).
+ *
+ * Re-reading a conversation is now normal: a reply arriving in an exchange
+ * that was already read re-extracts the whole thing, because that is the
+ * only way the model sees the new day beside the offer it answers. The
+ * cost is that everything the earlier pass got right comes back too, and
+ * `validateDays`' own duplicate check only sees one extraction at a time.
+ * So the ledger answers instead of the prompt: a day already waiting for a
+ * decision, or already recorded as a work unit, is not news.
+ *
+ * A **rejected** proposal is deliberately not in here. A rejection says
+ * "not this proposal", not "never this day": the reason this query exists
+ * is a re-read that understands the conversation better than the first
+ * pass did, and suppressing the improved proposal for a day a human had
+ * already turned down once would hide exactly the correction they were
+ * owed. What stops a rejected day from returning every five minutes is
+ * the enqueue guard, which needs a new message before it re-reads at all.
+ */
+export async function datesAlreadyDecided(
+	contractId: string,
+	executor: DbExecutor = db
+): Promise<Set<string>> {
+	const [pending, recorded] = await Promise.all([
+		executor
+			.select({ fields: proposal.proposedFields })
+			.from(proposal)
+			.where(and(eq(proposal.contractId, contractId), eq(proposal.status, 'pending'))),
+		executor
+			.select({ date: workUnit.date })
+			.from(workUnit)
+			.where(eq(workUnit.contractId, contractId))
+	]);
+	const dates = new Set<string>();
+	for (const row of recorded) dates.add(row.date);
+	for (const row of pending) {
+		const date = (row.fields as { date?: unknown } | null)?.date;
+		if (typeof date === 'string') dates.add(date);
+	}
+	return dates;
 }
 
 /** Every proposal, most recent first, optionally narrowed to one status —

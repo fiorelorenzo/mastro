@@ -120,9 +120,9 @@ export async function countExtractionRunsForDocument(
 }
 
 /**
- * Which of `documentIds` have been handed to the runner at all (#398).
+ * When each of `documentIds` was last handed to the runner (#398, #403).
  *
- * The enqueue guard. It used to ask "does this document have a proposal",
+ * The enqueue guard. It first asked "does this document have a proposal",
  * which is a different question and answers the wrong way for a message
  * that legitimately approves nothing: no proposal is ever written, so the
  * document looked un-extracted forever and was re-queued on every tick.
@@ -130,26 +130,39 @@ export async function countExtractionRunsForDocument(
  * minutes apart, indefinitely - three newsletters costing a model call
  * each, 864 a day, to re-learn that they approve no days.
  *
+ * It then asked "has any message of this conversation been extracted",
+ * which is too coarse in the other direction (#403): a reply arriving in
+ * a conversation that was already read found a sibling with a run and was
+ * skipped, so a client answering an earlier offer was never read at all.
+ * A timestamp answers both, because the real question is whether the
+ * conversation has been extracted *since its newest message arrived*.
+ *
  * Any run counts, whatever its status. `queued` and `running` mean one is
- * in flight and a second would be duplicate work; `applied` means it is
- * done; `failed` is deliberately included too, because re-trying a failed
- * extraction is #315's explicit, human-driven path and not something an
- * automatic sweep should do behind everyone's back every five minutes.
+ * in flight and a second would be duplicate work; `applied` and
+ * `nothing_proposed` mean it is done; `failed` is deliberately included
+ * too, because re-trying a failed extraction is #315's explicit,
+ * human-driven path and not something an automatic sweep should do behind
+ * everyone's back every five minutes.
  *
  * One query for the batch rather than `countExtractionRunsForDocument` per
  * thread: the enqueue pass already reads its contracts, documents and
  * proposals in three batched lookups and this is the fourth.
  */
-export async function documentIdsWithExtractionRun(
+export async function lastExtractionByDocument(
 	documentIds: readonly string[],
 	executor: DbExecutor = db
-): Promise<Set<string>> {
-	if (documentIds.length === 0) return new Set();
+): Promise<Map<string, Date>> {
+	if (documentIds.length === 0) return new Map();
 	const rows = await executor
-		.select({ documentId: extractionRun.documentId })
+		.select({ documentId: extractionRun.documentId, enqueuedAt: extractionRun.enqueuedAt })
 		.from(extractionRun)
 		.where(inArray(extractionRun.documentId, [...documentIds]));
-	return new Set(rows.map((row) => row.documentId));
+	const latest = new Map<string, Date>();
+	for (const row of rows) {
+		const current = latest.get(row.documentId);
+		if (!current || row.enqueuedAt > current) latest.set(row.documentId, row.enqueuedAt);
+	}
+	return latest;
 }
 
 /** Every run, newest first, with its document's name for display — the

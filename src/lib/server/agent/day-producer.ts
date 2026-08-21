@@ -15,7 +15,11 @@
 // screen, which is what actually calls `createWorkUnit`.
 
 import { listRateCards } from '$lib/server/repositories/rate-card';
-import { createProposal, type ProposalRow } from '$lib/server/repositories/proposal';
+import {
+	createProposal,
+	datesAlreadyDecided,
+	type ProposalRow
+} from '$lib/server/repositories/proposal';
 import type { DbExecutor } from '$lib/server/db';
 import type { ProposalCandidate } from '$lib/server/runner/types';
 import type { ConversationMessage } from '$lib/server/mail/conversation';
@@ -195,11 +199,15 @@ async function extractionContext(
 	const allowedQuantities = [
 		...new Set(rateCards.flatMap((card) => card.allowedFractions.map(Number)))
 	];
+	const alreadyDecided = executor
+		? await datesAlreadyDecided(source.contractId, executor)
+		: await datesAlreadyDecided(source.contractId);
 	return {
 		startsOn: source.startsOn,
 		endsOn: source.endsOn,
 		messageDate: source.messageDate,
 		allowedQuantities,
+		alreadyDecided,
 		content: source.content
 	};
 }

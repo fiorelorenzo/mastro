@@ -14,7 +14,7 @@ import {
 import { createProposal } from '$lib/server/repositories/proposal';
 import {
 	createExtractionRun,
-	documentIdsWithExtractionRun,
+	lastExtractionByDocument,
 	getExtractionRunByJobId
 } from '$lib/server/repositories/extraction-run';
 import { listPendingJobs, readPendingJob } from '$lib/server/runner/queue';
@@ -364,7 +364,7 @@ test('a conversation is one job, not one per message, and every message of it is
 		const ours = queued.filter((job) =>
 			[offerDocument.id, replyDocument.id, thanksDocument.id].includes(job.request.documentId)
 		);
-		const runs = await documentIdsWithExtractionRun(
+		const runs = await lastExtractionByDocument(
 			[offerDocument.id, replyDocument.id, thanksDocument.id],
 			tx
 		);
@@ -457,4 +457,84 @@ test('a conversation already extracted is not re-enqueued from one of its other 
 
 	// Nothing, even though the reply itself has no run of its own.
 	expect(result.ours).toEqual([]);
+});
+
+test('a new reply in an already-extracted conversation is extracted (#403)', async () => {
+	// The question this answers: what happens on the next sync when a
+	// conversation that was already read gets an answer? The offer and its
+	// acceptance were extracted yesterday; today the client writes again,
+	// naming another day. That new message must be read.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const suffix = crypto.randomUUID();
+		const offerId = `<offer-${suffix}@visumlabs.example>`;
+		const replyId = `<reply-${suffix}@example.com>`;
+		const laterId = `<later-${suffix}@visumlabs.example>`;
+
+		const offerDocument = await archiveMessage(tx, contractRow.id, 'mezza giornata il 5');
+		const replyDocument = await archiveMessage(tx, contractRow.id, 'confermo');
+		const laterDocument = await archiveMessage(tx, contractRow.id, 'e anche il 12, giornata piena');
+
+		await recordInboundThread(
+			threadInput(contractRow.id, offerDocument.id, {
+				imapUid: 21,
+				messageId: offerId,
+				inReplyTo: null,
+				receivedAt: new Date('2026-08-05T10:00:00.000Z')
+			}),
+			tx
+		);
+		await recordInboundThread(
+			threadInput(contractRow.id, replyDocument.id, {
+				imapUid: 22,
+				messageId: replyId,
+				inReplyTo: offerId,
+				receivedAt: new Date('2026-08-05T10:05:00.000Z')
+			}),
+			tx
+		);
+
+		// Yesterday's extraction of the first two messages.
+		await createExtractionRun(
+			{
+				jobId: crypto.randomUUID(),
+				documentId: offerDocument.id,
+				targetType: 'work_unit',
+				enqueuedAt: new Date('2026-08-05T10:10:00.000Z')
+			},
+			tx
+		);
+
+		// Today's new message, arriving after that extraction.
+		await recordInboundThread(
+			threadInput(contractRow.id, laterDocument.id, {
+				imapUid: 23,
+				messageId: laterId,
+				inReplyTo: replyId,
+				receivedAt: new Date('2026-08-12T09:00:00.000Z')
+			}),
+			tx
+		);
+
+		await enqueueDayExtractions(queueDir, 500, tx);
+
+		const pending = await listPendingJobs(queueDir);
+		const queued = await Promise.all(pending.map((filename) => readPendingJob(queueDir, filename)));
+		return {
+			ours: queued.filter((job) =>
+				[offerDocument.id, replyDocument.id, laterDocument.id].includes(job.request.documentId)
+			),
+			laterDocument
+		};
+	});
+
+	// Exactly one job, carrying the whole conversation, with the new message
+	// in it: that is what makes the model read the new day beside the offer
+	// and the acceptance it answers. The anchor stays the oldest message
+	// still awaiting a decision, which is where the run is recorded.
+	expect(result.ours).toHaveLength(1);
+	expect(result.ours[0].request.conversation).toHaveLength(3);
+	expect(result.ours[0].request.conversation?.map((message) => message.documentId)).toContain(
+		result.laterDocument.id
+	);
 });
