@@ -276,6 +276,44 @@ export async function writeDayProposals(
 		);
 	}
 
+	// The mirror case of the loop above: a re-read can propose nothing at
+	// all for a date that still has a pending proposal — the client
+	// cancelled the day. The agent must not withdraw the proposal itself
+	// (invariant 3: a human decides), but a reviewer needs to know the most
+	// recent reading no longer confirms it, so a conflict row with a null
+	// `proposedFields` says exactly that, next to the untouched proposal.
+	//
+	// Scoped to dates this reading is silent on — neither accepted nor
+	// rejected, so genuinely absent from it, not merely revised or
+	// suppressed elsewhere above — and to proposals whose own document
+	// belongs to this conversation: only a re-read of the same thread has
+	// any evidence that the thread stopped confirming what it once said. A
+	// pending proposal from an unrelated document was never addressed by
+	// this reading at all.
+	const mentionedDates = new Set([
+		...accepted.map((day) => day.date),
+		...rejected.map((entry) => entry.day.date)
+	]);
+	const conversationDocumentIds = new Set([
+		source.documentId,
+		...(source.conversation?.map((message) => message.documentId) ?? [])
+	]);
+	for (const [date, pending] of pendingByDate) {
+		if (mentionedDates.has(date)) continue;
+		if (!conversationDocumentIds.has(pending.documentId)) continue;
+		await recordDayReadingConflict(
+			{
+				contractId: source.contractId,
+				date,
+				documentId: source.documentId,
+				extractionRunId: null,
+				proposedFields: null,
+				excerpt: null
+			},
+			executor
+		);
+	}
+
 	return { proposals, rejected };
 }
 

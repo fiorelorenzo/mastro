@@ -863,3 +863,101 @@ test('a revoked day does not suppress its date or produce a false conflict', asy
 	expect(result.outcome.proposals).toHaveLength(1);
 	expect(result.conflicts).toHaveLength(0);
 });
+
+test('a pending proposal from this conversation whose date the re-read no longer mentions gets a conflict, and keeps its proposal untouched', async () => {
+	// The mirror of the "disagrees with a recorded day" case: the client
+	// cancelled a day that was only ever proposed, never recorded. The
+	// agent must not withdraw the proposal itself (invariant 3: a human
+	// decides) — it stays pending, exactly as it was — but the newest
+	// reading's silence on that date is written down for a reviewer.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		const [pending] = await tx
+			.insert(proposal)
+			.values({
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				targetType: 'work_unit',
+				proposedFields: { date: '2026-03-01', quantity: 1, scope: 'Analisi' },
+				excerpt: 'la giornata del primo marzo',
+				confidence: 0.8,
+				status: 'pending'
+			})
+			.returning();
+
+		const outcome = await proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'grazie per il supporto questo mese',
+				messageDate: '2026-03-05',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn
+			},
+			answer({ days: [] }),
+			tx
+		);
+
+		const conflicts = await tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractRow.id));
+		const [stillPending] = await tx.select().from(proposal).where(eq(proposal.id, pending.id));
+		return { outcome, conflicts, stillPending };
+	});
+
+	expect(result.outcome.proposals).toHaveLength(0);
+	expect(result.conflicts).toHaveLength(1);
+	expect(result.conflicts[0].date).toBe('2026-03-01');
+	expect(result.conflicts[0].proposedFields).toBeNull();
+	expect(result.conflicts[0].excerpt).toBeNull();
+	// The proposal itself is exactly as it was — pending, same fields. The
+	// agent recorded the disagreement; it did not decide anything.
+	expect(result.stillPending.status).toBe('pending');
+	expect(result.stillPending.proposedFields).toEqual({
+		date: '2026-03-01',
+		quantity: 1,
+		scope: 'Analisi'
+	});
+});
+
+test('a pending proposal from a different document gets no conflict, even when its date is unmentioned', async () => {
+	// The guard that stops the loop above from firing on every unrelated
+	// pending proposal in the ledger: a re-read of one thread has no
+	// evidence about what a different thread's proposal still means.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		const otherDocument = await seedDocument(tx, contractRow.id, 'other-thread.eml');
+		await tx.insert(proposal).values({
+			documentId: otherDocument.id,
+			contractId: contractRow.id,
+			targetType: 'work_unit',
+			proposedFields: { date: '2026-03-02', quantity: 1, scope: 'Analisi' },
+			excerpt: 'la giornata del due marzo',
+			confidence: 0.8,
+			status: 'pending'
+		});
+
+		const outcome = await proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'grazie per il supporto questo mese',
+				messageDate: '2026-03-05',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn
+			},
+			answer({ days: [] }),
+			tx
+		);
+
+		const conflicts = await tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractRow.id));
+		return { outcome, conflicts };
+	});
+
+	expect(result.outcome.proposals).toHaveLength(0);
+	expect(result.conflicts).toHaveLength(0);
+});
