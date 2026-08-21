@@ -27,12 +27,18 @@ export async function getDocumentMirrorContext(documentId: string, executor: DbE
 
 /** Every document not yet mirrored — what a future scheduled publish run
  * would work through, oldest first. */
-export async function listUnmirroredDocuments(executor: DbExecutor = db) {
+export const DEFAULT_MIRROR_BATCH_LIMIT = 100;
+
+export async function listUnmirroredDocuments(
+	limit = DEFAULT_MIRROR_BATCH_LIMIT,
+	executor: DbExecutor = db
+) {
 	return executor
 		.select()
 		.from(document)
 		.where(isNull(document.remoteFileId))
-		.orderBy(asc(document.createdAt));
+		.orderBy(asc(document.createdAt))
+		.limit(limit);
 }
 
 export type MirrorRunInput = {

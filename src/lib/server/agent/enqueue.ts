@@ -134,19 +134,26 @@ export async function enqueueDayExtractions(
 		//
 		// Comparing timestamps handles both, and the five-messages-at-once
 		// case too: the extraction this pass performs is stamped now, which is
-		// later than every message already on disk, so the remaining siblings
+		// later than every row already on disk, so the remaining siblings
 		// skip. `extraction_run` stays one row per job
 		// (`extraction_run_job_id_unique`), which the three views depend on.
-		const newestMessageAt = conversationRows.reduce(
-			(newest, row) => (row.receivedAt > newest ? row.receivedAt : newest),
-			conversationRows[0].receivedAt
+		// When the ledger last learned something about this conversation -
+		// `created_at`, not `received_at`. A message's own date is when it was
+		// sent, and a conversation can gain a member whose date is weeks old:
+		// archiving the sent mailbox (#409) added my side of an exchange from
+		// three weeks ago, and comparing dates would have called the existing
+		// run fresh and never re-read it. Measured on the live instance, which
+		// is where it would have been a silent nothing rather than a bug.
+		const learnedAt = conversationRows.reduce(
+			(newest, row) => (row.createdAt > newest ? row.createdAt : newest),
+			conversationRows[0].createdAt
 		);
 		const lastExtractedAt = conversationRows.reduce<Date | null>((latest, row) => {
 			const at = extractedAt.get(row.documentId);
 			if (!at) return latest;
 			return latest === null || at > latest ? at : latest;
 		}, null);
-		if (lastExtractedAt !== null && lastExtractedAt >= newestMessageAt) {
+		if (lastExtractedAt !== null && lastExtractedAt >= learnedAt) {
 			alreadyProposed += 1;
 			continue;
 		}

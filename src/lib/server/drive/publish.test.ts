@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
@@ -177,6 +177,19 @@ test('a failing target leaves remote_file_id null and records a failure run, wit
 
 test('publishAllPending publishes every unmirrored document and skips one already mirrored', async () => {
 	await inRolledBackTransaction(async (tx) => {
+		// This is the one test here that calls a whole-table operation, so it
+		// has to stop depending on what the database already holds - the seed's
+		// documents, and whatever another test file committed a second ago
+		// (AGENTS.md: "a test runs against a database that has data in it").
+		// Before #409 it read every unmirrored row on the instance: it timed
+		// out at 5s, then at 20s, and once the pass was bounded to a batch its
+		// own two rows fell outside the batch entirely, because they are the
+		// newest and the order is oldest-first. Claiming everything else is
+		// already mirrored is a legitimate ledger state and makes this test
+		// about its own rows again.
+		await tx.execute(
+			sql`update document set remote_file_id = 'pre-existing' where remote_file_id is null`
+		);
 		const { contract: contractRow } = await insertContract(tx);
 		const first = await storeDocument(
 			{
