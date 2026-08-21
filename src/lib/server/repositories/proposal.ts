@@ -52,6 +52,7 @@ import { getInboundThreadForDocument } from './inbound-thread';
 import { createInvoice, type InvoiceInput, type InvoiceLineInput } from './invoice';
 import { createRateCard } from './rate-card';
 import { createApprovedWorkUnit, getWorkUnit, type WorkUnitInput } from './work-unit';
+import { clearDayReadingConflict } from './day-reading-conflict';
 
 export type ProposalRow = typeof proposal.$inferSelect;
 
@@ -882,13 +883,21 @@ async function applyProposal(
 				throw new Error(`proposal ${row.id} has no contract, which a work_unit target requires`);
 			}
 			const approvalId = await approvalForDocument({ ...row, contractId }, executor);
+			const workUnitInput = workUnitInputFromFields({ contractId }, fields);
 			const created = await createApprovedWorkUnit(
-				workUnitInputFromFields({ contractId }, fields),
+				workUnitInput,
 				approvalId,
 				{ kind: 'agent', proposalReference: row.id },
 				`accepted from proposal ${row.id}`,
 				executor
 			);
+			// The decision and the note about it must not disagree: accepting
+			// this day is a human resolving whatever `day-producer.ts` wrote
+			// about its date — a disagreement, or a reading that dropped the
+			// day entirely (Task 6) — so the conflict row for `(contractId,
+			// date)` is cleared in the same transaction as the write, not left
+			// to the next producer run to notice.
+			await clearDayReadingConflict(contractId, workUnitInput.date, executor);
 			return created.id;
 		}
 		case 'invoice': {

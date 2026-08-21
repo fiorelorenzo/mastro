@@ -961,3 +961,54 @@ test('a pending proposal from a different document gets no conflict, even when i
 	expect(result.outcome.proposals).toHaveLength(0);
 	expect(result.conflicts).toHaveLength(0);
 });
+
+test('a re-read that re-proposes a previously-dropped date leaves no conflict row behind', async () => {
+	// A stale `proposedFields: null` conflict row — as an earlier re-read
+	// left behind when it dropped this date entirely — must not survive a
+	// later reading that proposes the date again. Left in place, the alert
+	// it backs would keep announcing "the newest reading says nothing
+	// here" about a day the newest reading, in fact, just proposed.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		await tx.insert(dayReadingConflict).values({
+			contractId: contractRow.id,
+			date: '2026-03-01',
+			documentId: documentRow.id,
+			extractionRunId: null,
+			proposedFields: null,
+			excerpt: null
+		});
+
+		const outcome = await proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'in realtà il primo marzo ho lavorato',
+				messageDate: '2026-03-05',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn
+			},
+			answer({
+				days: [
+					{
+						date: '2026-03-01',
+						quantity: 1,
+						scope: 'Analisi',
+						excerpt: 'il primo marzo ho lavorato',
+						messageIndex: 0
+					}
+				]
+			}),
+			tx
+		);
+
+		const conflicts = await tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractRow.id));
+		return { outcome, conflicts };
+	});
+
+	expect(result.outcome.proposals).toHaveLength(1);
+	expect(result.conflicts).toHaveLength(0);
+});

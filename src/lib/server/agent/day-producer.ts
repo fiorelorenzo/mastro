@@ -162,6 +162,15 @@ export async function writeDayProposals(
 
 	const proposals: ProposalRow[] = [];
 	for (const day of accepted) {
+		// A reading that proposes this date again supersedes whatever a
+		// previous run wrote about it — a disagreement with the ledger, or
+		// (Task 6's follow-up) the earlier absence of a mention entirely —
+		// so any stale conflict row is cleared before this day is written.
+		// Safe unconditionally: a conflict row only ever exists for a date
+		// in `rejected` (the "already recorded" branch) or one this reading
+		// dropped, and `alreadyDecided` already keeps every recorded date
+		// out of `accepted`, so the two sets cannot overlap here.
+		await clearDayReadingConflict(source.contractId, day.date, executor);
 		// The model's own confidence and reason, folded together with the
 		// year-rollover guard's own (#244): the guard only ever lowers, so a
 		// day it caught can never end up looking as settled as the model

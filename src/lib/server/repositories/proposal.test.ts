@@ -11,6 +11,7 @@ import {
 	clauseNote,
 	client,
 	contract,
+	dayReadingConflict,
 	document,
 	inboundThread,
 	rateCard,
@@ -1425,5 +1426,45 @@ test('countPendingProposals counts only what is still waiting on a human', async
 
 		await rejectProposal(second.id, 'human', tx);
 		expect(await countPendingProposals(tx)).toBe(before + 1);
+	});
+});
+
+test("accepting a proposal clears the day's conflict row, so the alert cannot outlive the decision it describes (Task 6 follow-up)", async () => {
+	// A day-producer re-read may have left a `day_reading_conflict` row for
+	// this date — a disagreement with the ledger, or (Task 6's follow-up)
+	// a reading that dropped the day's proposal entirely, `proposedFields:
+	// null`. Accepting the proposal is the human decision that resolves
+	// either: the conflict row must go in the same transaction as the
+	// accept, not wait for the next producer run to notice.
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
+		const created = await createProposal(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				targetType: 'work_unit',
+				proposedFields: { date: '2024-06-10', quantity: 1, scope: 'API migration' },
+				excerpt: 'ok for Monday',
+				confidence: 0.9
+			},
+			tx
+		);
+		await tx.insert(dayReadingConflict).values({
+			contractId: contractRow.id,
+			date: '2024-06-10',
+			documentId: documentRow.id,
+			extractionRunId: null,
+			proposedFields: null,
+			excerpt: null
+		});
+
+		await acceptProposal(created.id, { decidedBy: 'lorenzo@example.com' }, tx);
+
+		const conflicts = await tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractRow.id));
+		expect(conflicts).toHaveLength(0);
 	});
 });
