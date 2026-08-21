@@ -4,7 +4,7 @@
 // just a plain object literal, and "the right moment" is exercised at
 // its exact severity boundary, not just "fires or does not".
 
-import { expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { minorUnits, NO_MINOR_UNITS } from '$lib/money';
 import type { EvaluatedCeiling } from '$lib/server/fiscal/ceiling';
 import type { Ceiling } from '$lib/server/fiscal/pack';
@@ -19,7 +19,9 @@ import {
 	detectInvoiceOverdue,
 	detectMailboxPollFailure,
 	detectMirrorFailure,
+	detectPendingProposalUnconfirmed,
 	detectProposalPending,
+	detectRecordedDayContradicted,
 	detectRenewalWindowOpen,
 	detectWorkedWithoutApproval,
 	detectYearEndOverrunRisk,
@@ -727,4 +729,79 @@ test('agent_run_failure is silent once a recent success is on file', () => {
 		asOf
 	);
 	expect(alerts).toEqual([]);
+});
+
+describe('detectRecordedDayContradicted', () => {
+	const base = {
+		conflictId: 'c1',
+		contractId: 'ct1',
+		clientId: 'cl1',
+		contractTitle: 'Contratto',
+		clientLegalName: 'Visum Labs',
+		date: '2026-08-04',
+		readingQuantity: 0.5,
+		recordedWorkUnitId: 'w1',
+		recordedQuantity: 1,
+		recordedState: 'worked' as const,
+		pendingProposalId: null
+	};
+
+	test('fires while the reading and the recorded day disagree', () => {
+		const alerts = detectRecordedDayContradicted([base]);
+		expect(alerts).toHaveLength(1);
+		expect(alerts[0].detail.type).toBe('recorded_day_contradicted');
+		expect(alerts[0].severity).toBe('serious');
+	});
+
+	test('a day already invoiced is critical: the money has left', () => {
+		const alerts = detectRecordedDayContradicted([{ ...base, recordedState: 'invoiced' }]);
+		expect(alerts[0].severity).toBe('critical');
+	});
+
+	test('stops on its own once they agree', () => {
+		// No acknowledgement needed: correcting the day is what silences it.
+		expect(detectRecordedDayContradicted([{ ...base, readingQuantity: 1 }])).toEqual([]);
+	});
+});
+
+describe('detectPendingProposalUnconfirmed', () => {
+	test('fires when the newest reading proposes nothing for a pending day', () => {
+		const alerts = detectPendingProposalUnconfirmed([
+			{
+				conflictId: 'c2',
+				contractId: 'ct1',
+				clientId: 'cl1',
+				contractTitle: 'Contratto',
+				clientLegalName: 'Visum Labs',
+				date: '2026-08-04',
+				readingQuantity: null,
+				recordedWorkUnitId: null,
+				recordedQuantity: null,
+				recordedState: null,
+				pendingProposalId: 'p1'
+			}
+		]);
+		expect(alerts).toHaveLength(1);
+		expect(alerts[0].severity).toBe('warning');
+	});
+
+	test('a pending proposal the reading still confirms raises nothing', () => {
+		expect(
+			detectPendingProposalUnconfirmed([
+				{
+					conflictId: 'c3',
+					contractId: 'ct1',
+					clientId: 'cl1',
+					contractTitle: 'Contratto',
+					clientLegalName: 'Visum Labs',
+					date: '2026-08-04',
+					readingQuantity: 0.5,
+					recordedWorkUnitId: null,
+					recordedQuantity: null,
+					recordedState: null,
+					pendingProposalId: 'p1'
+				}
+			])
+		).toEqual([]);
+	});
 });

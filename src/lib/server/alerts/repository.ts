@@ -7,7 +7,7 @@
 // `forecastCommitted`/`forecastProjected`) or is a small, direct query
 // this feature is the first to need.
 
-import { and, desc, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
 	agentRun,
@@ -15,6 +15,7 @@ import {
 	backupRun,
 	client,
 	contract,
+	dayReadingConflict,
 	document,
 	documentMirrorRun,
 	mailboxPollRun,
@@ -35,6 +36,7 @@ import type {
 	BackupRunRow,
 	BillablePeriodRow,
 	ContractDeadlineRow,
+	DayReadingConflictAlertRow,
 	InvoiceOverdueRow,
 	MailboxPollRunRow,
 	MirrorCandidateRow,
@@ -361,4 +363,57 @@ export async function fetchLatestMailboxPollRun(
 		.orderBy(desc(mailboxPollRun.createdAt))
 		.limit(1);
 	return { pollingConfigured: true, latestRun: row ?? null };
+}
+
+/** The conflicts, each carried alongside what the ledger currently holds for
+ * that day — which is what lets the detectors resolve themselves: they
+ * compare the stored reading against this on every run, so correcting the day
+ * silences the alert with no acknowledgement. */
+export async function fetchDayReadingConflictRows(
+	executor: DbExecutor = db
+): Promise<DayReadingConflictAlertRow[]> {
+	const rows = await executor
+		.select({
+			conflictId: dayReadingConflict.id,
+			contractId: dayReadingConflict.contractId,
+			clientId: client.id,
+			contractTitle: contract.title,
+			clientLegalName: client.legalName,
+			date: dayReadingConflict.date,
+			// Null when `proposed_fields` is null, which is how the producer
+			// records "the newest reading proposes nothing for this date".
+			readingQuantity: sql<string | null>`(${dayReadingConflict.proposedFields} ->> 'quantity')`,
+			recordedWorkUnitId: workUnit.id,
+			recordedQuantity: workUnit.quantity,
+			recordedState: workUnit.state,
+			pendingProposalId: proposal.id
+		})
+		.from(dayReadingConflict)
+		.innerJoin(contract, eq(contract.id, dayReadingConflict.contractId))
+		.innerJoin(client, eq(client.id, contract.clientId))
+		.leftJoin(
+			workUnit,
+			and(
+				eq(workUnit.contractId, dayReadingConflict.contractId),
+				eq(workUnit.date, dayReadingConflict.date)
+			)
+		)
+		.leftJoin(
+			proposal,
+			and(
+				eq(proposal.contractId, dayReadingConflict.contractId),
+				eq(proposal.targetType, 'work_unit'),
+				eq(proposal.status, 'pending'),
+				sql`${proposal.proposedFields} ->> 'date' = ${dayReadingConflict.date}::text`
+			)
+		);
+
+	// Numeric columns come back as strings from `postgres`; the detectors
+	// compare numbers, so the conversion belongs here rather than in three
+	// places downstream.
+	return rows.map((row) => ({
+		...row,
+		readingQuantity: row.readingQuantity === null ? null : Number(row.readingQuantity),
+		recordedQuantity: row.recordedQuantity === null ? null : Number(row.recordedQuantity)
+	}));
 }

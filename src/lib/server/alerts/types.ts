@@ -160,6 +160,27 @@ export type AlertDetail =
 			readonly reason: 'failure' | 'stale' | 'never_run';
 			readonly detail: string | null;
 			readonly lastRunAt: string | null;
+	  }
+	| {
+			readonly type: 'recorded_day_contradicted';
+			readonly contractId: string;
+			readonly clientId: string;
+			readonly contractTitle: string;
+			readonly clientLegalName: string;
+			readonly date: string;
+			readonly workUnitId: string;
+			readonly recordedQuantity: number;
+			/** Null when the newest reading proposes nothing for this date. */
+			readonly readingQuantity: number | null;
+	  }
+	| {
+			readonly type: 'pending_proposal_unconfirmed';
+			readonly contractId: string;
+			readonly clientId: string;
+			readonly contractTitle: string;
+			readonly clientLegalName: string;
+			readonly date: string;
+			readonly proposalId: string;
 	  };
 
 export interface Alert {

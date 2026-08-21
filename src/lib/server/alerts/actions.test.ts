@@ -127,6 +127,26 @@ const FIXTURES: Record<AlertType, AlertDetail> = {
 		reason: 'failure',
 		detail: 'ENOTFOUND db',
 		lastRunAt: '2026-08-01T03:00:00.000Z'
+	},
+	recorded_day_contradicted: {
+		type: 'recorded_day_contradicted',
+		contractId: 'contract-1',
+		clientId: 'client-1',
+		contractTitle: 'Consulting agreement',
+		clientLegalName: 'Acme Srl',
+		date: '2026-08-04',
+		workUnitId: 'work-unit-1',
+		recordedQuantity: 1,
+		readingQuantity: 0.5
+	},
+	pending_proposal_unconfirmed: {
+		type: 'pending_proposal_unconfirmed',
+		contractId: 'contract-1',
+		clientId: 'client-1',
+		contractTitle: 'Consulting agreement',
+		clientLegalName: 'Acme Srl',
+		date: '2026-08-04',
+		proposalId: 'proposal-1'
 	}
 };
 

@@ -17,6 +17,12 @@ import { id, timestamps } from '../columns';
  * previously invisible to this engine entirely (invariant 3's "humans
  * confirm" has no teeth if nobody is ever told there is something to
  * confirm) — see `alerts/detectors.ts`'s `detectProposalPending`.
+ * `recorded_day_contradicted` and `pending_proposal_unconfirmed` widen it a
+ * third time (Task 7): `day_reading_conflict` (Task 6) writes down a
+ * disagreement between a re-read of the mail and what the ledger holds, but
+ * leaves the ledger untouched because a human already decided it — a row on
+ * a table nobody queries is a fact nobody learns, so these two types are
+ * how the alert engine says it out loud.
  */
 export const ALERT_TYPES = [
 	'contract_expiring',
@@ -31,7 +37,9 @@ export const ALERT_TYPES = [
 	'mirror_failure',
 	'mailbox_poll_failure',
 	'agent_run_failure',
-	'proposal_pending'
+	'proposal_pending',
+	'recorded_day_contradicted',
+	'pending_proposal_unconfirmed'
 ] as const;
 export type AlertType = (typeof ALERT_TYPES)[number];
 

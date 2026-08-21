@@ -540,6 +540,13 @@
       "when": 1787353046306,
       "tag": "0077_day_reading_conflict_touch",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1787354709096,
+      "tag": "0078_alert_types_day_reading_conflict",
+      "breakpoints": true
     }
   ]
 }
