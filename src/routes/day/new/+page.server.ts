@@ -141,7 +141,20 @@ export const load: PageServerLoad = async ({ url }) => {
 		defaultDate,
 		crumbs,
 		firstClientId,
-		emptyReason
+		emptyReason,
+		// How many written approvals each contract holds (#417). The warning
+		// on this form used to claim "no written approval for {date} on this
+		// contract" from a condition that only knew whether *this entry* had
+		// one attached - a statement about the ledger that nothing had
+		// checked, and false on the live instance the day it was read. A count
+		// is enough to tell the two states apart and costs no query: the
+		// approvals were already loaded here to validate the submitted id.
+		approvalCountByContract: Object.fromEntries(
+			Object.entries(approvalsByContract).map(([contractId, approvals]) => [
+				contractId,
+				approvals.length
+			])
+		)
 	};
 };
 
