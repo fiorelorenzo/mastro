@@ -214,6 +214,21 @@
 							{m.proposal_queue_review()}
 						</a>
 					</p>
+					<!-- #409: a day confirmed by the client and a day resting on my own
+					     reply are not the same claim, and an address alone does not say
+					     which one a reviewer is looking at before the one-tap Accept below.
+					     One badge per card, not per row: every row here shares one source
+					     thread, and this is the same fact and the same strings the detail
+					     screen's own evidence badge already uses. -->
+					<p class="evidence-source">
+						<Badge
+							variant={group.mine ? 'warning' : 'info'}
+							label={group.mine
+								? m.proposal_evidence_source_mine_badge()
+								: m.proposal_evidence_source_badge()}
+							size="sm"
+						/>
+					</p>
 
 					<ul class="proposals">
 						{#each group.rows as row (row.id)}
@@ -474,6 +489,12 @@
 		flex: none;
 		color: var(--color-primary);
 	}
+	/* Not a flex child of anything stretch-prone (`.decision` is a plain
+	   block), so the badge sizes to its own label with no wrapper tricks
+	   needed — only spacing, matching the byline's own rhythm above it. */
+	.evidence-source {
+		margin: var(--space-2) 0 0;
+	}
 
 	.proposals {
 		display: flex;
@@ -521,13 +542,20 @@
 	}
 	/* The client's own sentence the row rests on, evidence for the
 	   confidence judgement above it — clamped so a long quote cannot push
-	   the row's own accept/reject buttons off screen or widen the card
-	   past its neighbours. Unsupported line-clamp just shows the whole
-	   excerpt uncut, which is a fine fallback for a paragraph of text. */
+	   the row's own accept/reject buttons off screen or widen the card past
+	   its neighbours. Unsupported line-clamp just shows the whole excerpt
+	   uncut, a fine fallback for a paragraph of text. `overflow-wrap` is for
+	   the one token a clamp alone mishandles: verbatim client text can carry
+	   a URL or a path longer than the column, which would otherwise clip
+	   mid-word with no ellipsis (the clamp's own ellipsis only fires when a
+	   *line* is discarded, not on inline overflow within the last one). No
+	   margin of its own: `.proposal`'s flex `gap` already spaces every
+	   direct child, and margins do not collapse into a flex gap. */
 	.excerpt {
-		margin: var(--space-2) 0 0;
+		margin: 0;
 		font-size: var(--text-sm);
 		color: var(--text-secondary);
+		overflow-wrap: anywhere;
 		display: -webkit-box;
 		-webkit-line-clamp: 3;
 		line-clamp: 3;

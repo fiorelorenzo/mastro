@@ -17,6 +17,7 @@ import {
 	type ExtractedContractFields,
 	type ExtractedRateCard
 } from '$lib/server/agent/contract-extraction';
+import type { ProposalRow } from '$lib/server/repositories/proposal';
 
 /** The `work_unit` shape a day proposal carries. */
 export function workUnitFields(
@@ -68,4 +69,23 @@ export function proposedContract(fields: Record<string, unknown>): ProposedContr
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * Whether a re-read (Task 5) has rewritten this proposal in place since it
+ * was created. `acceptProposal`/`rejectProposal` are the only other
+ * writers of a proposal row, and both move it out of `pending` in the same
+ * `UPDATE`, so scoping to `status === 'pending'` is what keeps a decided
+ * row — whose `updatedAt` necessarily moved when it was decided — from
+ * reading as revised. The one-second tolerance exists because `createdAt`
+ * and `updatedAt` are both `defaultNow()` columns written by the same
+ * `INSERT`: they can differ by a database-clock rounding sliver with no
+ * second write at all. One second is comfortably wider than that sliver
+ * and comfortably narrower than any real re-read, which happens in a
+ * separate request at a different time entirely.
+ */
+export function proposalRevised(
+	row: Pick<ProposalRow, 'status' | 'createdAt' | 'updatedAt'>
+): boolean {
+	return row.status === 'pending' && row.updatedAt.getTime() - row.createdAt.getTime() > 1000;
 }
