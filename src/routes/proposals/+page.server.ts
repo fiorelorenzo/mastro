@@ -210,6 +210,16 @@ export type QueueRow = {
 	confidenceReason: string | null;
 	validationIssue: ProposalValidationIssue | null;
 	amount: number | null;
+	/** The client's own sentence the proposal rests on, quoted verbatim —
+	 *  never translated, rendered as data next to the fields it backs. */
+	excerpt: string;
+	/** A re-read (Task 5) rewrites a still-pending proposal in place rather
+	 *  than dropping it, which moves `updated_at` past `created_at`.
+	 *  Scoped to `pending`: `acceptProposal`/`rejectProposal` are the only
+	 *  other writers of this column, and both move the row out of
+	 *  `pending`, so outside that status the comparison would read every
+	 *  decided row as revised. */
+	revised: boolean;
 };
 
 export type QueueGroup = {
@@ -273,7 +283,9 @@ async function loadQueue(): Promise<QueueGroup[]> {
 			confidence: row.confidence,
 			confidenceReason: row.confidenceReason,
 			validationIssue: row.validationIssue,
-			amount: priceProposal(row, context.rateCardsByContract)
+			amount: priceProposal(row, context.rateCardsByContract),
+			excerpt: row.excerpt,
+			revised: row.status === 'pending' && row.updatedAt.getTime() - row.createdAt.getTime() > 1000
 		});
 	}
 

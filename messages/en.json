@@ -1395,6 +1395,7 @@
 	"proposal_queue_no_subject": "(no subject)",
 	"proposal_queue_rates_more": "+{count} more rate cards",
 	"proposal_queue_review": "Review",
+	"proposal_queue_revised_badge": "Revised",
 	"proposal_queue_row_contract": "{client} — {title}",
 	"proposal_queue_row_unreadable": "Fields the review screen will have to fix",
 	"proposal_queue_terms_period": "Period",

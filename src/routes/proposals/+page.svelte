@@ -248,6 +248,11 @@
 									<p class="scope">{row.scope}</p>
 								{/if}
 
+								<p class="excerpt">{row.excerpt}</p>
+								{#if row.revised}
+									<Badge variant="info" label={m.proposal_queue_revised_badge()} size="sm" />
+								{/if}
+
 								<p class="judgement">
 									<Badge variant={confidence.variant} label={confidence.label} size="sm" />
 									{#if row.confidenceReason}
@@ -511,6 +516,21 @@
 		margin: 0;
 		font-size: var(--text-sm);
 		color: var(--text-secondary);
+	}
+	/* The client's own sentence the row rests on, evidence for the
+	   confidence judgement above it — clamped so a long quote cannot push
+	   the row's own accept/reject buttons off screen or widen the card
+	   past its neighbours. Unsupported line-clamp just shows the whole
+	   excerpt uncut, which is a fine fallback for a paragraph of text. */
+	.excerpt {
+		margin: var(--space-2) 0 0;
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
+		display: -webkit-box;
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
+		-webkit-box-orient: vertical;
+		overflow: hidden;
 	}
 	/* The terms, as a key/value grid that collapses to one column on a
 	   phone rather than squeezing both into 390px. */
