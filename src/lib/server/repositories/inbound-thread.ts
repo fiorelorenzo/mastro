@@ -24,6 +24,15 @@ export type InboundThreadInput = {
 	 * from, so extraction can read an offer together with its acceptance.
 	 */
 	inReplyTo: string | null;
+	/**
+	 * Every ancestor the `References` header names, oldest first (#410).
+	 * Optional, defaulting to empty: a caller with no bytes to read cannot
+	 * invent one, and the column is `not null default '{}'` so absent and
+	 * empty are the same state. `in_reply_to` alone loses a conversation
+	 * whose middle message was never archived, which is the shape of every
+	 * exchange where the answer came from me.
+	 */
+	referenceIds?: string[];
 	subject: string | null;
 	/**
 	 * The `From` address, normalised, or null when the envelope carried none
@@ -183,12 +192,18 @@ export async function listInboundThreadsAwaitingExtraction(
  * in mail written by people, and each round is one indexed lookup. It also
  * stops on its own: a round that adds nothing ends it.
  *
- * Grouping is by `in_reply_to` alone, never by subject. `Re:` on a subject
- * line is a convention, not a link: two unrelated "Re: Conferma" threads
- * would collapse into one conversation and their days would be judged as
- * one exchange. A missing header degrades to two conversations, which is a
- * duplicate a human can see, where a wrong merge is an approval attributed
- * to the wrong offer.
+ * Grouping is by identifier, never by subject: `in_reply_to` for the direct
+ * link and every `References` ancestor for the indirect one (#410). `Re:` on
+ * a subject line is a convention, not a link, and two unrelated "Re:
+ * Conferma" threads collapsing into one conversation would have their days
+ * judged as a single exchange - a wrong merge attributes an approval to the
+ * wrong offer, and no reader would catch it.
+ *
+ * `References` is what crosses a hole. A conversation missing its middle
+ * message used to split into fragments, and holes are the normal case here
+ * rather than the exotic one: the middle message of the first real approval
+ * on this ledger is one I sent, and nothing archives outbound mail (#409).
+ * A message two steps below a gap still names every ancestor above it.
  */
 export async function loadConversations(
 	seeds: readonly ArchivedInboundThreadRow[],
@@ -203,39 +218,54 @@ export async function loadConversations(
 	// header could otherwise turn into a loop: `In-Reply-To` is chosen by the
 	// sender, so nothing stops two messages naming each other.
 	for (let round = 0; round < 10; round += 1) {
-		const parentIds = [
-			...new Set(
-				frontier.map((row) => row.inReplyTo).filter((value): value is string => value !== null)
-			)
-		];
-		const ownIds = [
-			...new Set(
-				frontier.map((row) => row.messageId).filter((value): value is string => value !== null)
-			)
-		];
-		if (parentIds.length === 0 && ownIds.length === 0) break;
+		// Every id this frontier knows about: its own, its parents', and every
+		// ancestor its `References` headers name (#410). One set, because the
+		// three queries below all ask about the same names from different
+		// sides - "who is called this", "who replies to this", "who names this
+		// among its ancestors".
+		const knownIds = [
+			...new Set(frontier.flatMap((row) => [row.messageId, row.inReplyTo, ...row.referenceIds]))
+		].filter((value): value is string => value !== null);
+		if (knownIds.length === 0) break;
 
-		const [parents, replies] = await Promise.all([
-			parentIds.length > 0
-				? executor
-						.select()
-						.from(inboundThread)
-						.where(
-							and(eq(inboundThread.archived, true), inArray(inboundThread.messageId, parentIds))
-						)
-				: Promise.resolve([]),
-			ownIds.length > 0
-				? executor
-						.select()
-						.from(inboundThread)
-						.where(and(eq(inboundThread.archived, true), inArray(inboundThread.inReplyTo, ownIds)))
-				: Promise.resolve([])
+		const [named, replies, descendants] = await Promise.all([
+			executor
+				.select()
+				.from(inboundThread)
+				.where(and(eq(inboundThread.archived, true), inArray(inboundThread.messageId, knownIds))),
+			executor
+				.select()
+				.from(inboundThread)
+				.where(and(eq(inboundThread.archived, true), inArray(inboundThread.inReplyTo, knownIds))),
+			// Array overlap, which the GIN index on `reference_ids` answers.
+			// This is the query that crosses a hole: a message two steps below
+			// an unarchived one still names everything above it, so it is
+			// reachable from the ancestor even though no `in_reply_to` link
+			// between them exists in this table.
+			executor
+				.select()
+				.from(inboundThread)
+				.where(
+					and(
+						eq(inboundThread.archived, true),
+						// An explicit `ARRAY[...]::text[]`, because both a bare
+						// interpolation and drizzle's own `arrayOverlaps` emit a
+						// parameter *tuple* (`&& ($1, $2)`) that Postgres reads as
+						// a row constructor and refuses against an array column.
+						// Measured: it was the first thing this query did.
+						sql`${inboundThread.referenceIds} && ARRAY[${sql.join(
+							knownIds.map((value) => sql`${value}`),
+							sql`, `
+						)}]::text[]`
+					)
+				)
 		]);
 
 		const added: ArchivedInboundThreadRow[] = [];
-		for (const row of [...parents, ...replies]) {
-			// `archived = true` is in both queries, so `inbound_thread_archived_shape`
-			// guarantees the document id the type promises.
+		for (const row of [...named, ...replies, ...descendants]) {
+			// `archived = true` is in all three queries, so
+			// `inbound_thread_archived_shape` guarantees the document id the
+			// type promises.
 			if (row.documentId === null || byId.has(row.id)) continue;
 			const archivedRow = row as ArchivedInboundThreadRow;
 			byId.set(row.id, archivedRow);
@@ -267,9 +297,17 @@ export async function loadConversations(
 	};
 	for (const row of rows) parentOf.set(row.id, row.id);
 	for (const row of rows) {
-		if (!row.inReplyTo) continue;
-		const parentRowId = idByMessageId.get(row.inReplyTo);
-		if (parentRowId) union(row.id, parentRowId);
+		// Two edge kinds, one component. `in_reply_to` is the direct link;
+		// every `References` ancestor is an indirect one, and it is the
+		// indirect one that survives a message nobody archived sitting in
+		// between (#410). Both are identifiers a sender chose, which is why
+		// this is still never subject-based: a wrong merge attributes an
+		// approval to the wrong offer, and no reader would catch it.
+		for (const name of [row.inReplyTo, ...row.referenceIds]) {
+			if (!name) continue;
+			const relatedRowId = idByMessageId.get(name);
+			if (relatedRowId) union(row.id, relatedRowId);
+		}
 	}
 
 	const grouped = new Map<string, ArchivedInboundThreadRow[]>();

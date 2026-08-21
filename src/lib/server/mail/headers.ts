@@ -155,3 +155,25 @@ export function decodeMessageBody(message: ParsedMessage): string {
 	}
 	return message.body.toString(charset);
 }
+
+/**
+ * The `Message-ID`s a message's `References` header names, in the order it
+ * names them — oldest ancestor first, which is the order RFC 5322 requires
+ * (#410).
+ *
+ * Takes the raw bytes rather than a `ParsedMessage` so the one caller that
+ * has only bytes — the backfill, reading an archived original — needs no
+ * second parse. `parseMessage` already unfolds, which matters: a long
+ * ancestry is exactly the header a client wraps, and a line-at-a-time read
+ * would keep the first ids and silently drop the rest.
+ *
+ * Matched by angle brackets rather than split on whitespace. The grammar
+ * allows comments and folding between ids, and an id itself cannot contain
+ * `<` or `>`, so the brackets are the reliable delimiter. Empty array when
+ * the header is absent, which is a conversation's first message.
+ */
+export function parseReferences(raw: Buffer): string[] {
+	const value = parseMessage(raw).headers.get('references');
+	if (!value) return [];
+	return [...value.matchAll(/<[^<>]+>/g)].map((match) => match[0]);
+}

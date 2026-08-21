@@ -1,0 +1,2 @@
+ALTER TABLE "inbound_thread" ADD COLUMN "reference_ids" text[] DEFAULT '{}' NOT NULL;--> statement-breakpoint
+CREATE INDEX "inbound_thread_reference_ids_gin" ON "inbound_thread" USING gin ("reference_ids");

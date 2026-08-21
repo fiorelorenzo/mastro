@@ -1,5 +1,5 @@
-// A one-off: fills `inbound_thread.in_reply_to` for messages archived
-// before that column existed (#407).
+// A one-off: fills `inbound_thread.in_reply_to` and `reference_ids` for
+// messages archived before those columns existed (#407, #410).
 //
 // Extraction reads a conversation, not a message (#400), and it walks
 // `In-Reply-To` to find one. Every message archived before v0.16.0 has no
@@ -29,7 +29,7 @@ import { parseEnv } from 'node:util';
 import { readFileSync } from 'node:fs';
 import postgres from 'postgres';
 import { readBlob } from '../src/lib/server/documents/blob-store.ts';
-import { parseMessage } from '../src/lib/server/mail/headers.ts';
+import { parseMessage, parseReferences } from '../src/lib/server/mail/headers.ts';
 import { log } from '../src/lib/server/log/logger.ts';
 
 function databaseUrl(): string {
@@ -53,15 +53,21 @@ const storageRoot = process.env.DOCUMENT_STORAGE_ROOT ?? 'data/documents';
 const sql = postgres(databaseUrl(), { max: 1 });
 
 try {
+	// Both links, in one pass over the blobs (#410). `reference_ids` is the
+	// one that crosses a hole in a conversation, and a hole is the normal
+	// case: the middle message of the first real approval on this ledger is
+	// one I sent, and nothing archives outbound mail (#409).
 	const rows = await sql<{ id: string; hash: string }[]>`
 		SELECT t.id, d.hash
 		FROM inbound_thread t
 		JOIN document d ON d.id = t.document_id
-		WHERE t.in_reply_to IS NULL AND t.document_id IS NOT NULL
+		WHERE t.document_id IS NOT NULL
+		  AND (t.in_reply_to IS NULL OR t.reference_ids = '{}')
 	`;
 
-	let filled = 0;
-	let noParent = 0;
+	let parents = 0;
+	let ancestries = 0;
+	let noLinks = 0;
 	let unreadable = 0;
 
 	for (const row of rows) {
@@ -71,22 +77,30 @@ try {
 		} catch {
 			// A database restored without its documents directory, or a blob
 			// that never landed (#313). One message that cannot be read must
-			// not stop the rest: the field stays null, which is the state it
-			// is already in.
+			// not stop the rest: the fields stay as they are.
 			unreadable += 1;
 			continue;
 		}
 		const inReplyTo = parseMessage(bytes).headers.get('in-reply-to')?.trim() ?? null;
-		if (!inReplyTo) {
-			noParent += 1;
+		const referenceIds = parseReferences(bytes);
+		if (!inReplyTo && referenceIds.length === 0) {
+			noLinks += 1;
 			continue;
 		}
-		await sql`UPDATE inbound_thread SET in_reply_to = ${inReplyTo} WHERE id = ${row.id}`;
-		filled += 1;
+		// One statement per row, and `coalesce` on the parent so a second run
+		// cannot blank a value an earlier one already wrote.
+		await sql`
+			UPDATE inbound_thread
+			SET in_reply_to = coalesce(in_reply_to, ${inReplyTo}),
+			    reference_ids = ${referenceIds}
+			WHERE id = ${row.id}
+		`;
+		if (inReplyTo) parents += 1;
+		if (referenceIds.length > 0) ancestries += 1;
 	}
 
-	log.info('in_reply_to backfilled', {
-		context: { considered: rows.length, filled, noParent, unreadable }
+	log.info('conversation links backfilled', {
+		context: { considered: rows.length, parents, ancestries, noLinks, unreadable }
 	});
 } finally {
 	await sql.end();

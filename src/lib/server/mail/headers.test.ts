@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { decodeMessageBody, parseMessage } from './headers';
+import { decodeMessageBody, parseMessage, parseReferences } from './headers';
 
 /** Joins RFC 822 header lines and a body with the required blank-line
  *  separator, so no test call site has to get the newline count right by hand. */
@@ -78,5 +78,43 @@ describe('decodeMessageBody', () => {
 
 	test('an empty body decodes to an empty string', () => {
 		expect(decodeMessageBody(parseMessage(Buffer.alloc(0)))).toBe('');
+	});
+});
+
+describe('parseReferences', () => {
+	test('reads the whole ancestry, oldest first', () => {
+		const raw = Buffer.from(
+			'Message-ID: <c@example.com>\r\n' +
+				'References: <root@example.com> <middle@example.com>\r\n\r\nbody'
+		);
+		expect(parseReferences(raw)).toEqual(['<root@example.com>', '<middle@example.com>']);
+	});
+
+	test('a folded ancestry is read whole', () => {
+		// The header a real client wraps once the thread is a few messages
+		// deep, and the one a line-at-a-time read truncates: it would keep the
+		// root and silently drop the message that actually bridges the gap.
+		const raw = Buffer.from(
+			'References: <root@example.com>\r\n <middle@example.com>\r\n\t<last@example.com>\r\n\r\nbody'
+		);
+		expect(parseReferences(raw)).toEqual([
+			'<root@example.com>',
+			'<middle@example.com>',
+			'<last@example.com>'
+		]);
+	});
+
+	test('a message with no ancestry answers with an empty list, never a null', () => {
+		// A conversation's first message. Empty rather than absent, so the
+		// column and every reader have one shape to handle.
+		expect(parseReferences(Buffer.from('Message-ID: <a@b>\r\n\r\nbody'))).toEqual([]);
+	});
+
+	test('comments and stray text between ids are not mistaken for ids', () => {
+		// RFC 5322 allows CFWS between the ids, and an id cannot contain angle
+		// brackets - which is why this matches on brackets rather than
+		// splitting on whitespace.
+		const raw = Buffer.from('References: <a@x> (a comment) <b@x>\r\n\r\nbody');
+		expect(parseReferences(raw)).toEqual(['<a@x>', '<b@x>']);
 	});
 });

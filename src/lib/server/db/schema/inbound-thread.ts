@@ -3,6 +3,7 @@ import {
 	bigint,
 	boolean,
 	check,
+	index,
 	integer,
 	pgTable,
 	text,
@@ -121,17 +122,39 @@ export const inboundThread = pgTable(
 		 * in one message and the acceptance in the next, so no single message
 		 * contains the approval.
 		 *
-		 * `In-Reply-To` only, not `References`. An IMAP envelope carries the
-		 * first for free and not the second, and a second fetch per message
-		 * to reconstruct a fuller chain buys nothing here: following
-		 * `in_reply_to` to a message with none reaches the same root, and a
-		 * broken chain (a client that dropped the header) degrades to two
-		 * conversations rather than a wrong one.
-		 *
-		 * Null for a conversation's first message, and for every row archived
-		 * before this column existed.
+		 * Its own header, verbatim, and null for a conversation's first
+		 * message or for a row archived before this column existed.
 		 */
 		inReplyTo: text('in_reply_to'),
+		/**
+		 * Every `Message-ID` the `References` header names, oldest ancestor
+		 * first (#410).
+		 *
+		 * `in_reply_to` alone cannot rebuild a conversation with a hole in
+		 * it, and holes are normal here rather than exotic: the middle
+		 * message of the first real approval on this ledger is one I sent,
+		 * and nothing archives outbound mail (#409). Measured after the
+		 * parents were backfilled - the offer and the reply to my answer
+		 * stayed two conversations of one message each, both extracted
+		 * alone, both proposing nothing, which is the exact failure #400
+		 * removed arriving through another door.
+		 *
+		 * `References` names the whole ancestry, so a message two steps
+		 * below a gap still points at everything above it. The one that
+		 * broke carries `References: <offer> <my reply>` and therefore names
+		 * the offer directly.
+		 *
+		 * This costs no extra IMAP round trip, which is what the comment
+		 * here used to claim it would: an envelope does not carry
+		 * `References`, but the poll already fetches the full source of
+		 * every message it keeps, and the header block is in those bytes.
+		 * Only kept messages get one, which is the same set that can ever
+		 * reach extraction.
+		 *
+		 * Empty rather than null when the header is absent, so a reader
+		 * never has to handle two shapes of "no ancestors".
+		 */
+		referenceIds: text('reference_ids').array().notNull().default([]),
 		/**
 		 * The `From` address, lower-cased and trimmed, as it arrived (#394).
 		 *
@@ -171,7 +194,12 @@ export const inboundThread = pgTable(
 		check(
 			'inbound_thread_skip_reason_known',
 			sql`${table.skipReason} is null or ${table.skipReason} in ('oversized', 'sender_unknown')`
-		)
+		),
+		// Grouping asks "which archived messages name any of these ancestors"
+		// (#410), which is an array-overlap test. A GIN index is what answers
+		// that without reading the table: cheap here today at a few hundred
+		// rows, and the query runs on every enqueue tick forever.
+		index('inbound_thread_reference_ids_gin').using('gin', table.referenceIds)
 	]
 );
 
