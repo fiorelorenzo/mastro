@@ -81,8 +81,9 @@ try {
 			unreadable += 1;
 			continue;
 		}
-		const inReplyTo = parseMessage(bytes).headers.get('in-reply-to')?.trim() ?? null;
-		const referenceIds = parseReferences(bytes);
+		const headers = parseMessage(bytes).headers;
+		const inReplyTo = headers.get('in-reply-to')?.trim() ?? null;
+		const referenceIds = parseReferences(headers.get('references'));
 		if (!inReplyTo && referenceIds.length === 0) {
 			noLinks += 1;
 			continue;

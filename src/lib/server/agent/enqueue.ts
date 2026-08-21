@@ -186,6 +186,10 @@ export async function enqueueDayExtractions(
 				documentId: row.documentId,
 				sentAt: row.receivedAt.toISOString().slice(0, 10),
 				from: row.senderAddress ?? 'unknown',
+				// Whose words these are (#409). The prompt raises confidence for
+				// an offer met by the other side's agreement, so it has to know
+				// which side each message is.
+				mine: row.direction === 'outbound',
 				// Quoted history and signatures removed here rather than left
 				// to the prompt: the same sentence quoted four deep is four
 				// chances for the model to read it as a new statement, and it

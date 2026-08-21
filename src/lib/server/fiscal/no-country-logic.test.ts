@@ -93,9 +93,10 @@ interface Rule {
  * A handful of literals share the pack-id shape and are demonstrably not
  * pack ids: IANA charset names in a MIME header parser, for one, and the
  * HTTP cache directives an SSE route has to send, where the collision is
- * `no` being Norway. They are listed rather than pattern-excused, so
- * adding one is a decision somebody reads, and so a real pack id can
- * never hide behind a loosened regex.
+ * `no` being Norway. Mail header names are the third kind, where `in` is
+ * India and `reply-to` reads as a regime (#409). They are listed rather
+ * than pattern-excused, so adding one is a decision somebody reads, and so
+ * a real pack id can never hide behind a loosened regex.
  */
 const NOT_PACK_IDS = new Set([
 	"'us-ascii'",
@@ -103,7 +104,9 @@ const NOT_PACK_IDS = new Set([
 	"'no-cache'",
 	'"no-cache"',
 	"'no-store'",
-	'"no-store"'
+	'"no-store"',
+	"'in-reply-to'",
+	'"in-reply-to"'
 ]);
 
 const RULES: readonly Rule[] = [

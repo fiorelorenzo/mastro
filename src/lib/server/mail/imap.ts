@@ -35,9 +35,7 @@ export async function appendToSentMailbox(
 	});
 	await client.connect();
 	try {
-		const mailboxes = await client.list();
-		const specialUseSent = mailboxes.find((mailbox) => mailbox.specialUse === '\\Sent');
-		const target = specialUseSent?.path ?? config.sentMailbox;
+		const target = (await resolveSentMailbox(client, config.sentMailbox)) ?? config.sentMailbox;
 
 		try {
 			await client.append(target, message.raw, ['\\Seen']);
@@ -57,4 +55,29 @@ export async function appendToSentMailbox(
 	} finally {
 		await client.logout();
 	}
+}
+
+/**
+ * Which mailbox holds sent mail on this server, or null when nothing does.
+ *
+ * The SPECIAL-USE extension (RFC 6154) is the only provider-independent way
+ * to ask - providers name it differently, and Gmail's is
+ * `[Gmail]/Sent Mail` - with the configured name as the fallback for a
+ * server that does not report one. Extracted from `appendToSentMailbox`
+ * when the sent pass (#409) needed the same answer: two copies of this
+ * resolution would be two chances to append to one mailbox and read from
+ * another, and nothing would look wrong.
+ *
+ * Null means "no such mailbox", which is a supported configuration and not
+ * a failure: the poller then has nothing to read, and the appender falls
+ * back to creating the configured name on TRYCREATE as it always did.
+ */
+export async function resolveSentMailbox(
+	client: ImapFlow,
+	configured: string
+): Promise<string | null> {
+	const mailboxes = await client.list();
+	const specialUseSent = mailboxes.find((mailbox) => mailbox.specialUse === '\\Sent');
+	if (specialUseSent) return specialUseSent.path;
+	return mailboxes.some((mailbox) => mailbox.path === configured) ? configured : null;
 }

@@ -18,10 +18,13 @@
 // whichever caller invokes this, the same way #74/#75's push/digest
 // interval lives in a crontab entry, never in this repository.
 import { ImapFlow } from 'imapflow';
-import { parseReferences } from './headers';
+import { parseHeaderBlock, parseReferences } from './headers';
+import { resolveSentMailbox } from './imap';
+import type { MailDirection } from '$lib/server/db/schema';
 import { finishPollProgress, reportPollPhase } from './poll-progress';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
+	attributeByRecipients,
 	attributeBySender,
 	knownSenderAddresses,
 	normaliseAddress,
@@ -30,6 +33,7 @@ import {
 import { storeDocument } from '$lib/server/repositories/document';
 import {
 	findByMailboxAndMessageId,
+	findByMessageId,
 	maxImapUidForMailbox,
 	recordInboundThread,
 	recordSkippedInboundThread
@@ -120,7 +124,21 @@ export async function connectWithRetry(
  * arrive pre-sorted, which on the first real client it never did. Sender
  * matching is the only mechanism now.
  */
-export type PollTarget = { mailbox: string };
+export type PollTarget = {
+	mailbox: string;
+	/**
+	 * Which way the mail in this mailbox travelled (#409). Defaults to
+	 * `inbound`, which is every caller that predates the sent pass.
+	 *
+	 * The two directions differ in three specific places and nowhere else,
+	 * which is why this is a flag on one function rather than a second copy
+	 * of it: who the message is attributed by (sender for inbound, recipient
+	 * for outbound - both are "the other party"), which addresses being
+	 * unknown means the message is not worth a model call, and whether
+	 * re-attribution of older rows belongs in the pass at all.
+	 */
+	direction?: MailDirection;
+};
 
 export type MailboxPollResult = {
 	mailbox: string;
@@ -189,6 +207,8 @@ export async function pollMailboxTarget(
 	lookbackDays: number = DEFAULT_IMAP_INBOX_LOOKBACK_DAYS
 ): Promise<MailboxPollResult> {
 	const mailbox = target.mailbox;
+	const direction: MailDirection = target.direction ?? 'inbound';
+	const outbound = direction === 'outbound';
 	const empty = {
 		mailbox,
 		handedOff: 0,
@@ -204,8 +224,13 @@ export async function pollMailboxTarget(
 		// empty mailbox returns early below, and a reader who fixes a contact
 		// and presses "check now" is owed the recovery whether or not new mail
 		// happens to have arrived.
-		const recovered = await reattributeKnownSenders(executor);
-		reportPollPhase('reattributing', recovered);
+		//
+		// Inbound only (#409). It re-decides attribution from the *sender*, and
+		// a message I sent has me as its sender: running it over the sent pass
+		// would attribute my own mail to whichever client happens to have my
+		// address as a contact, and would do it twice per poll besides.
+		const recovered = outbound ? 0 : await reattributeKnownSenders(executor);
+		if (!outbound) reportPollPhase('reattributing', recovered);
 
 		const box = await client.mailboxOpen(mailbox);
 		const uidValidity = Number(box.uidValidity);
@@ -227,12 +252,21 @@ export async function pollMailboxTarget(
 		type KeptMeta = {
 			messageId: string | null;
 			inReplyTo: string | null;
+			referenceIds: string[];
 			subject: string | null;
 			internalDate: Date;
-			/** Null when nothing in the ledger claims this sender. */
+			/** Null when nothing in the ledger claims this counterparty. */
 			contractId: string | null;
 			senderAddress: string | null;
-			senderKnown: boolean;
+			/**
+			 * Whether the other party to this message is somebody the ledger
+			 * knows: the sender for inbound mail, a recipient for outbound
+			 * (#409). It decides `sender_unknown` on the inbound side, and on
+			 * the outbound side it is already true by the time a message is
+			 * kept - a sent message with no known recipient is only kept when
+			 * it answers something archived, and then it is readable anyway.
+			 */
+			counterpartyKnown: boolean;
 		};
 		const kept = new Map<number, KeptMeta>();
 		let skipped = 0;
@@ -260,7 +294,23 @@ export async function pollMailboxTarget(
 		let seen = 0;
 		for await (const message of client.fetch(
 			firstPass ? recentUids : `${from}:*`,
-			{ uid: true, envelope: true, size: true, internalDate: true },
+			{
+				uid: true,
+				envelope: true,
+				size: true,
+				internalDate: true,
+				// The two threading headers, read from the message itself rather
+				// than from ENVELOPE (#410, #409). ENVELOPE's `In-Reply-To` is
+				// whatever the server chooses to report and GreenMail reports
+				// nothing at all - measured, with the header plainly present in
+				// the message - so a poll that trusted it lost threading against
+				// any such server and nobody would have seen why. `References` is
+				// not in ENVELOPE on any server. Both come back in this same
+				// FETCH, so there is no extra round trip, and having them here
+				// rather than after the second fetch is what lets the keep
+				// decision below use them.
+				headers: ['in-reply-to', 'references']
+			},
 			{ uid: true }
 		)) {
 			// The "n:*" gotcha, not a new message. Never applies to the
@@ -283,20 +333,47 @@ export async function pollMailboxTarget(
 					? message.internalDate
 					: new Date(message.internalDate ?? Date.now());
 			const subject = message.envelope?.subject ?? null;
-			// What this message answers (#400). The envelope carries it, so
-			// grouping a conversation costs no extra fetch.
-			const inReplyTo = message.envelope?.inReplyTo ?? null;
+			// What this message answers, and every ancestor above it (#400,
+			// #410), from the header block fetched above.
+			const headerBytes = Buffer.isBuffer(message.headers) ? message.headers : Buffer.alloc(0);
+			const threadingHeaders = parseHeaderBlock(headerBytes);
+			const inReplyTo = threadingHeaders.get('in-reply-to')?.trim() ?? null;
+			const referenceIds = parseReferences(threadingHeaders.get('references'));
 			const uid = message.uid;
 			const size = message.size ?? null;
 
-			// Who it is from, and therefore whose it is. The envelope is the
-			// only source of that answer now (#394), and "nobody knows" is an
-			// accepted one.
+			// Who the counterparty is, and therefore whose message this is. For
+			// inbound that is the sender (#394); for a message I sent it is the
+			// recipients, because the sender is me (#409). "Nobody knows" stays
+			// an accepted answer on both sides.
 			const senderAddress = normaliseAddress(message.envelope?.from?.[0]?.address ?? null);
-			const senderKnown = !!senderAddress && knownSenders.has(senderAddress);
-			const attributed = senderKnown
-				? ((await attributeBySender(senderAddress, executor))?.contractId ?? null)
-				: null;
+			const recipientAddresses = outbound
+				? [
+						...(message.envelope?.to ?? []).map((address) => address.address ?? null),
+						...(message.envelope?.cc ?? []).map((address) => address.address ?? null)
+					]
+				: [];
+			const counterparties = outbound
+				? recipientAddresses.map((address) => normaliseAddress(address))
+				: [senderAddress];
+			const counterpartyKnown = counterparties.some(
+				(address) => !!address && knownSenders.has(address)
+			);
+
+			// A reply to something already on the ledger belongs to that
+			// conversation whatever its addresses say, and that is the case
+			// this whole pass exists for: my "tutto ok, confermo" answers an
+			// offer that is already archived. Cheap - one indexed lookup, and
+			// only for outbound mail that is a reply at all.
+			const parent = outbound && inReplyTo ? await findByMessageId(inReplyTo, executor) : undefined;
+
+			const attributed = outbound
+				? ((await attributeByRecipients(counterparties, executor))?.contractId ??
+					parent?.contractId ??
+					null)
+				: counterpartyKnown
+					? ((await attributeBySender(senderAddress, executor))?.contractId ?? null)
+					: null;
 
 			if (size !== null && size > maxMessageBytes) {
 				// #306, invariant 4: the bytes are what get dropped, on
@@ -311,6 +388,7 @@ export async function pollMailboxTarget(
 							senderAddress,
 							inReplyTo,
 							mailbox,
+							direction,
 							imapUidValidity: uidValidity,
 							imapUid: uid,
 							messageId,
@@ -326,14 +404,55 @@ export async function pollMailboxTarget(
 				continue;
 			}
 
+			// The cost guard for the sent mailbox (#409), and the one place the
+			// two directions differ in what they keep. An inbox is a mailbox
+			// somebody else writes to about my work, so #380 archives all of
+			// it and lets a contact added later unlock it. A sent mailbox is
+			// everything I write to everybody - other clients, other projects,
+			// my own life - and archiving that wholesale would put mail no
+			// contract has any claim on into this ledger's blob store.
+			//
+			// So a sent message is kept when it touches the ledger: addressed
+			// to a known contact, or answering a message already archived. The
+			// rest is recorded as having existed - which is also what advances
+			// the UID cursor - and its bytes are never read. The cost is that
+			// adding a contact later does not retroactively pull my own old
+			// mail in the way `reattributeKnownSenders` does for theirs; the
+			// row is there, so a future pass could re-fetch by UID, and until
+			// something needs that this stays the conservative side to err on.
+			if (outbound && !counterpartyKnown && !parent) {
+				await executor.transaction((tx) =>
+					recordSkippedInboundThread(
+						{
+							contractId: null,
+							senderAddress,
+							inReplyTo,
+							mailbox,
+							direction,
+							imapUidValidity: uidValidity,
+							imapUid: uid,
+							messageId,
+							subject,
+							receivedAt: internalDate,
+							skipReason: 'recipient_unknown',
+							messageSize: size ?? 0
+						},
+						tx
+					)
+				);
+				skipped += 1;
+				continue;
+			}
+
 			kept.set(uid, {
 				messageId,
 				inReplyTo,
+				referenceIds,
 				subject,
 				internalDate,
 				contractId: attributed,
 				senderAddress,
-				senderKnown
+				counterpartyKnown
 			});
 		}
 
@@ -386,14 +505,11 @@ export async function pollMailboxTarget(
 							contractId: meta.contractId,
 							senderAddress: meta.senderAddress,
 							inReplyTo: meta.inReplyTo,
-							// Read from the bytes this loop already holds (#410).
-							// An envelope does not carry `References`, but the
-							// source of every kept message is fetched anyway, so
-							// the whole ancestry costs no round trip. It is what
-							// rebuilds a conversation with a hole in it, and the
-							// hole is normal: the middle message of the first real
-							// approval here is one I sent, which nothing archives.
-							referenceIds: parseReferences(source),
+							// The ancestry the listing already read (#410), which is
+							// what rebuilds a conversation with a hole in it - and
+							// the hole is normal, since the middle message of the
+							// first real approval here is one I sent.
+							referenceIds: meta.referenceIds,
 							documentId: archived.id,
 							mailbox,
 							imapUidValidity: uidValidity,
@@ -401,13 +517,19 @@ export async function pollMailboxTarget(
 							messageId: meta.messageId,
 							subject: meta.subject,
 							receivedAt: meta.internalDate,
+							direction,
 							// The cost guard (#380): a message nobody in the ledger
 							// sent is kept, and never handed to a model. Marking it
 							// here rather than filtering at drain time is what makes
 							// the decision visible on the row, and reversible — a
 							// contact added later is what changes the answer, which
 							// `reattributeKnownSenders` acts on (#388).
-							skipReason: meta.senderKnown ? null : 'sender_unknown'
+							//
+							// Inbound only, and the database agrees: a message I sent
+							// cannot have an unknown sender, and
+							// `inbound_thread_skip_reason_matches_direction` rejects
+							// the row that claims otherwise (#409).
+							skipReason: outbound || meta.counterpartyKnown ? null : 'sender_unknown'
 						},
 						tx
 					);
@@ -417,7 +539,10 @@ export async function pollMailboxTarget(
 				// exactly this, opening a nested savepoint, so this composes
 				// correctly whether `executor` is the pool or an ambient `tx`.
 				await executor.transaction(run);
-				if (meta.senderKnown) handedOff += 1;
+				// A sent message is always readable - it was kept precisely
+				// because it touches the ledger - so it counts as handed off
+				// rather than as one more address nobody claims (#409).
+				if (outbound || meta.counterpartyKnown) handedOff += 1;
 				else archivedUnknownSender += 1;
 			}
 		}
@@ -494,6 +619,32 @@ export async function pollMailboxesOnce(
 			imapConfig.maxMessageBytes,
 			imapConfig.inboxLookbackDays
 		);
+
+		// Then the sent mailbox (#409), on the same connection, because on a
+		// contract billed by written confirmation the confirmation is often
+		// mine: the client offers a day and asks for an ok, and my reply is
+		// the ok. With only their side archived the conversation reads as an
+		// offer and a thank-you and proposes nothing - measured, on the first
+		// real approval this instance ever saw.
+		//
+		// Its outcome is deliberately not merged into `result`. The run row and
+		// the status strip are about whether the *watched* mailbox is being
+		// read, which is what a reader configured and what breaks; a sent pass
+		// that fails while the inbox is fine is a smaller fact and must not
+		// turn the mailbox red. It is reported through the progress log, and a
+		// failure there leaves the inbox's own result untouched.
+		if (imapConfig.sentMailbox) {
+			const sentTarget = await resolveSentMailbox(client, imapConfig.sentMailbox);
+			if (sentTarget) {
+				await pollMailboxTarget(
+					client,
+					{ mailbox: sentTarget, direction: 'outbound' },
+					executor,
+					imapConfig.maxMessageBytes,
+					imapConfig.inboxLookbackDays
+				);
+			}
+		}
 	} finally {
 		// CLOSE before LOGOUT, not LOGOUT straight from a selected state:
 		// observed against the real GreenMail container (not a hypothetical

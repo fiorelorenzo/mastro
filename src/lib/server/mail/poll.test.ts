@@ -30,8 +30,10 @@ import { ImapFlow } from 'imapflow';
 import { desc, eq } from 'drizzle-orm';
 import { afterAll, afterEach, expect, test } from 'vitest';
 import { client as pool, db } from '$lib/server/db';
+import type { MailDirection } from '$lib/server/db/schema';
 import {
 	listInboundThreadsAwaitingExtraction,
+	loadConversations,
 	recordInboundThread
 } from '$lib/server/repositories/inbound-thread';
 import { storeDocument } from '$lib/server/repositories/document';
@@ -245,6 +247,20 @@ async function appendMessage(
 	}
 }
 
+/** Appends bytes exactly as given, for the cases where the header block
+ * itself is the thing under test - `appendMessage` above builds the headers
+ * from fields, which cannot express an `In-Reply-To` or a `References`. */
+async function appendRawMessage(folder: string, raw: string, internalDate = new Date()) {
+	const appendClient = rawClient();
+	await appendClient.connect();
+	try {
+		await appendClient.mailboxCreate(folder).catch(() => {});
+		await appendClient.append(folder, Buffer.from(raw), [], internalDate);
+	} finally {
+		await appendClient.logout();
+	}
+}
+
 /** Polls one throwaway mailbox directly, the same way a real pass would
  * poll the one it watches — but on a mailbox this test made up, not
  * `imapConfig.inboxMailbox`, so tests do not fight over one shared INBOX
@@ -253,14 +269,14 @@ async function appendMessage(
  * `pollMailboxesOnce` does around `pollMailboxTarget` for the real path. */
 async function pollIsolatedMailbox(
 	mailbox: string,
-	options: { maxMessageBytes?: number; lookbackDays?: number } = {}
+	options: { maxMessageBytes?: number; lookbackDays?: number; direction?: MailDirection } = {}
 ) {
 	const pollClient = rawClient();
 	await pollClient.connect();
 	try {
 		return await pollMailboxTarget(
 			pollClient,
-			{ mailbox },
+			{ mailbox, direction: options.direction },
 			db,
 			options.maxMessageBytes ?? DEFAULT_IMAP_MAX_MESSAGE_BYTES,
 			options.lookbackDays ?? 30
@@ -859,5 +875,155 @@ test.skipIf(!mailboxAvailable)(
 			['connecting', 3, 3],
 			['failed', undefined, undefined]
 		]);
+	}
+);
+
+test.skipIf(!mailboxAvailable)(
+	'a sent message answering something already archived is kept, whoever it is addressed to (#409)',
+	async () => {
+		// The case the sent pass exists for. Leo offers a half day and asks for
+		// an ok; my reply is the ok, and it is the only place that agreement
+		// exists. Addressed here to nobody the ledger knows, so the *only*
+		// reason to keep it is that it answers an archived message.
+		const inbox = testFolder('sent-parent-inbox');
+		const sent = testFolder('sent-parent-sent');
+		const { clientId } = await createTestContract();
+		await addContact(clientId, 'offerer@example.com');
+
+		const offerId = `<offer-${crypto.randomUUID()}@example.com>`;
+		await appendMessage(inbox, {
+			messageId: offerId,
+			from: 'offerer@example.com',
+			subject: 'Conferma allocazione'
+		});
+		await pollIsolatedMailbox(inbox);
+
+		// A message whose only "link" is body text pretending to be a header,
+		// which must be refused: the parent lookup reads the envelope.
+		await appendMessage(sent, {
+			messageId: `<mine-${crypto.randomUUID()}@example.com>`,
+			from: 'me@example.com',
+			subject: 'Re: Conferma allocazione',
+			body: `In-Reply-To: ${offerId}\r\n\r\ntutto ok, confermo`
+		});
+		await appendRawMessage(
+			sent,
+			`Message-ID: <mine2-${crypto.randomUUID()}@example.com>\r\n` +
+				`In-Reply-To: ${offerId}\r\n` +
+				`References: ${offerId}\r\n` +
+				`Subject: Re: Conferma allocazione\r\n` +
+				`From: me@example.com\r\n` +
+				`To: stranger@nobody.example\r\n\r\ntutto ok, confermo`
+		);
+
+		const result = await pollIsolatedMailbox(sent, { direction: 'outbound' });
+
+		// One kept (the reply that names the archived offer), one refused (the
+		// one whose only "link" was body text pretending to be a header).
+		expect(result.handedOff).toBe(1);
+		expect(result.skipped).toBe(1);
+
+		const rows = await db
+			.select()
+			.from(inboundThread)
+			.where(eq(inboundThread.mailbox, sent))
+			.orderBy(inboundThread.imapUid);
+		const kept = rows.find((row) => row.archived);
+		const refused = rows.find((row) => !row.archived);
+		expect(kept?.direction).toBe('outbound');
+		expect(kept?.skipReason).toBeNull();
+		// Attributed through the conversation, not through its recipient: the
+		// address it went to matches no contact at all.
+		expect(kept?.contractId).not.toBeNull();
+		expect(refused?.skipReason).toBe('recipient_unknown');
+		expect(refused?.documentId).toBeNull();
+	}
+);
+
+test.skipIf(!mailboxAvailable)(
+	'a sent message to a known contact is kept and attributed by recipient (#409)',
+	async () => {
+		const sent = testFolder('sent-recipient');
+		const { clientId } = await createTestContract();
+		await addContact(clientId, 'client@known.example');
+
+		await appendRawMessage(
+			sent,
+			`Message-ID: <to-known-${crypto.randomUUID()}@example.com>\r\n` +
+				`Subject: giornate della settimana\r\n` +
+				`From: me@example.com\r\n` +
+				`To: client@known.example\r\n\r\nconfermo il 3 e il 4`
+		);
+
+		const result = await pollIsolatedMailbox(sent, { direction: 'outbound' });
+		expect(result.handedOff).toBe(1);
+
+		const [row] = await db.select().from(inboundThread).where(eq(inboundThread.mailbox, sent));
+		expect(row.direction).toBe('outbound');
+		expect(row.contractId).not.toBeNull();
+		// Never `sender_unknown` on a message I sent: the sender is me, and the
+		// database refuses that combination outright.
+		expect(row.skipReason).toBeNull();
+	}
+);
+
+test.skipIf(!mailboxAvailable)(
+	'the shape of the first real approval: offer, my answer, thanks, as one conversation (#409)',
+	async () => {
+		// End to end on the exact thread this work came from, against real
+		// IMAP. Leo offers half a day and asks for an ok; my reply is the ok;
+		// Leo thanks. My reply is outbound, so it lives in a different mailbox
+		// and used to be invisible - and without it the conversation reads as
+		// an offer and a thank-you, which correctly approves nothing.
+		const inbox = testFolder('polymarket-inbox');
+		const sent = testFolder('polymarket-sent');
+		const { clientId } = await createTestContract();
+		await addContact(clientId, 'leo@visumlabs.example');
+
+		const offerId = `<offer-${crypto.randomUUID()}@visumlabs.example>`;
+		const mineId = `<mine-${crypto.randomUUID()}@gmail.example>`;
+		const thanksId = `<thanks-${crypto.randomUUID()}@visumlabs.example>`;
+
+		await appendRawMessage(
+			inbox,
+			`Message-ID: ${offerId}\r\nSubject: Conferma allocazione mezza giornata\r\n` +
+				`From: leo@visumlabs.example\r\nTo: me@gmail.example\r\n\r\n` +
+				`ti confermo l'allocazione di mezza giornata per i meeting w/c 03/08`,
+			new Date('2026-08-05T16:38:00.000Z')
+		);
+		await appendRawMessage(
+			sent,
+			`Message-ID: ${mineId}\r\nIn-Reply-To: ${offerId}\r\nReferences: ${offerId}\r\n` +
+				`Subject: Re: Conferma allocazione mezza giornata\r\n` +
+				`From: me@gmail.example\r\nTo: leo@visumlabs.example\r\n\r\ntutto ok, confermo`,
+			new Date('2026-08-05T16:40:00.000Z')
+		);
+		// Replies to *my* message, so its only link to the offer is
+		// `References` - the hole #410 exists to cross.
+		await appendRawMessage(
+			inbox,
+			`Message-ID: ${thanksId}\r\nIn-Reply-To: ${mineId}\r\nReferences: ${offerId} ${mineId}\r\n` +
+				`Subject: Re: Conferma allocazione mezza giornata\r\n` +
+				`From: leo@visumlabs.example\r\nTo: me@gmail.example\r\n\r\nGrazie!`,
+			new Date('2026-08-05T16:41:00.000Z')
+		);
+
+		await pollIsolatedMailbox(inbox);
+		await pollIsolatedMailbox(sent, { direction: 'outbound' });
+
+		const seeds = (await listInboundThreadsAwaitingExtraction(50, db)).filter((row) =>
+			[inbox, sent].includes(row.mailbox)
+		);
+		// Two seeds, both from the inbox: my own message is never one.
+		expect(seeds.map((row) => row.mailbox)).toEqual([inbox, inbox]);
+
+		const conversations = await loadConversations(seeds, db);
+		const ours = conversations.filter((conversation) =>
+			conversation.some((row) => row.messageId === offerId)
+		);
+		expect(ours).toHaveLength(1);
+		// All three, oldest first, with mine in the middle where it belongs.
+		expect(ours[0].map((row) => row.messageId)).toEqual([offerId, mineId, thanksId]);
+		expect(ours[0].map((row) => row.direction)).toEqual(['inbound', 'outbound', 'inbound']);
 	}
 );

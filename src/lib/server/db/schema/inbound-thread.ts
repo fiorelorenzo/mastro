@@ -87,7 +87,26 @@ import { document } from './document';
  * either way - invariant 4 does not care why we archived it - so a sender
  * added later makes the archived message extractable rather than lost.
  */
-export type InboundThreadSkipReason = 'oversized' | 'sender_unknown';
+export type InboundThreadSkipReason = 'oversized' | 'sender_unknown' | 'recipient_unknown';
+
+/**
+ * Which way a message travelled (#409).
+ *
+ * The table is named `inbound_thread` and now holds outbound messages too,
+ * which is a name that has stopped being the whole truth. It is not renamed
+ * because the rename is mechanical churn across every reader and every
+ * migration that mentions it, and buys a better word rather than a better
+ * guarantee; this column is what makes the distinction explicit at each use
+ * site instead, and every read that means "what the client wrote" states it.
+ *
+ * A sent message matters because on a contract billed by written
+ * confirmation the confirmation is often mine: the client offers a day and
+ * asks for an ok, and my reply is the ok. Measured - with only the client's
+ * two messages archived, the conversation reads as an offer and a thank-you
+ * and proposes nothing, correctly, because the agreement between them is a
+ * message the ledger never saw.
+ */
+export type MailDirection = 'inbound' | 'outbound';
 
 export const inboundThread = pgTable(
 	'inbound_thread',
@@ -175,6 +194,15 @@ export const inboundThread = pgTable(
 		archived: boolean('archived').notNull().default(true),
 		skipReason: text('skip_reason').$type<InboundThreadSkipReason>(),
 		messageSize: integer('message_size'),
+		/**
+		 * Whose message this is (#409). `inbound` for everything the watched
+		 * mailbox receives, `outbound` for what the sent mailbox holds.
+		 *
+		 * Defaulted rather than backfilled: every row that existed before this
+		 * column came from the inbox, so the default is the truth for all of
+		 * them and there is nothing to rebuild.
+		 */
+		direction: text('direction').$type<MailDirection>().notNull().default('inbound'),
 		...timestamps()
 	},
 	(table) => [
@@ -193,7 +221,21 @@ export const inboundThread = pgTable(
 		),
 		check(
 			'inbound_thread_skip_reason_known',
-			sql`${table.skipReason} is null or ${table.skipReason} in ('oversized', 'sender_unknown')`
+			sql`${table.skipReason} is null
+				or ${table.skipReason} in ('oversized', 'sender_unknown', 'recipient_unknown')`
+		),
+		check('inbound_thread_direction_known', sql`${table.direction} in ('inbound', 'outbound')`),
+		// A sent message is never refused for an unknown *sender* - the sender
+		// is me - and an inbound one is never refused for an unknown recipient,
+		// since the recipient is me as well. Getting these the wrong way round
+		// is the mistake this constraint exists to catch, because both fields
+		// are written by the same code path with the direction as its only
+		// difference.
+		check(
+			'inbound_thread_skip_reason_matches_direction',
+			sql`${table.skipReason} is null
+				or (${table.direction} = 'inbound' and ${table.skipReason} in ('oversized', 'sender_unknown'))
+				or (${table.direction} = 'outbound' and ${table.skipReason} in ('oversized', 'recipient_unknown'))`
 		),
 		// Grouping asks "which archived messages name any of these ancestors"
 		// (#410), which is an array-overlap test. A GIN index is what answers
