@@ -397,6 +397,31 @@ export async function listWorkUnitsBetween(
 }
 
 /**
+ * The days already recorded on one contract for one date (#417).
+ *
+ * What `/day/new` asks before it lets somebody record a second one. Two
+ * days on one date is legal - different activities happen, and `quantity`
+ * plus `scope` say which - so this warns rather than forbidding, and there
+ * is deliberately no unique constraint behind it. But a duplicated day is a
+ * duplicated invoice line, which is the most expensive mistake this product
+ * can make on the path it is fastest on, so the form has to know.
+ *
+ * One pair, not a table: the date is a client-side input, so the answer is
+ * fetched when it changes rather than shipped whole.
+ */
+export async function listWorkUnitsForContractOnDate(
+	contractId: string,
+	date: string,
+	executor: DbExecutor = db
+) {
+	return executor
+		.select()
+		.from(workUnit)
+		.where(and(eq(workUnit.contractId, contractId), eq(workUnit.date, date)))
+		.orderBy(asc(workUnit.createdAt));
+}
+
+/**
  * Every state a day passes through once it has actually happened: `worked`
  * itself, its at-risk cousin `worked_without_approval`, every state
  * downstream of billing (`invoiced`, `paid`, `disputed`), and `unbillable`

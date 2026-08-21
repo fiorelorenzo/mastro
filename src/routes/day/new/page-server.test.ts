@@ -51,3 +51,25 @@ test('defaultContractId, when set, always names one of the offered contracts', a
 		expect(data.contracts.some((contract) => contract.id === data.defaultContractId)).toBe(true);
 	}
 });
+
+test('approvalCountByContract answers for every contract the form offers (#417)', async () => {
+	// The banner used to claim "no written approval for {date} on this
+	// contract" from a condition that only knew whether *this entry* carried
+	// one - a statement about the ledger nothing had checked, and false on
+	// the live instance the day somebody read it. This count is what tells
+	// "none exists" apart from "none linked", so the form cannot say the
+	// first when the second is true.
+	const data = await loadPage('http://localhost/day/new');
+
+	for (const contract of data.contracts) {
+		const count = data.approvalCountByContract[contract.id];
+		expect(count, `contract ${contract.id} has no count`).toBeTypeOf('number');
+		expect(count).toBeGreaterThanOrEqual(0);
+	}
+	// And nothing else: a count for a contract the form does not offer would
+	// be a fact the page cannot use and a row somebody else's contract paid
+	// for reading.
+	expect(Object.keys(data.approvalCountByContract).sort()).toEqual(
+		data.contracts.map((contract) => contract.id).sort()
+	);
+});

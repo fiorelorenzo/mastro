@@ -15,6 +15,7 @@ import {
 	getWorkUnit,
 	getWorkUnitDocument,
 	listWorkUnitTransitions,
+	listWorkUnitsForContractOnDate,
 	transitionWorkUnit
 } from './work-unit';
 
@@ -328,4 +329,46 @@ test('#62: a second day for the same contract and date under a different id stil
 			isPostgresConstraintViolation(error, '23505', 'work_unit_one_active_per_contract_date')
 		);
 	});
+});
+
+test('the days one contract already holds for one date (#417)', async () => {
+	// What `/day/new` asks before it lets somebody record a second day. It
+	// has to be scoped to the pair, not to the date: the shared instance has
+	// other contracts with days on the same dates (AGENTS.md), and a form
+	// warning about somebody else's day would be worse than no warning.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const first = await insertContract(tx, false);
+		const second = await insertContract(tx, false);
+
+		const mine = await createWorkUnit(
+			{ contractId: first.id, date: '2026-08-04', quantity: 0.5, scope: 'meetings' },
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'recorded for the #417 fixture',
+			tx
+		);
+		// Same date, other contract: must not appear.
+		await createWorkUnit(
+			{ contractId: second.id, date: '2026-08-04', quantity: 1, scope: 'elsewhere' },
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'recorded for the #417 fixture',
+			tx
+		);
+		// Same contract, next day: must not appear either.
+		await createWorkUnit(
+			{ contractId: first.id, date: '2026-08-05', quantity: 1, scope: 'later' },
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'recorded for the #417 fixture',
+			tx
+		);
+
+		return {
+			onTheDate: await listWorkUnitsForContractOnDate(first.id, '2026-08-04', tx),
+			mineId: mine.id,
+			emptyDate: await listWorkUnitsForContractOnDate(first.id, '2026-08-06', tx)
+		};
+	});
+
+	expect(result.onTheDate.map((day) => day.id)).toEqual([result.mineId]);
+	expect(Number(result.onTheDate[0].quantity)).toBe(0.5);
+	expect(result.emptyDate).toEqual([]);
 });

@@ -40,6 +40,8 @@
 		StatusIndicator
 	} from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
+	import { workUnitStateBadge } from '$lib/design/day-state-badge';
+	import type { WorkUnitStateValue } from '../work-unit-state';
 	import { offlineQueue } from '$lib/pwa/offline-queue.svelte';
 	import OfflineQueuePanel from './OfflineQueuePanel.svelte';
 	import {
@@ -117,12 +119,62 @@
 	);
 	const mode = $derived(quantityModeForCard(preview?.card ?? null));
 
+	// The days this contract already holds for `date` (#417). Fetched on the
+	// pair rather than shipped whole, because the date is an input: the answer
+	// only exists once both halves are chosen, and it changes as they do.
+	type RecordedDay = {
+		id: string;
+		quantity: number;
+		state: WorkUnitStateValue;
+		scope: string;
+		approved: boolean;
+	};
+	let recorded = $state<RecordedDay[]>([]);
+	// A sequence number, because the answers can arrive out of order: type a
+	// date, change it again, and a slow first reply would otherwise land on
+	// top of the right one and warn about a day belonging to another date.
+	let recordedRequest = 0;
+	$effect(() => {
+		const contract = contractId;
+		const forDate = date;
+		const ticket = ++recordedRequest;
+		if (!contract || !forDate) {
+			recorded = [];
+			return;
+		}
+		void (async () => {
+			try {
+				const response = await fetch(
+					`${resolve('/day/new/recorded')}?contract=${encodeURIComponent(contract)}&date=${encodeURIComponent(forDate)}`,
+					{ cache: 'no-store' }
+				);
+				if (!response.ok) return;
+				const answer = (await response.json()) as { days: RecordedDay[] };
+				if (ticket === recordedRequest) recorded = answer.days;
+			} catch {
+				// Offline, which this form is built to keep working through
+				// (`offline-queue`). A warning nobody could fetch is not a
+				// reason to stop somebody recording their day.
+			}
+		})();
+	});
+
 	// The moment the warning speaks: a contract that requires written
 	// approval, with none attached to this attempt. Never blocks Save —
 	// the state machine already knows how to record that honestly
 	// (`worked_without_approval`); this only says so first.
+	//
+	// It says two different things now (#417). This condition only ever knew
+	// whether *this entry* carries an approval, while the sentence claimed
+	// the ledger held none for the date - a fact nothing here had checked,
+	// and false on the live instance the day somebody read it: the approval
+	// existed, on that contract, and the day was already recorded against
+	// it. `approvalCountByContract` is what tells the two apart.
 	const showApprovalWarning = $derived(
 		Boolean(selectedContract?.requiresPriorApproval) && !approvalId
+	);
+	const approvalsOnContract = $derived(
+		(contractId && data.approvalCountByContract[contractId]) || 0
 	);
 
 	// `Input` wraps the native element now (component, not a plain
@@ -318,10 +370,44 @@
 				</Select>
 			</Field>
 
+			<!-- #417: the day already on the ledger comes first, above the
+			     approval warning, because it is the one that costs money to get
+			     wrong - a second day on one date is a second invoice line. It
+			     warns rather than blocking: two days on one date is legal when
+			     the activities differ, which is what `scope` is for. -->
+			{#each recorded as day (day.id)}
+				<Banner tone="warning">
+					<strong>
+						{m.day_form_already_recorded_heading({
+							date: formatDate(date),
+							quantity: formatDays(day.quantity)
+						})}
+					</strong>
+					{day.approved
+						? m.day_form_already_recorded_approved()
+						: m.day_form_already_recorded_body({
+								state: workUnitStateBadge(day.state).label
+							})}
+					{#snippet actions()}
+						<Button href={resolve('/day/[id]', { id: day.id })} variant="secondary" size="sm">
+							{m.day_form_already_recorded_open()}
+						</Button>
+					{/snippet}
+				</Banner>
+			{/each}
+
 			{#if showApprovalWarning}
 				<Banner tone="warning">
-					<strong>{m.day_form_approval_warning_heading({ date: formatDate(date) })}</strong>
-					{m.day_form_approval_warning_body()}
+					<strong>
+						{approvalsOnContract > 0
+							? m.day_form_approval_none_linked_heading()
+							: m.day_form_approval_none_on_contract_heading()}
+					</strong>
+					{approvalsOnContract === 0
+						? m.day_form_approval_warning_body()
+						: approvalsOnContract === 1
+							? m.day_form_approval_none_linked_body_one()
+							: m.day_form_approval_none_linked_body_other({ count: approvalsOnContract })}
 					{#snippet actions()}
 						<Button
 							type="submit"
