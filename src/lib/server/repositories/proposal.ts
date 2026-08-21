@@ -36,8 +36,7 @@ import {
 	proposal,
 	workUnit,
 	type ProposalStatus,
-	type ProposalTargetType,
-	type WorkUnitState
+	type ProposalTargetType
 } from '$lib/server/db/schema';
 import { parseMessage } from '$lib/server/mail/headers';
 import {
@@ -173,10 +172,14 @@ export async function recordedDaysByDate(
 	const rows = await executor
 		.select({
 			date: workUnit.date,
-			// `quantity: number`, not `string`: `work_unit.quantity` is
-			// declared `numeric(6, 2)` with drizzle's `mode: 'number'` (see
-			// `db/schema/work-unit.ts`), so `sum()` over it still decodes to
-			// a JS number, the same way `proposal.confidence` does.
+			// `.mapWith(Number)` is what makes this a JS number, and it is
+			// load-bearing: a raw `sql<number>` fragment is only a TypeScript
+			// assertion and inherits nothing from the column, so
+			// `work_unit.quantity`'s `mode: 'number'` (see
+			// `db/schema/work-unit.ts`) does not reach an aggregate over it —
+			// `sum()` comes back from pg as a numeric string. Drop the mapper
+			// and every comparison against this total silently becomes
+			// string-versus-number.
 			quantity: sql<number>`sum(${workUnit.quantity})`.mapWith(Number)
 		})
 		.from(workUnit)
