@@ -7,7 +7,7 @@
 // `forecastCommitted`/`forecastProjected`) or is a small, direct query
 // this feature is the first to need.
 
-import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, ne, notInArray, sql } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
 	agentRun,
@@ -395,7 +395,15 @@ export async function fetchDayReadingConflictRows(
 			workUnit,
 			and(
 				eq(workUnit.contractId, dayReadingConflict.contractId),
-				eq(workUnit.date, dayReadingConflict.date)
+				eq(workUnit.date, dayReadingConflict.date),
+				// A rejected or revoked day may legitimately share a date with the
+				// live one (`work_unit_one_active_per_contract_date` is unique only
+				// `WHERE state NOT IN ('rejected', 'revoked')`) — the same rule
+				// `recordedDaysByDate` (`repositories/proposal.ts`) applies to define
+				// what the ledger holds. Without it a dead row both fans a single
+				// conflict out into two alerts and keeps `recorded_day_contradicted`
+				// firing forever about a day the ledger no longer holds.
+				notInArray(workUnit.state, ['rejected', 'revoked'])
 			)
 		)
 		.leftJoin(
@@ -408,12 +416,15 @@ export async function fetchDayReadingConflictRows(
 			)
 		);
 
-	// Numeric columns come back as strings from `postgres`; the detectors
-	// compare numbers, so the conversion belongs here rather than in three
-	// places downstream.
+	// `readingQuantity` is extracted from `proposed_fields` with `->>`, which
+	// always comes back as text; `work_unit.quantity` is a plain
+	// `numeric(..., { mode: 'number' })` column (`db/schema/work-unit.ts`), so
+	// `recordedQuantity` is already a JS number here — the `->>` cast is the
+	// only conversion this query needs (contrast `recordedDaysByDate`'s
+	// `sum(...)`, `repositories/proposal.ts`, which genuinely does come back
+	// as a string because it is an aggregate).
 	return rows.map((row) => ({
 		...row,
-		readingQuantity: row.readingQuantity === null ? null : Number(row.readingQuantity),
-		recordedQuantity: row.recordedQuantity === null ? null : Number(row.recordedQuantity)
+		readingQuantity: row.readingQuantity === null ? null : Number(row.readingQuantity)
 	}));
 }

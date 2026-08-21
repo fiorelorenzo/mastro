@@ -754,7 +754,7 @@ export function detectRecordedDayContradicted(
 		const severity =
 			row.recordedState === 'invoiced' || row.recordedState === 'paid' ? 'critical' : 'serious';
 		alerts.push(
-			makeAlert(row.conflictId, severity, {
+			makeAlert(row.recordedWorkUnitId, severity, {
 				type: 'recorded_day_contradicted',
 				contractId: row.contractId,
 				clientId: row.clientId,
@@ -783,7 +783,7 @@ export function detectPendingProposalUnconfirmed(
 	for (const row of rows) {
 		if (row.pendingProposalId === null || row.readingQuantity !== null) continue;
 		alerts.push(
-			makeAlert(row.conflictId, 'warning', {
+			makeAlert(row.pendingProposalId, 'warning', {
 				type: 'pending_proposal_unconfirmed',
 				contractId: row.contractId,
 				clientId: row.clientId,

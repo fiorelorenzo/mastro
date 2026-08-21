@@ -762,6 +762,15 @@ describe('detectRecordedDayContradicted', () => {
 		// No acknowledgement needed: correcting the day is what silences it.
 		expect(detectRecordedDayContradicted([{ ...base, readingQuantity: 1 }])).toEqual([]);
 	});
+
+	test('a reading that drops the day entirely still contradicts a recorded one', () => {
+		const alerts = detectRecordedDayContradicted([{ ...base, readingQuantity: null }]);
+		expect(alerts).toHaveLength(1);
+		expect(alerts[0].detail).toMatchObject({
+			type: 'recorded_day_contradicted',
+			readingQuantity: null
+		});
+	});
 });
 
 describe('detectPendingProposalUnconfirmed', () => {
@@ -800,6 +809,26 @@ describe('detectPendingProposalUnconfirmed', () => {
 					recordedQuantity: null,
 					recordedState: null,
 					pendingProposalId: 'p1'
+				}
+			])
+		).toEqual([]);
+	});
+
+	test('nothing pending means nothing to leave unconfirmed, even if the reading dropped the day', () => {
+		expect(
+			detectPendingProposalUnconfirmed([
+				{
+					conflictId: 'c4',
+					contractId: 'ct1',
+					clientId: 'cl1',
+					contractTitle: 'Contratto',
+					clientLegalName: 'Visum Labs',
+					date: '2026-08-04',
+					readingQuantity: null,
+					recordedWorkUnitId: null,
+					recordedQuantity: null,
+					recordedState: null,
+					pendingProposalId: null
 				}
 			])
 		).toEqual([]);
