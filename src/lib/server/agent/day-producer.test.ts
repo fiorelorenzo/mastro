@@ -526,7 +526,7 @@ test('a re-read that re-attributes a day\u2019s evidence to a different message 
 
 test('a second reading rewrites the pending proposal instead of dropping it', async () => {
 	// The client wrote "half a day, not one" while the proposal was still
-	// waiting. Suppressing the day (which is what `datesAlreadyDecided` did)
+	// waiting. Suppressing the day (which the old always-decided query did)
 	// kept the stale reading on screen and put the new one only in the run
 	// log. The row is rewritten in place, keeping its id so a link somebody
 	// has open still resolves.

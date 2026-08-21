@@ -68,7 +68,7 @@ BEGIN
 		OR NEW.target_type IS DISTINCT FROM OLD.target_type
 	THEN
 		RAISE EXCEPTION
-			'proposal % contract_id and target_type are immutable; only status, accepted_fields, result_id, decided_by and decided_at may change once decided, and document_id/proposed_fields/excerpt/confidence/confidence_reason/validation_issue may only change while still pending',
+			'proposal % contract_id and target_type are immutable; document_id, proposed_fields, excerpt, confidence, confidence_reason and validation_issue may change only while status is still pending, and status/accepted_fields/result_id/decided_by/decided_at may be set only once, deciding that same pending row — nothing changes once a proposal is decided',
 			NEW.id;
 	END IF;
 

@@ -132,7 +132,7 @@ export async function listProposalsForDocuments(
 /**
  * Dates this contract already has a *recorded* day on (#403, revised).
  *
- * The half of the old `datesAlreadyDecided` that still suppresses: a day on
+ * The half of the old query this replaces that still suppresses: a day on
  * the ledger is a decision a human made, and a re-read must not offer it
  * again. The other half — a pending proposal — is no longer suppressed but
  * rewritten in place, which is what `pendingDayProposalsByDate` below is for:
@@ -199,23 +199,32 @@ export async function pendingDayProposalsByDate(
  * revision is not a decision, only a better one of the same undecided
  * question.
  *
- * `documentId` is part of the reading, not the identity, and is rewritten
- * along with it (0075_proposal_pending_reading_is_mutable.sql): a re-read of
- * a multi-message thread can attribute a day's evidence to a different
- * message than the first pass did, and `excerpt` moving without `documentId`
- * moving with it would leave a row whose quotation cannot be found in the
- * document it names — invariant 4's exact failure. When that happens the
- * review queue (`src/routes/proposals/+page.server.ts`), which groups
- * pending rows by `documentId`, moves this row to a different card; the
- * "Revised" badge (`proposalRevised` in `src/routes/proposals/queue-fields.ts`)
- * is what tells the reviewer it moved, which is correct — not a bug to
- * paper over.
+ * Recomputes `validationIssue` against the new `proposedFields`, the same
+ * way `createProposal` does at insert time and for the same reason (#245):
+ * a stale issue left over from the *previous* reading would either block
+ * Accept on a row a correcting re-read already fixed, or — the more
+ * dangerous direction — leave a bad re-read looking clean until a human
+ * clicks Accept and the write fails downstream, exactly what #245 exists to
+ * avoid. `targetType`/`contractId` come off the row being revised, not
+ * `input`: both are frozen by `proposal_forbid_retrofit`
+ * (0075_proposal_pending_reading_is_mutable.sql), so the row's own values
+ * are authoritative and the input never needs to carry them.
  *
- * The `WHERE status = 'pending'` guard is belt-and-braces: the trigger
- * refuses this same write once a proposal is decided, but failing the
- * update quietly (`null`) rather than as a raised exception lets a caller
- * that raced a human's decision fall back to `createProposal` instead of
- * crashing the whole extraction run over one day.
+ * `documentId` is part of the reading, not the identity, and is rewritten
+ * along with it: a re-read of a multi-message thread can attribute a day's
+ * evidence to a different message than the first pass did, and `excerpt`
+ * moving without `documentId` moving with it would leave a row whose
+ * quotation cannot be found in the document it names — invariant 4's exact
+ * failure. When that happens the review queue
+ * (`src/routes/proposals/+page.server.ts`), which groups pending rows by
+ * `documentId`, moves this row to a different card; the "Revised" badge
+ * (`proposalRevised` in `src/routes/proposals/queue-fields.ts`) is what
+ * tells the reviewer it moved, which is correct — not a bug to paper over.
+ *
+ * Returns `null` when the row is gone or was decided — either before this
+ * read or between it and the `UPDATE` below losing a race with a human's
+ * own decision. The caller (`writeDayProposals`) is the one responsible for
+ * not treating that as silence.
  */
 export async function reviseDayProposal(
 	id: string,
@@ -228,6 +237,17 @@ export async function reviseDayProposal(
 	},
 	executor: DbExecutor = db
 ): Promise<ProposalRow | null> {
+	const existing = await getProposal(id, executor);
+	if (!existing || existing.status !== 'pending') return null;
+	// Named `issue`, not `validationIssue`, the same way `createProposal`
+	// does: this file also imports a function called `validationIssue` from
+	// `$lib/proposals/validation-issue`, and shadowing it here would be a
+	// silent trap for the next edit made inside this function.
+	const issue = proposalValidationIssue(
+		existing.targetType,
+		existing.contractId,
+		input.proposedFields
+	);
 	const [row] = await executor
 		.update(proposal)
 		.set({
@@ -235,7 +255,8 @@ export async function reviseDayProposal(
 			excerpt: input.excerpt,
 			confidence: input.confidence,
 			confidenceReason: input.confidenceReason,
-			documentId: input.documentId
+			documentId: input.documentId,
+			validationIssue: issue
 		})
 		.where(and(eq(proposal.id, id), eq(proposal.status, 'pending')))
 		.returning();

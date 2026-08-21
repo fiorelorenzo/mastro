@@ -135,10 +135,16 @@ export async function writeDayProposals(
 		...(await extractionContext(source, executor)),
 		fallbackExcerpt: candidate.excerpt
 	};
-	const { accepted, rejected } = validateDays(
+	const { accepted, rejected: rejectedByValidation } = validateDays(
 		parseExtractedDays(candidate.proposedFields, source.conversation?.length ?? 1),
 		context
 	);
+	// Mutable copy: a day can still fail *after* validation, when the revise
+	// it resolves to loses a race with a human decision (see the `existing`
+	// branch below) — that outcome has to land somewhere in `rejected` too,
+	// not be dropped, so this is built up alongside `proposals` rather than
+	// returned straight from `validateDays`.
+	const rejected: RejectedDay[] = [...rejectedByValidation];
 
 	// Fetched once per run, not once per day: a re-read of a conversation
 	// with several days in it must see all of them, since two of `accepted`
@@ -190,7 +196,24 @@ export async function writeDayProposals(
 				{ proposedFields, excerpt: day.excerpt, confidence, confidenceReason, documentId },
 				executor
 			);
-			if (revised) proposals.push(revised);
+			if (revised) {
+				proposals.push(revised);
+			} else {
+				// `existing` was read moments ago from `pendingByDate`, and a
+				// human decided it before this UPDATE ran — `reviseDayProposal`
+				// found no pending row left to rewrite. Neither
+				// `createProposal` nor silence is right here: writing a new
+				// proposal would duplicate an accepted day, dropping the day
+				// would lose a rejected one's correction, and the caller
+				// cannot tell which happened from here. Recorded as rejected
+				// instead, visibly, so nothing vanishes; the next run reads
+				// fresh state (`recordedDaysByDate`/`pendingDayProposalsByDate`)
+				// and does the right thing either way.
+				rejected.push({
+					day,
+					reason: `${day.date}'s proposal was decided while this re-read was running`
+				});
+			}
 			continue;
 		}
 		proposals.push(
@@ -228,9 +251,10 @@ async function extractionContext(
 	const allowedQuantities = [
 		...new Set(rateCards.flatMap((card) => card.allowedFractions.map(Number)))
 	];
-	// The map itself is kept for Task 6, which needs the recorded quantity
-	// to tell a disagreement from a re-read that confirms the ledger; the
-	// validator here only ever needs the dates.
+	// Only the dates are used here; Task 6 gets the recorded quantities and
+	// states it needs (to tell a disagreement from a re-read that confirms
+	// the ledger) from its own call to `recordedDaysByDate`, not from this
+	// context.
 	const recorded = executor
 		? await recordedDaysByDate(source.contractId, executor)
 		: await recordedDaysByDate(source.contractId);
