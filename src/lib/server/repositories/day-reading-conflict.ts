@@ -32,8 +32,14 @@ export async function recordDayReadingConflict(
 }
 
 /** Drops the conflict for a day, for when the ledger and the reading agree
- * again — the producer calls this so a stale row cannot keep an alert alive
- * after the disagreement is over. */
+ * again, so a stale row cannot keep an alert alive after the disagreement is
+ * over. Three callers, and the third is the one worth knowing about: the
+ * producer clears a date whose reading now matches the ledger and a date it
+ * re-proposes, and `applyProposal` clears the date a human accepts. Without
+ * that last one, accepting a proposal whose date carried a "the reading says
+ * nothing here" row left behind a contradiction alert nobody could ever
+ * silence, because that alert resolves itself by comparing a reading
+ * quantity which in such a row is null. */
 export async function clearDayReadingConflict(
 	contractId: string,
 	date: string,
