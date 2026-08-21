@@ -676,6 +676,27 @@ git commit -m "feat(web): a queue row carries the words it rests on"
 
 **Files:**
 
+- Create: one hand-written migration (`pnpm db:generate:custom
+--name=proposal_pending_reading_is_mutable`) replacing the
+  `proposal_forbid_retrofit` trigger function. **Found while implementing Task
+  4, not in the design**: that function
+  (`drizzle/0060_proposal_validation_issue_constraints.sql:17-40`) currently
+  refuses any UPDATE that changes `proposed_fields`, `excerpt`, `confidence`,
+  `confidence_reason` or `validation_issue`, which is precisely the write this
+  task exists to make. Without the migration the whole task is impossible, and
+  the failure arrives as a raised exception at runtime, not at build time.
+
+  The relaxation is narrow, and the reasoning is the one the product already
+  holds: **a decision is final, a reading is not**. The identity columns
+  (`document_id`, `contract_id`, `target_type`) stay immutable always, so a
+  proposal can never be retargeted at another document or contract, and
+  invariant 4 keeps its source. The second rule stays exactly as it is: once
+  `OLD.status` is anything but `pending`, every UPDATE is still refused, so an
+  accepted or rejected proposal is frozen with the words it was decided on.
+  What becomes mutable is only the agent's current reading of an undecided
+  proposal, which is what a re-read is. Write that reasoning into the
+  migration's own comment, since in this repo a constraint is reviewed as SQL.
+
 - Modify: `src/lib/server/repositories/proposal.ts` (replace
   `datesAlreadyDecided` with `recordedDaysByDate`, add
   `pendingDayProposalsByDate` and `reviseDayProposal`)
