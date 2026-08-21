@@ -77,16 +77,46 @@ async function seedContractAndDocument(tx: Parameters<Parameters<typeof db.trans
 	return { contractId: contractRow.id, documentId: documentRow.id };
 }
 
+/** A second archived document on the same contract, so a test can prove the
+ * upsert really replaces `document_id` (not just `proposed_fields`) —
+ * Task 5 shipped a first attempt that left a stale `document_id` behind on
+ * an otherwise-refreshed row. */
+async function seedSecondDocument(
+	tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+	contractId: string
+) {
+	const documentRow = await storeDocument(
+		{
+			bytes: new TextEncoder().encode(`From: ops@client.example\r\n\r\nniente il 4`),
+			mime: 'message/rfc822',
+			originalName: 'thread-2.eml',
+			provenance: 'mail' as const,
+			contractId,
+			confidential: true,
+			ownerType: 'contract' as const,
+			ownerId: contractId
+		},
+		tx
+	);
+	return documentRow.id;
+}
+
 test('the newest reading supersedes the previous one for the same day', async () => {
 	// Upserted, not appended: what a reviewer needs is what the mail says
-	// now, not every reading that ever disagreed.
+	// now, not every reading that ever disagreed. Every mutable column is
+	// pinned here, not just `proposedFields`: dropping any of
+	// `documentId`/`excerpt` from the upsert's `set` clause would leave a
+	// stale value behind while this test stayed green, since a superseded
+	// row that agrees on the other columns cannot tell a real replace from
+	// a no-op.
 	const result = await inRolledBackTransaction(async (tx) => {
-		const { contractId, documentId } = await seedContractAndDocument(tx);
+		const { contractId, documentId: firstDocumentId } = await seedContractAndDocument(tx);
+		const secondDocumentId = await seedSecondDocument(tx, contractId);
 		await recordDayReadingConflict(
 			{
 				contractId,
 				date: '2026-08-04',
-				documentId,
+				documentId: firstDocumentId,
 				extractionRunId: null,
 				proposedFields: { date: '2026-08-04', quantity: 1, scope: 'meetings' },
 				excerpt: 'una giornata il 4'
@@ -97,19 +127,24 @@ test('the newest reading supersedes the previous one for the same day', async ()
 			{
 				contractId,
 				date: '2026-08-04',
-				documentId,
+				documentId: secondDocumentId,
 				extractionRunId: null,
 				proposedFields: null,
 				excerpt: null
 			},
 			tx
 		);
-		return tx
-			.select()
-			.from(dayReadingConflict)
-			.where(eq(dayReadingConflict.contractId, contractId));
+		return {
+			rows: await tx
+				.select()
+				.from(dayReadingConflict)
+				.where(eq(dayReadingConflict.contractId, contractId)),
+			secondDocumentId
+		};
 	});
 
-	expect(result).toHaveLength(1);
-	expect(result[0].proposedFields).toBeNull();
+	expect(result.rows).toHaveLength(1);
+	expect(result.rows[0].proposedFields).toBeNull();
+	expect(result.rows[0].excerpt).toBeNull();
+	expect(result.rows[0].documentId).toBe(result.secondDocumentId);
 });

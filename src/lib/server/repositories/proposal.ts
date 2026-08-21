@@ -27,7 +27,7 @@
 // email approving several days), and #209's contract is one `approval`
 // per document, not one per accepted day.
 
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { validationIssue, type ProposalValidationIssue } from '$lib/proposals/validation-issue';
 import { minorUnits } from '$lib/money';
 import { db, type DbExecutor } from '$lib/server/db';
@@ -129,18 +129,35 @@ export async function listProposalsForDocuments(
 	return executor.select().from(proposal).where(inArray(proposal.documentId, documentIds));
 }
 
-/** One row `recordedDaysByDate` returns: the recorded day's id, quantity
- * and state. Named so a consumer (`day-producer.ts`'s conflict check)
- * imports the type instead of inferring it off the function that returns
- * it. */
-export interface RecordedDay {
-	readonly id: string;
-	readonly quantity: number;
-	readonly state: WorkUnitState;
-}
-
 /**
- * Dates this contract already has a *recorded* day on (#403, revised).
+ * Dates this contract already has a *recorded* day on (#403, revised), each
+ * mapped to the total quantity every **live** day on that date sums to.
+ *
+ * "Live" is the same notion `DayImportExistingStateByKey` names in
+ * `agent/day-import.ts` and `existingStateByKeyForDayImport` implements in
+ * `import/day-import-request.ts` (`row.state !== 'rejected' && row.state
+ * !== 'revoked'`): the two states the partial unique index on `work_unit`
+ * itself excludes, because a rejected or revoked day never happened and so
+ * does not occupy the date. A rejected/revoked-inclusive query would make
+ * this function disagree with the database about what "recorded" means —
+ * `alreadyDecided` below would wrongly suppress a date whose only day was
+ * revoked, and Task 6's conflict check would compare a re-read against a
+ * quantity the ledger no longer holds.
+ *
+ * Summed, not per-row: `work_unit_one_active_per_contract_date` allows at
+ * most one *live* row per `(contract_id, date)`, but a dead row
+ * (rejected/revoked) can still share the date with a live one — an earlier
+ * reading rejected, a later one recorded — and a plain per-row map keyed by
+ * date, built without the state filter above, would let whichever row
+ * happens to sort last win, dead or alive. Summing every *live* row for the
+ * date (never more than one today, but the aggregate is what "what the
+ * ledger holds for this date" actually means, and does not depend on that
+ * remaining true) is the total a re-read has to be checked against — not
+ * one arbitrarily chosen row's own quantity, and not a total that silently
+ * folded in a rejected or revoked row's quantity too. Only the total is
+ * exposed — nothing downstream reads a single row's `id` or `state`, and a
+ * map keyed by date to one arbitrary row invites exactly that kind of
+ * mismatch.
  *
  * The half of the old query this replaces that still suppresses: a day on
  * the ledger is a decision a human made, and a re-read must not offer it
@@ -148,34 +165,26 @@ export interface RecordedDay {
  * rewritten in place, which is what `pendingDayProposalsByDate` below is for:
  * suppressing it kept a stale reading on screen and put the newer one only in
  * the extraction run's transcript.
- *
- * A **rejected** date is deliberately in neither: a rejection says "not this
- * proposal", not "never this day", and a re-read that understands the
- * conversation better is exactly the correction the reviewer is owed.
  */
 export async function recordedDaysByDate(
 	contractId: string,
 	executor: DbExecutor = db
-	// `quantity: number`, not `string`: `work_unit.quantity` is declared
-	// `numeric(6, 2)` with drizzle's `mode: 'number'` (see
-	// `db/schema/work-unit.ts`), which decodes to a JS number the same way
-	// `proposal.confidence` does — the brief's own literal type was written
-	// against the raw-numeric-as-string assumption drizzle's `mode` option
-	// exists to avoid.
-): Promise<Map<string, RecordedDay>> {
+): Promise<Map<string, number>> {
 	const rows = await executor
 		.select({
-			id: workUnit.id,
 			date: workUnit.date,
-			quantity: workUnit.quantity,
-			state: workUnit.state
+			// `quantity: number`, not `string`: `work_unit.quantity` is
+			// declared `numeric(6, 2)` with drizzle's `mode: 'number'` (see
+			// `db/schema/work-unit.ts`), so `sum()` over it still decodes to
+			// a JS number, the same way `proposal.confidence` does.
+			quantity: sql<number>`sum(${workUnit.quantity})`.mapWith(Number)
 		})
 		.from(workUnit)
-		.where(eq(workUnit.contractId, contractId));
-	// Keyed by date. Two days on one date is legal (different activities), and
-	// then either is enough to answer "this date is already recorded" — the
-	// last one wins, which no caller can tell apart from the first.
-	return new Map(rows.map((row) => [row.date, row]));
+		.where(
+			and(eq(workUnit.contractId, contractId), notInArray(workUnit.state, ['rejected', 'revoked']))
+		)
+		.groupBy(workUnit.date);
+	return new Map(rows.map((row) => [row.date, row.quantity]));
 }
 
 /** The pending day proposals this contract holds, keyed by the date each one

@@ -734,3 +734,132 @@ test('a reading that agrees with a recorded day writes no conflict', async () =>
 
 	expect(result).toHaveLength(0);
 });
+
+test('a rejected day sharing a date with a live one does not skew the recorded total', async () => {
+	// `work_unit_one_active_per_contract_date` allows at most one *live* row
+	// per (contract, date), but a dead row (rejected/revoked) can still
+	// share the date with a live one — an earlier reading was rejected,
+	// then a later one was recorded. `recordedByDate` must answer with the
+	// live row's quantity, not "whichever row a plain `GROUP BY` or
+	// "last one wins" pick happens to include" — summing every row
+	// regardless of state (finding 1) or reading a per-date map built over
+	// every state (finding 2) both reach the wrong total here, because the
+	// rejected row's own quantity differs from the live one's.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		const [rejectedRow] = await tx
+			.insert(workUnit)
+			.values({
+				contractId: contractRow.id,
+				date: '2026-02-03',
+				quantity: 1,
+				scope: 'Analisi',
+				state: 'proposed'
+			})
+			.returning();
+		await tx.update(workUnit).set({ state: 'rejected' }).where(eq(workUnit.id, rejectedRow.id));
+		await tx.insert(workUnit).values({
+			contractId: contractRow.id,
+			date: '2026-02-03',
+			quantity: 0.5,
+			scope: 'Analisi',
+			state: 'worked_without_approval'
+		});
+
+		const outcome = await proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'il 3 mezza giornata',
+				messageDate: '2026-02-04',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn
+			},
+			answer({
+				days: [
+					{
+						date: '2026-02-03',
+						quantity: 0.5,
+						scope: 'Analisi',
+						excerpt: 'il 3 mezza giornata',
+						messageIndex: 0
+					}
+				]
+			}),
+			tx
+		);
+
+		const conflicts = await tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractRow.id));
+		return { outcome, conflicts };
+	});
+
+	// The live row's own quantity (0.5) is what the re-read agrees with —
+	// not the rejected row's (1), and not their sum (1.5).
+	expect(result.outcome.proposals).toHaveLength(0);
+	expect(result.outcome.rejected.map((entry) => entry.reason)).toEqual([
+		'2026-02-03 is already recorded on this contract'
+	]);
+	expect(result.conflicts).toHaveLength(0);
+});
+
+test('a revoked day does not suppress its date or produce a false conflict', async () => {
+	// Rejected and revoked are not "recorded" (`day-import.ts`'s
+	// `DayImportExistingStateByKey`, `day-import-request.ts`'s
+	// `existingStateByKeyForDayImport`, and the partial unique index on
+	// `work_unit` itself all agree: a rejected or revoked day never
+	// happened and does not occupy its date). A re-read proposing a day on
+	// a date whose only work unit was revoked must be treated as a fresh
+	// proposal, not suppressed as already recorded and not written as a
+	// disagreement.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		const [row] = await tx
+			.insert(workUnit)
+			.values({
+				contractId: contractRow.id,
+				date: '2026-02-03',
+				quantity: 1,
+				scope: 'Analisi',
+				state: 'proposed'
+			})
+			.returning();
+		await tx.update(workUnit).set({ state: 'approved' }).where(eq(workUnit.id, row.id));
+		await tx.update(workUnit).set({ state: 'revoked' }).where(eq(workUnit.id, row.id));
+
+		const outcome = await proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'il 3 era una giornata intera',
+				messageDate: '2026-02-04',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn
+			},
+			answer({
+				days: [
+					{
+						date: '2026-02-03',
+						quantity: 1,
+						scope: 'Analisi',
+						excerpt: 'il 3 era una giornata intera',
+						messageIndex: 0
+					}
+				]
+			}),
+			tx
+		);
+
+		const conflicts = await tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractRow.id));
+		return { outcome, conflicts };
+	});
+
+	expect(result.outcome.rejected).toHaveLength(0);
+	expect(result.outcome.proposals).toHaveLength(1);
+	expect(result.conflicts).toHaveLength(0);
+});

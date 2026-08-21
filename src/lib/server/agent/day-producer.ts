@@ -20,8 +20,7 @@ import {
 	pendingDayProposalsByDate,
 	recordedDaysByDate,
 	reviseDayProposal,
-	type ProposalRow,
-	type RecordedDay
+	type ProposalRow
 } from '$lib/server/repositories/proposal';
 import {
 	clearDayReadingConflict,
@@ -249,8 +248,8 @@ export async function writeDayProposals(
 	// model to rediscover it.
 	for (const entry of rejected) {
 		if (!entry.reason.endsWith('is already recorded on this contract')) continue;
-		const recorded = recordedByDate.get(entry.day.date);
-		if (recorded && recorded.quantity === entry.day.quantity) {
+		const recordedQuantity = recordedByDate.get(entry.day.date);
+		if (recordedQuantity !== undefined && recordedQuantity === entry.day.quantity) {
 			// A re-read that confirms what the ledger already holds is not
 			// news; clear any conflict an earlier, disagreeing reading left
 			// behind so a stale alert cannot outlive the disagreement it
@@ -282,11 +281,11 @@ export async function writeDayProposals(
 
 /** `DayExtractionContext` plus the recorded-day map itself, not just the
  * keys `alreadyDecided` carries. Task 6's own conflict check needs the
- * quantity: it is what tells a disagreeing re-read from one that merely
- * confirms the ledger, and `validateDays` has no use for it, so it never
- * enters `DayExtractionContext` itself. */
+ * total quantity each recorded date holds: it is what tells a disagreeing
+ * re-read from one that merely confirms the ledger, and `validateDays` has
+ * no use for it, so it never enters `DayExtractionContext` itself. */
 interface ExtractionContext extends DayExtractionContext {
-	readonly recordedByDate: ReadonlyMap<string, RecordedDay>;
+	readonly recordedByDate: ReadonlyMap<string, number>;
 }
 
 async function extractionContext(
