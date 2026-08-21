@@ -360,12 +360,23 @@ export async function pollMailboxTarget(
 				(address) => !!address && knownSenders.has(address)
 			);
 
-			// A reply to something already on the ledger belongs to that
+			// A reply to something the ledger *cares about* belongs to that
 			// conversation whatever its addresses say, and that is the case
 			// this whole pass exists for: my "tutto ok, confermo" answers an
 			// offer that is already archived. Cheap - one indexed lookup, and
 			// only for outbound mail that is a reply at all.
-			const parent = outbound && inReplyTo ? await findByMessageId(inReplyTo, executor) : undefined;
+			//
+			// "Cares about" is `skip_reason is null`, and the qualifier is the
+			// whole point (#409). The inbox archives everything, newsletters
+			// included, marking the ones no contract claims `sender_unknown` -
+			// so "answers something archived" let my own replies to form
+			// notifications into the blob store. Measured on the live instance
+			// the day it shipped: 14 of 17 kept sent messages were replies to
+			// `sender_unknown` rows, every one of them attributed to nobody,
+			// which is exactly the mail this guard exists to keep out.
+			const inReplyToRow =
+				outbound && inReplyTo ? await findByMessageId(inReplyTo, executor) : null;
+			const parent = inReplyToRow?.skipReason === null ? inReplyToRow : null;
 
 			const attributed = outbound
 				? ((await attributeByRecipients(counterparties, executor))?.contractId ??
