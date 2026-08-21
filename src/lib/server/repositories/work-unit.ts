@@ -187,6 +187,30 @@ export async function markWorkUnitUnbillable(
 	return transitionWorkUnit(id, { state: 'unbillable' }, actor, reason, tx);
 }
 
+/**
+ * The edge the product was missing (#417's successor). `work_unit_enforce_
+ * state_machine` has always allowed `approved -> worked`; nothing in the
+ * application ever called it, so an accepted proposal parked a day at
+ * `approved` and `listEligibleWorkUnitsForInvoicing` — which reads `worked`
+ * and `disputed` — could never see it. Recording every day by hand was the
+ * only road that arrived.
+ *
+ * Same shape as its six siblings: one field through `transitionWorkUnit`, and
+ * an illegal source state is refused by the database rather than by a check
+ * here. `actor` is `{ kind: 'system' }` when the settle sweep applies it and
+ * `{ kind: 'human', email }` when somebody presses the button on the day
+ * itself; `reason` is never optional, because the append-only log is what
+ * makes an automatic transition readable afterwards.
+ */
+export async function markWorkUnitWorked(
+	id: string,
+	actor: TransitionActor,
+	reason: string,
+	tx?: DbExecutor
+) {
+	return transitionWorkUnit(id, { state: 'worked' }, actor, reason, tx);
+}
+
 /** #214's path in: a client contests an already-billed day. Same shape as
  * `markWorkUnitUnbillable` — one field through `transitionWorkUnit` —
  * except the trigger's allowed-edge list only admits this from `invoiced`
