@@ -7,6 +7,7 @@ import {
 	document,
 	proposal,
 	rateCard,
+	workUnit,
 	type ExpensePolicy
 } from '$lib/server/db/schema';
 import type { DbExecutor } from '$lib/server/db';
@@ -357,4 +358,78 @@ test('#400: with no conversation array, a day still archives against the source 
 		expect(proposals).toHaveLength(1);
 		expect(proposals[0].documentId).toBe(documentRow.id);
 	});
+});
+
+test('a second read of a conversation offers only what is new (#403)', async () => {
+	// The shape a repeated sync produces: the 3rd was proposed when the
+	// conversation was first read and is still waiting for a decision, the
+	// 4th was accepted and is on the ledger, and today's reply adds the 5th.
+	// Re-reading gives the model all three again, because it must see the
+	// offer to understand the answer; only the 5th is news.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		await tx.insert(proposal).values({
+			documentId: documentRow.id,
+			contractId: contractRow.id,
+			targetType: 'work_unit',
+			proposedFields: { date: '2026-02-03', quantity: 1, scope: 'Analisi' },
+			excerpt: 'le giornate del 3',
+			confidence: 0.8,
+			status: 'pending'
+		});
+		await tx.insert(workUnit).values({
+			contractId: contractRow.id,
+			date: '2026-02-04',
+			quantity: 0.5,
+			scope: 'Analisi',
+			state: 'worked_without_approval'
+		});
+
+		return proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'ti confermo le giornate del 3 e 4 febbraio, la seconda mezza, e anche il 5',
+				messageDate: '2026-02-05',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn
+			},
+			answer({
+				days: [
+					{
+						date: '2026-02-03',
+						quantity: 1,
+						scope: 'Analisi',
+						excerpt: 'le giornate del 3',
+						messageIndex: 0
+					},
+					{
+						date: '2026-02-04',
+						quantity: 0.5,
+						scope: 'Analisi',
+						excerpt: 'e 4 febbraio',
+						messageIndex: 0
+					},
+					{
+						date: '2026-02-05',
+						quantity: 1,
+						scope: 'Analisi',
+						excerpt: 'e anche il 5',
+						messageIndex: 0
+					}
+				]
+			}),
+			tx
+		);
+	});
+
+	// One new proposal, and the two the ledger already holds are reported as
+	// rejected rather than dropped, so a run that found nothing new says so.
+	expect(result.proposals.map((row) => row.proposedFields)).toEqual([
+		expect.objectContaining({ date: '2026-02-05' })
+	]);
+	expect(result.rejected.map((entry) => entry.reason)).toEqual([
+		'2026-02-03 is already proposed or recorded on this contract',
+		'2026-02-04 is already proposed or recorded on this contract'
+	]);
 });

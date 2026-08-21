@@ -10,7 +10,7 @@
 import { listProposalsForDocuments } from '$lib/server/repositories/proposal';
 import {
 	createExtractionRun,
-	documentIdsWithExtractionRun
+	lastExtractionByDocument
 } from '$lib/server/repositories/extraction-run';
 import {
 	renderConversation,
@@ -93,11 +93,11 @@ export async function enqueueDayExtractions(
 		])
 	];
 
-	const [contracts, documents, existingProposals, extractedDocumentIds] = await Promise.all([
+	const [contracts, documents, existingProposals, lastExtraction] = await Promise.all([
 		getContractsWithClient(contractIds, executor),
 		getDocuments(documentIds, executor),
 		listProposalsForDocuments(documentIds, executor),
-		documentIdsWithExtractionRun(documentIds, executor)
+		lastExtractionByDocument(documentIds, executor)
 	]);
 	const contractIdsPresent = new Set(contracts.map((contract) => contract.id));
 	const documentsById = new Map(documents.map((document) => [document.id, document]));
@@ -105,7 +105,7 @@ export async function enqueueDayExtractions(
 	// Mutable, because enqueuing a conversation marks all of its messages
 	// handled for the rest of this batch: five messages of one negotiation
 	// arrive as five awaiting rows, and only the first should produce a job.
-	const alreadyExtracted = new Set(extractedDocumentIds);
+	const extractedAt = new Map(lastExtraction);
 
 	for (const thread of threads) {
 		if (thread.contractId === null) continue;
@@ -117,25 +117,36 @@ export async function enqueueDayExtractions(
 
 		const conversationRows = conversationsBySeedId.get(thread.id) ?? [thread];
 
-		// Having a proposal is not the same as having been extracted, and
-		// this is where the difference bit (#398). A message that approves
-		// nothing produces no proposal, ever, so the check above answers
-		// "not extracted yet" for it on every single pass: measured on the
-		// live instance, `queued 3` on every scheduler tick, five minutes
-		// apart, indefinitely - three newsletters paying for a model call
-		// each to re-learn that they approve no days. The run is the record
-		// of the attempt, so it is what the guard has to read.
+		// Has this conversation been extracted since its newest message
+		// arrived? That one question replaced two worse ones.
 		//
-		// Asked of the whole conversation, not just this message (#400).
-		// `extraction_run` is one row per *job* - `extraction_run_job_id_unique`
-		// says so, and the three views that read it depend on that - so a
-		// conversation extracted as one job leaves a row against one document,
-		// the anchor. Its siblings have none, and a per-message guard would
-		// re-enqueue the same exchange from each of them in turn. Reading it
-		// per conversation needs no extra rows and is durable across ticks:
-		// any sibling's conversation contains the anchor, and the anchor has
-		// the run.
-		if (conversationRows.some((row) => alreadyExtracted.has(row.documentId))) {
+		// "Does this document have a proposal" (#398) answers wrong for a
+		// message that legitimately approves nothing: no proposal is ever
+		// written, so it looked un-extracted forever and was re-queued every
+		// five minutes - measured at `queued 3` on every tick, indefinitely.
+		//
+		// "Has any message of this conversation been extracted" (#400) is
+		// wrong in the other direction, and this is the one that hurt: a reply
+		// arriving in a conversation that had already been read found a
+		// sibling with a run and was skipped, so a client answering an earlier
+		// offer was never read at all. Proven by a test before this line was
+		// written, and it is the question a person asks about repeated syncs.
+		//
+		// Comparing timestamps handles both, and the five-messages-at-once
+		// case too: the extraction this pass performs is stamped now, which is
+		// later than every message already on disk, so the remaining siblings
+		// skip. `extraction_run` stays one row per job
+		// (`extraction_run_job_id_unique`), which the three views depend on.
+		const newestMessageAt = conversationRows.reduce(
+			(newest, row) => (row.receivedAt > newest ? row.receivedAt : newest),
+			conversationRows[0].receivedAt
+		);
+		const lastExtractedAt = conversationRows.reduce<Date | null>((latest, row) => {
+			const at = extractedAt.get(row.documentId);
+			if (!at) return latest;
+			return latest === null || at > latest ? at : latest;
+		}, null);
+		if (lastExtractedAt !== null && lastExtractedAt >= newestMessageAt) {
 			alreadyProposed += 1;
 			continue;
 		}
@@ -221,7 +232,9 @@ export async function enqueueDayExtractions(
 		);
 		// Locally too, so the remaining awaiting rows of this same
 		// conversation skip in this pass rather than waiting for the next.
-		for (const row of conversationRows) alreadyExtracted.add(row.documentId);
+		// Stamped with the enqueue time, which is later than every message
+		// already archived, so the guard above reads them as covered.
+		for (const row of conversationRows) extractedAt.set(row.documentId, enqueuedAt);
 		enqueued += 1;
 	}
 	return { enqueued, alreadyProposed };
