@@ -158,3 +158,102 @@ describe('parseHeaderBlock', () => {
 		expect(parseHeaderBlock(Buffer.alloc(0)).size).toBe(0);
 	});
 });
+
+describe('decodeMessageBody on a multipart message', () => {
+	// The shape Gmail actually sends, boundary and all, with the accent that
+	// the verbatim guard used to choke on (#414).
+	const gmailAlternative = Buffer.from(
+		[
+			'Content-Type: multipart/alternative; boundary="0000000000007ed165"',
+			'Subject: Conferma allocazione',
+			'',
+			'--0000000000007ed165',
+			'Content-Type: text/plain; charset="UTF-8"',
+			'Content-Transfer-Encoding: quoted-printable',
+			'',
+			'- Attivit=C3=A0: partecipazione ai meeting w/c 03/08',
+			'- Allocazione: 0,5 giornata',
+			'',
+			'--0000000000007ed165',
+			'Content-Type: text/html; charset="UTF-8"',
+			'Content-Transfer-Encoding: quoted-printable',
+			'',
+			'<div>- Attivit=C3=A0: ignored</div>',
+			'',
+			'--0000000000007ed165--',
+			''
+		].join('\r\n')
+	);
+
+	test('yields the plain text part, with its accents decoded', () => {
+		const body = decodeMessageBody(parseMessage(gmailAlternative));
+		expect(body).toContain('Attività: partecipazione ai meeting w/c 03/08');
+		expect(body).toContain('Allocazione: 0,5 giornata');
+	});
+
+	test('never leaks the container: no boundary, no part headers, no html', () => {
+		// Each of these reaching the model is what made an excerpt fail the
+		// verbatim check, and the failure was silent.
+		const body = decodeMessageBody(parseMessage(gmailAlternative));
+		expect(body).not.toContain('0000000000007ed165');
+		expect(body).not.toContain('Content-Transfer-Encoding');
+		expect(body).not.toContain('ignored');
+		expect(body).not.toContain('=C3=A0');
+	});
+
+	test('an attachment is not the body: mixed wrapping alternative walks down', () => {
+		// What a message with a PDF attached looks like. The text is two
+		// levels down, and the first part is not text at all.
+		const raw = Buffer.from(
+			[
+				'Content-Type: multipart/mixed; boundary="outer"',
+				'',
+				'--outer',
+				'Content-Type: application/pdf; name="contratto.pdf"',
+				'Content-Transfer-Encoding: base64',
+				'',
+				'JVBERi0xLjQK',
+				'',
+				'--outer',
+				'Content-Type: multipart/alternative; boundary="inner"',
+				'',
+				'--inner',
+				'Content-Type: text/plain; charset="UTF-8"',
+				'',
+				'confermo la giornata del 3',
+				'',
+				'--inner--',
+				'',
+				'--outer--',
+				''
+			].join('\r\n')
+		);
+		expect(decodeMessageBody(parseMessage(raw)).trim()).toBe('confermo la giornata del 3');
+	});
+
+	test('a single-part message is unchanged', () => {
+		// The regression this could have caused: every message archived
+		// before Gmail was in the picture is one part with its own encoding.
+		const raw = Buffer.from(
+			'Content-Type: text/plain; charset="UTF-8"\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\nAttivit=C3=A0 confermata'
+		);
+		expect(decodeMessageBody(parseMessage(raw))).toBe('Attività confermata');
+	});
+
+	test('a multipart with no text part at all falls back rather than throwing', () => {
+		const raw = Buffer.from(
+			[
+				'Content-Type: multipart/mixed; boundary="b"',
+				'',
+				'--b',
+				'Content-Type: application/pdf',
+				'',
+				'JVBERi0=',
+				'',
+				'--b--',
+				''
+			].join('\r\n')
+		);
+		expect(() => decodeMessageBody(parseMessage(raw))).not.toThrow();
+	});
+});

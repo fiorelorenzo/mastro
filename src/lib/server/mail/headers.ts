@@ -169,19 +169,86 @@ function decodeQuotedPrintable(input: Buffer): Buffer {
  */
 export function decodeMessageBody(message: ParsedMessage): string {
 	if (!message.body) return '';
-	const encoding = (message.headers.get('content-transfer-encoding') ?? '7bit')
-		.toLowerCase()
-		.trim();
-	const charset = bufferEncoding(charsetOf(message.headers.get('content-type')));
+
+	// A multipart message's own body is the MIME container, not text
+	// anybody wrote: boundaries, per-part headers, and each part's own
+	// escaping still escaped (#414). Decoding it as if it were text is what
+	// this function did until the live instance proved what that costs -
+	// `Attivit=C3=A0` reached the model, the model answered with
+	// `Attività`, and the verbatim guard that protects invariant 4 threw
+	// the day away, silently. Gmail sends `multipart/alternative` for
+	// everything, so on this ledger that was most approvals.
+	const part = readablePart(message);
+	if (part) return decodePartText(part);
+
+	return decodePartText(message);
+}
+
+/** The transfer decode for one part, given its own headers. Split out so a
+ * part chosen out of a multipart is decoded by its own `Content-Type` and
+ * `Content-Transfer-Encoding` rather than the envelope's, which is the
+ * whole bug in #414: the outer message says nothing useful about how the
+ * text inside it is encoded. */
+function decodePartText(part: ParsedMessage): string {
+	if (!part.body) return '';
+	const encoding = (part.headers.get('content-transfer-encoding') ?? '7bit').toLowerCase().trim();
+	const charset = bufferEncoding(charsetOf(part.headers.get('content-type')));
 
 	if (encoding === 'quoted-printable') {
-		return decodeQuotedPrintable(message.body).toString(charset);
+		return decodeQuotedPrintable(part.body).toString(charset);
 	}
 	if (encoding === 'base64') {
-		const ascii = message.body.toString('ascii').replace(/\s+/g, '');
+		const ascii = part.body.toString('ascii').replace(/\s+/g, '');
 		return Buffer.from(ascii, 'base64').toString(charset);
 	}
-	return message.body.toString(charset);
+	return part.body.toString(charset);
+}
+
+/**
+ * The part of a multipart message a human reads, or null when the message
+ * is not multipart at all.
+ *
+ * `text/plain` wins over `text/html`, always: it is what the sender's own
+ * client generated from what they typed, and the alternative is the same
+ * words wrapped in markup this product has no business un-wrapping to
+ * compare an excerpt against. Nested containers are walked rather than
+ * guessed at - `multipart/mixed` wrapping `multipart/alternative` is what
+ * a message with an attachment looks like, and the text is two levels
+ * down. An attachment is never the body: only `text/*` parts are
+ * candidates, so a `mixed` whose first part is a PDF still yields the
+ * text.
+ */
+function readablePart(message: ParsedMessage, depth = 0): ParsedMessage | null {
+	// Four levels is past anything a mail client produces (`mixed` around
+	// `related` around `alternative` is three) and stops a crafted message
+	// from turning this into a walk without end.
+	if (depth > 4) return null;
+	const contentType = message.headers.get('content-type') ?? '';
+	if (!/^\s*multipart\//i.test(contentType) || !message.body) return null;
+
+	const boundary = contentType.match(/boundary\s*=\s*"?([^;"\s]+)"?/i)?.[1];
+	if (!boundary) return null;
+
+	const parts: ParsedMessage[] = [];
+	// Split on the delimiter line, not on the bare boundary string: the
+	// boundary is chosen to be absent from the content, but the `--`
+	// prefix is what actually makes a line a delimiter (RFC 2046 §5.1.1),
+	// and the closing delimiter carries a `--` suffix as well.
+	for (const chunk of message.body.toString('latin1').split(`--${boundary}`)) {
+		const trimmed = chunk.replace(/^\r?\n/, '');
+		if (trimmed === '' || trimmed.startsWith('--')) continue;
+		parts.push(parseMessage(Buffer.from(trimmed, 'latin1')));
+	}
+
+	const typeOf = (part: ParsedMessage) =>
+		(part.headers.get('content-type') ?? 'text/plain').toLowerCase();
+	const plain = parts.find((part) => typeOf(part).startsWith('text/plain'));
+	if (plain) return plain;
+	for (const part of parts) {
+		const nested = readablePart(part, depth + 1);
+		if (nested) return nested;
+	}
+	return parts.find((part) => typeOf(part).startsWith('text/')) ?? null;
 }
 
 /**
