@@ -598,6 +598,7 @@
 	"day_form_scope_placeholder": "e.g. API migration, sprint 4",
 	"day_form_submit": "Save",
 	"day_form_value_label": "Worth",
+	"day_mark_worked_submit": "Mark as worked",
 	"day_new_heading": "Record a day",
 	"day_new_no_client_action": "Add a client",
 	"day_new_no_client_body": "A day is recorded against a contract, and a contract belongs to a client. Start with the client.",

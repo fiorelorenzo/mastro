@@ -14,6 +14,7 @@ import {
 	linkApprovalToWorkUnit,
 	listWorkUnitTransitions,
 	markWorkUnitUnbillable,
+	markWorkUnitWorked,
 	rejectWorkUnit,
 	resolveWorkUnitDispute,
 	revokeWorkUnit
@@ -175,6 +176,21 @@ export const actions: Actions = {
 		await markWorkUnitUnbillable(params.id, { kind: 'human', email: locals.user!.email }, reason);
 
 		return { markedUnbillable: true };
+	},
+
+	// The manual half of the settle sweep (Task 2's automatic half fires
+	// once the date has passed): a day approved for today that the
+	// consultant has already finished should not have to wait for the
+	// night. Legal only from `approved` — the trigger enforces that,
+	// this action does not re-check the day's current state first.
+	worked: async ({ params, locals }) => {
+		await markWorkUnitWorked(
+			params.id,
+			{ kind: 'human', email: locals.user!.email },
+			'recorded worked by hand'
+		);
+
+		return { recorded: true };
 	},
 
 	// #214's path in: legal only from `invoiced` — the trigger enforces

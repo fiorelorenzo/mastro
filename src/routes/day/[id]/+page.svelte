@@ -33,6 +33,7 @@
 	const link = submitting();
 	const dispute = submitting();
 	const resolveDispute = submitting();
+	const worked = submitting();
 
 	// The link-approval select's current pick — the reviewer's own
 	// in-progress choice among `data.linkableApprovals`, not a mirror to
@@ -233,6 +234,11 @@
 		</form>
 	{:else if data.workUnit.state === 'approved'}
 		<div class="lifecycle-actions">
+			<form method="POST" action="?/worked" onsubmit={worked.onsubmit}>
+				<Button type="submit" variant="primary" size="sm" loading={worked.busy}>
+					{m.day_mark_worked_submit()}
+				</Button>
+			</form>
 			<Button
 				type="button"
 				variant="danger"
