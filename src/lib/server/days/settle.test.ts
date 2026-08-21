@@ -130,9 +130,9 @@ test('the sweep leaves alone every state that is not approved', async () => {
 			'recorded as proposed',
 			tx
 		);
-		const settled = await settleApprovedDays('2026-08-05', tx);
+		await settleApprovedDays('2026-08-05', tx);
 		const [row] = await tx.select().from(workUnit).where(eq(workUnit.id, proposed.id));
-		return { settled, state: row.state };
+		return { state: row.state };
 	});
 
 	// Not asserting `settled.settled === 0`: the sweep runs against a
