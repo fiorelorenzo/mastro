@@ -547,6 +547,13 @@
       "when": 1787354709096,
       "tag": "0078_alert_types_day_reading_conflict",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1787358854933,
+      "tag": "0079_work_unit_transition_ordered_by_insertion",
+      "breakpoints": true
     }
   ]
 }
