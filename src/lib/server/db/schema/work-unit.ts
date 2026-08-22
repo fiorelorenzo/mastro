@@ -1,5 +1,16 @@
 import { relations, sql } from 'drizzle-orm';
-import { date, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+	bigserial,
+	date,
+	index,
+	jsonb,
+	numeric,
+	pgEnum,
+	pgTable,
+	text,
+	timestamp,
+	uuid
+} from 'drizzle-orm/pg-core';
 import { id, timestamps } from '../columns';
 import { approval } from './approval';
 import { contract } from './contract';
@@ -83,30 +94,44 @@ export type TransitionActor =
  * application code, so no write path — including a future import or the
  * ACP runner — can produce a state change this table does not see.
  */
-export const workUnitTransition = pgTable('work_unit_transition', {
-	id: id(),
-	workUnitId: uuid('work_unit_id')
-		.notNull()
-		.references(() => workUnit.id, { onDelete: 'restrict' }),
-	fromState: workUnitState('from_state'),
-	toState: workUnitState('to_state').notNull(),
-	actor: jsonb('actor').$type<TransitionActor>().notNull(),
-	reason: text('reason').notNull(),
-	...timestamps(),
-	// The one column in the schema that does not take `timestamps()`'s
-	// `now()`. This is a log, so its order is its insertion order, and
-	// `now()` is frozen for the whole transaction: every transition written
-	// by one transaction shared a single value, and the query that renders
-	// the day detail's history orders by this column alone, so a lifecycle
-	// could display backwards (migration `0079` has the measurements).
-	// `clock_timestamp()` is the real clock at each INSERT. Overridden here
-	// rather than only in SQL because the generator models column defaults:
-	// left to `timestamps()`, the next `db:generate` would emit an ALTER
-	// putting `now()` back, and the flake with it.
-	createdAt: timestamp('created_at', { withTimezone: true })
-		.notNull()
-		.default(sql`clock_timestamp()`)
-});
+export const workUnitTransition = pgTable(
+	'work_unit_transition',
+	{
+		id: id(),
+		workUnitId: uuid('work_unit_id')
+			.notNull()
+			.references(() => workUnit.id, { onDelete: 'restrict' }),
+		fromState: workUnitState('from_state'),
+		toState: workUnitState('to_state').notNull(),
+		actor: jsonb('actor').$type<TransitionActor>().notNull(),
+		reason: text('reason').notNull(),
+		...timestamps(),
+		// The one column in the schema that does not take `timestamps()`'s
+		// `now()`. This is a log, so its order is its insertion order, and
+		// `now()` is frozen for the whole transaction: every transition written
+		// by one transaction shared a single value, and the query that renders
+		// the day detail's history orders by this column alone, so a lifecycle
+		// could display backwards (migration `0079` has the measurements).
+		// `clock_timestamp()` is the real clock at each INSERT. Overridden here
+		// rather than only in SQL because the generator models column defaults:
+		// left to `timestamps()`, the next `db:generate` would emit an ALTER
+		// putting `now()` back, and the flake with it.
+		createdAt: timestamp('created_at', { withTimezone: true })
+			.notNull()
+			.default(sql`clock_timestamp()`),
+		// #420: `created_at` (above) records *when* a transition was written,
+		// not the order it was written in. `clock_timestamp()` can repeat
+		// within a single statement, so a bulk UPDATE touching several work
+		// units at once (one row-trigger firing per row) can still tie. `seq`
+		// is a database sequence (`bigserial`): `nextval()` is guaranteed
+		// unique and strictly increasing across every row of the table,
+		// including several rows produced by one statement, because it does
+		// not read the clock at all. `listWorkUnitTransitions` orders by this
+		// column, not `created_at`.
+		seq: bigserial('seq', { mode: 'bigint' }).notNull()
+	},
+	(table) => [index('work_unit_transition_work_unit_id_seq_idx').on(table.workUnitId, table.seq)]
+);
 
 export const workUnitRelations = relations(workUnit, ({ one, many }) => ({
 	contract: one(contract, { fields: [workUnit.contractId], references: [contract.id] }),

@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
 import { minorUnits } from '$lib/money';
 import { rejection } from '$lib/server/db/pg-error';
@@ -590,5 +590,58 @@ test('a fabricated approval_id does not trigger the worked_without_approval redi
 					)
 			)
 		).toMatchObject({ code: '23503', constraint_name: 'work_unit_approval_id_approval_id_fk' });
+	});
+});
+
+test('#420: two transitions written by one statement get distinct, totally ordered seq values', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx, false);
+		const [first] = await tx
+			.insert(workUnit)
+			.values(workUnitFields(contractRow.id, { date: '2024-06-03' }))
+			.returning();
+		const [second] = await tx
+			.insert(workUnit)
+			.values(workUnitFields(contractRow.id, { date: '2024-06-04' }))
+			.returning();
+
+		// One statement, not two transactions: `work_unit_enforce_state_machine`
+		// fires once per row it touches, so this writes both transition rows
+		// from a single INSERT ... SELECT-driven UPDATE, the shape #420 is
+		// about. `clock_timestamp()` alone (0079) can tie inside one
+		// statement; `seq` must not.
+		await tx
+			.update(workUnit)
+			.set({ state: 'approved' })
+			.where(inArray(workUnit.id, [first.id, second.id]));
+
+		const transitions = await tx
+			.select()
+			.from(workUnitTransition)
+			.where(
+				and(
+					inArray(workUnitTransition.workUnitId, [first.id, second.id]),
+					eq(workUnitTransition.toState, 'approved')
+				)
+			)
+			.orderBy(asc(workUnitTransition.seq));
+
+		expect(transitions).toHaveLength(2);
+		// The claim, and the only one this shape can honestly make: two rows
+		// written by one statement do not tie. Which of the two Postgres
+		// touches first is up to its plan and nothing here controls it, so
+		// asserting *which* one leads would be asserting a promise the
+		// database never made. What matters is that a total order exists at
+		// all, because `clock_timestamp()` (0079) can hand both rows the
+		// same microsecond inside one statement and then no ORDER BY can
+		// separate them.
+		expect(new Set(transitions.map((t) => t.seq)).size).toBe(2);
+		// And that ordering by it is what the reader gets: sorted ascending
+		// above, so the sequence the query returns is strictly increasing.
+		// `seq` is `mode: 'bigint'`, so these are BigInts: a subtracting
+		// comparator throws on them.
+		expect([...transitions].map((t) => t.seq)).toEqual(
+			[...transitions].map((t) => t.seq).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+		);
 	});
 });
