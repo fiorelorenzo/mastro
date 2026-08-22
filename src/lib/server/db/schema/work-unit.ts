@@ -1,5 +1,5 @@
-import { relations } from 'drizzle-orm';
-import { date, jsonb, numeric, pgEnum, pgTable, text, uuid } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
+import { date, jsonb, numeric, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { id, timestamps } from '../columns';
 import { approval } from './approval';
 import { contract } from './contract';
@@ -92,7 +92,20 @@ export const workUnitTransition = pgTable('work_unit_transition', {
 	toState: workUnitState('to_state').notNull(),
 	actor: jsonb('actor').$type<TransitionActor>().notNull(),
 	reason: text('reason').notNull(),
-	...timestamps()
+	...timestamps(),
+	// The one column in the schema that does not take `timestamps()`'s
+	// `now()`. This is a log, so its order is its insertion order, and
+	// `now()` is frozen for the whole transaction: every transition written
+	// by one transaction shared a single value, and the query that renders
+	// the day detail's history orders by this column alone, so a lifecycle
+	// could display backwards (migration `0079` has the measurements).
+	// `clock_timestamp()` is the real clock at each INSERT. Overridden here
+	// rather than only in SQL because the generator models column defaults:
+	// left to `timestamps()`, the next `db:generate` would emit an ALTER
+	// putting `now()` back, and the flake with it.
+	createdAt: timestamp('created_at', { withTimezone: true })
+		.notNull()
+		.default(sql`clock_timestamp()`)
 });
 
 export const workUnitRelations = relations(workUnit, ({ one, many }) => ({

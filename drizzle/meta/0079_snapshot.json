@@ -1,5 +1,5 @@
 {
-  "id": "4e35f0c1-7cac-4075-8f12-8aa37f9f0f4a",
+  "id": "0bae30ed-d769-4222-866f-9e4341a8a961",
   "prevId": "a9d327fd-973c-4ce1-8404-540d012b2c46",
   "version": "7",
   "dialect": "postgresql",
@@ -113,10 +113,10 @@
       "uniqueConstraints": {
         "alert_acknowledgement_alert_key_key": {
           "name": "alert_acknowledgement_alert_key_key",
+          "nullsNotDistinct": false,
           "columns": [
             "alert_key"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -180,10 +180,10 @@
       "uniqueConstraints": {
         "alert_delivery_alert_key_key": {
           "name": "alert_delivery_alert_key_key",
+          "nullsNotDistinct": false,
           "columns": [
             "alert_key"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -242,10 +242,10 @@
       "uniqueConstraints": {
         "alert_preference_alert_type_key": {
           "name": "alert_preference_alert_type_key",
+          "nullsNotDistinct": false,
           "columns": [
             "alert_type"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -332,28 +332,28 @@
         "approval_contract_id_contract_id_fk": {
           "name": "approval_contract_id_contract_id_fk",
           "tableFrom": "approval",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "approval_document_id_document_id_fk": {
           "name": "approval_document_id_document_id_fk",
           "tableFrom": "approval",
+          "tableTo": "document",
           "columnsFrom": [
             "document_id"
           ],
-          "tableTo": "document",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -453,26 +453,26 @@
         "account_user_id_user_id_fk": {
           "name": "account_user_id_user_id_fk",
           "tableFrom": "account",
+          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
-          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "account_provider_account_id_unique": {
           "name": "account_provider_account_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "provider_id",
             "account_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -540,25 +540,25 @@
         "session_user_id_user_id_fk": {
           "name": "session_user_id_user_id_fk",
           "tableFrom": "session",
+          "tableTo": "user",
           "columnsFrom": [
             "user_id"
           ],
-          "tableTo": "user",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "session_token_unique": {
           "name": "session_token_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "token"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -622,10 +622,10 @@
       "uniqueConstraints": {
         "user_email_unique": {
           "name": "user_email_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "email"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -831,26 +831,26 @@
         "ceiling_contract_id_contract_id_fk": {
           "name": "ceiling_contract_id_contract_id_fk",
           "tableFrom": "ceiling",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "ceiling_contract_code_unique": {
           "name": "ceiling_contract_code_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "contract_id",
             "code"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -931,15 +931,15 @@
         "clause_note_contract_id_contract_id_fk": {
           "name": "clause_note_contract_id_contract_id_fk",
           "tableFrom": "clause_note",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1053,10 +1053,10 @@
       "uniqueConstraints": {
         "client_tax_id_unique": {
           "name": "client_tax_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "tax_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -1140,15 +1140,15 @@
         "client_contact_client_id_client_id_fk": {
           "name": "client_contact_client_id_client_id_fk",
           "tableFrom": "client_contact",
+          "tableTo": "client",
           "columnsFrom": [
             "client_id"
           ],
-          "tableTo": "client",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1312,15 +1312,15 @@
         "contract_client_id_client_id_fk": {
           "name": "contract_client_id_client_id_fk",
           "tableFrom": "contract",
+          "tableTo": "client",
           "columnsFrom": [
             "client_id"
           ],
-          "tableTo": "client",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1384,25 +1384,25 @@
         "contract_renewal_assumption_contract_id_contract_id_fk": {
           "name": "contract_renewal_assumption_contract_id_contract_id_fk",
           "tableFrom": "contract_renewal_assumption",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "contract_renewal_assumption_contract_id_unique": {
           "name": "contract_renewal_assumption_contract_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "contract_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -1485,52 +1485,52 @@
         "day_reading_conflict_contract_id_contract_id_fk": {
           "name": "day_reading_conflict_contract_id_contract_id_fk",
           "tableFrom": "day_reading_conflict",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "day_reading_conflict_document_id_document_id_fk": {
           "name": "day_reading_conflict_document_id_document_id_fk",
           "tableFrom": "day_reading_conflict",
+          "tableTo": "document",
           "columnsFrom": [
             "document_id"
           ],
-          "tableTo": "document",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "day_reading_conflict_extraction_run_id_extraction_run_id_fk": {
           "name": "day_reading_conflict_extraction_run_id_extraction_run_id_fk",
           "tableFrom": "day_reading_conflict",
+          "tableTo": "extraction_run",
           "columnsFrom": [
             "extraction_run_id"
           ],
-          "tableTo": "extraction_run",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "day_reading_conflict_contract_date_key": {
           "name": "day_reading_conflict_contract_date_key",
+          "nullsNotDistinct": false,
           "columns": [
             "contract_id",
             "date"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -1629,15 +1629,15 @@
         "document_contract_id_contract_id_fk": {
           "name": "document_contract_id_contract_id_fk",
           "tableFrom": "document",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1707,15 +1707,15 @@
         "document_mirror_run_document_id_document_id_fk": {
           "name": "document_mirror_run_document_id_document_id_fk",
           "tableFrom": "document_mirror_run",
+          "tableTo": "document",
           "columnsFrom": [
             "document_id"
           ],
-          "tableTo": "document",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1791,15 +1791,15 @@
         "email_template_contract_id_contract_id_fk": {
           "name": "email_template_contract_id_contract_id_fk",
           "tableFrom": "email_template",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1888,50 +1888,50 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "btree",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "sent_email_contract_id_contract_id_fk": {
           "name": "sent_email_contract_id_contract_id_fk",
           "tableFrom": "sent_email",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "sent_email_email_template_id_email_template_id_fk": {
           "name": "sent_email_email_template_id_email_template_id_fk",
           "tableFrom": "sent_email",
+          "tableTo": "email_template",
           "columnsFrom": [
             "email_template_id"
           ],
-          "tableTo": "email_template",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "sent_email_invoice_id_invoice_id_fk": {
           "name": "sent_email_invoice_id_invoice_id_fk",
           "tableFrom": "sent_email",
+          "tableTo": "invoice",
           "columnsFrom": [
             "invoice_id"
           ],
-          "tableTo": "invoice",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2021,28 +2021,28 @@
         "expense_contract_id_contract_id_fk": {
           "name": "expense_contract_id_contract_id_fk",
           "tableFrom": "expense",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "expense_invoice_line_id_invoice_line_id_fk": {
           "name": "expense_invoice_line_id_invoice_line_id_fk",
           "tableFrom": "expense",
+          "tableTo": "invoice_line",
           "columnsFrom": [
             "invoice_line_id"
           ],
-          "tableTo": "invoice_line",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2142,38 +2142,38 @@
         "extraction_run_document_id_document_id_fk": {
           "name": "extraction_run_document_id_document_id_fk",
           "tableFrom": "extraction_run",
+          "tableTo": "document",
           "columnsFrom": [
             "document_id"
           ],
-          "tableTo": "document",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "extraction_run_proposal_id_proposal_id_fk": {
           "name": "extraction_run_proposal_id_proposal_id_fk",
           "tableFrom": "extraction_run",
+          "tableTo": "proposal",
           "columnsFrom": [
             "proposal_id"
           ],
-          "tableTo": "proposal",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "extraction_run_job_id_unique": {
           "name": "extraction_run_job_id_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "job_id"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -2241,15 +2241,15 @@
         "extraction_run_event_run_id_extraction_run_id_fk": {
           "name": "extraction_run_event_run_id_extraction_run_id_fk",
           "tableFrom": "extraction_run_event",
+          "tableTo": "extraction_run",
           "columnsFrom": [
             "run_id"
           ],
-          "tableTo": "extraction_run",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2459,37 +2459,37 @@
             }
           ],
           "isUnique": false,
-          "with": {},
+          "concurrently": false,
           "method": "gin",
-          "concurrently": false
+          "with": {}
         }
       },
       "foreignKeys": {
         "inbound_thread_contract_id_contract_id_fk": {
           "name": "inbound_thread_contract_id_contract_id_fk",
           "tableFrom": "inbound_thread",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "inbound_thread_document_id_document_id_fk": {
           "name": "inbound_thread_document_id_document_id_fk",
           "tableFrom": "inbound_thread",
+          "tableTo": "document",
           "columnsFrom": [
             "document_id"
           ],
-          "tableTo": "document",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2665,38 +2665,38 @@
         "invoice_contract_id_contract_id_fk": {
           "name": "invoice_contract_id_contract_id_fk",
           "tableFrom": "invoice",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "invoice_corrects_invoice_id_invoice_id_fk": {
           "name": "invoice_corrects_invoice_id_invoice_id_fk",
           "tableFrom": "invoice",
+          "tableTo": "invoice",
           "columnsFrom": [
             "corrects_invoice_id"
           ],
-          "tableTo": "invoice",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "invoice_number_unique": {
           "name": "invoice_number_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "number"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -2805,15 +2805,15 @@
         "invoice_line_invoice_id_invoice_id_fk": {
           "name": "invoice_line_invoice_id_invoice_id_fk",
           "tableFrom": "invoice_line",
+          "tableTo": "invoice",
           "columnsFrom": [
             "invoice_id"
           ],
-          "tableTo": "invoice",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2953,15 +2953,15 @@
         "payment_invoice_id_invoice_id_fk": {
           "name": "payment_invoice_id_invoice_id_fk",
           "tableFrom": "payment",
+          "tableTo": "invoice",
           "columnsFrom": [
             "invoice_id"
           ],
-          "tableTo": "invoice",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "cascade"
+          "onDelete": "cascade",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3068,10 +3068,10 @@
       "uniqueConstraints": {
         "practice_profile_singleton_unique": {
           "name": "practice_profile_singleton_unique",
+          "nullsNotDistinct": false,
           "columns": [
             "singleton"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -3194,28 +3194,28 @@
         "proposal_document_id_document_id_fk": {
           "name": "proposal_document_id_document_id_fk",
           "tableFrom": "proposal",
+          "tableTo": "document",
           "columnsFrom": [
             "document_id"
           ],
-          "tableTo": "document",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "proposal_contract_id_contract_id_fk": {
           "name": "proposal_contract_id_contract_id_fk",
           "tableFrom": "proposal",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3285,10 +3285,10 @@
       "uniqueConstraints": {
         "push_subscription_endpoint_key": {
           "name": "push_subscription_endpoint_key",
+          "nullsNotDistinct": false,
           "columns": [
             "endpoint"
-          ],
-          "nullsNotDistinct": false
+          ]
         }
       },
       "policies": {},
@@ -3383,15 +3383,15 @@
         "rate_card_contract_id_contract_id_fk": {
           "name": "rate_card_contract_id_contract_id_fk",
           "tableFrom": "rate_card",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3481,41 +3481,41 @@
         "work_unit_contract_id_contract_id_fk": {
           "name": "work_unit_contract_id_contract_id_fk",
           "tableFrom": "work_unit",
+          "tableTo": "contract",
           "columnsFrom": [
             "contract_id"
           ],
-          "tableTo": "contract",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "work_unit_approval_id_approval_id_fk": {
           "name": "work_unit_approval_id_approval_id_fk",
           "tableFrom": "work_unit",
+          "tableTo": "approval",
           "columnsFrom": [
             "approval_id"
           ],
-          "tableTo": "approval",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         },
         "work_unit_invoice_line_id_invoice_line_id_fk": {
           "name": "work_unit_invoice_line_id_invoice_line_id_fk",
           "tableFrom": "work_unit",
+          "tableTo": "invoice_line",
           "columnsFrom": [
             "invoice_line_id"
           ],
-          "tableTo": "invoice_line",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3572,7 +3572,7 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
-          "default": "now()"
+          "default": "clock_timestamp()"
         },
         "updated_at": {
           "name": "updated_at",
@@ -3587,15 +3587,15 @@
         "work_unit_transition_work_unit_id_work_unit_id_fk": {
           "name": "work_unit_transition_work_unit_id_work_unit_id_fk",
           "tableFrom": "work_unit_transition",
+          "tableTo": "work_unit",
           "columnsFrom": [
             "work_unit_id"
           ],
-          "tableTo": "work_unit",
           "columnsTo": [
             "id"
           ],
-          "onUpdate": "no action",
-          "onDelete": "restrict"
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -3810,10 +3810,10 @@
     }
   },
   "schemas": {},
-  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
+  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},
