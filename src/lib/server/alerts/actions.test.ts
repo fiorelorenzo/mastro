@@ -6,7 +6,8 @@
 
 import { expect, test } from 'vitest';
 import { alertResolution } from './actions';
-import { ALERT_TYPES, type AlertDetail, type AlertType } from './types';
+import { alertMessage } from './render';
+import { ALERT_TYPES, makeAlert, type AlertDetail, type AlertType } from './types';
 
 const label = { en: 'Flat-rate cap', it: 'Massimale forfettario' };
 const consequence = { en: 'Regime lost', it: 'Regime perso' };
@@ -162,6 +163,33 @@ test('every alert kind the engine can raise resolves to a real link and a real a
 		// "Resolving" is never phrased as acknowledging — that stays a
 		// separate, tertiary action on the page itself.
 		expect(resolution.actionLabel.toLowerCase(), type).not.toContain('acknowledge');
+	}
+});
+
+test('every alert kind the engine can raise renders a title and a body, in both languages', () => {
+	// The other half of the same exhaustiveness, and the guard #436 was
+	// missing: `alertResolution` above never formats a date, so a detail
+	// whose date field cannot be formatted passed every check here while
+	// `alertMessage` threw. Two details carry a full ISO instant off a
+	// timestamp column, `approval_unactioned`'s `receivedAt` and
+	// `proposal_pending`'s `createdAt` — the values in FIXTURES above are
+	// those exact shapes — and `formatDate` used to build an Invalid Date
+	// from one, so `Intl` raised `RangeError` and the weekly digest answered
+	// 500 for as long as either alert was active. Both locales, because a
+	// message with a missing interpolation can render in one and not the
+	// other.
+	for (const type of ALERT_TYPES) {
+		for (const locale of ['en', 'it'] as const) {
+			// `alertMessage` takes the whole alert, not the detail: the key and
+			// severity are what the digest and the page carry it around by.
+			const message = alertMessage(makeAlert('subject-1', 'warning', FIXTURES[type]), locale);
+			expect(message.title.length, `${type} ${locale} title`).toBeGreaterThan(0);
+			expect(message.body.length, `${type} ${locale} body`).toBeGreaterThan(0);
+			// A thrown formatter is the loud failure; a silently empty
+			// interpolation is the quiet one, and reads as a gap in a
+			// sentence a person is meant to act on.
+			expect(message.body, `${type} ${locale} body`).not.toMatch(/\s{2,}|\(\)|,\s*\./);
+		}
 	}
 });
 

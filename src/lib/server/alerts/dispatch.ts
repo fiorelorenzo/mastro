@@ -137,6 +137,63 @@ export interface DigestRunResult {
 	readonly sent: boolean;
 }
 
+/** One alert the digest could not turn into text, named so the log can say
+ *  which and why. */
+export interface UnrenderableAlert {
+	readonly alertKey: string;
+	readonly alertType: string;
+	readonly detail: string;
+}
+
+/**
+ * The digest's body, one block per alert, severest first, and separately
+ * the alerts that could not be rendered at all.
+ *
+ * Split out and exported for one reason: one alert that cannot be rendered
+ * must not cost the other twelve their only delivery. The digest is the
+ * safety net for anything push could not reach, so a throw in here used to
+ * mean the whole weekly email never went out while the route answered 500
+ * to a timer nobody watches — which is exactly how #436 sat unnoticed on
+ * production for a release. Same "one bad row does not stop the batch"
+ * shape `runQueueOnce` and the document mirror already use.
+ *
+ * Pure, and exported, because the failure path is otherwise unreachable
+ * from a test: `runAlertDigest` reads its alerts out of the database, and
+ * the columns they come from cannot hold a value that fails to render. A
+ * test can hand this function one, and that is the only way to prove the
+ * containment actually contains.
+ *
+ * `rendered` is returned alongside the lines, and it is not decoration:
+ * only what actually reached the email may be marked delivered, or an
+ * alert that failed to render would be recorded as sent and never appear
+ * in a later digest either. Dropping it from one email is a degradation;
+ * marking it delivered would be data loss.
+ */
+export function digestLines(alerts: readonly Alert[]): {
+	readonly lines: readonly string[];
+	readonly rendered: readonly Alert[];
+	readonly unrenderable: readonly UnrenderableAlert[];
+} {
+	const sorted = [...alerts].sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity]);
+	const lines: string[] = [];
+	const rendered: Alert[] = [];
+	const unrenderable: UnrenderableAlert[] = [];
+	for (const alert of sorted) {
+		try {
+			const { title, body } = alertMessage(alert, DELIVERY_LOCALE);
+			lines.push(`${title}\n${body}`);
+			rendered.push(alert);
+		} catch (error) {
+			unrenderable.push({
+				alertKey: alert.key,
+				alertType: alert.detail.type,
+				detail: error instanceof Error ? error.message : String(error)
+			});
+		}
+	}
+	return { lines, rendered, unrenderable };
+}
+
 /**
  * The weekly digest (#75): one email containing every alert not already
  * delivered through either channel — urgent ones included, as the safety
@@ -166,13 +223,20 @@ export async function runAlertDigest(asOfDate: string): Promise<DigestRunResult>
 		return { included: alerts.length, sent: false };
 	}
 
-	const sorted = [...alerts].sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity]);
-	const lines = sorted.map((alert) => {
-		const { title, body } = alertMessage(alert, DELIVERY_LOCALE);
-		return `${title}\n${body}`;
-	});
+	const { lines, rendered, unrenderable } = digestLines(alerts);
+	for (const failure of unrenderable) {
+		log.error('alerts: digest could not render an alert, sending the rest without it', {
+			...failure
+		});
+	}
+	if (lines.length === 0) {
+		log.error('alerts: digest had content but nothing could be rendered; nothing sent', {
+			included: alerts.length
+		});
+		return { included: alerts.length, sent: false };
+	}
 	const body = [
-		m.alerts_digest_intro({ count: sorted.length }, { locale: DELIVERY_LOCALE }),
+		m.alerts_digest_intro({ count: lines.length }, { locale: DELIVERY_LOCALE }),
 		'',
 		lines.join('\n\n')
 	].join('\n');
@@ -193,7 +257,10 @@ export async function runAlertDigest(asOfDate: string): Promise<DigestRunResult>
 	if (gmail) await sendOverGmailApi(gmail, message);
 	else await sendOverSmtp(mailConfig.smtp, message);
 
-	await Promise.all(sorted.map((alert) => recordDelivery(alert, 'digest')));
+	// Only what the email actually contained. An alert that failed to render
+	// stays undelivered on purpose, so the next digest offers it again
+	// instead of it being recorded as sent and never seen.
+	await Promise.all(rendered.map((alert) => recordDelivery(alert, 'digest')));
 
-	return { included: sorted.length, sent: true };
+	return { included: rendered.length, sent: true };
 }

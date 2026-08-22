@@ -73,6 +73,22 @@ test('a date given as an ISO calendar day never shifts to the adjacent day', () 
 	expect(formatDate('2024-12-31', 'en')).toBe('Dec 31, 2024');
 });
 
+test('a full ISO instant renders as its UTC calendar day, not a RangeError', () => {
+	// #436: this appended `T00:00:00Z` unconditionally, so an instant became
+	// `'…T10:16:03.465ZT00:00:00Z'`, an Invalid Date, and Intl threw
+	// `RangeError: date value is not finite` rather than returning anything
+	// odd a caller might notice. Two alert details carry an instant off a
+	// timestamp column, so the weekly digest 500'd for as long as either
+	// alert was active. The type said `string` and meant "date-only string".
+	expect(formatDate('2026-08-21T10:16:03.465Z', 'en')).toBe('Aug 21, 2026');
+	expect(formatDate('2026-08-21T10:16:03.465Z', 'it')).toBe('21 ago 2026');
+	// Read in UTC like a calendar day, not in the reader's zone: an instant
+	// late on the 21st UTC must not render as the 22nd for a reader east of
+	// it, the same guarantee the calendar-day case above has.
+	expect(formatDate('2026-08-21T23:59:59.999Z', 'en')).toBe('Aug 21, 2026');
+	expect(formatDate('2026-08-21T00:00:00.000Z', 'en')).toBe('Aug 21, 2026');
+});
+
 test('a timestamp renders with locale-appropriate date and time, in the reader’s own time zone, not fixed to UTC like a calendar day', () => {
 	// Unlike formatDate above, a timestamp such as "data saved at" (#61) has
 	// to say how long ago that was for the person looking at it, so the
