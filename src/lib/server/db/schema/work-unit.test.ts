@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, expect, test } from 'vitest';
 import { minorUnits } from '$lib/money';
 import { rejection } from '$lib/server/db/pg-error';
@@ -590,5 +590,46 @@ test('a fabricated approval_id does not trigger the worked_without_approval redi
 					)
 			)
 		).toMatchObject({ code: '23503', constraint_name: 'work_unit_approval_id_approval_id_fk' });
+	});
+});
+
+test('#420: a bulk UPDATE moving several work units in one statement records their transitions in strict insertion order', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx, false);
+		const [first] = await tx
+			.insert(workUnit)
+			.values(workUnitFields(contractRow.id, { date: '2024-06-03' }))
+			.returning();
+		const [second] = await tx
+			.insert(workUnit)
+			.values(workUnitFields(contractRow.id, { date: '2024-06-04' }))
+			.returning();
+
+		// One statement, not two transactions: `work_unit_enforce_state_machine`
+		// fires once per row it touches, so this writes both transition rows
+		// from a single INSERT ... SELECT-driven UPDATE, the shape #420 is
+		// about. `clock_timestamp()` alone (0079) can tie inside one
+		// statement; `seq` must not.
+		await tx
+			.update(workUnit)
+			.set({ state: 'approved' })
+			.where(inArray(workUnit.id, [first.id, second.id]));
+
+		const transitions = await tx
+			.select()
+			.from(workUnitTransition)
+			.where(
+				and(
+					inArray(workUnitTransition.workUnitId, [first.id, second.id]),
+					eq(workUnitTransition.toState, 'approved')
+				)
+			)
+			.orderBy(asc(workUnitTransition.seq));
+
+		expect(transitions).toHaveLength(2);
+		// The whole point: two rows written by one statement must not tie,
+		// so their order is well defined regardless of what the clock did.
+		expect(transitions[0].seq).toBeLessThan(transitions[1].seq);
+		expect(new Set(transitions.map((t) => t.seq)).size).toBe(2);
 	});
 });

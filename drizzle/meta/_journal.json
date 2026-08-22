@@ -554,6 +554,13 @@
       "when": 1787360174139,
       "tag": "0079_work_unit_transition_ordered_by_insertion",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1787379883431,
+      "tag": "0080_work_unit_transition_seq",
+      "breakpoints": true
     }
   ]
 }

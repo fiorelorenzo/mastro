@@ -1,0 +1,33 @@
+-- #420: `work_unit_transition` is an append-only log, so its order is its
+-- insertion order, and until now nothing in the table recorded that order.
+-- Migration `0079` fixed the reachable half: `created_at` had defaulted to
+-- `now()`, frozen for the whole transaction, so every transition written by
+-- one transaction shared a value and `listWorkUnitTransitions` (which the
+-- day detail page's history renders) tied on it. Switching the default to
+-- `clock_timestamp()`, the real clock at each INSERT, made the order total
+-- for every writer that exists today, because each one issues one statement
+-- per transition.
+--
+-- What `0079` explicitly did not promise: `clock_timestamp()` can return the
+-- same microsecond twice within a single statement. No writer does that
+-- today, but a bulk state UPDATE touching several work units at once would
+-- fire the row trigger that writes this log once per row, in one statement,
+-- and could tie again. A clock is the wrong tool for recording insertion
+-- order regardless of its resolution; a sequence is the right one, because
+-- `nextval()` never repeats and never depends on wall-clock resolution.
+--
+-- `seq` is a `bigserial`: Postgres creates a backing sequence and gives the
+-- column `DEFAULT nextval(...)`. Every INSERT gets a strictly increasing
+-- value assigned before any other row of the same statement, so several
+-- transitions written by one statement (the bulk UPDATE this issue is
+-- about) come back in the order they were written, not the order the query
+-- plan happens to produce. `created_at` is untouched and keeps meaning what
+-- `0079` made it mean: when the row was written. This column is only about
+-- order.
+ALTER TABLE "work_unit_transition" ADD COLUMN "seq" bigserial NOT NULL;
+
+-- `listWorkUnitTransitions` (`src/lib/server/repositories/work-unit.ts`) now
+-- orders by `seq`. An index keeps that ordered scan cheap as the log grows;
+-- `work_unit_id` first because every read of this table is scoped to one
+-- work unit.
+CREATE INDEX "work_unit_transition_work_unit_id_seq_idx" ON "work_unit_transition" USING btree ("work_unit_id","seq");

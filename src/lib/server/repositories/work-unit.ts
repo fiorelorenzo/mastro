@@ -284,7 +284,7 @@ export async function listWorkUnitTransitions(workUnitId: string, executor: DbEx
 		.select()
 		.from(workUnitTransition)
 		.where(eq(workUnitTransition.workUnitId, workUnitId))
-		.orderBy(asc(workUnitTransition.createdAt));
+		.orderBy(asc(workUnitTransition.seq));
 }
 
 /** The archived original behind a day's approval, reachable in one query —
