@@ -30,12 +30,17 @@ export type PublishOutcome =
  * same document — a retried batch, an overlapping scheduler run — never
  * produces two copies at the target.
  *
- * A `target.publish` failure is caught here, never rethrown: it is
- * recorded as a `failure` row (`recordMirrorRun`) and returned as
- * `{ ok: false }`, which is the acceptance criterion "a failed publish is
- * visible rather than silent" — visible in the table #74's alert engine
- * is meant to query, not as an unhandled rejection that crashes whatever
- * called this.
+ * Everything past resolving `documentId`, including the "not found" case
+ * below, runs inside one `try` so every failure is recorded as a
+ * `failure` row (`recordMirrorRun`) and returned as `{ ok: false }`
+ * rather than thrown. Before #393 that `try` only wrapped the
+ * `target.publish` call: `getDocumentMirrorContext` returning `null`
+ * threw *before* it, so the outer catch in `publishAllPending` — which
+ * records nothing — was the one that saw it, and the alert engine's own
+ * query over `document_mirror_run` never learned a failure had happened
+ * at all. This is the acceptance criterion "a failed publish is visible
+ * rather than silent" applied to every failure this function can produce,
+ * not only the one after its own `try` used to start.
  */
 export async function publishDocument(
 	documentId: string,
@@ -43,17 +48,17 @@ export async function publishDocument(
 	folderConfig: MirrorFolderConfig,
 	executor: DbExecutor = db
 ): Promise<PublishOutcome> {
-	const context = await getDocumentMirrorContext(documentId, executor);
-	if (!context) throw new Error(`document ${documentId} not found`);
-
-	if (context.document.remoteFileId) {
-		return { ok: true, remoteFileId: context.document.remoteFileId };
-	}
-
-	const folder = resolveMirrorFolder({ clientLegalName: context.clientLegalName }, folderConfig);
-	const bytes = await readDocumentBytes(context.document);
-
 	try {
+		const context = await getDocumentMirrorContext(documentId, executor);
+		if (!context) throw new Error(`document ${documentId} not found`);
+
+		if (context.document.remoteFileId) {
+			return { ok: true, remoteFileId: context.document.remoteFileId };
+		}
+
+		const folder = resolveMirrorFolder({ clientLegalName: context.clientLegalName }, folderConfig);
+		const bytes = await readDocumentBytes(context.document);
+
 		const result = await target.publish({
 			documentId: context.document.id,
 			bytes,
@@ -69,7 +74,7 @@ export async function publishDocument(
 		return { ok: true, remoteFileId: result.remoteFileId };
 	} catch (error) {
 		const detail = error instanceof Error ? error.message : String(error);
-		await recordMirrorRun({ documentId: context.document.id, status: 'failure', detail }, executor);
+		await recordMirrorRun({ documentId, status: 'failure', detail }, executor);
 		return { ok: false, detail };
 	}
 }
