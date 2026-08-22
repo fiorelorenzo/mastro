@@ -91,8 +91,34 @@ export interface DayExtractionContext {
 	readonly alreadyDecided?: ReadonlySet<string>;
 }
 
+/**
+ * Why a day was rejected, as a stable value a caller can branch on —
+ * `day-producer.ts`'s "already recorded" conflict check is the reason this
+ * exists, and the day-import module's own discriminated
+ * `DayImportRejectReason` (`import/day-import.ts`) is the shape this
+ * follows. `'decided_while_rereading'` is the one code `rejectionReason`
+ * below never returns: `day-producer.ts` adds it itself, for the day whose
+ * revise lost a race with a human decision mid-run.
+ */
+export type DayRejectionCode =
+	| 'invalid_date'
+	| 'duplicate_in_reading'
+	| 'already_recorded'
+	| 'before_contract_start'
+	| 'after_contract_end'
+	| 'non_positive_quantity'
+	| 'excerpt_too_short'
+	| 'excerpt_not_verbatim'
+	| 'quantity_not_sold'
+	| 'decided_while_rereading';
+
 export interface RejectedDay {
 	readonly day: ExtractedDay;
+	/** For programmatic dispatch. Never parse `reason` to answer the same
+	 * question — that couples a caller's branching to this file's wording. */
+	readonly code: DayRejectionCode;
+	/** The rejection explained in prose, for a human or a log. Display
+	 * only. */
 	readonly reason: string;
 }
 
@@ -327,9 +353,9 @@ export function validateDays(
 
 	for (const raw of days) {
 		const day = widenShortExcerpt(raw, context);
-		const reason = rejectionReason(day, context, seen);
-		if (reason) {
-			rejected.push({ day, reason });
+		const rejection = rejectionReason(day, context, seen);
+		if (rejection) {
+			rejected.push({ day, code: rejection.code, reason: rejection.reason });
 			continue;
 		}
 		seen.add(day.date);
@@ -354,34 +380,58 @@ function rejectionReason(
 	day: ExtractedDay,
 	context: DayExtractionContext,
 	seen: ReadonlySet<string>
-): string | null {
+): { code: DayRejectionCode; reason: string } | null {
 	// `2026-02-31` matches the shape and is not a date. Round-tripping
 	// through Date is the cheapest way to find out, and the only one that
 	// gets February right in a leap year.
 	const parsed = new Date(`${day.date}T00:00:00Z`);
 	if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== day.date) {
-		return `${day.date} is not a real date`;
+		return { code: 'invalid_date', reason: `${day.date} is not a real date` };
 	}
-	if (seen.has(day.date)) return `${day.date} appears twice`;
+	if (seen.has(day.date)) {
+		return { code: 'duplicate_in_reading', reason: `${day.date} appears twice` };
+	}
 	// Already on the ledger, from an earlier read of this same conversation
 	// (#403). Reported rather than dropped: the run's own outcome names it,
 	// so a re-read that found nothing new says so instead of looking idle.
 	if (context.alreadyDecided?.has(day.date)) {
-		return `${day.date} is already recorded on this contract`;
+		return {
+			code: 'already_recorded',
+			reason: `${day.date} is already recorded on this contract`
+		};
 	}
-	if (day.date < context.startsOn) return `${day.date} is before the contract starts`;
+	if (day.date < context.startsOn) {
+		return {
+			code: 'before_contract_start',
+			reason: `${day.date} is before the contract starts`
+		};
+	}
 	if (context.endsOn !== null && day.date > context.endsOn) {
-		return `${day.date} is after the contract ends`;
+		return { code: 'after_contract_end', reason: `${day.date} is after the contract ends` };
 	}
-	if (day.quantity <= 0) return `quantity ${day.quantity} is not positive`;
+	if (day.quantity <= 0) {
+		return {
+			code: 'non_positive_quantity',
+			reason: `quantity ${day.quantity} is not positive`
+		};
+	}
 	if (day.excerpt.length < MINIMUM_EXCERPT_LENGTH) {
-		return `excerpt ${JSON.stringify(day.excerpt)} is too short to be evidence`;
+		return {
+			code: 'excerpt_too_short',
+			reason: `excerpt ${JSON.stringify(day.excerpt)} is too short to be evidence`
+		};
 	}
 	if (!normalise(context.content).includes(normalise(day.excerpt))) {
-		return `excerpt ${JSON.stringify(day.excerpt)} is not verbatim in the message`;
+		return {
+			code: 'excerpt_not_verbatim',
+			reason: `excerpt ${JSON.stringify(day.excerpt)} is not verbatim in the message`
+		};
 	}
 	if (context.allowedQuantities.length > 0 && !context.allowedQuantities.includes(day.quantity)) {
-		return `quantity ${day.quantity} is not one this contract's rate cards sell`;
+		return {
+			code: 'quantity_not_sold',
+			reason: `quantity ${day.quantity} is not one this contract's rate cards sell`
+		};
 	}
 	return null;
 }

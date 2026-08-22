@@ -225,6 +225,7 @@ export async function writeDayProposals(
 				// and does the right thing either way.
 				rejected.push({
 					day,
+					code: 'decided_while_rereading',
 					reason: `${day.date}'s proposal was decided while this re-read was running`
 				});
 			}
@@ -256,7 +257,7 @@ export async function writeDayProposals(
 	// is written down for the alert engine, which cannot re-invoke the
 	// model to rediscover it.
 	for (const entry of rejected) {
-		if (!entry.reason.endsWith('is already recorded on this contract')) continue;
+		if (entry.code !== 'already_recorded') continue;
 		const recordedQuantity = recordedByDate.get(entry.day.date);
 		if (recordedQuantity !== undefined && recordedQuantity === entry.day.quantity) {
 			// A re-read that confirms what the ledger already holds is not

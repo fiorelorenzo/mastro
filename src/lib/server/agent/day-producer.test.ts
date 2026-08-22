@@ -439,7 +439,10 @@ test('a second read of a conversation revises the pending day, suppresses the re
 	]);
 	expect(result.outcome.proposals[0].id).toBe(result.existingId);
 	// Only the recorded day is reported as rejected; a pending one reaching
-	// the writer is no longer a rejection at all.
+	// the writer is no longer a rejection at all. `code` is what the
+	// producer's own conflict check dispatches on (day-producer.ts); `reason`
+	// is pinned too, but only as the prose a human/log sees.
+	expect(result.outcome.rejected.map((entry) => entry.code)).toEqual(['already_recorded']);
 	expect(result.outcome.rejected.map((entry) => entry.reason)).toEqual([
 		'2026-02-04 is already recorded on this contract'
 	]);
@@ -797,8 +800,10 @@ test('a rejected day sharing a date with a live one does not skew the recorded t
 	});
 
 	// The live row's own quantity (0.5) is what the re-read agrees with —
-	// not the rejected row's (1), and not their sum (1.5).
+	// not the rejected row's (1), and not their sum (1.5). `code` is what
+	// the producer's conflict check actually dispatches on.
 	expect(result.outcome.proposals).toHaveLength(0);
+	expect(result.outcome.rejected.map((entry) => entry.code)).toEqual(['already_recorded']);
 	expect(result.outcome.rejected.map((entry) => entry.reason)).toEqual([
 		'2026-02-03 is already recorded on this contract'
 	]);
