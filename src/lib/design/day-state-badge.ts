@@ -54,6 +54,19 @@ function badge(variant: BadgeVariant, label: string): StateBadge {
 	return { variant, glyph: BADGE_GLYPH[variant], label };
 }
 
+/** One state's badge, minus the resolved label: `label` is the message
+ * *function* itself, never its called-once result, so the maps below stay
+ * exhaustive at compile time (`Record<State, StateBadgeSpec>`) while the
+ * actual `m.*()` call happens inside `workUnitStateBadge` /
+ * `queuedDayStatusBadge`, at render time, against the request's locale.
+ * A module-level constant holding the resolved string would freeze the
+ * label in whichever locale first imported this module — wrong for every
+ * request after the first on a long-lived server process (#422). */
+interface StateBadgeSpec {
+	variant: BadgeVariant;
+	label: () => string;
+}
+
 /**
  * `worked_without_approval` is the one state the product needs unmistakable
  * (README.md's own framing: "the branch that matters most"). It is the
@@ -63,22 +76,24 @@ function badge(variant: BadgeVariant, label: string): StateBadge {
  * represents unrecorded legal risk and never gets diluted by sharing its
  * colour with something less urgent.
  */
-const WORK_UNIT_STATE_BADGE: Readonly<Record<WorkUnitStateValue, StateBadge>> = {
-	proposed: badge('neutral', m.day_state_proposed()),
-	approved: badge('info', m.day_state_approved()),
-	worked: badge('good', m.day_state_worked()),
-	worked_without_approval: badge('critical', m.day_state_worked_without_approval()),
-	invoiced: badge('info', m.day_state_invoiced()),
-	paid: badge('good', m.day_state_paid()),
-	disputed: badge('serious', m.day_state_disputed()),
-	revoked: badge('neutral', m.day_state_revoked()),
-	rejected: badge('warning', m.day_state_rejected()),
-	unbillable: badge('neutral', m.day_state_unbillable())
+const WORK_UNIT_STATE_BADGE: Readonly<Record<WorkUnitStateValue, StateBadgeSpec>> = {
+	proposed: { variant: 'neutral', label: m.day_state_proposed },
+	approved: { variant: 'info', label: m.day_state_approved },
+	worked: { variant: 'good', label: m.day_state_worked },
+	worked_without_approval: { variant: 'critical', label: m.day_state_worked_without_approval },
+	invoiced: { variant: 'info', label: m.day_state_invoiced },
+	paid: { variant: 'good', label: m.day_state_paid },
+	disputed: { variant: 'serious', label: m.day_state_disputed },
+	revoked: { variant: 'neutral', label: m.day_state_revoked },
+	rejected: { variant: 'warning', label: m.day_state_rejected },
+	unbillable: { variant: 'neutral', label: m.day_state_unbillable }
 };
 
-/** The `{ variant, glyph, label }` a `Badge` needs to render `state`. */
+/** The `{ variant, glyph, label }` a `Badge` needs to render `state`,
+ *  resolved against the request's locale at call time. */
 export function workUnitStateBadge(state: WorkUnitStateValue): StateBadge {
-	return WORK_UNIT_STATE_BADGE[state];
+	const spec = WORK_UNIT_STATE_BADGE[state];
+	return badge(spec.variant, spec.label());
 }
 
 /**
@@ -89,14 +104,16 @@ export function workUnitStateBadge(state: WorkUnitStateValue): StateBadge {
  * `warning`, not `critical`: it is a local, retriable sync problem, and
  * `critical` stays reserved for `worked_without_approval` above.
  */
-const QUEUED_DAY_STATUS_BADGE: Readonly<Record<QueuedDayStatus, StateBadge>> = {
-	pending: badge('neutral', m.day_offline_pending_status_pending()),
-	syncing: badge('info', m.day_offline_pending_status_syncing()),
-	failed: badge('warning', m.day_offline_pending_status_failed())
+const QUEUED_DAY_STATUS_BADGE: Readonly<Record<QueuedDayStatus, StateBadgeSpec>> = {
+	pending: { variant: 'neutral', label: m.day_offline_pending_status_pending },
+	syncing: { variant: 'info', label: m.day_offline_pending_status_syncing },
+	failed: { variant: 'warning', label: m.day_offline_pending_status_failed }
 };
 
 /** The `{ variant, glyph, label }` a `Badge` needs to render a queued
- *  offline day's `status`. */
+ *  offline day's `status`, resolved against the request's locale at call
+ *  time (see `StateBadgeSpec` above). */
 export function queuedDayStatusBadge(status: QueuedDayStatus): StateBadge {
-	return QUEUED_DAY_STATUS_BADGE[status];
+	const spec = QUEUED_DAY_STATUS_BADGE[status];
+	return badge(spec.variant, spec.label());
 }

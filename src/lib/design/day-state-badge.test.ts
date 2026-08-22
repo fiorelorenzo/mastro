@@ -9,6 +9,7 @@
 
 import { describe, expect, test } from 'vitest';
 import type { QueuedDayStatus } from '$lib/pwa/offline-queue';
+import { getLocale, overwriteGetLocale } from '$lib/paraglide/runtime';
 import {
 	queuedDayStatusBadge,
 	workUnitStateBadge,
@@ -72,5 +73,46 @@ describe('queuedDayStatusBadge', () => {
 	test('the three queued statuses are distinguishable by variant', () => {
 		const variants = queuedDayStatuses.map((status) => queuedDayStatusBadge(status).variant);
 		expect(new Set(variants).size).toBe(queuedDayStatuses.length);
+	});
+});
+
+// #422: the label maps in day-state-badge.ts hold message *functions*,
+// never a called-once string, precisely so a badge resolves against
+// whichever locale is active *when it is rendered* rather than whichever
+// locale happened to be active the first time this module was imported.
+// `overwriteGetLocale` simulates a request switching locale the way
+// `setLocale` would in the browser (same technique as
+// `$lib/i18n/proposal-issue.test.ts`). Before the fix this test would have
+// failed: both reads would have returned whatever string was frozen in at
+// import time.
+describe('labels follow the active locale at call time, not import time', () => {
+	test('a day-state badge label follows a locale switch', () => {
+		const originalGetLocale = getLocale;
+		try {
+			overwriteGetLocale(() => 'en');
+			expect(workUnitStateBadge('proposed').label).toBe('Proposed');
+
+			overwriteGetLocale(() => 'it');
+			expect(workUnitStateBadge('proposed').label).toBe('Proposta');
+		} finally {
+			overwriteGetLocale(originalGetLocale);
+		}
+	});
+
+	test('a queued-day-status badge label follows a locale switch', () => {
+		const originalGetLocale = getLocale;
+		try {
+			overwriteGetLocale(() => 'en');
+			expect(queuedDayStatusBadge('pending').label).toBe(
+				"Queued — will sync when you're back online"
+			);
+
+			overwriteGetLocale(() => 'it');
+			expect(queuedDayStatusBadge('pending').label).toBe(
+				'In coda — verrà sincronizzata quando torni online'
+			);
+		} finally {
+			overwriteGetLocale(originalGetLocale);
+		}
 	});
 });
