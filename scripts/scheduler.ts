@@ -112,6 +112,14 @@ const jobs: Job[] = [
 		// can configure the cron token ahead of the mirror itself.
 		token: process.env.DRIVE_MIRROR_CRON_TOKEN,
 		intervalMinutes: minutes('DRIVE_PUBLISH_INTERVAL_MINUTES', 15)
+	},
+	{
+		name: 'days settle',
+		path: '/api/days/settle',
+		token: process.env.ALERT_CRON_TOKEN,
+		// Once an hour is enough: the only thing it waits for is a date to
+		// pass.
+		intervalMinutes: minutes('DAYS_SETTLE_INTERVAL_MINUTES', 60)
 	}
 ];
 

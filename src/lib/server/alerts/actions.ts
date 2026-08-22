@@ -171,5 +171,27 @@ export function alertResolution(detail: AlertDetail, locale: Locale): AlertResol
 			const label = m.alerts_action_open_contract(undefined, { locale });
 			return { subjectHref: href, subjectLabel: label, actionHref: href, actionLabel: label };
 		}
+
+		case 'recorded_day_contradicted': {
+			// The day itself is what to look at: correcting it is what silences
+			// this, since the detector re-compares on every run.
+			return {
+				subjectHref: contractHref(detail.contractId, detail.clientId),
+				subjectLabel: m.alerts_action_open_contract(undefined, { locale }),
+				actionHref: `/day/${detail.workUnitId}`,
+				actionLabel: m.alerts_action_open_day({ date: formatDate(detail.date, locale) }, { locale })
+			};
+		}
+
+		case 'pending_proposal_unconfirmed': {
+			// Nothing is on the ledger, so the action is the decision that was
+			// already waiting: the proposal's own screen.
+			return {
+				subjectHref: contractHref(detail.contractId, detail.clientId),
+				subjectLabel: m.alerts_action_open_contract(undefined, { locale }),
+				actionHref: `/proposals/${detail.proposalId}`,
+				actionLabel: m.alerts_action_review_proposal(undefined, { locale })
+			};
+		}
 	}
 }

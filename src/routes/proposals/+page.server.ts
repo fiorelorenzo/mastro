@@ -6,7 +6,12 @@
 // nothing to group by message for once the decision is already made.
 import { error, fail } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
-import { proposedContract, workUnitFields, type ProposedContract } from './queue-fields';
+import {
+	proposalRevised,
+	proposedContract,
+	workUnitFields,
+	type ProposedContract
+} from './queue-fields';
 import type { ProposalTargetType } from '$lib/server/db/schema';
 import { isPostgresError } from '$lib/server/db/postgres-error';
 import { log } from '$lib/server/log/logger';
@@ -210,6 +215,13 @@ export type QueueRow = {
 	confidenceReason: string | null;
 	validationIssue: ProposalValidationIssue | null;
 	amount: number | null;
+	/** The client's own sentence the proposal rests on, quoted verbatim —
+	 *  never translated, rendered as data next to the fields it backs. */
+	excerpt: string;
+	/** True when a re-read (Task 5) has rewritten a still-pending proposal
+	 *  in place rather than dropping it — see `proposalRevised`'s own
+	 *  doc comment for the exact rule and why the tolerance is a second. */
+	revised: boolean;
 };
 
 export type QueueGroup = {
@@ -222,6 +234,12 @@ export type QueueGroup = {
 	 *  link offers to open: an uploaded contract PDF has no message to open,
 	 *  and no subject to be missing either. */
 	fromMessage: boolean;
+	/** Whose message the evidence is (#409, same fact and same comment as
+	 *  the detail screen's `message.mine`): a day confirmed by the client
+	 *  and a day resting on my own reply are not the same claim, and a
+	 *  reviewer cannot tell them apart from an address alone. One flag per
+	 *  group, not per row — every row in a card shares one source thread. */
+	mine: boolean;
 	sender: string | null;
 	receivedAt: string | null;
 	/** When the source arrived, whichever kind it is: the message's own
@@ -252,6 +270,7 @@ async function loadQueue(): Promise<QueueGroup[]> {
 				subject: thread?.subject ?? null,
 				documentName: document?.originalName ?? null,
 				fromMessage: thread !== null,
+				mine: thread?.direction === 'outbound',
 				sender,
 				receivedAt: thread?.receivedAt.toISOString() ?? null,
 				sourceAt: (thread?.receivedAt ?? document?.createdAt)?.toISOString() ?? null,
@@ -273,7 +292,9 @@ async function loadQueue(): Promise<QueueGroup[]> {
 			confidence: row.confidence,
 			confidenceReason: row.confidenceReason,
 			validationIssue: row.validationIssue,
-			amount: priceProposal(row, context.rateCardsByContract)
+			amount: priceProposal(row, context.rateCardsByContract),
+			excerpt: row.excerpt,
+			revised: proposalRevised(row)
 		});
 	}
 

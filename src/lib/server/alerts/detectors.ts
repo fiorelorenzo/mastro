@@ -10,6 +10,7 @@
 import { daysLate, isOverdue } from '$lib/server/domain/invoice';
 import type { EvaluatedCeiling } from '$lib/server/fiscal/ceiling';
 import type { InvoicingCadence } from '$lib/server/db/schema/contract';
+import type { WorkUnitState } from '$lib/server/db/schema/work-unit';
 import {
 	AGENT_RUN_STALE_HOURS,
 	APPROVAL_UNACTIONED_CRITICAL_DAYS,
@@ -715,4 +716,83 @@ export function detectAgentRunFailure(latestRun: AgentRunRow | null, asOfDate: D
 		];
 	}
 	return [];
+}
+
+export interface DayReadingConflictAlertRow {
+	readonly conflictId: string;
+	readonly contractId: string;
+	readonly clientId: string;
+	readonly contractTitle: string;
+	readonly clientLegalName: string;
+	readonly date: string;
+	/** Null when the newest reading proposes nothing for this date. */
+	readonly readingQuantity: number | null;
+	readonly recordedWorkUnitId: string | null;
+	readonly recordedQuantity: number | null;
+	readonly recordedState: WorkUnitState | null;
+	readonly pendingProposalId: string | null;
+}
+
+/**
+ * The mail now says something different from a day the ledger already holds
+ * (design doc, "when a reading disagrees with the ledger"). The ledger is not
+ * touched — that day was a human decision — so the only honest move is to say
+ * so. Self-resolving: the row is compared against the ledger on every run, so
+ * correcting the day silences the alert without an acknowledgement.
+ *
+ * `critical` once the day is `invoiced` or `paid`, because by then the number
+ * has left the building; `serious` before that, when correcting it is still
+ * free.
+ */
+export function detectRecordedDayContradicted(
+	rows: readonly DayReadingConflictAlertRow[]
+): Alert[] {
+	const alerts: Alert[] = [];
+	for (const row of rows) {
+		if (row.recordedWorkUnitId === null || row.recordedQuantity === null) continue;
+		if (row.readingQuantity !== null && row.readingQuantity === row.recordedQuantity) continue;
+		const severity =
+			row.recordedState === 'invoiced' || row.recordedState === 'paid' ? 'critical' : 'serious';
+		alerts.push(
+			makeAlert(row.recordedWorkUnitId, severity, {
+				type: 'recorded_day_contradicted',
+				contractId: row.contractId,
+				clientId: row.clientId,
+				contractTitle: row.contractTitle,
+				clientLegalName: row.clientLegalName,
+				date: row.date,
+				workUnitId: row.recordedWorkUnitId,
+				recordedQuantity: row.recordedQuantity,
+				readingQuantity: row.readingQuantity
+			})
+		);
+	}
+	return alerts;
+}
+
+/**
+ * A proposal is still waiting and the newest reading of its conversation no
+ * longer proposes that day at all — the client cancelled it. Not withdrawn
+ * automatically: that would be the agent deciding, which invariant 3 gives to
+ * a human. `warning`, because nothing is on the ledger yet.
+ */
+export function detectPendingProposalUnconfirmed(
+	rows: readonly DayReadingConflictAlertRow[]
+): Alert[] {
+	const alerts: Alert[] = [];
+	for (const row of rows) {
+		if (row.pendingProposalId === null || row.readingQuantity !== null) continue;
+		alerts.push(
+			makeAlert(row.pendingProposalId, 'warning', {
+				type: 'pending_proposal_unconfirmed',
+				contractId: row.contractId,
+				clientId: row.clientId,
+				contractTitle: row.contractTitle,
+				clientLegalName: row.clientLegalName,
+				date: row.date,
+				proposalId: row.pendingProposalId
+			})
+		);
+	}
+	return alerts;
 }

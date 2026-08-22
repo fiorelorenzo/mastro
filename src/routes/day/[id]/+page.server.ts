@@ -1,6 +1,7 @@
 import { error, fail } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
 import { calendarCrumbs } from '$lib/nav/crumbs';
+import { utcToday } from '$lib/server/days/settle';
 import { getApproval, listApprovalsForContract } from '$lib/server/repositories/approval';
 import { listClauseNotes } from '$lib/server/repositories/clause-note';
 import { getContractWithClient } from '$lib/server/repositories/contract';
@@ -14,6 +15,7 @@ import {
 	linkApprovalToWorkUnit,
 	listWorkUnitTransitions,
 	markWorkUnitUnbillable,
+	markWorkUnitWorked,
 	rejectWorkUnit,
 	resolveWorkUnitDispute,
 	revokeWorkUnit
@@ -75,6 +77,10 @@ export const load: PageServerLoad = async ({ params }) => {
 	const rateCard = resolveRateCard(rateCards, workUnit.date);
 	const quantityKind: 'day' | 'hour' = rateCard?.kind === 'hourly' ? 'hour' : 'day';
 
+	// Shared with the sweep (`settleApprovedDays`) so the manual button and
+	// the automatic half never disagree about what "today" means — see
+	// `utcToday`'s own note on why UTC, not local time.
+	const today = utcToday();
 	const crumbs = calendarCrumbs();
 
 	return {
@@ -85,7 +91,8 @@ export const load: PageServerLoad = async ({ params }) => {
 			quantityKind,
 			scope: workUnit.scope,
 			state: workUnit.state,
-			notes: workUnit.notes
+			notes: workUnit.notes,
+			today
 		},
 		contract: {
 			id: contract.id,
@@ -175,6 +182,37 @@ export const actions: Actions = {
 		await markWorkUnitUnbillable(params.id, { kind: 'human', email: locals.user!.email }, reason);
 
 		return { markedUnbillable: true };
+	},
+
+	// The manual half of the settle sweep (Task 2's automatic half fires
+	// once the date has passed): a day approved for today that the
+	// consultant has already finished should not have to wait for the
+	// night. The trigger admits `approved -> worked` and also
+	// `worked_without_approval -> worked`, but neither the trigger nor the
+	// state machine has any notion of *when* a day happened — that is an
+	// application rule, not a state-machine one, and the trigger cannot
+	// enforce it. So this action carries the one precondition the template
+	// button also renders on: the day's date must not be in the future.
+	// `date <= today`, not `date === today` — a day dated yesterday that
+	// the hourly sweep has not reached yet is legitimately markable by
+	// hand (the sweep would do it within the hour anyway); a day dated
+	// tomorrow must never be, because the only edge out of `worked` is
+	// `worked -> invoiced`, and a mis-tap here cannot be undone.
+	worked: async ({ params, locals }) => {
+		const workUnit = await getWorkUnit(params.id);
+		if (!workUnit) error(404, m.day_detail_not_found());
+
+		if (workUnit.date > utcToday()) {
+			return fail(400, { workedError: m.day_detail_worked_future_error() });
+		}
+
+		await markWorkUnitWorked(
+			params.id,
+			{ kind: 'human', email: locals.user!.email },
+			'recorded worked by hand'
+		);
+
+		return { recorded: true };
 	},
 
 	// #214's path in: legal only from `invoiced` — the trigger enforces

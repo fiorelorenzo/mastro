@@ -7,7 +7,7 @@
 // `forecastCommitted`/`forecastProjected`) or is a small, direct query
 // this feature is the first to need.
 
-import { and, desc, eq, inArray, isNotNull, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, ne, notInArray, sql } from 'drizzle-orm';
 import { db, type DbExecutor } from '$lib/server/db';
 import {
 	agentRun,
@@ -15,6 +15,7 @@ import {
 	backupRun,
 	client,
 	contract,
+	dayReadingConflict,
 	document,
 	documentMirrorRun,
 	mailboxPollRun,
@@ -35,6 +36,7 @@ import type {
 	BackupRunRow,
 	BillablePeriodRow,
 	ContractDeadlineRow,
+	DayReadingConflictAlertRow,
 	InvoiceOverdueRow,
 	MailboxPollRunRow,
 	MirrorCandidateRow,
@@ -361,4 +363,68 @@ export async function fetchLatestMailboxPollRun(
 		.orderBy(desc(mailboxPollRun.createdAt))
 		.limit(1);
 	return { pollingConfigured: true, latestRun: row ?? null };
+}
+
+/** The conflicts, each carried alongside what the ledger currently holds for
+ * that day — which is what lets the detectors resolve themselves: they
+ * compare the stored reading against this on every run, so correcting the day
+ * silences the alert with no acknowledgement. */
+export async function fetchDayReadingConflictRows(
+	executor: DbExecutor = db
+): Promise<DayReadingConflictAlertRow[]> {
+	const rows = await executor
+		.select({
+			conflictId: dayReadingConflict.id,
+			contractId: dayReadingConflict.contractId,
+			clientId: client.id,
+			contractTitle: contract.title,
+			clientLegalName: client.legalName,
+			date: dayReadingConflict.date,
+			// Null when `proposed_fields` is null, which is how the producer
+			// records "the newest reading proposes nothing for this date".
+			readingQuantity: sql<string | null>`(${dayReadingConflict.proposedFields} ->> 'quantity')`,
+			recordedWorkUnitId: workUnit.id,
+			recordedQuantity: workUnit.quantity,
+			recordedState: workUnit.state,
+			pendingProposalId: proposal.id
+		})
+		.from(dayReadingConflict)
+		.innerJoin(contract, eq(contract.id, dayReadingConflict.contractId))
+		.innerJoin(client, eq(client.id, contract.clientId))
+		.leftJoin(
+			workUnit,
+			and(
+				eq(workUnit.contractId, dayReadingConflict.contractId),
+				eq(workUnit.date, dayReadingConflict.date),
+				// A rejected or revoked day may legitimately share a date with the
+				// live one (`work_unit_one_active_per_contract_date` is unique only
+				// `WHERE state NOT IN ('rejected', 'revoked')`) — the same rule
+				// `recordedDaysByDate` (`repositories/proposal.ts`) applies to define
+				// what the ledger holds. Without it a dead row both fans a single
+				// conflict out into two alerts and keeps `recorded_day_contradicted`
+				// firing forever about a day the ledger no longer holds.
+				notInArray(workUnit.state, ['rejected', 'revoked'])
+			)
+		)
+		.leftJoin(
+			proposal,
+			and(
+				eq(proposal.contractId, dayReadingConflict.contractId),
+				eq(proposal.targetType, 'work_unit'),
+				eq(proposal.status, 'pending'),
+				sql`${proposal.proposedFields} ->> 'date' = ${dayReadingConflict.date}::text`
+			)
+		);
+
+	// `readingQuantity` is extracted from `proposed_fields` with `->>`, which
+	// always comes back as text; `work_unit.quantity` is a plain
+	// `numeric(..., { mode: 'number' })` column (`db/schema/work-unit.ts`), so
+	// `recordedQuantity` is already a JS number here — the `->>` cast is the
+	// only conversion this query needs (contrast `recordedDaysByDate`'s
+	// `sum(...)`, `repositories/proposal.ts`, which genuinely does come back
+	// as a string because it is an aggregate).
+	return rows.map((row) => ({
+		...row,
+		readingQuantity: row.readingQuantity === null ? null : Number(row.readingQuantity)
+	}));
 }

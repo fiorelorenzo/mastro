@@ -187,6 +187,29 @@ export async function markWorkUnitUnbillable(
 	return transitionWorkUnit(id, { state: 'unbillable' }, actor, reason, tx);
 }
 
+/**
+ * The edge the product was missing (#417's successor). `work_unit_enforce_state_machine`
+ * has always allowed `approved -> worked`; nothing in the application ever called it,
+ * so an accepted proposal parked a day at `approved` and `listEligibleWorkUnitsForInvoicing`
+ * — which reads `worked` and `disputed` — could never see it. Recording every day by hand
+ * was the only road that arrived.
+ *
+ * Same shape as its six siblings: one field through `transitionWorkUnit`, and
+ * an illegal source state is refused by the database rather than by a check
+ * here. `actor` is `{ kind: 'system' }` when the settle sweep applies it and
+ * `{ kind: 'human', email }` when somebody presses the button on the day
+ * itself; `reason` is never optional, because the append-only log is what
+ * makes an automatic transition readable afterwards.
+ */
+export async function markWorkUnitWorked(
+	id: string,
+	actor: TransitionActor,
+	reason: string,
+	tx?: DbExecutor
+) {
+	return transitionWorkUnit(id, { state: 'worked' }, actor, reason, tx);
+}
+
 /** #214's path in: a client contests an already-billed day. Same shape as
  * `markWorkUnitUnbillable` — one field through `transitionWorkUnit` —
  * except the trigger's allowed-edge list only admits this from `invoiced`
@@ -419,6 +442,23 @@ export async function listWorkUnitsForContractOnDate(
 		.from(workUnit)
 		.where(and(eq(workUnit.contractId, contractId), eq(workUnit.date, date)))
 		.orderBy(asc(workUnit.createdAt));
+}
+
+/**
+ * Every day still `approved` whose date is strictly before `date` — the
+ * settle sweep's own read (`$lib/server/days/settle.ts`).
+ *
+ * Strictly before, never on: a day must not become billable while it is
+ * still in progress. `date` is the sweep's idea of today, passed in rather
+ * than read from the clock here, so a test can name the boundary and a
+ * future timezone decision has one place to change.
+ */
+export async function listApprovedDaysBefore(date: string, executor: DbExecutor = db) {
+	return executor
+		.select({ id: workUnit.id, date: workUnit.date })
+		.from(workUnit)
+		.where(and(eq(workUnit.state, 'approved'), lt(workUnit.date, date)))
+		.orderBy(asc(workUnit.date));
 }
 
 /**

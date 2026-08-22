@@ -19,6 +19,9 @@ const EXPECTED_PUBLIC_ROUTE_IDS = new Set([
 	// session check runs before any handler, so a cron caller holding a
 	// valid token would otherwise collect a 401 it can do nothing about.
 	'/api/drive/publish',
+	// The settle sweep's cron-driven run, bearer-authed on
+	// `ALERT_CRON_TOKEN` exactly like `/api/agent/run` above.
+	'/api/days/settle',
 	'/offline'
 ]);
 

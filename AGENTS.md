@@ -455,6 +455,36 @@ not possible with a planted cookie: drive the pages with `curl` against the
 production build (which is what catches a resolved-path 500 on a breadcrumb) and do
 the visual sweep against `pnpm dev`.
 
+**A helper exported from a `+page.server.ts` breaks the route, and `pnpm check` is
+the one command that does not notice.** SvelteKit allows only a fixed set of
+exports from a server module — `load`, `actions`, the page options, `entries`, and
+anything prefixed with `_` — and `pnpm check` misses an extra one entirely,
+because its validator runs after type-only exports are erased. Measured on this
+branch by appending `export const illegalHelper = () => 1;` to a real
+`+page.server.ts`: `pnpm check` still reported 0 errors, while `pnpm build` exited
+1 with `Invalid export 'illegalHelper' in src/routes/day/[id]/+page.server.ts
+(valid exports are load, prerender, csr, ssr, trailingSlash, config, actions,
+entries, or anything with a '_' prefix)`. So the gate does catch it, at build, and
+`pnpm dev` shows it as a 500 on the page the moment you load the route — which is
+how it was actually found, since an agent told to run only the tests it touched
+never reached either. Pure row helpers belong in a sibling module
+(`src/routes/proposals/queue-fields.ts` is the pattern): testable without a
+database, and it imports cleanly from both the loader and the test (#419).
+
+**`now()` is frozen per transaction, so a timestamp is not an ordering key.** This
+is the same fact the test section states, but it bites production too, and it did:
+`work_unit_transition.created_at` defaulted to `now()`, so every transition written
+by one transaction shared one value, and `listWorkUnitTransitions` — which the day
+detail page's history renders — orders by that column alone. Tied sort keys leave
+the order to the query plan, so a lifecycle could display backwards, and the suite
+failed 2 runs in 6 on assertions about it. The default is now `clock_timestamp()`
+(migration `0079`), which is the real clock at each INSERT rather than the
+transaction's start. Two consequences worth carrying: a column named `created_at`
+on any other table still means "when the transaction started", and
+`clock_timestamp()` can still repeat within a single statement, so a bulk UPDATE
+firing a row trigger per row would tie again (#420 carries the sequence-column fix
+that would end it).
+
 ### What CI covers, and what does not scope
 
 The `check` job runs `pnpm lint`, `pnpm check`, `pnpm db:migrate`, `pnpm test` and

@@ -4,6 +4,7 @@ import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import {
 	client,
 	contract,
+	dayReadingConflict,
 	document,
 	proposal,
 	rateCard,
@@ -360,23 +361,29 @@ test('#400: with no conversation array, a day still archives against the source 
 	});
 });
 
-test('a second read of a conversation offers only what is new (#403)', async () => {
+test('a second read of a conversation revises the pending day, suppresses the recorded one, and adds what is new (#403, revised by Task 5)', async () => {
 	// The shape a repeated sync produces: the 3rd was proposed when the
 	// conversation was first read and is still waiting for a decision, the
 	// 4th was accepted and is on the ledger, and today's reply adds the 5th.
 	// Re-reading gives the model all three again, because it must see the
-	// offer to understand the answer; only the 5th is news.
+	// offer to understand the answer. The 4th, recorded, is still suppressed
+	// — a human decided it. The 3rd, only pending, is no longer suppressed:
+	// it is rewritten in place (Task 5), same id, same document, refreshed
+	// reading. Only the 5th is a brand new row.
 	const result = await inRolledBackTransaction(async (tx) => {
 		const { contractRow, documentRow } = await seed(tx);
-		await tx.insert(proposal).values({
-			documentId: documentRow.id,
-			contractId: contractRow.id,
-			targetType: 'work_unit',
-			proposedFields: { date: '2026-02-03', quantity: 1, scope: 'Analisi' },
-			excerpt: 'le giornate del 3',
-			confidence: 0.8,
-			status: 'pending'
-		});
+		const [existing] = await tx
+			.insert(proposal)
+			.values({
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				targetType: 'work_unit',
+				proposedFields: { date: '2026-02-03', quantity: 1, scope: 'Analisi' },
+				excerpt: 'le giornate del 3',
+				confidence: 0.8,
+				status: 'pending'
+			})
+			.returning();
 		await tx.insert(workUnit).values({
 			contractId: contractRow.id,
 			date: '2026-02-04',
@@ -385,7 +392,7 @@ test('a second read of a conversation offers only what is new (#403)', async () 
 			state: 'worked_without_approval'
 		});
 
-		return proposeDaysFromMessage(
+		const outcome = await proposeDaysFromMessage(
 			{
 				documentId: documentRow.id,
 				contractId: contractRow.id,
@@ -421,15 +428,592 @@ test('a second read of a conversation offers only what is new (#403)', async () 
 			}),
 			tx
 		);
+		return { outcome, existingId: existing.id };
 	});
 
-	// One new proposal, and the two the ledger already holds are reported as
-	// rejected rather than dropped, so a run that found nothing new says so.
-	expect(result.proposals.map((row) => row.proposedFields)).toEqual([
+	// Two proposals: the 3rd, revised in place (same id), and the 5th, new.
+	// The 4th is not among them — it is on the ledger, not proposed again.
+	expect(result.outcome.proposals.map((row) => row.proposedFields)).toEqual([
+		expect.objectContaining({ date: '2026-02-03' }),
 		expect.objectContaining({ date: '2026-02-05' })
 	]);
-	expect(result.rejected.map((entry) => entry.reason)).toEqual([
-		'2026-02-03 is already proposed or recorded on this contract',
-		'2026-02-04 is already proposed or recorded on this contract'
+	expect(result.outcome.proposals[0].id).toBe(result.existingId);
+	// Only the recorded day is reported as rejected; a pending one reaching
+	// the writer is no longer a rejection at all. `code` is what the
+	// producer's own conflict check dispatches on (day-producer.ts); `reason`
+	// is pinned too, but only as the prose a human/log sees.
+	expect(result.outcome.rejected.map((entry) => entry.code)).toEqual(['already_recorded']);
+	expect(result.outcome.rejected.map((entry) => entry.reason)).toEqual([
+		'2026-02-04 is already recorded on this contract'
 	]);
+});
+
+test('a re-read that re-attributes a day\u2019s evidence to a different message moves the proposal to that document too', async () => {
+	// Task 5 + invariant 4: `excerpt` and `document_id` move together or not
+	// at all (0075_proposal_pending_reading_is_mutable.sql) — a row whose
+	// excerpt cannot be found in the document it names is exactly the
+	// failure invariant 4 exists to prevent. The first read attributed the
+	// day to the offer (message 0, tentative); the reply resolves it, and
+	// the evidence a human should be shown now sits in message 1 instead.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow: offerDocument } = await seed(tx);
+		const replyDocument = await seedDocument(tx, contractRow.id, 'reply.eml');
+		const [existing] = await tx
+			.insert(proposal)
+			.values({
+				documentId: offerDocument.id,
+				contractId: contractRow.id,
+				targetType: 'work_unit',
+				proposedFields: { date: '2026-02-03', quantity: 1, scope: 'Analisi' },
+				excerpt: 'forse il 3, da confermare',
+				confidence: 0.5,
+				status: 'pending'
+			})
+			.returning();
+
+		const outcome = await proposeDaysFromMessage(
+			{
+				documentId: replyDocument.id,
+				contractId: contractRow.id,
+				content:
+					'--- message 0, 2026-02-02, client@example.com ---\n' +
+					'forse il 3, da confermare\n\n' +
+					'--- message 1, 2026-02-03, client@example.com ---\n' +
+					'confermo il 3, giornata intera',
+				messageDate: '2026-02-03',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn,
+				conversation: [
+					{
+						documentId: offerDocument.id,
+						sentAt: '2026-02-02',
+						from: 'client@example.com',
+						body: 'forse il 3, da confermare'
+					},
+					{
+						documentId: replyDocument.id,
+						sentAt: '2026-02-03',
+						from: 'client@example.com',
+						body: 'confermo il 3, giornata intera'
+					}
+				]
+			},
+			answer({
+				days: [
+					{
+						date: '2026-02-03',
+						quantity: 1,
+						scope: 'Analisi',
+						excerpt: 'confermo il 3, giornata intera',
+						messageIndex: 1
+					}
+				]
+			}),
+			tx
+		);
+
+		const [after] = await tx.select().from(proposal).where(eq(proposal.id, existing.id));
+		return { outcome, after, existingId: existing.id, replyDocumentId: replyDocument.id };
+	});
+
+	expect(result.outcome.proposals).toHaveLength(1);
+	// Same row, same id: a link a reviewer already has open still resolves.
+	expect(result.outcome.proposals[0].id).toBe(result.existingId);
+	// But it now names the document the new excerpt actually came from, not
+	// the one the first, tentative read pointed at — the review queue
+	// (grouped by documentId) moves this row to that document's card, and
+	// that is the correct effect of a corrected reading.
+	expect(result.after.documentId).toBe(result.replyDocumentId);
+	expect(result.after.excerpt).toBe('confermo il 3, giornata intera');
+	expect(result.after.status).toBe('pending');
+});
+
+test('a second reading rewrites the pending proposal instead of dropping it', async () => {
+	// The client wrote "half a day, not one" while the proposal was still
+	// waiting. Suppressing the day (which the old always-decided query did)
+	// kept the stale reading on screen and put the new one only in the run
+	// log. The row is rewritten in place, keeping its id so a link somebody
+	// has open still resolves.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		const [existing] = await tx
+			.insert(proposal)
+			.values({
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				targetType: 'work_unit',
+				proposedFields: { date: '2026-02-03', quantity: 1, scope: 'Analisi' },
+				excerpt: 'la giornata del 3',
+				confidence: 0.8,
+				status: 'pending'
+			})
+			.returning();
+
+		const outcome = await proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'in realt\u00e0 il 3 facciamo mezza giornata',
+				messageDate: '2026-02-04',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn
+			},
+			answer({
+				days: [
+					{
+						date: '2026-02-03',
+						quantity: 0.5,
+						scope: 'Analisi',
+						excerpt: 'il 3 facciamo mezza giornata',
+						messageIndex: 0
+					}
+				]
+			}),
+			tx
+		);
+
+		const [after] = await tx.select().from(proposal).where(eq(proposal.id, existing.id));
+		return { outcome, after, existingId: existing.id };
+	});
+
+	// One proposal, the same one, with the new reading on it.
+	expect(result.outcome.proposals).toHaveLength(1);
+	expect(result.outcome.proposals[0].id).toBe(result.existingId);
+	expect(result.after.proposedFields).toMatchObject({ quantity: 0.5 });
+	expect(result.after.excerpt).toBe('il 3 facciamo mezza giornata');
+	expect(result.after.status).toBe('pending');
+	// Not asserting `updatedAt > createdAt` here: `now()` is frozen for the
+	// whole transaction (`inRolledBackTransaction`), so the INSERT and the
+	// UPDATE both stamp the identical instant and the two are equal, not
+	// ordered. Task 4's `proposalRevised` reads the same two columns outside
+	// a transaction, where they genuinely differ across two requests.
+});
+
+test('a date whose proposal was rejected can be proposed again', async () => {
+	// A rejection says "not this proposal", not "never this day". A re-read
+	// that understands the conversation better is the correction the reviewer
+	// is owed, so a rejected date is in neither the recorded map nor the
+	// pending map and reaches `createProposal` as if it were new.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		await tx.insert(proposal).values({
+			documentId: documentRow.id,
+			contractId: contractRow.id,
+			targetType: 'work_unit',
+			proposedFields: { date: '2026-02-03', quantity: 1, scope: 'Analisi' },
+			excerpt: 'la giornata del 3',
+			confidence: 0.8,
+			status: 'rejected',
+			// `proposal_decision_shape` requires both once a row is decided.
+			decidedBy: 'reviewer@example.com',
+			decidedAt: new Date()
+		});
+
+		return proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'confermo la giornata del 3, mezza',
+				messageDate: '2026-02-04',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn
+			},
+			answer({
+				days: [
+					{
+						date: '2026-02-03',
+						quantity: 0.5,
+						scope: 'Analisi',
+						excerpt: 'la giornata del 3, mezza',
+						messageIndex: 0
+					}
+				]
+			}),
+			tx
+		);
+	});
+
+	// A new proposal, not a revision of the rejected one.
+	expect(result.proposals).toHaveLength(1);
+	expect(result.proposals[0].status).toBe('pending');
+});
+
+test('a reading that disagrees with a recorded day writes a conflict and no proposal, once, not on every re-read', async () => {
+	// A day already on the ledger is a human's decision (invariant 3): the
+	// producer must not re-propose it, but a reading that disagrees with
+	// what is recorded is still a fact worth a reviewer's attention, kept
+	// as a conflict row rather than silently dropped.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		await tx.insert(workUnit).values({
+			contractId: contractRow.id,
+			date: '2026-02-03',
+			quantity: 1,
+			scope: 'Analisi',
+			state: 'worked_without_approval'
+		});
+
+		const request = {
+			documentId: documentRow.id,
+			contractId: contractRow.id,
+			content: 'il 3 era mezza giornata',
+			messageDate: '2026-02-04',
+			startsOn: contractRow.startsOn,
+			endsOn: contractRow.endsOn
+		};
+		const scripted = answer({
+			days: [
+				{
+					date: '2026-02-03',
+					quantity: 0.5,
+					scope: 'Analisi',
+					excerpt: 'il 3 era mezza giornata',
+					messageIndex: 0
+				}
+			]
+		});
+
+		const outcome = await proposeDaysFromMessage(request, scripted, tx);
+		// A second, unchanged re-read of the same conversation must not pile
+		// a second row onto the same disagreement — the table is upserted
+		// on `(contract_id, date)`, not appended to.
+		const second = await proposeDaysFromMessage(request, scripted, tx);
+
+		const conflicts = await tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractRow.id));
+		return { outcome, second, conflicts };
+	});
+
+	expect(result.outcome.proposals).toHaveLength(0);
+	expect(result.second.proposals).toHaveLength(0);
+	expect(result.conflicts).toHaveLength(1);
+	expect(result.conflicts[0].proposedFields).toMatchObject({ quantity: 0.5 });
+	expect(result.conflicts[0].excerpt).toBe('il 3 era mezza giornata');
+});
+
+test('a reading that agrees with a recorded day writes no conflict', async () => {
+	// Agreement is not news: a table that fills up with confirmations is a
+	// table nobody reads.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		await tx.insert(workUnit).values({
+			contractId: contractRow.id,
+			date: '2026-02-03',
+			quantity: 1,
+			scope: 'Analisi',
+			state: 'worked_without_approval'
+		});
+
+		await proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'confermo la giornata del 3',
+				messageDate: '2026-02-04',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn
+			},
+			answer({
+				days: [
+					{
+						date: '2026-02-03',
+						quantity: 1,
+						scope: 'Analisi',
+						excerpt: 'confermo la giornata del 3',
+						messageIndex: 0
+					}
+				]
+			}),
+			tx
+		);
+
+		return tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractRow.id));
+	});
+
+	expect(result).toHaveLength(0);
+});
+
+test('a rejected day sharing a date with a live one does not skew the recorded total', async () => {
+	// `work_unit_one_active_per_contract_date` allows at most one *live* row
+	// per (contract, date), but a dead row (rejected/revoked) can still
+	// share the date with a live one — an earlier reading was rejected,
+	// then a later one was recorded. `recordedByDate` must answer with the
+	// live row's quantity, not "whichever row a plain `GROUP BY` or
+	// "last one wins" pick happens to include" — summing every row
+	// regardless of state (finding 1) or reading a per-date map built over
+	// every state (finding 2) both reach the wrong total here, because the
+	// rejected row's own quantity differs from the live one's.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		const [rejectedRow] = await tx
+			.insert(workUnit)
+			.values({
+				contractId: contractRow.id,
+				date: '2026-02-03',
+				quantity: 1,
+				scope: 'Analisi',
+				state: 'proposed'
+			})
+			.returning();
+		await tx.update(workUnit).set({ state: 'rejected' }).where(eq(workUnit.id, rejectedRow.id));
+		await tx.insert(workUnit).values({
+			contractId: contractRow.id,
+			date: '2026-02-03',
+			quantity: 0.5,
+			scope: 'Analisi',
+			state: 'worked_without_approval'
+		});
+
+		const outcome = await proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'il 3 mezza giornata',
+				messageDate: '2026-02-04',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn
+			},
+			answer({
+				days: [
+					{
+						date: '2026-02-03',
+						quantity: 0.5,
+						scope: 'Analisi',
+						excerpt: 'il 3 mezza giornata',
+						messageIndex: 0
+					}
+				]
+			}),
+			tx
+		);
+
+		const conflicts = await tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractRow.id));
+		return { outcome, conflicts };
+	});
+
+	// The live row's own quantity (0.5) is what the re-read agrees with —
+	// not the rejected row's (1), and not their sum (1.5). `code` is what
+	// the producer's conflict check actually dispatches on.
+	expect(result.outcome.proposals).toHaveLength(0);
+	expect(result.outcome.rejected.map((entry) => entry.code)).toEqual(['already_recorded']);
+	expect(result.outcome.rejected.map((entry) => entry.reason)).toEqual([
+		'2026-02-03 is already recorded on this contract'
+	]);
+	expect(result.conflicts).toHaveLength(0);
+});
+
+test('a revoked day does not suppress its date or produce a false conflict', async () => {
+	// Rejected and revoked are not "recorded" (`day-import.ts`'s
+	// `DayImportExistingStateByKey`, `day-import-request.ts`'s
+	// `existingStateByKeyForDayImport`, and the partial unique index on
+	// `work_unit` itself all agree: a rejected or revoked day never
+	// happened and does not occupy its date). A re-read proposing a day on
+	// a date whose only work unit was revoked must be treated as a fresh
+	// proposal, not suppressed as already recorded and not written as a
+	// disagreement.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		const [row] = await tx
+			.insert(workUnit)
+			.values({
+				contractId: contractRow.id,
+				date: '2026-02-03',
+				quantity: 1,
+				scope: 'Analisi',
+				state: 'proposed'
+			})
+			.returning();
+		await tx.update(workUnit).set({ state: 'approved' }).where(eq(workUnit.id, row.id));
+		await tx.update(workUnit).set({ state: 'revoked' }).where(eq(workUnit.id, row.id));
+
+		const outcome = await proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'il 3 era una giornata intera',
+				messageDate: '2026-02-04',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn
+			},
+			answer({
+				days: [
+					{
+						date: '2026-02-03',
+						quantity: 1,
+						scope: 'Analisi',
+						excerpt: 'il 3 era una giornata intera',
+						messageIndex: 0
+					}
+				]
+			}),
+			tx
+		);
+
+		const conflicts = await tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractRow.id));
+		return { outcome, conflicts };
+	});
+
+	expect(result.outcome.rejected).toHaveLength(0);
+	expect(result.outcome.proposals).toHaveLength(1);
+	expect(result.conflicts).toHaveLength(0);
+});
+
+test('a pending proposal from this conversation whose date the re-read no longer mentions gets a conflict, and keeps its proposal untouched', async () => {
+	// The mirror of the "disagrees with a recorded day" case: the client
+	// cancelled a day that was only ever proposed, never recorded. The
+	// agent must not withdraw the proposal itself (invariant 3: a human
+	// decides) — it stays pending, exactly as it was — but the newest
+	// reading's silence on that date is written down for a reviewer.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		const [pending] = await tx
+			.insert(proposal)
+			.values({
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				targetType: 'work_unit',
+				proposedFields: { date: '2026-03-01', quantity: 1, scope: 'Analisi' },
+				excerpt: 'la giornata del primo marzo',
+				confidence: 0.8,
+				status: 'pending'
+			})
+			.returning();
+
+		const outcome = await proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'grazie per il supporto questo mese',
+				messageDate: '2026-03-05',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn
+			},
+			answer({ days: [] }),
+			tx
+		);
+
+		const conflicts = await tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractRow.id));
+		const [stillPending] = await tx.select().from(proposal).where(eq(proposal.id, pending.id));
+		return { outcome, conflicts, stillPending };
+	});
+
+	expect(result.outcome.proposals).toHaveLength(0);
+	expect(result.conflicts).toHaveLength(1);
+	expect(result.conflicts[0].date).toBe('2026-03-01');
+	expect(result.conflicts[0].proposedFields).toBeNull();
+	expect(result.conflicts[0].excerpt).toBeNull();
+	// The proposal itself is exactly as it was — pending, same fields. The
+	// agent recorded the disagreement; it did not decide anything.
+	expect(result.stillPending.status).toBe('pending');
+	expect(result.stillPending.proposedFields).toEqual({
+		date: '2026-03-01',
+		quantity: 1,
+		scope: 'Analisi'
+	});
+});
+
+test('a pending proposal from a different document gets no conflict, even when its date is unmentioned', async () => {
+	// The guard that stops the loop above from firing on every unrelated
+	// pending proposal in the ledger: a re-read of one thread has no
+	// evidence about what a different thread's proposal still means.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		const otherDocument = await seedDocument(tx, contractRow.id, 'other-thread.eml');
+		await tx.insert(proposal).values({
+			documentId: otherDocument.id,
+			contractId: contractRow.id,
+			targetType: 'work_unit',
+			proposedFields: { date: '2026-03-02', quantity: 1, scope: 'Analisi' },
+			excerpt: 'la giornata del due marzo',
+			confidence: 0.8,
+			status: 'pending'
+		});
+
+		const outcome = await proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'grazie per il supporto questo mese',
+				messageDate: '2026-03-05',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn
+			},
+			answer({ days: [] }),
+			tx
+		);
+
+		const conflicts = await tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractRow.id));
+		return { outcome, conflicts };
+	});
+
+	expect(result.outcome.proposals).toHaveLength(0);
+	expect(result.conflicts).toHaveLength(0);
+});
+
+test('a re-read that re-proposes a previously-dropped date leaves no conflict row behind', async () => {
+	// A stale `proposedFields: null` conflict row — as an earlier re-read
+	// left behind when it dropped this date entirely — must not survive a
+	// later reading that proposes the date again. Left in place, the alert
+	// it backs would keep announcing "the newest reading says nothing
+	// here" about a day the newest reading, in fact, just proposed.
+	const result = await inRolledBackTransaction(async (tx) => {
+		const { contractRow, documentRow } = await seed(tx);
+		await tx.insert(dayReadingConflict).values({
+			contractId: contractRow.id,
+			date: '2026-03-01',
+			documentId: documentRow.id,
+			extractionRunId: null,
+			proposedFields: null,
+			excerpt: null
+		});
+
+		const outcome = await proposeDaysFromMessage(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				content: 'in realtà il primo marzo ho lavorato',
+				messageDate: '2026-03-05',
+				startsOn: contractRow.startsOn,
+				endsOn: contractRow.endsOn
+			},
+			answer({
+				days: [
+					{
+						date: '2026-03-01',
+						quantity: 1,
+						scope: 'Analisi',
+						excerpt: 'il primo marzo ho lavorato',
+						messageIndex: 0
+					}
+				]
+			}),
+			tx
+		);
+
+		const conflicts = await tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractRow.id));
+		return { outcome, conflicts };
+	});
+
+	expect(result.outcome.proposals).toHaveLength(1);
+	expect(result.conflicts).toHaveLength(0);
 });

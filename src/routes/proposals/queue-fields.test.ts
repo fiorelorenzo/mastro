@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { proposedContract, workUnitFields } from './queue-fields';
+import { proposalRevised, proposedContract, workUnitFields } from './queue-fields';
 
 /** A contract the extraction could have written, in the shape
  *  `parseExtractedContract` demands — the live Visum Labs upload, with the
@@ -134,5 +134,42 @@ describe('proposedContract', () => {
 		['nothing at all', {}]
 	])('%s reads as null instead of throwing', (_label, fields) => {
 		expect(proposedContract(fields as Record<string, unknown>)).toBeNull();
+	});
+});
+
+// #409's queue badge: `proposalRevised`'s predicate has two halves. A
+// fixture that only ever UPDATE-bumps `updated_at` exercises the true side
+// of both — a fresh, untouched pending row and a decided row are the two
+// cases that must stay false, and neither showed up in the browser
+// verification that shipped this.
+describe('proposalRevised', () => {
+	test('a fresh pending proposal, untouched since creation, is not revised', () => {
+		const createdAt = new Date('2026-08-20T09:00:00.000Z');
+		expect(proposalRevised({ status: 'pending', createdAt, updatedAt: new Date(createdAt) })).toBe(
+			false
+		);
+	});
+
+	// The tolerance is the whole reason the comparison is not `> 0`: both
+	// timestamps default to `now()` on one INSERT and can land a clock
+	// sliver apart. Without this case, narrowing the rule to `> 0` would
+	// keep every other test green and light the badge on every fresh row.
+	test('a pending proposal whose two timestamps differ by a sliver is not revised', () => {
+		const createdAt = new Date('2026-08-20T09:00:00.000Z');
+		const updatedAt = new Date(createdAt.getTime() + 300);
+		expect(proposalRevised({ status: 'pending', createdAt, updatedAt })).toBe(false);
+	});
+
+	test('a pending proposal whose updatedAt moved well past createdAt is revised', () => {
+		const createdAt = new Date('2026-08-20T09:00:00.000Z');
+		const updatedAt = new Date(createdAt.getTime() + 2 * 60 * 60 * 1000);
+		expect(proposalRevised({ status: 'pending', createdAt, updatedAt })).toBe(true);
+	});
+
+	test('a decided proposal never reads as revised, however far updatedAt moved', () => {
+		const createdAt = new Date('2026-08-20T09:00:00.000Z');
+		const updatedAt = new Date(createdAt.getTime() + 2 * 60 * 60 * 1000);
+		expect(proposalRevised({ status: 'accepted', createdAt, updatedAt })).toBe(false);
+		expect(proposalRevised({ status: 'rejected', createdAt, updatedAt })).toBe(false);
 	});
 });

@@ -11,6 +11,7 @@ import {
 	clauseNote,
 	client,
 	contract,
+	dayReadingConflict,
 	document,
 	inboundThread,
 	rateCard,
@@ -28,6 +29,7 @@ import {
 	listProposalsForDocuments,
 	ProposalValidationError,
 	rejectProposal,
+	reviseDayProposal,
 	type ClientChoice
 } from './proposal';
 import { createWorkUnit, getWorkUnit } from './work-unit';
@@ -798,6 +800,87 @@ test('#245: an edit that fixes the offending field on the review screen is accep
 	});
 });
 
+test('#403 Task 5: a correcting re-read clears a stale validation issue, not just the fields', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
+		// No rate card on this contract, so nothing about the *fraction* is
+		// checked here — this is `too_large_for_column`, the numeric(6, 2)
+		// column check, which the first, bad reading trips.
+		const created = await createProposal(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				targetType: 'work_unit',
+				proposedFields: { date: '2024-06-10', quantity: 12000, scope: 'API migration' },
+				excerpt: 'a full 12000 days, apparently',
+				confidence: 0.4
+			},
+			tx
+		);
+		expect(created.validationIssue).toMatchObject({
+			code: 'too_large_for_column',
+			field: 'quantity'
+		});
+
+		// The re-read corrects the day. If `reviseDayProposal` left the old
+		// issue in place, the queue would still show a blocked banner about
+		// 12000 next to a row now proposing 1, and Accept would stay
+		// disabled on a proposal that is actually fine.
+		const revised = await reviseDayProposal(
+			created.id,
+			{
+				proposedFields: { date: '2024-06-10', quantity: 1, scope: 'API migration' },
+				excerpt: 'ok for Monday',
+				confidence: 0.9,
+				confidenceReason: null,
+				documentId: documentRow.id
+			},
+			tx
+		);
+		expect(revised?.validationIssue).toBeNull();
+	});
+});
+
+test('#403 Task 5: a re-read that breaks a previously clean proposal records the new issue', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
+		const created = await createProposal(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				targetType: 'work_unit',
+				proposedFields: { date: '2024-06-10', quantity: 1, scope: 'API migration' },
+				excerpt: 'ok for Monday',
+				confidence: 0.9
+			},
+			tx
+		);
+		expect(created.validationIssue).toBeNull();
+
+		// A worse re-read, not a better one: if `reviseDayProposal` left
+		// `validationIssue` at its old `null`, the row would look clean until
+		// a human clicked Accept and the write failed downstream — the exact
+		// sequence #245 exists to prevent.
+		const revised = await reviseDayProposal(
+			created.id,
+			{
+				proposedFields: { date: '2024-06-10', quantity: 12000, scope: 'API migration' },
+				excerpt: 'a full 12000 days, apparently',
+				confidence: 0.4,
+				confidenceReason: null,
+				documentId: documentRow.id
+			},
+			tx
+		);
+		expect(revised?.validationIssue).toMatchObject({
+			code: 'too_large_for_column',
+			field: 'quantity'
+		});
+	});
+});
+
 test('#86: a well-formed first-intake contract proposal has no validation error and no contract_id', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const documentRow = await insertUnclaimedDocument(tx);
@@ -1343,5 +1426,45 @@ test('countPendingProposals counts only what is still waiting on a human', async
 
 		await rejectProposal(second.id, 'human', tx);
 		expect(await countPendingProposals(tx)).toBe(before + 1);
+	});
+});
+
+test("accepting a proposal clears the day's conflict row, so the alert cannot outlive the decision it describes (Task 6 follow-up)", async () => {
+	// A day-producer re-read may have left a `day_reading_conflict` row for
+	// this date — a disagreement with the ledger, or (Task 6's follow-up)
+	// a reading that dropped the day's proposal entirely, `proposedFields:
+	// null`. Accepting the proposal is the human decision that resolves
+	// either: the conflict row must go in the same transaction as the
+	// accept, not wait for the next producer run to notice.
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
+		const created = await createProposal(
+			{
+				documentId: documentRow.id,
+				contractId: contractRow.id,
+				targetType: 'work_unit',
+				proposedFields: { date: '2024-06-10', quantity: 1, scope: 'API migration' },
+				excerpt: 'ok for Monday',
+				confidence: 0.9
+			},
+			tx
+		);
+		await tx.insert(dayReadingConflict).values({
+			contractId: contractRow.id,
+			date: '2024-06-10',
+			documentId: documentRow.id,
+			extractionRunId: null,
+			proposedFields: null,
+			excerpt: null
+		});
+
+		await acceptProposal(created.id, { decidedBy: 'lorenzo@example.com' }, tx);
+
+		const conflicts = await tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractRow.id));
+		expect(conflicts).toHaveLength(0);
 	});
 });

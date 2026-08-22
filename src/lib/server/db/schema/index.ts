@@ -17,6 +17,7 @@ export * from './clause-note';
 export * from './client';
 export * from './contract';
 export * from './contract-renewal-assumption';
+export * from './day-reading-conflict';
 export * from './document';
 export * from './document-mirror';
 export * from './email-template';

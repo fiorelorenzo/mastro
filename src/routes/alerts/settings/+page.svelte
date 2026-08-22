@@ -44,6 +44,10 @@
 				return m.alerts_type_agent_run_failure();
 			case 'proposal_pending':
 				return m.alerts_type_proposal_pending();
+			case 'recorded_day_contradicted':
+				return m.alerts_type_recorded_day_contradicted();
+			case 'pending_proposal_unconfirmed':
+				return m.alerts_type_pending_proposal_unconfirmed();
 		}
 	}
 

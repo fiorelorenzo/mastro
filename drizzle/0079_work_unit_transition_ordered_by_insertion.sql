@@ -1,0 +1,34 @@
+-- `work_unit_transition` is an append-only log, so its order *is* its
+-- insertion order — and until now nothing recorded that. `created_at`
+-- defaulted to `now()`, which Postgres freezes for the whole enclosing
+-- transaction, so every transition written by one transaction shared one
+-- timestamp, and `listWorkUnitTransitions`
+-- (`src/lib/server/repositories/work-unit.ts`) orders by that column alone.
+-- Tied sort keys leave the order to whatever the query plan happens to
+-- produce, which varies under load.
+--
+-- This was not theoretical. Three work units in a freshly seeded database
+-- held two transitions each on one identical `created_at`, so the day
+-- detail page's own history (`src/routes/day/[id]/+page.server.ts` reads
+-- exactly this query) could render a lifecycle out of order, and the test
+-- suite failed 2 runs in 6 on assertions about that order — always a
+-- different test, always the same shape. A lifecycle displayed backwards is
+-- worse than a flaky test: the log exists to say what happened, in order.
+--
+-- `clock_timestamp()` is the actual clock at the moment of the call rather
+-- than the transaction's start, so each INSERT gets its own value and the
+-- timestamp finally means what the column name says: when this transition
+-- was written, not when the transaction that wrote it began. Separate
+-- statements are microseconds apart at the very least, and every writer
+-- here is one statement per transition (`transitionWorkUnit` updates a
+-- single row by id; the settle sweep, `applyProposal` and the import loop
+-- all iterate day by day), so the order is total in practice.
+--
+-- What this does NOT promise: two transition rows written by a single
+-- statement could still tie, because `clock_timestamp()` can return the
+-- same microsecond twice within one statement. No writer does that today.
+-- A bulk state UPDATE touching several work units at once would, and the
+-- honest fix for that is a monotonic sequence column rather than a clock —
+-- filed separately rather than folded in here, because it changes the
+-- schema, the query and every consumer of the log's shape.
+ALTER TABLE "work_unit_transition" ALTER COLUMN "created_at" SET DEFAULT clock_timestamp();

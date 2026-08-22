@@ -33,6 +33,21 @@
 	const link = submitting();
 	const dispute = submitting();
 	const resolveDispute = submitting();
+	const worked = submitting();
+	// Unlike `unbillableDialogOpen` and its siblings, this never reopens on
+	// `form?.workedError`: the button (and this dialog) render only under
+	// `data.workUnit.date <= data.workUnit.today`, the exact condition the
+	// server's `fail(400)` fires the opposite of, so a legitimate submit
+	// through this UI can never see that error — only a crafted or stale
+	// POST can, and there is no page left open to show it on.
+	let workedDialogOpen = $state(false);
+	let announcedWorked = false;
+	$effect(() => {
+		if (!form?.recorded || announcedWorked) return;
+		announcedWorked = true;
+		workedDialogOpen = false;
+		toasts.push('neutral', m.day_detail_worked_toast());
+	});
 
 	// The link-approval select's current pick — the reviewer's own
 	// in-progress choice among `data.linkableApprovals`, not a mirror to
@@ -233,6 +248,18 @@
 		</form>
 	{:else if data.workUnit.state === 'approved'}
 		<div class="lifecycle-actions">
+			{#if data.workUnit.date <= data.workUnit.today}
+				<Button
+					type="button"
+					variant="primary"
+					size="sm"
+					onclick={() => {
+						workedDialogOpen = true;
+					}}
+				>
+					{m.day_detail_mark_worked_action()}
+				</Button>
+			{/if}
 			<Button
 				type="button"
 				variant="danger"
@@ -244,6 +271,22 @@
 				{m.day_detail_revoke_action()}
 			</Button>
 		</div>
+		{#if data.workUnit.date <= data.workUnit.today}
+			<form method="POST" action="?/worked" onsubmit={worked.onsubmit}>
+				<Dialog
+					bind:open={workedDialogOpen}
+					title={m.day_detail_worked_confirm_title()}
+					role="alertdialog"
+				>
+					<p>{m.day_detail_worked_confirm_body({ date: formatDate(data.workUnit.date) })}</p>
+					{#snippet actions()}
+						<Button type="submit" variant="primary" loading={worked.busy}>
+							{m.day_detail_mark_worked_action()}
+						</Button>
+					{/snippet}
+				</Dialog>
+			</form>
+		{/if}
 		<form method="POST" action="?/revoke" onsubmit={revoke.onsubmit}>
 			<Dialog
 				bind:open={revokeDialogOpen}

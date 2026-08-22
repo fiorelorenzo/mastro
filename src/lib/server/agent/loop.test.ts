@@ -9,11 +9,17 @@ import {
 	approval,
 	client,
 	contract,
+	dayReadingConflict,
 	inboundThread,
 	rateCard,
+	workUnit,
 	type ExpensePolicy
 } from '$lib/server/db/schema';
 import { storeDocument } from '$lib/server/repositories/document';
+import {
+	createExtractionRun,
+	getExtractionRunByJobId
+} from '$lib/server/repositories/extraction-run';
 import {
 	acceptProposal,
 	createProposal,
@@ -298,4 +304,77 @@ test('#209: the whole path — queued extraction, drained answer, human accept �
 	expect(outcome.eligible.map((row) => row.id)).toContain(outcome.dayOne!.id);
 
 	expect(outcome.rejectedDayCount).toBe(0);
+});
+
+test('a conflict row written from a job-driven read carries the run behind it', async () => {
+	// The `document` is already `writeDayProposals`'s evidence (invariant
+	// 4); the `extraction_run` is the *how* — since #281 made every
+	// extraction a run a reviewer can open and watch, a conflict row that
+	// carries it lets them jump straight from the disagreement to the
+	// transcript that produced it. `applyDayJob` (`drain.ts`) is the one
+	// place that can resolve it, off the job id the queue file and this
+	// run row both carry — `proposeDaysFromMessage`'s own tests cover the
+	// non-job-driven case, which stays `null`.
+	const dir = await mkdtemp(join(tmpdir(), 'mastro-agent-loop-conflict-'));
+
+	const outcome = await inRolledBackTransaction(async (tx) => {
+		const { contractId, documentId } = await seed(tx);
+		// Recorded on the ledger already, a full day.
+		await tx.insert(workUnit).values({
+			contractId,
+			date: '2026-02-03',
+			quantity: 1,
+			scope: 'Analisi',
+			state: 'worked_without_approval'
+		});
+
+		const content = 'Confermo il 3, ma solo mezza giornata.';
+		const jobId = await enqueueJob(dir, {
+			documentId,
+			contractId,
+			targetType: 'work_unit',
+			content,
+			instructions: 'x'
+		});
+		await createExtractionRun(
+			{ jobId, documentId, targetType: 'work_unit', enqueuedAt: new Date() },
+			tx
+		);
+		const job = await readPendingJob(dir, `${jobId}.json`);
+		// Disagrees with the ledger: the mail now says half a day, the
+		// recorded day is a full one.
+		const candidate: ProposalCandidate = {
+			documentId,
+			contractId,
+			targetType: 'work_unit',
+			proposedFields: {
+				days: [
+					{
+						date: '2026-02-03',
+						quantity: 0.5,
+						scope: 'Analisi',
+						excerpt: content,
+						messageIndex: 0
+					}
+				]
+			},
+			excerpt: content,
+			confidence: 0.8
+		};
+		await markJobDone(dir, `${jobId}.json`, job, candidate);
+
+		await drainCompletedJobs(dir, tx);
+
+		const run = await getExtractionRunByJobId(jobId, tx);
+		const conflicts = await tx
+			.select()
+			.from(dayReadingConflict)
+			.where(eq(dayReadingConflict.contractId, contractId));
+		return { run, conflicts };
+	});
+
+	expect(outcome.conflicts).toHaveLength(1);
+	expect(outcome.conflicts[0].proposedFields).toMatchObject({ quantity: 0.5 });
+	expect(outcome.run).not.toBeNull();
+	expect(outcome.conflicts[0].extractionRunId).toBe(outcome.run?.id);
 });

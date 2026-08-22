@@ -54,12 +54,15 @@ async function insertContract(tx: Parameters<Parameters<typeof db.transaction>[0
 
 async function insertDocument(
 	tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-	contractId: string
+	contractId: string,
+	// A second call on the same contract needs a distinct hash — nothing
+	// else about the row matters to the trigger tests that use two.
+	hash = 'e'.repeat(64)
 ) {
 	const [row] = await tx
 		.insert(document)
 		.values({
-			hash: 'e'.repeat(64),
+			hash,
 			mime: 'message/rfc822',
 			size: 256,
 			originalName: 'approval.eml',
@@ -265,14 +268,116 @@ test('a pending status carrying a decision is rejected by the database', async (
 	});
 });
 
-test('the proposed fields, excerpt and confidence cannot change after creation', async () => {
+// Task 5 (#403 revised, 0075_proposal_pending_reading_is_mutable.sql):
+// `proposal_forbid_retrofit` used to forbid every one of these columns from
+// ever changing. It now splits them: `contract_id`/`target_type` are the
+// proposal's identity and stay immutable at any status; `document_id`,
+// `proposed_fields`, `excerpt`, `confidence`, `confidence_reason` and
+// `validation_issue` are its current reading, mutable only while the row is
+// still `pending` — a re-read rewrites them in place
+// (`reviseDayProposal` in `repositories/proposal.ts`), and the same second
+// rule as before freezes all of it, reading included, the moment a human
+// decides.
+test('contract_id and target_type stay immutable, even on a pending proposal', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const contractRow = await insertContract(tx);
+		const otherContract = await insertContract(tx);
 		const documentRow = await insertDocument(tx, contractRow.id);
 		const [row] = await tx
 			.insert(proposal)
 			.values(proposalFields(contractRow.id, documentRow.id))
 			.returning();
+		expect(row.status).toBe('pending');
+
+		expect(
+			(
+				await rejection(
+					() =>
+						tx
+							.update(proposal)
+							.set({ contractId: otherContract.id })
+							.where(eq(proposal.id, row.id)),
+					tx
+				)
+			).message
+		).toMatch(/immutable/);
+
+		expect(
+			(
+				await rejection(
+					() => tx.update(proposal).set({ targetType: 'invoice' }).where(eq(proposal.id, row.id)),
+					tx
+				)
+			).message
+		).toMatch(/immutable/);
+	});
+});
+
+test('a pending proposal\u2019s reading — document, fields, excerpt, confidence and validation issue — can be rewritten while it waits for a decision', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
+		const secondDocument = await insertDocument(tx, contractRow.id, 'f'.repeat(64));
+		const [row] = await tx
+			.insert(proposal)
+			.values(proposalFields(contractRow.id, documentRow.id, { confidenceReason: 'a reason' }))
+			.returning();
+
+		const [revised] = await tx
+			.update(proposal)
+			.set({
+				documentId: secondDocument.id,
+				proposedFields: { date: '2024-06-11', quantity: 0.5, scope: 'a later reading' },
+				excerpt: 'a different sentence entirely',
+				confidence: 0.4,
+				confidenceReason: 'a different reason',
+				validationIssue: {
+					code: 'must_be_positive',
+					field: 'quantity',
+					index: null,
+					params: { value: -1 }
+				}
+			})
+			.where(eq(proposal.id, row.id))
+			.returning();
+
+		expect(revised.documentId).toBe(secondDocument.id);
+		expect(revised.proposedFields).toEqual({
+			date: '2024-06-11',
+			quantity: 0.5,
+			scope: 'a later reading'
+		});
+		expect(revised.excerpt).toBe('a different sentence entirely');
+		expect(revised.confidence).toBe(0.4);
+		expect(revised.confidenceReason).toBe('a different reason');
+		expect(revised.validationIssue).toEqual({
+			code: 'must_be_positive',
+			field: 'quantity',
+			index: null,
+			params: { value: -1 }
+		});
+		expect(revised.status).toBe('pending');
+	});
+});
+
+test('once a proposal is decided, its reading is frozen too — a decision is final', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const documentRow = await insertDocument(tx, contractRow.id);
+		const secondDocument = await insertDocument(tx, contractRow.id, 'f'.repeat(64));
+		const [row] = await tx
+			.insert(proposal)
+			.values(proposalFields(contractRow.id, documentRow.id))
+			.returning();
+
+		await tx
+			.update(proposal)
+			.set({
+				status: 'rejected',
+				decidedBy: 'lorenzo@example.com',
+				decidedAt: new Date()
+			})
+			.where(eq(proposal.id, row.id));
 
 		expect(
 			(
@@ -285,18 +390,7 @@ test('the proposed fields, excerpt and confidence cannot change after creation',
 					tx
 				)
 			).message
-		).toMatch(/immutable after creation/);
-	});
-});
-
-test('confidence_reason and validation_issue cannot change after creation either', async () => {
-	await inRolledBackTransaction(async (tx) => {
-		const contractRow = await insertContract(tx);
-		const documentRow = await insertDocument(tx, contractRow.id);
-		const [row] = await tx
-			.insert(proposal)
-			.values(proposalFields(contractRow.id, documentRow.id, { confidenceReason: 'a reason' }))
-			.returning();
+		).toMatch(/already been decided/);
 
 		expect(
 			(
@@ -304,32 +398,12 @@ test('confidence_reason and validation_issue cannot change after creation either
 					() =>
 						tx
 							.update(proposal)
-							.set({ confidenceReason: 'a different reason' })
+							.set({ documentId: secondDocument.id })
 							.where(eq(proposal.id, row.id)),
 					tx
 				)
 			).message
-		).toMatch(/immutable after creation/);
-
-		expect(
-			(
-				await rejection(
-					() =>
-						tx
-							.update(proposal)
-							.set({
-								validationIssue: {
-									code: 'must_be_positive',
-									field: 'quantity',
-									index: null,
-									params: { value: -1 }
-								}
-							})
-							.where(eq(proposal.id, row.id)),
-					tx
-				)
-			).message
-		).toMatch(/immutable after creation/);
+		).toMatch(/already been decided/);
 	});
 });
 

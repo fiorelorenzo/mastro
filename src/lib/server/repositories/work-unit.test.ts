@@ -7,6 +7,7 @@ import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract, workUnit } from '$lib/server/db/schema';
 import { isPostgresConstraintViolation } from '$lib/server/db/postgres-error';
+import { rejection } from '$lib/server/db/pg-error';
 import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract';
 import { createApproval } from './approval';
 import {
@@ -16,6 +17,7 @@ import {
 	getWorkUnitDocument,
 	listWorkUnitTransitions,
 	listWorkUnitsForContractOnDate,
+	markWorkUnitWorked,
 	transitionWorkUnit
 } from './work-unit';
 
@@ -371,4 +373,79 @@ test('the days one contract already holds for one date (#417)', async () => {
 	expect(result.onTheDate.map((day) => day.id)).toEqual([result.mineId]);
 	expect(Number(result.onTheDate[0].quantity)).toBe(0.5);
 	expect(result.emptyDate).toEqual([]);
+});
+
+test('an approved day is recorded worked, and the log names who and why', async () => {
+	const result = await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx, true);
+		const day = await createWorkUnit(
+			{ contractId: contractRow.id, date: '2026-08-04', quantity: 1, scope: 'meetings' },
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'agreed in writing',
+			tx
+		);
+		const approval = await createApproval(
+			{
+				contractId: contractRow.id,
+				channel: 'email',
+				sender: 'client@example.com',
+				receivedAt: new Date('2026-08-03T09:00:00.000Z'),
+				messageId: '<approval-4@example.com>',
+				excerpt: 'confermo la giornata del 4',
+				origin: { kind: 'manual' },
+				document: {
+					bytes: new TextEncoder().encode('confermo la giornata del 4'),
+					mime: 'message/rfc822',
+					originalName: 'approval.eml',
+					provenance: 'mail',
+					confidential: true
+				}
+			},
+			tx
+		);
+		await transitionWorkUnit(
+			day.id,
+			{ state: 'approved', approvalId: approval.id },
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'accepted the proposal',
+			tx
+		);
+
+		const worked = await markWorkUnitWorked(
+			day.id,
+			{ kind: 'system' },
+			'the day passed with its approval on file',
+			tx
+		);
+		return { worked, transitions: await listWorkUnitTransitions(day.id, tx) };
+	});
+
+	expect(result.worked.state).toBe('worked');
+	const worked = result.transitions.find((t) => t.toState === 'worked');
+	expect(worked?.toState).toBe('worked');
+	expect(worked?.actor).toMatchObject({ kind: 'system' });
+	expect(worked?.reason).toBe('the day passed with its approval on file');
+});
+
+test('a proposed day cannot be recorded worked directly', async () => {
+	// `proposed -> worked` is not in the trigger's allowed-edge list: a day
+	// nobody approved has to pass through `approved` or be recorded worked at
+	// creation (which lands in `worked_without_approval`). The refusal is the
+	// database's, which is why this asserts the constraint's own message
+	// rather than an application error.
+	const error = await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx, true);
+		const day = await createWorkUnit(
+			{ contractId: contractRow.id, date: '2026-08-04', quantity: 1, scope: 'meetings' },
+			{ kind: 'human', email: 'lorenzo@example.com' },
+			'recorded as proposed',
+			tx
+		);
+		return rejection(
+			() => markWorkUnitWorked(day.id, { kind: 'system' }, 'should not be allowed', tx),
+			tx
+		);
+	});
+
+	expect(error.message).toContain('illegal work_unit transition: proposed -> worked');
 });

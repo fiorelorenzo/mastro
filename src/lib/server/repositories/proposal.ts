@@ -27,7 +27,7 @@
 // email approving several days), and #209's contract is one `approval`
 // per document, not one per accepted day.
 
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { validationIssue, type ProposalValidationIssue } from '$lib/proposals/validation-issue';
 import { minorUnits } from '$lib/money';
 import { db, type DbExecutor } from '$lib/server/db';
@@ -52,6 +52,7 @@ import { getInboundThreadForDocument } from './inbound-thread';
 import { createInvoice, type InvoiceInput, type InvoiceLineInput } from './invoice';
 import { createRateCard } from './rate-card';
 import { createApprovedWorkUnit, getWorkUnit, type WorkUnitInput } from './work-unit';
+import { clearDayReadingConflict } from './day-reading-conflict';
 
 export type ProposalRow = typeof proposal.$inferSelect;
 
@@ -129,46 +130,160 @@ export async function listProposalsForDocuments(
 }
 
 /**
- * Which dates this contract already holds, so a second extraction of the
- * same conversation does not offer them again (#403).
+ * Dates this contract already has a *recorded* day on (#403, revised), each
+ * mapped to the total quantity every **live** day on that date sums to.
  *
- * Re-reading a conversation is now normal: a reply arriving in an exchange
- * that was already read re-extracts the whole thing, because that is the
- * only way the model sees the new day beside the offer it answers. The
- * cost is that everything the earlier pass got right comes back too, and
- * `validateDays`' own duplicate check only sees one extraction at a time.
- * So the ledger answers instead of the prompt: a day already waiting for a
- * decision, or already recorded as a work unit, is not news.
+ * "Live" is the same notion `DayImportExistingStateByKey` names in
+ * `agent/day-import.ts` and `existingStateByKeyForDayImport` implements in
+ * `import/day-import-request.ts` (`row.state !== 'rejected' && row.state
+ * !== 'revoked'`): the two states the partial unique index on `work_unit`
+ * itself excludes, because a rejected or revoked day never happened and so
+ * does not occupy the date. A rejected/revoked-inclusive query would make
+ * this function disagree with the database about what "recorded" means —
+ * `alreadyDecided` below would wrongly suppress a date whose only day was
+ * revoked, and Task 6's conflict check would compare a re-read against a
+ * quantity the ledger no longer holds.
  *
- * A **rejected** proposal is deliberately not in here. A rejection says
- * "not this proposal", not "never this day": the reason this query exists
- * is a re-read that understands the conversation better than the first
- * pass did, and suppressing the improved proposal for a day a human had
- * already turned down once would hide exactly the correction they were
- * owed. What stops a rejected day from returning every five minutes is
- * the enqueue guard, which needs a new message before it re-reads at all.
+ * Summed, not per-row: `work_unit_one_active_per_contract_date` allows at
+ * most one *live* row per `(contract_id, date)`, but a dead row
+ * (rejected/revoked) can still share the date with a live one — an earlier
+ * reading rejected, a later one recorded — and a plain per-row map keyed by
+ * date, built without the state filter above, would let whichever row
+ * happens to sort last win, dead or alive. Summing every *live* row for the
+ * date (never more than one today, but the aggregate is what "what the
+ * ledger holds for this date" actually means, and does not depend on that
+ * remaining true) is the total a re-read has to be checked against — not
+ * one arbitrarily chosen row's own quantity, and not a total that silently
+ * folded in a rejected or revoked row's quantity too. Only the total is
+ * exposed — nothing downstream reads a single row's `id` or `state`, and a
+ * map keyed by date to one arbitrary row invites exactly that kind of
+ * mismatch.
+ *
+ * The half of the old query this replaces that still suppresses: a day on
+ * the ledger is a decision a human made, and a re-read must not offer it
+ * again. The other half — a pending proposal — is no longer suppressed but
+ * rewritten in place, which is what `pendingDayProposalsByDate` below is for:
+ * suppressing it kept a stale reading on screen and put the newer one only in
+ * the extraction run's transcript.
  */
-export async function datesAlreadyDecided(
+export async function recordedDaysByDate(
 	contractId: string,
 	executor: DbExecutor = db
-): Promise<Set<string>> {
-	const [pending, recorded] = await Promise.all([
-		executor
-			.select({ fields: proposal.proposedFields })
-			.from(proposal)
-			.where(and(eq(proposal.contractId, contractId), eq(proposal.status, 'pending'))),
-		executor
-			.select({ date: workUnit.date })
-			.from(workUnit)
-			.where(eq(workUnit.contractId, contractId))
-	]);
-	const dates = new Set<string>();
-	for (const row of recorded) dates.add(row.date);
-	for (const row of pending) {
-		const date = (row.fields as { date?: unknown } | null)?.date;
-		if (typeof date === 'string') dates.add(date);
+): Promise<Map<string, number>> {
+	const rows = await executor
+		.select({
+			date: workUnit.date,
+			// `.mapWith(Number)` is what makes this a JS number, and it is
+			// load-bearing: a raw `sql<number>` fragment is only a TypeScript
+			// assertion and inherits nothing from the column, so
+			// `work_unit.quantity`'s `mode: 'number'` (see
+			// `db/schema/work-unit.ts`) does not reach an aggregate over it —
+			// `sum()` comes back from pg as a numeric string. Drop the mapper
+			// and every comparison against this total silently becomes
+			// string-versus-number.
+			quantity: sql<number>`sum(${workUnit.quantity})`.mapWith(Number)
+		})
+		.from(workUnit)
+		.where(
+			and(eq(workUnit.contractId, contractId), notInArray(workUnit.state, ['rejected', 'revoked']))
+		)
+		.groupBy(workUnit.date);
+	return new Map(rows.map((row) => [row.date, row.quantity]));
+}
+
+/** The pending day proposals this contract holds, keyed by the date each one
+ * proposes. A re-read rewrites the row it finds here rather than writing a
+ * second proposal for the same day. */
+export async function pendingDayProposalsByDate(
+	contractId: string,
+	executor: DbExecutor = db
+): Promise<Map<string, ProposalRow>> {
+	const rows = await executor
+		.select()
+		.from(proposal)
+		.where(
+			and(
+				eq(proposal.contractId, contractId),
+				eq(proposal.status, 'pending'),
+				eq(proposal.targetType, 'work_unit')
+			)
+		);
+	const byDate = new Map<string, ProposalRow>();
+	for (const row of rows) {
+		const date = (row.proposedFields as { date?: unknown } | null)?.date;
+		if (typeof date === 'string') byDate.set(date, row);
 	}
-	return dates;
+	return byDate;
+}
+
+/**
+ * Rewrites a pending proposal's reading in place, keeping its id so a link a
+ * reviewer already has open still resolves. Never touches `status`: a
+ * revision is not a decision, only a better one of the same undecided
+ * question.
+ *
+ * Recomputes `validationIssue` against the new `proposedFields`, the same
+ * way `createProposal` does at insert time and for the same reason (#245):
+ * a stale issue left over from the *previous* reading would either block
+ * Accept on a row a correcting re-read already fixed, or — the more
+ * dangerous direction — leave a bad re-read looking clean until a human
+ * clicks Accept and the write fails downstream, exactly what #245 exists to
+ * avoid. `targetType`/`contractId` come off the row being revised, not
+ * `input`: both are frozen by `proposal_forbid_retrofit`
+ * (0075_proposal_pending_reading_is_mutable.sql), so the row's own values
+ * are authoritative and the input never needs to carry them.
+ *
+ * `documentId` is part of the reading, not the identity, and is rewritten
+ * along with it: a re-read of a multi-message thread can attribute a day's
+ * evidence to a different message than the first pass did, and `excerpt`
+ * moving without `documentId` moving with it would leave a row whose
+ * quotation cannot be found in the document it names — invariant 4's exact
+ * failure. When that happens the review queue
+ * (`src/routes/proposals/+page.server.ts`), which groups pending rows by
+ * `documentId`, moves this row to a different card; the "Revised" badge
+ * (`proposalRevised` in `src/routes/proposals/queue-fields.ts`) is what
+ * tells the reviewer it moved, which is correct — not a bug to paper over.
+ *
+ * Returns `null` when the row is gone or was decided — either before this
+ * read or between it and the `UPDATE` below losing a race with a human's
+ * own decision. The caller (`writeDayProposals`) is the one responsible for
+ * not treating that as silence.
+ */
+export async function reviseDayProposal(
+	id: string,
+	input: {
+		proposedFields: Record<string, unknown>;
+		excerpt: string;
+		confidence: number;
+		confidenceReason: string | null;
+		documentId: string;
+	},
+	executor: DbExecutor = db
+): Promise<ProposalRow | null> {
+	const existing = await getProposal(id, executor);
+	if (!existing || existing.status !== 'pending') return null;
+	// Named `issue`, not `validationIssue`, the same way `createProposal`
+	// does: this file also imports a function called `validationIssue` from
+	// `$lib/proposals/validation-issue`, and shadowing it here would be a
+	// silent trap for the next edit made inside this function.
+	const issue = proposalValidationIssue(
+		existing.targetType,
+		existing.contractId,
+		input.proposedFields
+	);
+	const [row] = await executor
+		.update(proposal)
+		.set({
+			proposedFields: input.proposedFields,
+			excerpt: input.excerpt,
+			confidence: input.confidence,
+			confidenceReason: input.confidenceReason,
+			documentId: input.documentId,
+			validationIssue: issue
+		})
+		.where(and(eq(proposal.id, id), eq(proposal.status, 'pending')))
+		.returning();
+	return row ?? null;
 }
 
 /** Every proposal, most recent first, optionally narrowed to one status —
@@ -768,13 +883,21 @@ async function applyProposal(
 				throw new Error(`proposal ${row.id} has no contract, which a work_unit target requires`);
 			}
 			const approvalId = await approvalForDocument({ ...row, contractId }, executor);
+			const workUnitInput = workUnitInputFromFields({ contractId }, fields);
 			const created = await createApprovedWorkUnit(
-				workUnitInputFromFields({ contractId }, fields),
+				workUnitInput,
 				approvalId,
 				{ kind: 'agent', proposalReference: row.id },
 				`accepted from proposal ${row.id}`,
 				executor
 			);
+			// The decision and the note about it must not disagree: accepting
+			// this day is a human resolving whatever `day-producer.ts` wrote
+			// about its date — a disagreement, or a reading that dropped the
+			// day entirely (Task 6) — so the conflict row for `(contractId,
+			// date)` is cleared in the same transaction as the write, not left
+			// to the next producer run to notice.
+			await clearDayReadingConflict(contractId, workUnitInput.date, executor);
 			return created.id;
 		}
 		case 'invoice': {

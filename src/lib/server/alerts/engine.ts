@@ -20,7 +20,9 @@ import {
 	detectInvoiceOverdue,
 	detectMailboxPollFailure,
 	detectMirrorFailure,
+	detectPendingProposalUnconfirmed,
 	detectProposalPending,
+	detectRecordedDayContradicted,
 	detectRenewalWindowOpen,
 	detectWorkedWithoutApproval,
 	detectYearEndOverrunRisk
@@ -29,6 +31,7 @@ import {
 	fetchApprovalUnactionedRows,
 	fetchContractsForBillablePeriod,
 	fetchContractsForDeadlineAlerts,
+	fetchDayReadingConflictRows,
 	fetchEvaluatedCeilings,
 	fetchInvoiceOverdueRows,
 	fetchLatestAgentRun,
@@ -64,7 +67,8 @@ export async function detectAlerts(asOfDate: string, executor: DbExecutor = db):
 		mirrorRows,
 		mailboxPollStatus,
 		latestAgentRun,
-		proposalPendingRows
+		proposalPendingRows,
+		dayReadingConflictRows
 	] = await Promise.all([
 		fetchContractsForDeadlineAlerts(executor),
 		fetchContractsForBillablePeriod(executor),
@@ -76,7 +80,8 @@ export async function detectAlerts(asOfDate: string, executor: DbExecutor = db):
 		fetchMirrorFailureRows(mirrorConfigFromEnv() !== null, executor),
 		fetchLatestMailboxPollRun(imapConfiguredInEnv(), executor),
 		fetchLatestAgentRun(executor),
-		fetchProposalPendingRows(executor)
+		fetchProposalPendingRows(executor),
+		fetchDayReadingConflictRows(executor)
 	]);
 
 	const yearEndInputs = await fetchYearEndOverrunInputs(evaluatedCeilings, asOfDate, executor);
@@ -98,7 +103,9 @@ export async function detectAlerts(asOfDate: string, executor: DbExecutor = db):
 			asOfInstant
 		),
 		...detectAgentRunFailure(latestAgentRun, asOfInstant),
-		...detectProposalPending(proposalPendingRows, asOfDate)
+		...detectProposalPending(proposalPendingRows, asOfDate),
+		...detectRecordedDayContradicted(dayReadingConflictRows),
+		...detectPendingProposalUnconfirmed(dayReadingConflictRows)
 	];
 }
 

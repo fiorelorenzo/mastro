@@ -17,9 +17,15 @@
 import { listRateCards } from '$lib/server/repositories/rate-card';
 import {
 	createProposal,
-	datesAlreadyDecided,
+	pendingDayProposalsByDate,
+	recordedDaysByDate,
+	reviseDayProposal,
 	type ProposalRow
 } from '$lib/server/repositories/proposal';
+import {
+	clearDayReadingConflict,
+	recordDayReadingConflict
+} from '$lib/server/repositories/day-reading-conflict';
 import type { DbExecutor } from '$lib/server/db';
 import type { ProposalCandidate } from '$lib/server/runner/types';
 import type { ConversationMessage } from '$lib/server/mail/conversation';
@@ -59,6 +65,20 @@ export interface DayProposalSource {
 	 * above for either.
 	 */
 	readonly conversation?: readonly ConversationMessage[];
+	/**
+	 * The `extraction_run` row behind this read, when there is one — so a
+	 * conflict row this file writes (Task 6) can carry it, next to the
+	 * document, letting a reviewer jump from the disagreement straight to
+	 * the transcript that produced it. Nullable, genuinely: the FK on
+	 * `day_reading_conflict.extraction_run_id` is nullable because a run
+	 * is not always in scope — `proposeDaysFromMessage` above is not
+	 * job-driven at all, and a job-driven read (`drain.ts`'s
+	 * `applyDayJob`) still has none for a job enqueued before #278, or one
+	 * whose run row never landed. Undefined (every existing caller, every
+	 * test) and `null` are the same "no run" case; only a real id is
+	 * carried forward.
+	 */
+	readonly extractionRunId?: string | null;
 }
 
 /** How the extraction is actually run. Injected so this module can be
@@ -129,17 +149,42 @@ export async function writeDayProposals(
 	candidate: ProposalCandidate,
 	executor?: DbExecutor
 ): Promise<DayProposalOutcome> {
+	const { recordedByDate, ...extractionCtx } = await extractionContext(source, executor);
 	const context = {
-		...(await extractionContext(source, executor)),
+		...extractionCtx,
 		fallbackExcerpt: candidate.excerpt
 	};
-	const { accepted, rejected } = validateDays(
+	const { accepted, rejected: rejectedByValidation } = validateDays(
 		parseExtractedDays(candidate.proposedFields, source.conversation?.length ?? 1),
 		context
 	);
+	// Mutable copy: a day can still fail *after* validation, when the revise
+	// it resolves to loses a race with a human decision (see the `existing`
+	// branch below) — that outcome has to land somewhere in `rejected` too,
+	// not be dropped, so this is built up alongside `proposals` rather than
+	// returned straight from `validateDays`.
+	const rejected: RejectedDay[] = [...rejectedByValidation];
+
+	// Fetched once per run, not once per day: a re-read of a conversation
+	// with several days in it must see all of them, since two of `accepted`
+	// can land on the same pre-existing pending proposal's date only if the
+	// model itself repeated a date, which `seen` in `day-extraction.ts`
+	// already refuses.
+	const pendingByDate = executor
+		? await pendingDayProposalsByDate(source.contractId, executor)
+		: await pendingDayProposalsByDate(source.contractId);
 
 	const proposals: ProposalRow[] = [];
 	for (const day of accepted) {
+		// A reading that proposes this date again supersedes whatever a
+		// previous run wrote about it — a disagreement with the ledger, or
+		// (Task 6's follow-up) the earlier absence of a mention entirely —
+		// so any stale conflict row is cleared before this day is written.
+		// Safe unconditionally: a conflict row only ever exists for a date
+		// in `rejected` (the "already recorded" branch) or one this reading
+		// dropped, and `alreadyDecided` already keeps every recorded date
+		// out of `accepted`, so the two sets cannot overlap here.
+		await clearDayReadingConflict(source.contractId, day.date, executor);
 		// The model's own confidence and reason, folded together with the
 		// year-rollover guard's own (#244): the guard only ever lowers, so a
 		// day it caught can never end up looking as settled as the model
@@ -149,32 +194,68 @@ export async function writeDayProposals(
 			candidate.confidence,
 			candidate.confidenceReason
 		);
+		// Exactly the fields `applyProposal` reads when a human accepts, and
+		// nothing else: a proposal carrying more than the target row needs
+		// invites a reviewer to edit something that will be ignored.
+		const proposedFields = {
+			date: day.date,
+			quantity: day.quantity,
+			scope: day.scope,
+			...(day.notes === undefined ? {} : { notes: day.notes })
+		};
+		// The message the day's own evidence actually came from (#400), not
+		// always the newest one: the Polymarket allocation's offer is
+		// message 0, the owner's "confermo" is message 1, and the proposal
+		// has to archive against the offer. Falls back to the top-level
+		// document when there is no conversation array to resolve against.
+		const documentId = source.conversation?.[day.messageIndex]?.documentId ?? source.documentId;
+
+		const existing = pendingByDate.get(day.date);
+		if (existing) {
+			// Rewritten, not replaced (Task 5): the id is what a link a
+			// reviewer already has open resolves to, and `status` stays
+			// `pending` because a revision is not a decision. `documentId`
+			// moves with `excerpt` even when they differ from `existing`'s —
+			// see `reviseDayProposal`'s own doc comment for why re-attributing
+			// the evidence to a different message is correct here, not a bug,
+			// and why the queue card it lands on is expected to change too.
+			const revised = await reviseDayProposal(
+				existing.id,
+				{ proposedFields, excerpt: day.excerpt, confidence, confidenceReason, documentId },
+				executor
+			);
+			if (revised) {
+				proposals.push(revised);
+			} else {
+				// `existing` was read moments ago from `pendingByDate`, and a
+				// human decided it before this UPDATE ran — `reviseDayProposal`
+				// found no pending row left to rewrite. Neither
+				// `createProposal` nor silence is right here: writing a new
+				// proposal would duplicate an accepted day, dropping the day
+				// would lose a rejected one's correction, and the caller
+				// cannot tell which happened from here. Recorded as rejected
+				// instead, visibly, so nothing vanishes; the next run reads
+				// fresh state (`recordedDaysByDate`/`pendingDayProposalsByDate`)
+				// and does the right thing either way.
+				rejected.push({
+					day,
+					code: 'decided_while_rereading',
+					reason: `${day.date}'s proposal was decided while this re-read was running`
+				});
+			}
+			continue;
+		}
 		proposals.push(
 			await createProposal(
 				{
-					// The message the day's own evidence actually came from
-					// (#400), not always the newest one: the Polymarket
-					// allocation's offer is message 0, the owner's "confermo"
-					// is message 1, and the proposal has to archive against
-					// the offer. Falls back to the top-level document when
-					// there is no conversation array to resolve against.
-					documentId: source.conversation?.[day.messageIndex]?.documentId ?? source.documentId,
+					documentId,
 					contractId: source.contractId,
 					targetType: 'work_unit',
-					// Exactly the fields `applyProposal` reads when a human
-					// accepts, and nothing else: a proposal carrying more than
-					// the target row needs invites a reviewer to edit something
-					// that will be ignored.
-					proposedFields: {
-						date: day.date,
-						quantity: day.quantity,
-						scope: day.scope,
-						...(day.notes === undefined ? {} : { notes: day.notes })
-					},
 					// The day's own span, not the message-level one: the review
 					// screen shows this next to the day, and a reviewer checking
 					// a Friday should not have to read the sentence about
 					// Thursday to do it.
+					proposedFields,
 					excerpt: day.excerpt,
 					confidence,
 					confidenceReason
@@ -183,13 +264,96 @@ export async function writeDayProposals(
 			)
 		);
 	}
+
+	// A reading that disagrees with a day already on the ledger is not
+	// suppressed information, it is a thing a reviewer needs to know: the
+	// ledger is not touched (that decision was theirs) and the disagreement
+	// is written down for the alert engine, which cannot re-invoke the
+	// model to rediscover it.
+	for (const entry of rejected) {
+		if (entry.code !== 'already_recorded') continue;
+		const recordedQuantity = recordedByDate.get(entry.day.date);
+		if (recordedQuantity !== undefined && recordedQuantity === entry.day.quantity) {
+			// A re-read that confirms what the ledger already holds is not
+			// news; clear any conflict an earlier, disagreeing reading left
+			// behind so a stale alert cannot outlive the disagreement it
+			// once described.
+			await clearDayReadingConflict(source.contractId, entry.day.date, executor);
+			continue;
+		}
+		const documentId =
+			source.conversation?.[entry.day.messageIndex]?.documentId ?? source.documentId;
+		await recordDayReadingConflict(
+			{
+				contractId: source.contractId,
+				date: entry.day.date,
+				documentId,
+				extractionRunId: source.extractionRunId ?? null,
+				proposedFields: {
+					date: entry.day.date,
+					quantity: entry.day.quantity,
+					scope: entry.day.scope
+				},
+				excerpt: entry.day.excerpt
+			},
+			executor
+		);
+	}
+
+	// The mirror case of the loop above: a re-read can propose nothing at
+	// all for a date that still has a pending proposal — the client
+	// cancelled the day. The agent must not withdraw the proposal itself
+	// (invariant 3: a human decides), but a reviewer needs to know the most
+	// recent reading no longer confirms it, so a conflict row with a null
+	// `proposedFields` says exactly that, next to the untouched proposal.
+	//
+	// Scoped to dates this reading is silent on — neither accepted nor
+	// rejected, so genuinely absent from it, not merely revised or
+	// suppressed elsewhere above — and to proposals whose own document
+	// belongs to this conversation: only a re-read of the same thread has
+	// any evidence that the thread stopped confirming what it once said. A
+	// pending proposal from an unrelated document was never addressed by
+	// this reading at all.
+	const mentionedDates = new Set([
+		...accepted.map((day) => day.date),
+		...rejected.map((entry) => entry.day.date)
+	]);
+	const conversationDocumentIds = new Set([
+		source.documentId,
+		...(source.conversation?.map((message) => message.documentId) ?? [])
+	]);
+	for (const [date, pending] of pendingByDate) {
+		if (mentionedDates.has(date)) continue;
+		if (!conversationDocumentIds.has(pending.documentId)) continue;
+		await recordDayReadingConflict(
+			{
+				contractId: source.contractId,
+				date,
+				documentId: source.documentId,
+				extractionRunId: source.extractionRunId ?? null,
+				proposedFields: null,
+				excerpt: null
+			},
+			executor
+		);
+	}
+
 	return { proposals, rejected };
+}
+
+/** `DayExtractionContext` plus the recorded-day map itself, not just the
+ * keys `alreadyDecided` carries. Task 6's own conflict check needs the
+ * total quantity each recorded date holds: it is what tells a disagreeing
+ * re-read from one that merely confirms the ledger, and `validateDays` has
+ * no use for it, so it never enters `DayExtractionContext` itself. */
+interface ExtractionContext extends DayExtractionContext {
+	readonly recordedByDate: ReadonlyMap<string, number>;
 }
 
 async function extractionContext(
 	source: DayProposalSource,
 	executor?: DbExecutor
-): Promise<DayExtractionContext> {
+): Promise<ExtractionContext> {
 	const rateCards = executor
 		? await listRateCards(source.contractId, executor)
 		: await listRateCards(source.contractId);
@@ -199,15 +363,16 @@ async function extractionContext(
 	const allowedQuantities = [
 		...new Set(rateCards.flatMap((card) => card.allowedFractions.map(Number)))
 	];
-	const alreadyDecided = executor
-		? await datesAlreadyDecided(source.contractId, executor)
-		: await datesAlreadyDecided(source.contractId);
+	const recorded = executor
+		? await recordedDaysByDate(source.contractId, executor)
+		: await recordedDaysByDate(source.contractId);
 	return {
 		startsOn: source.startsOn,
 		endsOn: source.endsOn,
 		messageDate: source.messageDate,
 		allowedQuantities,
-		alreadyDecided,
-		content: source.content
+		alreadyDecided: new Set(recorded.keys()),
+		content: source.content,
+		recordedByDate: recorded
 	};
 }

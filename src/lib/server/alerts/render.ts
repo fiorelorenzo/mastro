@@ -248,5 +248,37 @@ export function alertMessage(alert: Alert, locale: Locale): AlertMessage {
 									{ locale }
 								)
 			};
+
+		case 'recorded_day_contradicted':
+			return {
+				title: m.alerts_recorded_day_contradicted_title(
+					{ contractTitle: detail.contractTitle },
+					{ locale }
+				),
+				body: m.alerts_recorded_day_contradicted_body(
+					{
+						clientLegalName: detail.clientLegalName,
+						date: formatDate(detail.date, locale),
+						recorded: formatDays(detail.recordedQuantity, locale),
+						reading:
+							detail.readingQuantity === null
+								? m.alerts_recorded_day_contradicted_reading_none(undefined, { locale })
+								: formatDays(detail.readingQuantity, locale)
+					},
+					{ locale }
+				)
+			};
+
+		case 'pending_proposal_unconfirmed':
+			return {
+				title: m.alerts_pending_proposal_unconfirmed_title(
+					{ contractTitle: detail.contractTitle },
+					{ locale }
+				),
+				body: m.alerts_pending_proposal_unconfirmed_body(
+					{ clientLegalName: detail.clientLegalName, date: formatDate(detail.date, locale) },
+					{ locale }
+				)
+			};
 	}
 }
