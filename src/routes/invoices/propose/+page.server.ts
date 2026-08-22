@@ -24,25 +24,31 @@ import * as m from '$lib/paraglide/messages';
 import { contractCrumbs } from '$lib/nav/crumbs';
 import { invoiceExtractionInstructions } from '$lib/server/agent/invoice-extraction';
 import { extractPdfText } from '$lib/server/agent/invoice-producer';
+import { requireUuidSearchParam } from '$lib/server/params';
 import { getContractWithClient } from '$lib/server/repositories/contract';
 import { storeDocument } from '$lib/server/repositories/document';
 import { enqueueJob } from '$lib/server/runner/queue';
 import type { Actions, PageServerLoad } from './$types';
 
-async function requireContract(contractId: string) {
+// `contractId` is required here — there is no contract-less state this page
+// can render — so a missing or malformed value 404s exactly like an
+// unknown-but-valid id would, rather than reaching `getContractWithClient`
+// and having Postgres reject the malformed uuid as a 500 (#390).
+async function requireContract(url: URL) {
+	const contractId = requireUuidSearchParam(url, 'contractId', m.contract_not_found());
 	const contract = await getContractWithClient(contractId);
 	if (!contract) error(404, m.contract_not_found());
 	return contract;
 }
 
 export const load: PageServerLoad = async ({ url }) => {
-	const contract = await requireContract(url.searchParams.get('contractId') ?? '');
+	const contract = await requireContract(url);
 	return { contract, crumbs: contractCrumbs(contract) };
 };
 
 export const actions: Actions = {
 	default: async ({ request, url }) => {
-		const contract = await requireContract(url.searchParams.get('contractId') ?? '');
+		const contract = await requireContract(url);
 
 		const formData = await request.formData();
 		const file = formData.get('file');

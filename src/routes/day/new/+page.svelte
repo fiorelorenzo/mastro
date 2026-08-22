@@ -330,7 +330,7 @@
 				{#snippet actions()}
 					<a
 						href={data.firstClientId
-							? resolve('/clients/[id]/contracts/new', { id: data.firstClientId })
+							? resolve('/clients/[id=uuid]/contracts/new', { id: data.firstClientId })
 							: resolve('/clients/new')}
 						class="underline">{m.day_new_no_contracts_action()}</a
 					>
@@ -389,7 +389,7 @@
 								state: workUnitStateBadge(day.state).label
 							})}
 					{#snippet actions()}
-						<Button href={resolve('/day/[id]', { id: day.id })} variant="secondary" size="sm">
+						<Button href={resolve('/day/[id=uuid]', { id: day.id })} variant="secondary" size="sm">
 							{m.day_form_already_recorded_open()}
 						</Button>
 					{/snippet}

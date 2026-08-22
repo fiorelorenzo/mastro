@@ -129,7 +129,7 @@
 {#snippet actionsCell(row: Row)}
 	{#if row.overdue}
 		<Button
-			href={resolve('/invoices/[id]/remind', { id: row.invoice.id })}
+			href={resolve('/invoices/[id=uuid]/remind', { id: row.invoice.id })}
 			variant="secondary"
 			size="sm"
 		>

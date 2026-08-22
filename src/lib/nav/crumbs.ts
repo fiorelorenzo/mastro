@@ -72,7 +72,7 @@ export function clientsCrumbs(): Crumb[] {
 /** Clients, then one client: the trail for anything under `/clients/[id]`. */
 export function clientCrumbs(client: { id: string; legalName: string }): Crumb[] {
 	return trail(...clientsCrumbs(), {
-		href: resolve('/clients/[id]', { id: client.id }),
+		href: resolve('/clients/[id=uuid]', { id: client.id }),
 		label: client.legalName
 	});
 }
@@ -89,7 +89,7 @@ export function contractCrumbs(contract: {
 	client: { legalName: string };
 }): Crumb[] {
 	return trail(...clientCrumbs({ id: contract.clientId, legalName: contract.client.legalName }), {
-		href: resolve('/clients/[id]/contracts/[contractId]', {
+		href: resolve('/clients/[id=uuid]/contracts/[contractId=uuid]', {
 			id: contract.clientId,
 			contractId: contract.id
 		}),
@@ -109,7 +109,7 @@ export function mailCrumbs(): Crumb[] {
  */
 export function mailContractCrumbs(contract: { id: string; title: string }): Crumb[] {
 	return trail(...mailCrumbs(), {
-		href: resolve('/mail/contracts/[id]', { id: contract.id }),
+		href: resolve('/mail/contracts/[id=uuid]', { id: contract.id }),
 		label: contract.title
 	});
 }
@@ -122,7 +122,7 @@ export function invoicesCrumbs(): Crumb[] {
 /** Invoices, then one invoice. */
 export function invoiceCrumbs(invoice: { id: string; number: string }): Crumb[] {
 	return trail(...invoicesCrumbs(), {
-		href: resolve('/invoices/[id]', { id: invoice.id }),
+		href: resolve('/invoices/[id=uuid]', { id: invoice.id }),
 		label: invoice.number
 	});
 }

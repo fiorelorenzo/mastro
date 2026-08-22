@@ -51,7 +51,11 @@
 				})}
 			</span>
 		</div>
-		<Button href={resolve('/documents/[id]', { id: document.id })} variant="tertiary" size="sm">
+		<Button
+			href={resolve('/documents/[id=uuid]', { id: document.id })}
+			variant="tertiary"
+			size="sm"
+		>
 			{m.source_document_download()}
 		</Button>
 	</div>

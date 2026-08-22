@@ -367,7 +367,7 @@
 			rows={data.contracts}
 			caption={m.mail_index_contracts_heading()}
 			rowKey={(row) => row.id}
-			rowHref={(row) => resolve('/mail/contracts/[id]', { id: row.id })}
+			rowHref={(row) => resolve('/mail/contracts/[id=uuid]', { id: row.id })}
 			{empty}
 		/>
 	</Section>
