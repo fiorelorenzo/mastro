@@ -196,10 +196,22 @@ losing it invalidates every session): real client data, contracts and invoice do
 and test fixtures derived from real documents must be anonymised — names, tax ids and
 amounts changed, structure kept.
 
-**Nothing on GitHub enforces any of that.** `main` carries no branch protection and no
-ruleset, all three merge methods are enabled, and `delete_branch_on_merge` is off, so the
-convention above is the only thing keeping `main` sane: a red PR can still be merged, and a
-merged branch stays on the remote until you delete it (`git push -d origin <branch>`).
+**GitHub now enforces some of it, and the shape matters if you are merging.** Measured
+2026-08-22, not inferred: `main` carries two active rulesets. `protect-default-branch`
+blocks deletion and non-fast-forward, and requires both CI checks by name (`lint,
+typecheck, test, build` and `production image boots and serves`).
+`require-pull-request` requires a pull request with **0** approvals, so nothing waits
+on a reviewer, and **squash is the only merge method** the ruleset admits (merge
+commits and rebase are both disabled on the repository too). `delete_branch_on_merge`
+is **on**, so a merged branch disappears from the remote by itself and only the local
+ref and its worktree are yours to clean up.
+
+Two consequences worth knowing before a wave of parallel PRs.
+`strict_required_status_checks_policy` is **false**, so a PR does not have to be up to
+date with `main` to merge: several PRs can go in any order without a rebase cascade,
+which is exactly why a wide wave is cheap here. And a red PR can no longer be merged
+by accident, but nothing stops a green one whose checks never ran on the code you
+think they did, so read the check names on the PR rather than trusting a local pass.
 
 ## Local development
 
@@ -261,6 +273,23 @@ checkout its own `COMPOSE_PROJECT_NAME` in `.env` (`mastro-<worktree>`) alongsid
 own `POSTGRES_PORT`, and each gets its own container, volume and database. The
 variable overrides the compose file's `name:`; only `-p` and a shell variable of the
 same name beat it.
+
+**`POSTGRES_PORT` is not the only URL in that file.** `RUNNER_DATABASE_URL` carries the
+port too, because `db-privilege.test.ts` and the runner tests connect as `mastro_runner`
+through it rather than through `DATABASE_URL`. Rewrite one and not the other and those
+fifteen tests quietly run against whichever database the old port points at: they fail
+with empty result sets, which reads exactly like a missing role or a privilege problem
+and is neither. Measured while setting up four parallel worktrees, where it cost a
+round of "pre-existing failure" reports from three different agents before I looked.
+
+**The mail test server is the one resource a wave cannot duplicate.**
+`compose.mail-test.yaml` runs a single GreenMail container with a fixed name and fixed
+published ports, by design and stated in its own header. Two checkouts running
+`src/lib/server/mail/` tests at the same time therefore share one IMAP server and one
+`INBOX`, and each sees the other's appended messages against its own database, which
+has no cursor for any of them. Nothing depends on that today, since the tests that
+need an empty mailbox now use folders of their own (#421), but it caps a parallel wave
+at one mail-touching issue until #429 gives that container per-checkout isolation too.
 
 **A per-checkout port does not give you a per-checkout session.** Cookies are scoped
 by host and path and ignore the port entirely (RFC 6265), so every dev server on
