@@ -254,7 +254,7 @@
 						>
 							{#snippet actions()}
 								<a
-									href={resolve('/clients/[id]/contracts/[contractId]', {
+									href={resolve('/clients/[id=uuid]/contracts/[contractId=uuid]', {
 										id: selectedContract.clientId,
 										contractId: selectedContract.id
 									})}
@@ -432,7 +432,7 @@
 					>
 						{#snippet actions()}
 							<a
-								href={resolve('/clients/[id]/contracts/[contractId]/expenses/new', {
+								href={resolve('/clients/[id=uuid]/contracts/[contractId=uuid]/expenses/new', {
 									id: selectedContract.clientId,
 									contractId: selectedContract.id
 								})}

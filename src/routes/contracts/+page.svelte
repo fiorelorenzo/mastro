@@ -6,8 +6,11 @@
 	import { Badge, EmptyState } from '$lib/design';
 	import Table from '$lib/design/Table.svelte';
 	import type { TableColumn } from '$lib/design/table';
-	import { statusLabel, type ContractStatusValue } from '../clients/[id]/contracts/contract-enums';
-	import { rateUnitLabel } from '../clients/[id]/contracts/[contractId]/rate-cards/rate-card-enums';
+	import {
+		statusLabel,
+		type ContractStatusValue
+	} from '../clients/[id=uuid]/contracts/contract-enums';
+	import { rateUnitLabel } from '../clients/[id=uuid]/contracts/[contractId=uuid]/rate-cards/rate-card-enums';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -50,7 +53,7 @@
 			status" came from: this is the screen a blocked person is sent to.
 		-->
 		<a
-			href={resolve('/clients/[id]/contracts/[contractId]', {
+			href={resolve('/clients/[id=uuid]/contracts/[contractId=uuid]', {
 				id: row.clientId,
 				contractId: row.id
 			})}
@@ -108,7 +111,10 @@
 		caption={m.contracts_heading()}
 		rowKey={(row) => row.id}
 		rowHref={(row) =>
-			resolve('/clients/[id]/contracts/[contractId]', { id: row.clientId, contractId: row.id })}
+			resolve('/clients/[id=uuid]/contracts/[contractId=uuid]', {
+				id: row.clientId,
+				contractId: row.id
+			})}
 		{empty}
 	/>
 </Page>

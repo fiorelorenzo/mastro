@@ -18,8 +18,8 @@
 	import { viewResultLabel } from './decision-wording';
 	import { proposalIssueMessage } from '$lib/i18n/proposal-issue';
 	import { submitting } from '$lib/design/submitting.svelte';
-	import { paymentTermsKindLabel } from '../clients/[id]/contracts/contract-enums';
-	import { rateUnitLabel } from '../clients/[id]/contracts/[contractId]/rate-cards/rate-card-enums';
+	import { paymentTermsKindLabel } from '../clients/[id=uuid]/contracts/contract-enums';
+	import { rateUnitLabel } from '../clients/[id=uuid]/contracts/[contractId=uuid]/rate-cards/rate-card-enums';
 	import type { ProposedContract } from './queue-fields';
 	import type { HistoryRow, QueueGroup, QueueRow } from './+page.server';
 	import type { ActionData, PageProps } from './$types';
@@ -210,7 +210,7 @@
 							<span class="source-ico" aria-hidden="true">{group.fromMessage ? '✉' : '↑'}</span>
 							<span class="source-facts">{sourceLine(group)}</span>
 						</span>
-						<a class="source-link" href={resolve('/proposals/[id]', { id: group.rows[0].id })}>
+						<a class="source-link" href={resolve('/proposals/[id=uuid]', { id: group.rows[0].id })}>
 							{m.proposal_queue_review()}
 						</a>
 					</p>
@@ -238,7 +238,7 @@
 							{@const only = group.rows.length === 1}
 							<li class="proposal">
 								<div class="what">
-									<a class="what-title" href={resolve('/proposals/[id]', { id: row.id })}>
+									<a class="what-title" href={resolve('/proposals/[id=uuid]', { id: row.id })}>
 										{row.proposedContract ? row.proposedContract.contract.title : rowTitle(row)}
 									</a>
 									{#if row.amount !== null}
@@ -354,7 +354,7 @@
 				<li class="row">
 					<span class="row-ico" aria-hidden="true">{row.status === 'accepted' ? '✓' : '✕'}</span>
 					<div class="row-main">
-						<a class="row-title" href={resolve('/proposals/[id]', { id: row.id })}>
+						<a class="row-title" href={resolve('/proposals/[id=uuid]', { id: row.id })}>
 							{rowTitle(row)}
 						</a>
 						<span class="row-meta">
@@ -402,13 +402,13 @@
 							-->
 							<Button
 								href={row.result.kind === 'contract'
-									? resolve('/clients/[id]/contracts/[contractId]', {
+									? resolve('/clients/[id=uuid]/contracts/[contractId=uuid]', {
 											id: row.result.clientId,
 											contractId: row.result.contractId
 										})
 									: row.result.kind === 'invoice'
-										? resolve('/invoices/[id]', { id: row.result.id })
-										: resolve('/day/[id]', { id: row.result.id })}
+										? resolve('/invoices/[id=uuid]', { id: row.result.id })
+										: resolve('/day/[id=uuid]', { id: row.result.id })}
 								variant="tertiary"
 								size="sm"
 							>

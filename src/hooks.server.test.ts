@@ -62,7 +62,7 @@ test('an allowed email passes: the request resolves and locals carry the session
 	const cookie = await signUpAndGetCookie(testAuth, email);
 
 	const handleAuth = createHandleAuth(testAuth, new Set([email]));
-	const event = requestEvent('/documents/[id]', new Headers({ cookie }));
+	const event = requestEvent('/documents/[id=uuid]', new Headers({ cookie }));
 	const response = await handleAuth({ event, resolve });
 
 	expect(response).toBe(RESOLVED);
@@ -85,13 +85,13 @@ test('removing one address from a multi-address allowlist rejects only that addr
 	const narrowedHandleAuth = createHandleAuth(testAuth, new Set([keptEmail]));
 
 	const removedResponse = await narrowedHandleAuth({
-		event: requestEvent('/documents/[id]', new Headers({ cookie: removedCookie })),
+		event: requestEvent('/documents/[id=uuid]', new Headers({ cookie: removedCookie })),
 		resolve
 	});
 	expect(removedResponse.status).toBe(401);
 
 	const keptResponse = await narrowedHandleAuth({
-		event: requestEvent('/documents/[id]', new Headers({ cookie: keptCookie })),
+		event: requestEvent('/documents/[id=uuid]', new Headers({ cookie: keptCookie })),
 		resolve
 	});
 	expect(keptResponse).toBe(RESOLVED);
@@ -101,7 +101,7 @@ test('removing one address from a multi-address allowlist rejects only that addr
 	// admit removedEmail no longer finds a session to check at all.
 	const originalHandleAuth = createHandleAuth(testAuth, new Set([removedEmail, keptEmail]));
 	const secondAttempt = await originalHandleAuth({
-		event: requestEvent('/documents/[id]', new Headers({ cookie: removedCookie })),
+		event: requestEvent('/documents/[id=uuid]', new Headers({ cookie: removedCookie })),
 		resolve
 	});
 	expect(secondAttempt.status).toBe(401);
@@ -123,7 +123,7 @@ test('emptying the allowlist rejects a previously valid session', async () => {
 		testAuth,
 		new Set([email])
 	)({
-		event: requestEvent('/documents/[id]', new Headers({ cookie })),
+		event: requestEvent('/documents/[id=uuid]', new Headers({ cookie })),
 		resolve
 	});
 	expect(beforeResponse).toBe(RESOLVED);
@@ -132,7 +132,7 @@ test('emptying the allowlist rejects a previously valid session', async () => {
 		testAuth,
 		new Set()
 	)({
-		event: requestEvent('/documents/[id]', new Headers({ cookie })),
+		event: requestEvent('/documents/[id=uuid]', new Headers({ cookie })),
 		resolve
 	});
 	expect(afterResponse.status).toBe(401);

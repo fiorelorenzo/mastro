@@ -32,7 +32,7 @@
 {/snippet}
 {#snippet outcomeCell(row: Row)}
 	{#if row.status === 'applied' && row.proposalId}
-		<a href={resolve('/proposals/[id]', { id: row.proposalId })}>
+		<a href={resolve('/proposals/[id=uuid]', { id: row.proposalId })}>
 			{m.extraction_run_registry_outcome_view_proposal()}
 		</a>
 	{:else if row.status === 'nothing_proposed'}

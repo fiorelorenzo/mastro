@@ -94,7 +94,7 @@ const PRODUCERS: Record<WorkUnitState, readonly Producer[]> = {
 		},
 		{
 			kind: 'route',
-			file: 'src/routes/proposals/[id]/+page.server.ts',
+			file: 'src/routes/proposals/[id=uuid]/+page.server.ts',
 			contains: 'acceptProposal(',
 			via: 'proposal review accept'
 		}
@@ -112,13 +112,13 @@ const PRODUCERS: Record<WorkUnitState, readonly Producer[]> = {
 	disputed: [
 		{
 			kind: 'route',
-			file: 'src/routes/day/[id]/+page.server.ts',
+			file: 'src/routes/day/[id=uuid]/+page.server.ts',
 			contains: 'disputeWorkUnit(',
 			via: 'day detail dispute action'
 		},
 		{
 			kind: 'route',
-			file: 'src/routes/invoices/[id]/+page.server.ts',
+			file: 'src/routes/invoices/[id=uuid]/+page.server.ts',
 			contains: 'disputeWorkUnit(',
 			via: 'invoice detail dispute action'
 		}
@@ -128,7 +128,7 @@ const PRODUCERS: Record<WorkUnitState, readonly Producer[]> = {
 	revoked: [
 		{
 			kind: 'route',
-			file: 'src/routes/day/[id]/+page.server.ts',
+			file: 'src/routes/day/[id=uuid]/+page.server.ts',
 			contains: 'revokeWorkUnit(',
 			via: 'day detail revoke action'
 		}
@@ -136,7 +136,7 @@ const PRODUCERS: Record<WorkUnitState, readonly Producer[]> = {
 	rejected: [
 		{
 			kind: 'route',
-			file: 'src/routes/day/[id]/+page.server.ts',
+			file: 'src/routes/day/[id=uuid]/+page.server.ts',
 			contains: 'rejectWorkUnit(',
 			via: 'day detail reject action'
 		}
@@ -145,7 +145,7 @@ const PRODUCERS: Record<WorkUnitState, readonly Producer[]> = {
 	unbillable: [
 		{
 			kind: 'route',
-			file: 'src/routes/day/[id]/+page.server.ts',
+			file: 'src/routes/day/[id=uuid]/+page.server.ts',
 			contains: 'markWorkUnitUnbillable(',
 			via: 'day detail unbillable action'
 		},

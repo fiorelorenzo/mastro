@@ -134,7 +134,7 @@
 										cell.entries.find((entry) => entry.state === primaryState) ?? cell.entries[0]}
 									<div class="cell-occupied">
 										<a
-											href={resolve('/day/[id]', { id: primaryEntry.id })}
+											href={resolve('/day/[id=uuid]', { id: primaryEntry.id })}
 											class="cell-link"
 											aria-label={m.day_calendar_open_date({
 												date: formatDate(cell.date),
@@ -190,7 +190,7 @@
 						{#each cell.entries as entry (entry.id)}
 							{@const badge = workUnitStateBadge(entry.state)}
 							<li class="agenda-row">
-								<a href={resolve('/day/[id]', { id: entry.id })} class="agenda-link">
+								<a href={resolve('/day/[id=uuid]', { id: entry.id })} class="agenda-link">
 									<span class="agenda-date">{cell.date.slice(-2)}</span>
 									<span class="agenda-main">
 										<span class="agenda-title">{entry.contractLabel}</span>

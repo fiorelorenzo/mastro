@@ -24,6 +24,7 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import * as m from '$lib/paraglide/messages';
 import { contractCrumbs } from '$lib/nav/crumbs';
 import { noticeChannel } from '$lib/server/db/schema';
+import { requireUuidSearchParam } from '$lib/server/params';
 import { getContractWithClient } from '$lib/server/repositories/contract';
 import { getWorkUnit } from '$lib/server/repositories/work-unit';
 import { recordApproval } from '$lib/server/repositories/approval';
@@ -40,7 +41,12 @@ async function loadLinkableWorkUnit(contractId: string, workUnitId: string | nul
 }
 
 export const load: PageServerLoad = async ({ url }) => {
-	const contractId = url.searchParams.get('contractId') ?? '';
+	// `contractId` is required here, unlike `/invoices/new`'s and
+	// `/day/new`'s optional one: there is no contract-less state this page
+	// can render, so a missing or malformed value 404s exactly like an
+	// unknown-but-valid id would, rather than reaching `getContractWithClient`
+	// and having Postgres reject the malformed uuid as a 500 (#390).
+	const contractId = requireUuidSearchParam(url, 'contractId', m.contract_not_found());
 	const contract = await getContractWithClient(contractId);
 	if (!contract) error(404, m.contract_not_found());
 
@@ -56,7 +62,7 @@ export const load: PageServerLoad = async ({ url }) => {
 
 export const actions: Actions = {
 	default: async ({ request, url, locals }) => {
-		const contractId = url.searchParams.get('contractId') ?? '';
+		const contractId = requireUuidSearchParam(url, 'contractId', m.contract_not_found());
 		const contract = await getContractWithClient(contractId);
 		if (!contract) error(404, m.contract_not_found());
 
