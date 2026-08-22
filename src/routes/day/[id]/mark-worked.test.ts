@@ -7,14 +7,19 @@
 // gates on: tomorrow refuses, today works, yesterday (not yet reached by
 // the hourly sweep, but legitimately markable by hand) works too.
 //
-// Like `invoices/new/duplicate-number.test.ts`, this commits through the
-// real `db` singleton the action itself always uses — `getWorkUnit` and
-// `markWorkUnitWorked` never receive a `tx` from `actions.worked`, so
-// there is no transaction to roll back the way the repository suite does.
-// Every fixture row therefore becomes permanent audit history in whatever
-// database `DATABASE_URL` points at when this runs; the same cost that
-// test already accepts, for the same reason.
-import { afterAll, expect, test } from 'vitest';
+// This commits through the real `db` singleton the action itself always
+// uses — `getWorkUnit` and `markWorkUnitWorked` never receive a `tx` from
+// `actions.worked`, so there is no transaction to roll back the way the
+// repository suite does, and — unlike `invoices/new/duplicate-number.test.ts`,
+// whose rows can be deleted afterwards in FK order — nothing here can be
+// cleaned up: `work_unit_transition_immutable` refuses DELETE on the rows
+// this test's own INSERTs generate, and the `ON DELETE restrict` chain
+// from `work_unit` up through `contract` to `client` follows from that.
+// Every fixture row is therefore permanent, whatever database
+// `DATABASE_URL` points at when this runs. Kept to one client, one
+// contract and three work units — the fewest rows that still cover all
+// three boundary dates — rather than a fresh client/contract per case.
+import { afterAll, beforeAll, expect, test } from 'vitest';
 import * as m from '$lib/paraglide/messages';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract } from '$lib/server/db/schema';
@@ -26,16 +31,16 @@ import {
 } from '$lib/server/repositories/work-unit';
 import { actions } from './+page.server';
 
-afterAll(async () => {
-	await pool.end();
-});
-
 const actor = { kind: 'human' as const, email: 'lorenzo@example.com' };
 
-/** An `approved` day dated `date`, on a contract that needs no written
- * approval — the smallest fixture that reaches `approved`, since the date
- * guard under test does not care whether one is on file. */
-async function approvedDayDated(date: string): Promise<string> {
+/** One client and one contract, shared by every case below — the date
+ * guard under test does not care whether a written approval is on file,
+ * so the contract needs none, and none of the three cases below touch
+ * the same date, so one contract is never asked to hold two active work
+ * units on the same day. */
+let contractId: string;
+
+beforeAll(async () => {
 	const [clientRow] = await db
 		.insert(client)
 		.values({
@@ -64,9 +69,17 @@ async function approvedDayDated(date: string): Promise<string> {
 			requiresPriorApproval: false
 		})
 		.returning();
+	contractId = contractRow.id;
+});
 
+afterAll(async () => {
+	await pool.end();
+});
+
+/** An `approved` day dated `date`, on the shared `contractId`. */
+async function approvedDayDated(date: string): Promise<string> {
 	const created = await createWorkUnit(
-		{ contractId: contractRow.id, date, quantity: 1, scope: 'worked date-guard boundary fixture' },
+		{ contractId, date, quantity: 1, scope: 'worked date-guard boundary fixture' },
 		actor,
 		'test fixture'
 	);
@@ -91,9 +104,13 @@ function addDays(date: string, delta: number): string {
 	return d.toISOString().slice(0, 10);
 }
 
-const today = utcToday();
-
 test('a day dated tomorrow refuses: the friendly error comes back and the day stays approved', async () => {
+	// `today` read here, inside the test, right before it is used to date
+	// the fixture and to assert against — never hoisted to module scope,
+	// where a UTC-midnight rollover between module load and the action's
+	// own `utcToday()` call could date this fixture as today by the time
+	// the action runs.
+	const today = utcToday();
 	const id = await approvedDayDated(addDays(today, 1));
 
 	const result = await actions.worked(actionEvent(id));
@@ -107,6 +124,7 @@ test('a day dated tomorrow refuses: the friendly error comes back and the day st
 });
 
 test('a day dated today is recorded worked', async () => {
+	const today = utcToday();
 	const id = await approvedDayDated(today);
 
 	const result = await actions.worked(actionEvent(id));
@@ -117,6 +135,7 @@ test('a day dated today is recorded worked', async () => {
 });
 
 test('a day dated yesterday — not yet reached by the hourly sweep, but legitimately markable by hand — is recorded worked too', async () => {
+	const today = utcToday();
 	const id = await approvedDayDated(addDays(today, -1));
 
 	const result = await actions.worked(actionEvent(id));

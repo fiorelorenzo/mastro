@@ -34,10 +34,13 @@
 	const dispute = submitting();
 	const resolveDispute = submitting();
 	const worked = submitting();
-	// Reopens on a failed submit (the date-guard rejection below), the
-	// same as `unbillableDialogOpen` — a stale page posted through it and
-	// the server said no.
-	let workedDialogOpen = $state(Boolean(form?.workedError));
+	// Unlike `unbillableDialogOpen` and its siblings, this never reopens on
+	// `form?.workedError`: the button (and this dialog) render only under
+	// `data.workUnit.date <= data.workUnit.today`, the exact condition the
+	// server's `fail(400)` fires the opposite of, so a legitimate submit
+	// through this UI can never see that error — only a crafted or stale
+	// POST can, and there is no page left open to show it on.
+	let workedDialogOpen = $state(false);
 	let announcedWorked = false;
 	$effect(() => {
 		if (!form?.recorded || announcedWorked) return;
@@ -275,9 +278,6 @@
 					title={m.day_detail_worked_confirm_title()}
 					role="alertdialog"
 				>
-					{#if form?.workedError}
-						<Banner tone="critical">{form.workedError}</Banner>
-					{/if}
 					<p>{m.day_detail_worked_confirm_body({ date: formatDate(data.workUnit.date) })}</p>
 					{#snippet actions()}
 						<Button type="submit" variant="primary" loading={worked.busy}>
