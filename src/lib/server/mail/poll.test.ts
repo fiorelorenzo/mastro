@@ -55,10 +55,11 @@ import {
 import { connectWithRetry, pollMailboxesOnce, pollMailboxTarget } from './poll';
 import { finishPollProgress, readPollProgress, startPollProgress } from './poll-progress';
 import { DEFAULT_IMAP_MAX_MESSAGE_BYTES, type ImapConfig } from './config';
+import { MAIL_TEST_HOST, MAIL_TEST_IMAP_PORT, MAIL_TEST_SMTP_PORT } from './test-server-env';
 
 const imapConfig: ImapConfig = {
-	host: '127.0.0.1',
-	port: 34143,
+	host: MAIL_TEST_HOST,
+	port: MAIL_TEST_IMAP_PORT,
 	secure: false,
 	user: 'mastro@mastro.test',
 	password: 'test-app-password',
@@ -95,7 +96,7 @@ async function probeMailbox(): Promise<boolean> {
 const mailboxAvailable = await probeMailbox();
 if (!mailboxAvailable) {
 	console.warn(
-		'mail/poll.test.ts: no test mailbox at 127.0.0.1:34025/34143 — skipping. ' +
+		`mail/poll.test.ts: no test mailbox at ${MAIL_TEST_HOST}:${MAIL_TEST_SMTP_PORT}/${MAIL_TEST_IMAP_PORT} — skipping. ` +
 			'Run `docker compose -f compose.mail-test.yaml up -d` first.'
 	);
 }

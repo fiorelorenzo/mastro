@@ -282,14 +282,18 @@ with empty result sets, which reads exactly like a missing role or a privilege p
 and is neither. Measured while setting up four parallel worktrees, where it cost a
 round of "pre-existing failure" reports from three different agents before I looked.
 
-**The mail test server is the one resource a wave cannot duplicate.**
-`compose.mail-test.yaml` runs a single GreenMail container with a fixed name and fixed
-published ports, by design and stated in its own header. Two checkouts running
-`src/lib/server/mail/` tests at the same time therefore share one IMAP server and one
-`INBOX`, and each sees the other's appended messages against its own database, which
-has no cursor for any of them. Nothing depends on that today, since the tests that
-need an empty mailbox now use folders of their own (#421), but it caps a parallel wave
-at one mail-touching issue until #429 gives that container per-checkout isolation too.
+**The mail test server is per-checkout too, the same shape as the database.**
+`compose.mail-test.yaml` reuses `COMPOSE_PROJECT_NAME` above for its own `name:` —
+the same variable, the same precedence, no second name to remember to set — so giving
+a checkout its own project name gives the database container and this one their own
+names together. `MAIL_TEST_SMTP_PORT`/`MAIL_TEST_IMAP_PORT` give it its own ports the
+way `POSTGRES_PORT` does, defaulting to the 34025/34143 the file has always published,
+so a single checkout needs no configuration. Every test under `src/lib/server/mail/`
+(and `alerts/dispatch.test.ts`) reads those same two variables through
+`mail/test-server-env.ts` rather than a hardcoded port — parameterising the container
+and leaving the tests pointed at a fixed one would have looked isolated and not been.
+Two checkouts running mail tests at the same time now connect to two different
+GreenMail containers and never see each other's `INBOX` (#429).
 
 **A per-checkout port does not give you a per-checkout session.** Cookies are scoped
 by host and path and ignore the port entirely (RFC 6265), so every dev server on

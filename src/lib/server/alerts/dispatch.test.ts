@@ -1,10 +1,11 @@
 // The digest half of #75 against a real throwaway mailbox
-// (`compose.mail-test.yaml`, GreenMail on 127.0.0.1:34025/34143), the
-// same pattern `mail/smtp-imap.test.ts` sets: skipped automatically when
-// the test mailbox is not running. `runAlertPush` is not exercised here —
-// it needs a real push subscription, verified separately (see the PR
-// description) — this file only proves the digest's own delivery-dedup
-// contract: sent once, nothing twice.
+// (`compose.mail-test.yaml`, GreenMail on 127.0.0.1, MAIL_TEST_SMTP_PORT/
+// MAIL_TEST_IMAP_PORT — 34025/34143 by default), the same pattern
+// `mail/smtp-imap.test.ts` sets: skipped automatically when the test
+// mailbox is not running. `runAlertPush` is not exercised here — it needs
+// a real push subscription, verified separately (see the PR description)
+// — this file only proves the digest's own delivery-dedup contract: sent
+// once, nothing twice.
 //
 // SMTP/IMAP/allowlist env vars are read from the process environment
 // (`mailConfigFromEnv`/`AUTH_ALLOWED_EMAILS`, both `$env/dynamic/private`)
@@ -23,19 +24,22 @@ import {
 	type PaymentTerms
 } from '$lib/server/db/schema';
 import { runAlertDigest } from './dispatch';
+import { MAIL_TEST_HOST, MAIL_TEST_IMAP_PORT } from '$lib/server/mail/test-server-env';
 
-// Matches compose.mail-test.yaml's fixed test account, and the
+// Matches compose.mail-test.yaml's default test account, and the
 // AUTH_ALLOWED_EMAILS this file needs set in the environment it runs
 // under: SMTP_HOST=127.0.0.1 SMTP_PORT=34025 SMTP_SECURE=false
 // SMTP_USER=mastro@mastro.test SMTP_APP_PASSWORD=test-app-password
 // MAIL_FROM_ADDRESS=mastro@mastro.test IMAP_HOST=127.0.0.1
 // IMAP_PORT=34143 IMAP_SECURE=false IMAP_USER=mastro@mastro.test
 // IMAP_APP_PASSWORD=test-app-password AUTH_ALLOWED_EMAILS=mastro@mastro.test
+// A checkout running the mail server on non-default MAIL_TEST_SMTP_PORT/
+// MAIL_TEST_IMAP_PORT must set matching SMTP_PORT/IMAP_PORT values above.
 
 async function probeMailbox(): Promise<boolean> {
 	const probe = new ImapFlow({
-		host: '127.0.0.1',
-		port: 34143,
+		host: MAIL_TEST_HOST,
+		port: MAIL_TEST_IMAP_PORT,
 		secure: false,
 		auth: { user: 'mastro@mastro.test', pass: 'test-app-password' },
 		logger: false
@@ -102,8 +106,8 @@ test.skipIf(!mailboxAvailable)(
 			expect(first.included).toBeGreaterThan(0);
 
 			const imap = new ImapFlow({
-				host: '127.0.0.1',
-				port: 34143,
+				host: MAIL_TEST_HOST,
+				port: MAIL_TEST_IMAP_PORT,
 				secure: false,
 				auth: { user: 'mastro@mastro.test', pass: 'test-app-password' },
 				logger: false

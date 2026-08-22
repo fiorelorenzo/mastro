@@ -12,10 +12,17 @@
 #   pnpm test -- src/lib/server/mail/smtp-imap.test.ts
 #   docker compose -f compose.mail-test.yaml down
 #
-# Ports are non-default (34025/34143, not 25/143 or the usual 3025/3143) so
-# this can run next to another agent's worktree on the same box without a
-# port clash — see AGENTS.md on ports being fixed per project for the same
-# reason.
+# Per-checkout isolation (#429), the same shape compose.yaml gives Postgres:
+# `name:` below is overridden by `COMPOSE_PROJECT_NAME` in .env — same
+# variable, same precedence, no second name to keep in sync — so setting it
+# once per checkout gives the database container and this one their own
+# names together. The published ports come from `MAIL_TEST_SMTP_PORT` and
+# `MAIL_TEST_IMAP_PORT`, defaulting to the 34025/34143 this file has always
+# published (still non-default, so a lone checkout never clashes with a
+# real local mail service either), so a single checkout needs no
+# configuration at all. Every test under src/lib/server/mail/ reads the
+# same two variables (mail/test-server-env.ts) rather than a hardcoded
+# port — see AGENTS.md.
 name: mastro-mail-test
 
 services:
@@ -23,8 +30,8 @@ services:
     image: greenmail/standalone:2.1.8
     restart: 'no'
     ports:
-      - '127.0.0.1:34025:3025' # SMTP
-      - '127.0.0.1:34143:3143' # IMAP
+      - '127.0.0.1:${MAIL_TEST_SMTP_PORT:-34025}:3025' # SMTP
+      - '127.0.0.1:${MAIL_TEST_IMAP_PORT:-34143}:3143' # IMAP
     environment:
       # One fixed test account, auth required (real AUTH, not
       # `greenmail.auth.disabled`) so this actually exercises the
