@@ -20,6 +20,7 @@ import {
 } from '$lib/server/repositories/invoice';
 import { buildDunningContext, InvoiceNotOverdueError } from './dunning';
 import { DEFAULT_IMAP_MAX_MESSAGE_BYTES, type MailConfig } from './config';
+import { MAIL_TEST_HOST, MAIL_TEST_IMAP_PORT, MAIL_TEST_SMTP_PORT } from './test-server-env';
 import { appendToSentMailbox } from './imap';
 import { composeMessage } from './message';
 import { renderTemplate } from './render';
@@ -199,8 +200,8 @@ test('builds a draft with the real figures and days late off a persisted overdue
 
 const realConfig: MailConfig = {
 	smtp: {
-		host: '127.0.0.1',
-		port: 34025,
+		host: MAIL_TEST_HOST,
+		port: MAIL_TEST_SMTP_PORT,
 		secure: false,
 		user: 'mastro@mastro.test',
 		password: 'test-app-password',
@@ -208,8 +209,8 @@ const realConfig: MailConfig = {
 		fromName: 'Mastro Test'
 	},
 	imap: {
-		host: '127.0.0.1',
-		port: 34143,
+		host: MAIL_TEST_HOST,
+		port: MAIL_TEST_IMAP_PORT,
 		secure: false,
 		user: 'mastro@mastro.test',
 		password: 'test-app-password',
@@ -240,8 +241,8 @@ async function probeMailbox(): Promise<boolean> {
 const mailboxAvailable = await probeMailbox();
 if (!mailboxAvailable) {
 	console.warn(
-		'dunning.test.ts: no test mailbox at 127.0.0.1:34025/34143 — the real-send test is skipped. ' +
-			'Run `docker compose -p mastro-mail-test -f compose.mail-test.yaml up -d` first.'
+		`dunning.test.ts: no test mailbox at ${realConfig.imap.host}:${realConfig.smtp.port}/${realConfig.imap.port} — the real-send test is skipped. ` +
+			'Run `docker compose -f compose.mail-test.yaml up -d` first.'
 	);
 }
 

@@ -20,6 +20,7 @@ import type { ExpensePolicy, PaymentTerms } from '$lib/server/db/schema/contract
 import { createApproval } from '$lib/server/repositories/approval';
 import { createWorkUnit } from '$lib/server/repositories/work-unit';
 import { DEFAULT_IMAP_MAX_MESSAGE_BYTES, type MailConfig } from './config';
+import { MAIL_TEST_HOST, MAIL_TEST_IMAP_PORT, MAIL_TEST_SMTP_PORT } from './test-server-env';
 import { composeForAutomaticTrigger, dispatchEmail, prepareEmail } from './send';
 
 // Same transaction-rollback pattern as the other repository tests, plus
@@ -28,8 +29,8 @@ import { composeForAutomaticTrigger, dispatchEmail, prepareEmail } from './send'
 
 const realConfig: MailConfig = {
 	smtp: {
-		host: '127.0.0.1',
-		port: 34025,
+		host: MAIL_TEST_HOST,
+		port: MAIL_TEST_SMTP_PORT,
 		secure: false,
 		user: 'mastro@mastro.test',
 		password: 'test-app-password',
@@ -37,8 +38,8 @@ const realConfig: MailConfig = {
 		fromName: 'Mastro Test'
 	},
 	imap: {
-		host: '127.0.0.1',
-		port: 34143,
+		host: MAIL_TEST_HOST,
+		port: MAIL_TEST_IMAP_PORT,
 		secure: false,
 		user: 'mastro@mastro.test',
 		password: 'test-app-password',
@@ -104,8 +105,8 @@ let root: string;
 const mailboxAvailable = await probeMailbox();
 if (!mailboxAvailable) {
 	console.warn(
-		'send.test.ts: no test mailbox at 127.0.0.1:34025/34143 — the real-send tests are skipped. ' +
-			'Run `docker compose -p mastro-mail-test -f compose.mail-test.yaml up -d` first.'
+		`send.test.ts: no test mailbox at ${realConfig.imap.host}:${realConfig.smtp.port}/${realConfig.imap.port} — the real-send tests are skipped. ` +
+			'Run `docker compose -f compose.mail-test.yaml up -d` first.'
 	);
 }
 
