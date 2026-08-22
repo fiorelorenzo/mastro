@@ -165,6 +165,53 @@ export async function lastExtractionByDocument(
 	return latest;
 }
 
+/**
+ * Whether `documentId` already has an extraction run that is `queued` or
+ * `running` — the guard #404's human-driven "read this conversation
+ * again" checks, fresh, immediately before enqueuing a second job for the
+ * same conversation. Any other status means the last attempt is done, one
+ * way or another (including `failed`, whose own re-ask is #315's retry,
+ * not this one), and a fresh ask is not a duplicate.
+ */
+export async function hasInFlightExtractionRun(
+	documentId: string,
+	executor: DbExecutor = db
+): Promise<boolean> {
+	const [row] = await executor
+		.select({ id: extractionRun.id })
+		.from(extractionRun)
+		.where(
+			and(
+				eq(extractionRun.documentId, documentId),
+				inArray(extractionRun.status, ['queued', 'running'])
+			)
+		)
+		.limit(1);
+	return row !== undefined;
+}
+
+/** Batched {@link hasInFlightExtractionRun} (#404): the documents among
+ * `documentIds` that already have a `queued`/`running` run, in one query —
+ * the rejected-history list reads this once for a whole page instead of
+ * once per row, the same batching `enqueue.ts` already gives its other
+ * three lookups. */
+export async function inFlightExtractionRunDocumentIds(
+	documentIds: readonly string[],
+	executor: DbExecutor = db
+): Promise<Set<string>> {
+	if (documentIds.length === 0) return new Set();
+	const rows = await executor
+		.select({ documentId: extractionRun.documentId })
+		.from(extractionRun)
+		.where(
+			and(
+				inArray(extractionRun.documentId, [...documentIds]),
+				inArray(extractionRun.status, ['queued', 'running'])
+			)
+		);
+	return new Set(rows.map((row) => row.documentId));
+}
+
 /** Every run, newest first, with its document's name for display — the
  * registry's own query (design doc, "The registry (C)": "the view that
  * makes a failure repeating every five minutes visible"). A `leftJoin`,

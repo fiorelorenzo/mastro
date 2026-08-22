@@ -13,10 +13,11 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import * as m from '$lib/paraglide/messages';
-	import { formatDateTime, formatDuration } from '$lib/i18n/format';
+	import { formatDate, formatDateTime, formatDuration } from '$lib/i18n/format';
 	import { Badge, Banner, Button } from '$lib/design';
 	import Page from '$lib/layout/Page.svelte';
 	import { retryEligibility } from '$lib/extraction/retry-eligibility';
+	import { rereadBlockReasonMessage, rereadEligibility } from '$lib/extraction/reread-eligibility';
 	import {
 		coalesceEvents,
 		failureSummary,
@@ -151,6 +152,19 @@
 		})
 	);
 
+	// Whether the "read this conversation again" button belongs on screen
+	// at all (#404): only for a work-unit run that has actually finished
+	// with something to show for it — the same "succeeded" reading #315
+	// reserves `failed` away from, since a failed run already has its own
+	// retry above. `data.rereadHasInFlightRun` is load-time, like
+	// `retryHasProposals`: only a *different*, newer run for this same
+	// document could move it, and that lands on its own page once asked
+	// for.
+	const canOfferReread = $derived(
+		(status === 'applied' || status === 'nothing_proposed') && data.run.targetType === 'work_unit'
+	);
+	const reread = $derived(rereadEligibility({ hasInFlightRun: data.rereadHasInFlightRun }));
+
 	// Long model output stays readable without collapsing the transcript
 	// into a wall of text, and without any JavaScript to drive a
 	// show/hide toggle — `<details>` does that natively. Short payloads
@@ -202,6 +216,21 @@
 		     Said plainly, because a reader arrives here expecting one of those
 		     two and would otherwise be left inferring which one this is. -->
 		<p class="outcome-success">{m.extraction_run_detail_outcome_nothing_proposed()}</p>
+		{#if data.nothingProposedDates.length > 0}
+			<!-- #404: the dates this reading actually found, every one of them
+			     already proposed or recorded elsewhere — what turns "nothing to
+			     review" from a shrug into an answer about specific days. -->
+			<div class="skipped-dates">
+				<p class="skipped-dates-heading">
+					{m.extraction_run_detail_nothing_proposed_dates_heading()}
+				</p>
+				<ul>
+					{#each data.nothingProposedDates as date (date)}
+						<li>{formatDate(date)}</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
 	{:else if status === 'failed'}
 		<Banner tone="critical">
 			<strong>{m.extraction_run_detail_outcome_failed_heading()}</strong>
@@ -229,6 +258,22 @@
 		{/if}
 		{#if form?.retryError}
 			<p class="error-label">{form.retryError}</p>
+		{/if}
+	{/if}
+
+	{#if canOfferReread}
+		<!-- #404: the same button `retry` is, for a run that succeeded and
+		     whose output was wrong or is now stale — not offered on a failed
+		     run, which already has its own retry above. -->
+		{#if reread.canReread}
+			<form method="POST" action="?/reread" class="reread-form">
+				<Button type="submit" variant="secondary">{m.extraction_run_reread_button()}</Button>
+			</form>
+		{:else if reread.reason}
+			<p class="reread-note">{rereadBlockReasonMessage(reread.reason)}</p>
+		{/if}
+		{#if form?.rereadError}
+			<p class="error-label">{form.rereadError}</p>
 		{/if}
 	{/if}
 
@@ -286,10 +331,24 @@
 	.outcome-success a {
 		color: var(--color-primary);
 	}
-	.retry-form {
+	.skipped-dates {
+		margin: var(--space-3) 0 0;
+		font-size: var(--text-sm);
+	}
+	.skipped-dates-heading {
+		margin: 0 0 var(--space-1);
+		color: var(--text-secondary);
+	}
+	.skipped-dates ul {
+		margin: 0;
+		padding-left: var(--space-4);
+	}
+	.retry-form,
+	.reread-form {
 		margin-top: var(--space-4);
 	}
-	.retry-note {
+	.retry-note,
+	.reread-note {
 		margin: var(--space-4) 0 0;
 		font-size: var(--text-sm);
 		color: var(--text-secondary);

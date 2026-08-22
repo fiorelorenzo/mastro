@@ -24,14 +24,85 @@ import {
 	type ArchivedInboundThreadRow
 } from '$lib/server/repositories/inbound-thread';
 import { getContractsWithClient } from '$lib/server/repositories/contract';
-import { readDocumentBytes, getDocuments } from '$lib/server/repositories/document';
+import {
+	readDocumentBytes,
+	getDocuments,
+	type DocumentRow
+} from '$lib/server/repositories/document';
 import { enqueueJob } from '$lib/server/runner/queue';
+import type { ExtractionRequest } from '$lib/server/runner/types';
 import { db, type DbExecutor } from '$lib/server/db';
 import { dayExtractionInstructions } from './day-extraction';
 
 export interface EnqueueOutcome {
 	readonly enqueued: number;
 	readonly alreadyProposed: number;
+}
+
+/**
+ * Builds the work-unit extraction request for one conversation, anchored
+ * on `anchorDocumentId` — every archived message of `conversationRows`,
+ * oldest first, travels in the job (#400: a model handed only the
+ * acceptance reads "tutto ok, confermo" with nothing to confirm).
+ *
+ * The one place this shape is built, called from
+ * {@link enqueueDayExtractions}'s own per-thread loop below and from
+ * `agent/reread.ts`'s human-driven re-read (#404) — the latter needing the
+ * exact same job a scheduled enqueue would have produced, through the same
+ * code, not a second copy of it that could drift.
+ *
+ * `null` when the anchor message itself cannot be read back off disk: it
+ * is what the job is named after and what the runner re-derives its
+ * contract from, so a job missing it is not worth enqueuing. A sibling
+ * message that cannot be read is dropped from the conversation instead
+ * (#313) — an older message's bytes going missing must not take down an
+ * exchange whose newer messages are perfectly readable.
+ */
+export async function buildConversationExtractionRequest(
+	anchorDocumentId: string,
+	contractId: string,
+	conversationRows: readonly ArchivedInboundThreadRow[],
+	documentsById: ReadonlyMap<string, DocumentRow>
+): Promise<ExtractionRequest | null> {
+	const messages: ConversationMessage[] = [];
+	let anchorReadable = false;
+	for (const row of conversationRows) {
+		const archived = documentsById.get(row.documentId);
+		if (!archived) continue;
+		let bytes: Buffer;
+		try {
+			bytes = await readDocumentBytes(archived);
+		} catch {
+			continue;
+		}
+		if (row.documentId === anchorDocumentId) anchorReadable = true;
+		messages.push({
+			documentId: row.documentId,
+			sentAt: row.receivedAt.toISOString().slice(0, 10),
+			from: row.senderAddress ?? 'unknown',
+			// Whose words these are (#409). The prompt raises confidence for
+			// an offer met by the other side's agreement, so it has to know
+			// which side each message is.
+			mine: row.direction === 'outbound',
+			// Quoted history and signatures removed here rather than left to
+			// the prompt: the same sentence quoted four deep is four chances
+			// for the model to read it as a new statement, and it is paid
+			// for by the token either way.
+			body: stripQuotedHistory(decodeMessageBody(parseMessage(bytes)))
+		});
+	}
+	if (!anchorReadable) return null;
+	return {
+		// The anchor stays the awaiting message: the runner re-derives its
+		// contract from this id and rejects a job that disagrees, and that
+		// check is worth keeping pointed at one document rather than a set.
+		documentId: anchorDocumentId,
+		contractId,
+		targetType: 'work_unit',
+		content: renderConversation(messages),
+		conversation: messages,
+		instructions: dayExtractionInstructions(messages)
+	};
 }
 
 /**
@@ -159,67 +230,21 @@ export async function enqueueDayExtractions(
 		}
 
 		// Every archived message of this conversation travels in the job, not
-		// just the one that happens to be awaiting (#400). The Polymarket
-		// half-day is offered in one message and accepted in the next, so a
-		// model handed only the acceptance reads "tutto ok, confermo" with
-		// nothing to confirm; and a reply quoting its parent used to re-state
-		// the parent's sentence as if it were new, which is where three
-		// proposals for one day came from.
-		const documentsForRows = conversationRows.map((row) => documentsById.get(row.documentId));
-
-		// The runner cannot read the blob store (#82's grant does not cover
-		// it), so the message bodies travel in the job.
-		//
-		// Guarded per message, which closes #313 for this path and is what
-		// makes conversation-level extraction safe at all: reading N blobs
-		// where the old shape read one multiplies the chance of meeting a
-		// missing file by N, and an older sibling whose bytes have gone must
-		// not take down an exchange whose newer messages are perfectly
-		// readable. A missing blob is not hypothetical - a database restored
-		// without its documents directory is exactly this.
-		const messages: ConversationMessage[] = [];
-		let anchorReadable = false;
-		for (const [index, row] of conversationRows.entries()) {
-			const archived = documentsForRows[index];
-			if (!archived) continue;
-			let bytes: Buffer;
-			try {
-				bytes = await readDocumentBytes(archived);
-			} catch {
-				continue;
-			}
-			if (row.documentId === thread.documentId) anchorReadable = true;
-			messages.push({
-				documentId: row.documentId,
-				sentAt: row.receivedAt.toISOString().slice(0, 10),
-				from: row.senderAddress ?? 'unknown',
-				// Whose words these are (#409). The prompt raises confidence for
-				// an offer met by the other side's agreement, so it has to know
-				// which side each message is.
-				mine: row.direction === 'outbound',
-				// Quoted history and signatures removed here rather than left
-				// to the prompt: the same sentence quoted four deep is four
-				// chances for the model to read it as a new statement, and it
-				// is paid for by the token either way.
-				body: stripQuotedHistory(decodeMessageBody(parseMessage(bytes)))
-			});
-		}
+		// just the one that happens to be awaiting (#400), through the same
+		// builder a human-driven re-read uses (#404), so the two cannot
+		// drift.
+		const request = await buildConversationExtractionRequest(
+			thread.documentId,
+			thread.contractId,
+			conversationRows,
+			documentsById
+		);
 		// The anchor is the one message that cannot be missing: it is what the
 		// job is named after and what the runner re-derives its contract from.
-		if (!anchorReadable) continue;
+		if (!request) continue;
 
 		const enqueuedAt = new Date();
-		const jobId = await enqueueJob(queueDir, {
-			// The anchor stays the awaiting message: the runner re-derives its
-			// contract from this id and rejects a job that disagrees, and that
-			// check is worth keeping pointed at one document rather than a set.
-			documentId: thread.documentId,
-			contractId: thread.contractId,
-			targetType: 'work_unit',
-			content: renderConversation(messages),
-			conversation: messages,
-			instructions: dayExtractionInstructions(messages)
-		});
+		const jobId = await enqueueJob(queueDir, request);
 		// The row the guard above reads next time, and the row #281's three
 		// views need. Until now only the hand-driven import created one, so
 		// "every extraction is a run you can watch" was false for exactly the

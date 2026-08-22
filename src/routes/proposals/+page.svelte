@@ -18,6 +18,7 @@
 	import { viewResultLabel } from './decision-wording';
 	import { proposalIssueMessage } from '$lib/i18n/proposal-issue';
 	import { submitting } from '$lib/design/submitting.svelte';
+	import { rereadBlockReasonMessage, rereadEligibility } from '$lib/extraction/reread-eligibility';
 	import { paymentTermsKindLabel } from '../clients/[id=uuid]/contracts/contract-enums';
 	import { rateUnitLabel } from '../clients/[id=uuid]/contracts/[contractId=uuid]/rate-cards/rate-card-enums';
 	import type { ProposedContract } from './queue-fields';
@@ -163,6 +164,21 @@
 					: m.contract_form_requires_prior_approval_not_required_option()
 			}
 		];
+	}
+
+	/**
+	 * Whether a decided-history row offers "read this conversation again"
+	 * (#404) — a rejected work-unit row with a real conversation behind it.
+	 * `null` for everything else (accepted rows, a contract proposal, a
+	 * first-intake upload with no message), so the template's own `{#if}`
+	 * both gates the button and narrows `row.hasInFlightRereadRun` to a row
+	 * that actually has it.
+	 */
+	function rereadOffer(row: HistoryRow) {
+		if (row.status !== 'rejected' || row.targetType !== 'work_unit' || !row.fromMessage) {
+			return null;
+		}
+		return rereadEligibility({ hasInFlightRun: row.hasInFlightRereadRun });
 	}
 </script>
 
@@ -351,6 +367,7 @@
 		<ul class="rows history">
 			{#each data.rows as row (row.id)}
 				{@const when = row.sourceAt ? formatDateTime(row.sourceAt) : null}
+				{@const reread = rereadOffer(row)}
 				<li class="row">
 					<span class="row-ico" aria-hidden="true">{row.status === 'accepted' ? '✓' : '✕'}</span>
 					<div class="row-main">
@@ -390,6 +407,9 @@
 								{m.proposal_history_rejected_note_document({ when: when ?? '' })}
 							{/if}
 						</span>
+						{#if reread && !reread.canReread && reread.reason}
+							<span class="reread-note">{rereadBlockReasonMessage(reread.reason)}</span>
+						{/if}
 					</div>
 					<div class="row-actions">
 						{#if row.result}
@@ -414,6 +434,21 @@
 							>
 								{viewResultLabel(row.result.kind)}
 							</Button>
+						{/if}
+						{#if reread?.canReread}
+							{@const rereadSubmit = submitting()}
+							<!-- #404: reachable here even for a document with zero
+							     `extraction_run` rows — a rejected proposal keeps its
+							     document permanently out of the automatic sweep
+							     (`listInboundThreadsAwaitingExtraction`'s own
+							     `isNull(proposal.id)`), so this is the surface for exactly
+							     the case the registry cannot reach. -->
+							<form method="POST" action="?/reread" onsubmit={rereadSubmit.onsubmit}>
+								<input type="hidden" name="documentId" value={row.documentId} />
+								<Button type="submit" variant="tertiary" size="sm" loading={rereadSubmit.busy}>
+									{m.proposal_history_reread_button()}
+								</Button>
+							</form>
 						{/if}
 					</div>
 				</li>
@@ -673,6 +708,10 @@
 		gap: var(--space-2);
 		font-size: var(--text-sm);
 		color: var(--text-secondary);
+	}
+	.reread-note {
+		font-size: var(--text-sm);
+		color: var(--text-muted);
 	}
 	.row-actions {
 		flex: none;

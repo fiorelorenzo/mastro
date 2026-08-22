@@ -4,7 +4,8 @@
 // reviewer sees them as siblings rather than as unrelated cards. Decided
 // history (`?status=accepted`/`?status=rejected`) is a flatter list —
 // nothing to group by message for once the decision is already made.
-import { error, fail } from '@sveltejs/kit';
+import { error, fail, redirect } from '@sveltejs/kit';
+import { env } from '$env/dynamic/private';
 import * as m from '$lib/paraglide/messages';
 import {
 	proposalRevised,
@@ -17,6 +18,9 @@ import { isPostgresError } from '$lib/server/db/postgres-error';
 import { log } from '$lib/server/log/logger';
 import { parseMessage } from '$lib/server/mail/headers';
 import { priceWorkUnitOnDate } from '$lib/server/domain/work-unit-pricing';
+import { reReadConversation } from '$lib/server/agent/reread';
+import { rereadBlockReasonMessage } from '$lib/extraction/reread-eligibility';
+import { inFlightExtractionRunDocumentIds } from '$lib/server/repositories/extraction-run';
 import {
 	getContract,
 	getContractsWithClient,
@@ -303,6 +307,11 @@ async function loadQueue(): Promise<QueueGroup[]> {
 
 export type HistoryRow = {
 	id: string;
+	/** The source document (#404): a rejected work-unit row uses this to
+	 *  ask for one more extraction of the conversation it came from — the
+	 *  same id `enqueueDayExtractions`/`reReadConversation` anchor a job
+	 *  on, never the proposal's own `id`. */
+	documentId: string;
 	/** Same reason `QueueRow` carries it: a decided contract proposal read
 	 *  "— — —" on the Accepted and Rejected tabs too, and it is one row
 	 *  renderer for all three. */
@@ -326,6 +335,11 @@ export type HistoryRow = {
 	 *  which rendered "Rejected on ." with the date slot left empty. */
 	sourceAt: string | null;
 	amount: number | null;
+	/** Whether `documentId` already has a `queued`/`running` extraction run
+	 *  (#404) — computed only for the rejected tab, `false` everywhere else,
+	 *  since only a rejected work-unit row ever offers the re-read button
+	 *  this blocks. */
+	hasInFlightRereadRun: boolean;
 	/**
 	 * Where the accepted row's result actually lives. Was `resultId` alone,
 	 * which the template turned into `/day/[id]` for every target type, so
@@ -395,6 +409,15 @@ async function loadHistory(status: 'accepted' | 'rejected'): Promise<HistoryRow[
 		return pending;
 	}
 
+	// #404: whether a re-read is already in flight for a rejected row's
+	// document — batched once for the whole page rather than once per
+	// row, and skipped entirely on the accepted tab, which never offers
+	// the button this guards.
+	const inFlightReread =
+		status === 'rejected'
+			? await inFlightExtractionRunDocumentIds(rows.map((row) => row.documentId))
+			: new Set<string>();
+
 	return Promise.all(
 		rows.map(async (row) => {
 			const effectiveFields = row.acceptedFields ?? row.proposedFields;
@@ -404,6 +427,7 @@ async function loadHistory(status: 'accepted' | 'rejected'): Promise<HistoryRow[
 			const contract = contractSummary(row.contractId, context.contractById);
 			return {
 				id: row.id,
+				documentId: row.documentId,
 				targetType: row.targetType,
 				date: fields?.date ?? null,
 				quantity: fields?.quantity ?? null,
@@ -425,6 +449,7 @@ async function loadHistory(status: 'accepted' | 'rejected'): Promise<HistoryRow[
 							context.rateCardsByContract
 						)
 					: null,
+				hasInFlightRereadRun: inFlightReread.has(row.documentId),
 				result: await resultDestination(row.targetType, row.resultId)
 			};
 		})
@@ -497,5 +522,23 @@ export const actions: Actions = {
 			return fail(400, { actionError: failures.join(' ') });
 		}
 		return { decided: true };
+	},
+
+	/** Asks for one more extraction of a rejected row's conversation
+	 *  (#404) — the surface #404's own corrected finding names: a rejected
+	 *  proposal keeps its document out of the automatic sweep permanently
+	 *  (`listInboundThreadsAwaitingExtraction`'s `isNull(proposal.id)`), so
+	 *  this is reachable for a document with zero `extraction_run` rows,
+	 *  not only one the registry already lists. Success lands on the new
+	 *  run's own page, same as the registry's own `reread` action. */
+	reread: async ({ request }) => {
+		const formData = await request.formData();
+		const documentId = String(formData.get('documentId') ?? '');
+		const queueDir = env.RUNNER_QUEUE_DIR ?? './data/runner-queue';
+		const outcome = await reReadConversation(documentId, queueDir);
+		if (!outcome.ok) {
+			return fail(400, { actionError: rereadBlockReasonMessage(outcome.reason) });
+		}
+		redirect(303, `/import/runs/${outcome.run.id}`);
 	}
 };
