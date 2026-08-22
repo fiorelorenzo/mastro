@@ -90,14 +90,28 @@ export function formatPercent(value: number, locale: Locale = getLocale()): stri
 }
 
 /**
- * An ISO calendar date (`'2024-03-01'`) or a `Date`, in the active locale's
- * own day/month/year order, e.g. `Mar 1, 2024` in English and `1 mar 2024`
- * in Italian — never `toISOString().slice(0, 10)` or a hand-built
- * `dd/mm/yyyy`. A plain date string is read at UTC midnight so the
- * calendar day it names never shifts with the reader's time zone.
+ * An ISO calendar date (`'2024-03-01'`), a full ISO instant
+ * (`'2024-03-01T10:16:03.465Z'`) or a `Date`, in the active locale's own
+ * day/month/year order, e.g. `Mar 1, 2024` in English and `1 mar 2024` in
+ * Italian — never `toISOString().slice(0, 10)` or a hand-built
+ * `dd/mm/yyyy`. A plain date string is read at UTC midnight so the calendar
+ * day it names never shifts with the reader's time zone, and an instant is
+ * read as itself and then rendered in UTC, for the same reason.
+ *
+ * Both shapes, because taking only one of them was a live defect (#436).
+ * This appended `T00:00:00Z` unconditionally, which turns an instant into
+ * `'…T10:16:03.465ZT00:00:00Z'` — an `Invalid Date`, and
+ * `Intl.DateTimeFormat.format` throws `RangeError` on one rather than
+ * returning anything a caller could notice. Two alert details carry an
+ * instant (`approval_unactioned`'s `receivedAt`, `proposal_pending`'s
+ * `createdAt`, both `.toISOString()` off a timestamp column), so the weekly
+ * digest 500'd for as long as either alert was active, which is an ordinary
+ * state rather than an edge case. The type said `string` and meant
+ * "date-only string", and nothing made that difference visible.
  */
 export function formatDate(date: string | Date, locale: Locale = getLocale()): string {
-	const value = typeof date === 'string' ? new Date(`${date}T00:00:00Z`) : date;
+	const value =
+		typeof date === 'string' ? new Date(date.includes('T') ? date : `${date}T00:00:00Z`) : date;
 	return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' }).format(value);
 }
 
