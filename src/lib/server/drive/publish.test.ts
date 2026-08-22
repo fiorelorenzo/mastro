@@ -175,6 +175,44 @@ test('a failing target leaves remote_file_id null and records a failure run, wit
 	});
 });
 
+test('publishDocument records a failure run for an unattributed document called directly, the throw-before-try path', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		// A real document row with no contract: `getDocumentMirrorContext`'s
+		// `innerJoin` finds nothing and returns null, so `publishDocument`
+		// used to throw right here, before its own `try` block started - the
+		// outer catch in `publishAllPending` saw it instead, and that catch
+		// records nothing (#393). `listUnmirroredDocuments` now keeps a
+		// document like this out of the batch entirely, but `publishDocument`
+		// is also called directly (`publishAllPending`'s own loop, or any
+		// future caller), so it must still record what happened rather than
+		// throw an unhandled rejection nobody sees. A row with no
+		// `document_id` in `document` at all cannot be inserted here — the
+		// foreign key requires it — so this is the closest real instance of
+		// the throw-before-try path: a document the join cannot resolve.
+		const unattributed = await storeDocument(
+			{
+				bytes: new TextEncoder().encode('newsletter'),
+				mime: 'text/plain',
+				originalName: 'newsletter.txt',
+				provenance: 'mail',
+				contractId: null,
+				confidential: false,
+				ownerType: null,
+				ownerId: null
+			},
+			tx
+		);
+		const target = createLocalDirectoryMirrorTarget(mirrorRoot);
+
+		const outcome = await publishDocument(unattributed.id, target, folderConfig, tx);
+		expect(outcome).toEqual({ ok: false, detail: `document ${unattributed.id} not found` });
+
+		const run = await getLatestMirrorRun(unattributed.id, tx);
+		expect(run?.status).toBe('failure');
+		expect(run?.detail).toBe(`document ${unattributed.id} not found`);
+	});
+});
+
 test('publishAllPending publishes every unmirrored document and skips one already mirrored', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		// This is the one test here that calls a whole-table operation, so it
@@ -236,5 +274,42 @@ test('publishAllPending publishes every unmirrored document and skips one alread
 			ok: true,
 			remoteFileId: expect.stringContaining(first.id)
 		});
+	});
+});
+
+test('publishAllPending never offers an unattributed document to the publisher, and reports no failures for it', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		// Same isolation reason as the test above: claim every already-pending
+		// row so this run is only about the one this test creates.
+		await tx.execute(
+			sql`update document set remote_file_id = 'pre-existing' where remote_file_id is null`
+		);
+		const unattributed = await storeDocument(
+			{
+				bytes: new TextEncoder().encode('newsletter'),
+				mime: 'text/plain',
+				originalName: 'newsletter.txt',
+				provenance: 'mail',
+				contractId: null,
+				confidential: false,
+				ownerType: null,
+				ownerId: null
+			},
+			tx
+		);
+
+		const target = createLocalDirectoryMirrorTarget(mirrorRoot);
+		const outcomes = await publishAllPending(target, folderConfig, tx);
+
+		// A batch made entirely of unattributed documents reads as nothing
+		// publishable, not as a failure: the acceptance criterion is that
+		// `failed` is zero because the document was never offered, not
+		// because it was tried and swallowed (#393).
+		expect(outcomes).toEqual([]);
+
+		const [row] = await tx.select().from(document).where(eq(document.id, unattributed.id));
+		expect(row.remoteFileId).toBeNull();
+		const run = await getLatestMirrorRun(unattributed.id, tx);
+		expect(run).toBeNull();
 	});
 });

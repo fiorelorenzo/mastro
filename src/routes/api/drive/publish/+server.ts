@@ -18,13 +18,14 @@
 // already does, instead of joining `ALERT_CRON_TOKEN`'s shared pool.
 import { json } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
-import { authorizeCronRequest } from '$lib/server/auth/cron-token';
 import { createMirrorTarget, mirrorConfigFromEnv } from '$lib/server/drive/config';
+import { authorizeCronRequest } from '$lib/server/auth/cron-token';
 import {
 	DriveMirrorAlreadyInFlightError,
 	runExclusiveDriveMirrorPublish
 } from '$lib/server/drive/publish-lock';
 import { publishAllPending } from '$lib/server/drive/publish';
+import { countUnattributedPendingDocuments } from '$lib/server/repositories/document-mirror';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -54,10 +55,19 @@ export const POST: RequestHandler = async ({ request }) => {
 			publishAllPending(target, config.folder)
 		);
 		const failures = outcomes.filter((outcome) => !outcome.ok);
+		// A batch with nothing to publish because every pending document is
+		// still unattributed is a normal state of this product (#393), not an
+		// incident: `failed` only counts documents the publisher actually
+		// tried and could not place, never the ones the queue withheld
+		// because nobody has claimed them yet. `unattributed` is what keeps
+		// that withheld count visible instead of making those documents
+		// simply disappear from the response — someone who uploaded one and
+		// cannot find it in Drive can see why here.
 		return json({
 			status: failures.length > 0 ? 'partial_failure' : 'ok',
 			published: outcomes.length - failures.length,
-			failed: failures.length
+			failed: failures.length,
+			unattributed: await countUnattributedPendingDocuments()
 		});
 	} catch (error) {
 		if (error instanceof DriveMirrorAlreadyInFlightError) {
