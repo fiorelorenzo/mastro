@@ -638,8 +638,10 @@ test('#420: two transitions written by one statement get distinct, totally order
 		expect(new Set(transitions.map((t) => t.seq)).size).toBe(2);
 		// And that ordering by it is what the reader gets: sorted ascending
 		// above, so the sequence the query returns is strictly increasing.
+		// `seq` is `mode: 'bigint'`, so these are BigInts: a subtracting
+		// comparator throws on them.
 		expect([...transitions].map((t) => t.seq)).toEqual(
-			[...transitions].map((t) => t.seq).sort((a, b) => a - b)
+			[...transitions].map((t) => t.seq).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
 		);
 	});
 });
