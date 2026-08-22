@@ -425,13 +425,9 @@ async function seedNordwind() {
 	const paidInvoice = await createTaxedInvoice(contractRow.id, '2026/014', '2026-06-30', null, [
 		dayLine('Ottimizzazione rotte settimanali — 15/06/2026', paidDay.id, dayRate)
 	]);
+	// #389: recordPayment itself transitions paidDay to `paid` once this
+	// payment settles the invoice, so no separate transition here.
 	await recordPayment(paidInvoice.id, { amount: paidInvoice.total, date: '2026-07-10' });
-	await transitionWorkUnit(
-		paidDay.id,
-		{ state: 'paid' },
-		LORENZO,
-		'incasso registrato il 10/07/2026'
-	);
 
 	// 7. disputed — billed, then contested.
 	const disputedDay = await createWorkUnit(

@@ -382,23 +382,58 @@ export interface RecordPaymentInput {
  * {@link getInvoiceBalance}/`computeInvoiceBalance`, so there is nothing
  * for this function to keep in sync when a second, third, or overpaying
  * payment is recorded later.
+ *
+ * What this function *does* write, in the same transaction as the payment
+ * row: #389's answer to "when does a day become `paid`". Once the row is
+ * in, it asks {@link getInvoiceBalance} whether the invoice is now fully
+ * settled; if it is, every `invoiced` work unit billed on this invoice
+ * moves to `paid` through {@link transitionWorkUnit} (`system` actor,
+ * reason naming this payment). A partial payment settles nothing. The
+ * query only ever selects `invoiced` days, so a day already `paid` from
+ * an earlier payment is never touched again, and a day in some other
+ * state (disputed, say) is left for a human to resolve rather than
+ * forced. Invoice-scoped rather than line-scoped on purpose: a payment
+ * does not say which day it settled, so every day on the invoice moves
+ * together or none do.
  */
 export async function recordPayment(
 	invoiceId: string,
 	input: RecordPaymentInput,
 	executor: DbExecutor = db
 ): Promise<PaymentRow> {
-	const [row] = await executor
-		.insert(payment)
-		.values({
-			invoiceId,
-			amount: input.amount,
-			date: input.date,
-			method: input.method ?? null,
-			reference: input.reference ?? null
-		})
-		.returning();
-	return row;
+	const body = async (tx: DbExecutor) => {
+		const [row] = await tx
+			.insert(payment)
+			.values({
+				invoiceId,
+				amount: input.amount,
+				date: input.date,
+				method: input.method ?? null,
+				reference: input.reference ?? null
+			})
+			.returning();
+
+		const balance = await getInvoiceBalance(invoiceId, tx);
+		if (balance?.settled) {
+			const invoicedDays = await tx
+				.select({ id: workUnit.id })
+				.from(workUnit)
+				.innerJoin(invoiceLine, eq(workUnit.invoiceLineId, invoiceLine.id))
+				.where(and(eq(invoiceLine.invoiceId, invoiceId), eq(workUnit.state, 'invoiced')));
+			for (const day of invoicedDays) {
+				await transitionWorkUnit(
+					day.id,
+					{ state: 'paid' },
+					{ kind: 'system' },
+					`invoice settled by payment ${row.id}`,
+					tx
+				);
+			}
+		}
+
+		return row;
+	};
+	return executor === db ? db.transaction(body) : body(executor);
 }
 
 /** One row of {@link listInvoices}/{@link listUnpaidInvoices} — named here,
