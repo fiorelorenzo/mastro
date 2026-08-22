@@ -593,7 +593,7 @@ test('a fabricated approval_id does not trigger the worked_without_approval redi
 	});
 });
 
-test('#420: a bulk UPDATE moving several work units in one statement records their transitions in strict insertion order', async () => {
+test('#420: two transitions written by one statement get distinct, totally ordered seq values', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const contractRow = await insertContract(tx, false);
 		const [first] = await tx
@@ -627,9 +627,19 @@ test('#420: a bulk UPDATE moving several work units in one statement records the
 			.orderBy(asc(workUnitTransition.seq));
 
 		expect(transitions).toHaveLength(2);
-		// The whole point: two rows written by one statement must not tie,
-		// so their order is well defined regardless of what the clock did.
-		expect(transitions[0].seq).toBeLessThan(transitions[1].seq);
+		// The claim, and the only one this shape can honestly make: two rows
+		// written by one statement do not tie. Which of the two Postgres
+		// touches first is up to its plan and nothing here controls it, so
+		// asserting *which* one leads would be asserting a promise the
+		// database never made. What matters is that a total order exists at
+		// all, because `clock_timestamp()` (0079) can hand both rows the
+		// same microsecond inside one statement and then no ORDER BY can
+		// separate them.
 		expect(new Set(transitions.map((t) => t.seq)).size).toBe(2);
+		// And that ordering by it is what the reader gets: sorted ascending
+		// above, so the sequence the query returns is strictly increasing.
+		expect([...transitions].map((t) => t.seq)).toEqual(
+			[...transitions].map((t) => t.seq).sort((a, b) => a - b)
+		);
 	});
 });
