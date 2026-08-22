@@ -583,6 +583,7 @@
 	"day_detail_worked_confirm_body": "This makes {date} eligible for invoicing immediately, and cannot be undone.",
 	"day_detail_worked_confirm_title": "Record this day as worked?",
 	"day_detail_worked_future_error": "This day has not happened yet.",
+	"day_detail_worked_not_started_hint": "This day hasn't started yet, so it can't be marked as worked.",
 	"day_detail_worked_toast": "Recorded as worked.",
 	"day_form_already_recorded_approved": "It is approved and linked to its written approval. Saving again records a second day, and a second invoice line.",
 	"day_form_already_recorded_body": "State: {state}. Saving again records a second day, and a second invoice line.",

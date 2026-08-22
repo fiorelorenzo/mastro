@@ -583,6 +583,7 @@
 	"day_detail_worked_confirm_body": "Questo rende {date} immediatamente fatturabile, e non si può annullare.",
 	"day_detail_worked_confirm_title": "Registrare questa giornata come lavorata?",
 	"day_detail_worked_future_error": "Questa giornata non è ancora trascorsa.",
+	"day_detail_worked_not_started_hint": "Questa giornata non è ancora iniziata, quindi non può essere segnata come lavorata.",
 	"day_detail_worked_toast": "Registrata come lavorata.",
 	"day_form_already_recorded_approved": "È approvata e legata alla sua approvazione scritta. Salvare di nuovo registra una seconda giornata, e una seconda riga di fattura.",
 	"day_form_already_recorded_body": "Stato: {state}. Salvare di nuovo registra una seconda giornata, e una seconda riga di fattura.",

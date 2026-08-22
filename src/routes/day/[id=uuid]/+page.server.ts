@@ -91,9 +91,9 @@ export const load: PageServerLoad = async ({ params }) => {
 			quantityKind,
 			scope: workUnit.scope,
 			state: workUnit.state,
-			notes: workUnit.notes,
-			today
+			notes: workUnit.notes
 		},
+		today,
 		contract: {
 			id: contract.id,
 			title: contract.title,

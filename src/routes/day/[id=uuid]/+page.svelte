@@ -29,14 +29,21 @@
 
 	let { data, form }: PageProps & { form: ActionData } = $props();
 
+	// The one place `date <= today` is asked, so the button, the hint
+	// explaining it and the form that submits it can never disagree — a
+	// later edit moving one and not the other is exactly the bug this
+	// guard exists to prevent. `data.today` is UTC, not the reader's own
+	// clock: see `+page.server.ts` and `utcToday`'s own note on why.
+	const canMarkWorked = $derived(data.workUnit.date <= data.today);
+
 	const unbillable = submitting();
 	const link = submitting();
 	const dispute = submitting();
 	const resolveDispute = submitting();
 	const worked = submitting();
 	// Unlike `unbillableDialogOpen` and its siblings, this never reopens on
-	// `form?.workedError`: the button (and this dialog) render only under
-	// `data.workUnit.date <= data.workUnit.today`, the exact condition the
+	// `form?.workedError`: the button is disabled and this dialog's form is
+	// unmounted whenever `!canMarkWorked`, the exact condition the
 	// server's `fail(400)` fires the opposite of, so a legitimate submit
 	// through this UI can never see that error — only a crafted or stale
 	// POST can, and there is no page left open to show it on.
@@ -247,19 +254,21 @@
 			</Dialog>
 		</form>
 	{:else if data.workUnit.state === 'approved'}
+		{#if !canMarkWorked}
+			<p class="worked-hint" role="status">{m.day_detail_worked_not_started_hint()}</p>
+		{/if}
 		<div class="lifecycle-actions">
-			{#if data.workUnit.date <= data.workUnit.today}
-				<Button
-					type="button"
-					variant="primary"
-					size="sm"
-					onclick={() => {
-						workedDialogOpen = true;
-					}}
-				>
-					{m.day_detail_mark_worked_action()}
-				</Button>
-			{/if}
+			<Button
+				type="button"
+				variant="primary"
+				size="sm"
+				disabled={!canMarkWorked}
+				onclick={() => {
+					workedDialogOpen = true;
+				}}
+			>
+				{m.day_detail_mark_worked_action()}
+			</Button>
 			<Button
 				type="button"
 				variant="danger"
@@ -271,7 +280,7 @@
 				{m.day_detail_revoke_action()}
 			</Button>
 		</div>
-		{#if data.workUnit.date <= data.workUnit.today}
+		{#if canMarkWorked}
 			<form method="POST" action="?/worked" onsubmit={worked.onsubmit}>
 				<Dialog
 					bind:open={workedDialogOpen}
@@ -531,6 +540,11 @@
 	}
 	.clause {
 		margin: 0;
+	}
+	.worked-hint {
+		margin: var(--space-3) 0 0;
+		font-size: var(--text-sm);
+		color: var(--text-secondary);
 	}
 	.lifecycle-actions {
 		/* #370: bottom margin as well as top. The `proposed` and `approved`
