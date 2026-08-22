@@ -106,6 +106,28 @@ export async function markJobApplied(queueDir: string, filename: string): Promis
 	await rename(join(queueDir, 'done', filename), join(queueDir, 'applied', filename));
 }
 
+/** `applied/<jobId>.json`, read back — the same evidence
+ * `markJobApplied`'s own doc comment says is kept for a human about to
+ * read a proposal, read here for a run that produced none (#404): a
+ * `nothing_proposed` run's own detail page uses this to show what the
+ * model actually found in the conversation, so "nothing to review" reads
+ * as an answer about specific dates rather than a bare status word.
+ * `null` when the file is not there — a run whose job never reached
+ * `applied/` (still `queued`/`running`, or `failed` before ever
+ * answering) has nothing to read back, which is not an error. */
+export async function readAppliedJob(
+	queueDir: string,
+	jobId: string
+): Promise<CompletedJob | null> {
+	try {
+		const raw = await readFile(join(queueDir, 'applied', `${jobId}.json`), 'utf8');
+		return JSON.parse(raw) as CompletedJob;
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+		throw err;
+	}
+}
+
 /** Records why a job failed and moves it into `failed/` — a terminal
  * state a human reviews and re-enqueues if the failure was transient,
  * never retried automatically (an automatic retry loop is exactly how a

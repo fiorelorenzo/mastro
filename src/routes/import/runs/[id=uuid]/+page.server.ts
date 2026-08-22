@@ -22,24 +22,43 @@
  * (`$lib/extraction/retry-eligibility.ts`'s own doc comment on why that
  * split exists). The `retry` action below re-derives both fresh, and
  * never trusts a value this `load` produced for an earlier request.
+ *
+ * `rereadHasInFlightRun` (#404) is the same shape for the "read this
+ * conversation again" button: whether *some* run for this document is
+ * already `queued`/`running`, which may be a different, newer run than
+ * the one this page is showing. `nothingProposedDates` is read only for
+ * a work-unit run that ended `nothing_proposed` — the dates that
+ * reading found, all of them rejected, which is what makes "nothing to
+ * review" read as an answer instead of a shrug.
  */
 import { error, fail, redirect } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import * as m from '$lib/paraglide/messages';
 import { gatherRetryFacts, retryFailedRun } from '$lib/server/agent/retry';
+import {
+	gatherRereadFacts,
+	nothingProposedDates,
+	reReadConversation
+} from '$lib/server/agent/reread';
 import { getDocument } from '$lib/server/repositories/document';
 import { getExtractionRun, listRunEvents } from '$lib/server/repositories/extraction-run';
 import { retryBlockReasonMessage } from '../run-status';
+import { rereadBlockReasonMessage } from '$lib/extraction/reread-eligibility';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ params }) => {
 	const run = await getExtractionRun(params.id);
 	if (!run) error(404, m.extraction_run_not_found());
 
-	const [events, document, retryFacts] = await Promise.all([
+	const queueDir = env.RUNNER_QUEUE_DIR ?? './data/runner-queue';
+	const [events, document, retryFacts, rereadFacts, skippedDates] = await Promise.all([
 		listRunEvents(run.id),
 		getDocument(run.documentId),
-		gatherRetryFacts(run.documentId)
+		gatherRetryFacts(run.documentId),
+		gatherRereadFacts(run.documentId),
+		run.targetType === 'work_unit' && run.status === 'nothing_proposed'
+			? nothingProposedDates(queueDir, run)
+			: Promise.resolve([])
 	]);
 
 	return {
@@ -48,7 +67,9 @@ export const load: PageServerLoad = async ({ params }) => {
 		documentOriginalName: document?.originalName ?? null,
 		proposalId: run.proposalId,
 		retryAttemptCount: retryFacts.attemptCount,
-		retryHasProposals: retryFacts.hasProposals
+		retryHasProposals: retryFacts.hasProposals,
+		rereadHasInFlightRun: rereadFacts.hasInFlightRun,
+		nothingProposedDates: skippedDates
 	};
 };
 
@@ -67,6 +88,23 @@ export const actions: Actions = {
 		const outcome = await retryFailedRun(run, queueDir);
 		if (!outcome.ok) {
 			return fail(400, { retryError: retryBlockReasonMessage(outcome.reason) });
+		}
+		redirect(303, `/import/runs/${outcome.run.id}`);
+	},
+
+	/** Asks for one more extraction of this run's conversation (#404).
+	 * `reReadConversation` re-checks eligibility itself, fresh, before
+	 * acting — the same "never trust the page's own read" shape `retry`
+	 * above already follows. Success lands on the *new* run's own page,
+	 * so the job that was just queued is the one thing on screen next. */
+	reread: async ({ params }) => {
+		const run = await getExtractionRun(params.id);
+		if (!run) error(404, m.extraction_run_not_found());
+
+		const queueDir = env.RUNNER_QUEUE_DIR ?? './data/runner-queue';
+		const outcome = await reReadConversation(run.documentId, queueDir);
+		if (!outcome.ok) {
+			return fail(400, { rereadError: rereadBlockReasonMessage(outcome.reason) });
 		}
 		redirect(303, `/import/runs/${outcome.run.id}`);
 	}
