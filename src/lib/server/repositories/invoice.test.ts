@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inRolledBackTransaction } from '$lib/server/db/rollback';
 import { rejection } from '$lib/server/db/pg-error';
-import { minorUnits } from '$lib/money';
+import { minorUnits, type MinorUnits } from '$lib/money';
 import { eq, sql } from 'drizzle-orm';
 import { client as pool, db } from '$lib/server/db';
 import { client, contract, document, invoice, invoiceLine } from '$lib/server/db/schema';
@@ -27,7 +27,7 @@ import {
 	type InvoiceInput
 } from './invoice';
 import { createExpense } from './expense';
-import { createWorkUnit, getWorkUnit } from './work-unit';
+import { createWorkUnit, getWorkUnit, listWorkUnitTransitions } from './work-unit';
 
 // Needs a migrated database: `pnpm db:up && pnpm db:migrate`. Postgres work
 // happens inside a transaction that is always rolled back, same pattern as
@@ -494,7 +494,7 @@ test('recording a payment sets paid_on, and the invoice no longer appears in the
 	});
 });
 
-test('a day linked to an unpaid invoice line is not itself transitioned to "paid": paid is derived from the invoice, not stored on the day', async () => {
+test('a day linked to a fully paid invoice line moves to "paid": the invoice itself stays derived, but the day follows it, not a second opinion', async () => {
 	await inRolledBackTransaction(async (tx) => {
 		const contractRow = await insertContract(tx);
 		const day = await createWorkUnit(
@@ -544,10 +544,12 @@ test('a day linked to an unpaid invoice line is not itself transitioned to "paid
 		await recordPayment(invoiceRow.id, { amount: invoiceRow.total, date: '2024-02-01' }, tx);
 
 		const refreshedDay = await getWorkUnit(day.id, tx);
-		// The row itself is unchanged by paying the invoice — no cascade
-		// wrote 'paid' onto it. `routes/invoices/[id]` derives the display
-		// status from the invoice's own paidOn instead.
-		expect(refreshedDay.state).toBe('invoiced');
+		// #389: a payment that settles the invoice moves every `invoiced`
+		// day on it to `paid`, in `recordPayment`'s own transaction — the
+		// invoice's own paid status stays derived through `getInvoiceBalance`
+		// (`routes/invoices/[id]` still reads it that way); this is only the
+		// day following that derivation, never a second source of truth.
+		expect(refreshedDay.state).toBe('paid');
 	});
 });
 
@@ -1396,5 +1398,158 @@ test('#311: getInvoiceListTotals reports the oldest overdue due date across the 
 
 		const totals = await getInvoiceListTotals(today, tx);
 		expect(totals.oldestOverdueDueDate).toBe('1901-01-15');
+	});
+});
+
+async function createInvoicedDay(tx: Tx, contractId: string, date: string, scope: string) {
+	return createWorkUnit(
+		{ contractId, date, quantity: 1, scope, state: 'worked' },
+		{ kind: 'human', email: 'lorenzo@example.com' },
+		'worked',
+		tx
+	);
+}
+
+async function createInvoiceForDays(
+	tx: Tx,
+	contractId: string,
+	days: { id: string; amount: MinorUnits }[]
+) {
+	return createInvoice(
+		{
+			contractId,
+			number: `INV-${crypto.randomUUID()}`,
+			issueDate: '2024-01-01',
+			documentType: 'invoice',
+			currency: 'EUR',
+			taxTreatmentCode: null,
+			statutoryReference: null,
+			stampDuty: null,
+			socialCharge: null,
+			dueDate: '2024-01-15',
+			paymentMethod: null,
+			iban: null,
+			transmissionId: null,
+			lines: days.map((day, index) => ({
+				description: `Day ${index + 1}`,
+				quantity: 1,
+				unitPrice: day.amount,
+				amount: day.amount,
+				taxRate: 0,
+				taxTreatmentCode: null,
+				workUnitIds: [day.id]
+			}))
+		} satisfies InvoiceInput,
+		{ kind: 'human', email: 'lorenzo@example.com' },
+		'invoiced',
+		tx
+	);
+}
+
+// #389: `work_unit`'s `paid` state was only reachable through hand-written
+// SQL or seed data. The decision on the issue: a day moves to `paid`
+// automatically, in `recordPayment`'s own transaction, the moment
+// `getInvoiceBalance` reports the invoice fully settled — never a second
+// opinion set independently of the balance.
+
+test('#389: a second payment arriving after the invoice is already settled does not fail and does not write a second transition for a day already paid', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const day = await createInvoicedDay(tx, contractRow.id, '2024-01-05', 'Work.');
+		const invoiceRow = await createInvoiceForDays(tx, contractRow.id, [
+			{ id: day.id, amount: minorUnits(50000) }
+		]);
+
+		await recordPayment(invoiceRow.id, { amount: invoiceRow.total, date: '2024-02-01' }, tx);
+		const afterFirst = await getWorkUnit(day.id, tx);
+		expect(afterFirst.state).toBe('paid');
+
+		// Nothing left to settle, but a stray/duplicate payment must not
+		// error, and must not try to move a day that is already `paid`
+		// (the trigger has no `paid -> paid` edge, so a second write would
+		// be rejected, not merely redundant).
+		await expect(
+			recordPayment(invoiceRow.id, { amount: minorUnits(1000), date: '2024-02-10' }, tx)
+		).resolves.toBeDefined();
+
+		const afterSecond = await getWorkUnit(day.id, tx);
+		expect(afterSecond.state).toBe('paid');
+
+		const log = await listWorkUnitTransitions(day.id, tx);
+		expect(log.filter((entry) => entry.toState === 'paid')).toHaveLength(1);
+	});
+});
+
+test('#389: a partial payment moves nothing', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const day = await createInvoicedDay(tx, contractRow.id, '2024-01-05', 'Work.');
+		const invoiceRow = await createInvoiceForDays(tx, contractRow.id, [
+			{ id: day.id, amount: minorUnits(50000) }
+		]);
+
+		await recordPayment(
+			invoiceRow.id,
+			{ amount: minorUnits(Math.floor(invoiceRow.total / 2)), date: '2024-02-01' },
+			tx
+		);
+
+		const refreshedDay = await getWorkUnit(day.id, tx);
+		expect(refreshedDay.state).toBe('invoiced');
+
+		const log = await listWorkUnitTransitions(day.id, tx);
+		expect(log.some((entry) => entry.toState === 'paid')).toBe(false);
+	});
+});
+
+test('#389: a payment that settles the invoice moves every "invoiced" day on it to paid, logged with a system actor and a reason naming the payment', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const dayOne = await createInvoicedDay(tx, contractRow.id, '2024-01-05', 'Work one.');
+		const dayTwo = await createInvoicedDay(tx, contractRow.id, '2024-01-06', 'Work two.');
+		const invoiceRow = await createInvoiceForDays(tx, contractRow.id, [
+			{ id: dayOne.id, amount: minorUnits(30000) },
+			{ id: dayTwo.id, amount: minorUnits(20000) }
+		]);
+
+		const paid = await recordPayment(
+			invoiceRow.id,
+			{ amount: invoiceRow.total, date: '2024-02-01' },
+			tx
+		);
+
+		const [refreshedOne, refreshedTwo] = await Promise.all([
+			getWorkUnit(dayOne.id, tx),
+			getWorkUnit(dayTwo.id, tx)
+		]);
+		expect(refreshedOne.state).toBe('paid');
+		expect(refreshedTwo.state).toBe('paid');
+
+		const logOne = await listWorkUnitTransitions(dayOne.id, tx);
+		const paidEntry = logOne.find((entry) => entry.toState === 'paid');
+		expect(paidEntry?.actor).toEqual({ kind: 'system' });
+		expect(paidEntry?.reason).toContain(paid.id);
+	});
+});
+
+test('#389: a payment that overshoots the total still settles the invoice and moves its invoiced days to paid', async () => {
+	await inRolledBackTransaction(async (tx) => {
+		const contractRow = await insertContract(tx);
+		const day = await createInvoicedDay(tx, contractRow.id, '2024-01-05', 'Work.');
+		const invoiceRow = await createInvoiceForDays(tx, contractRow.id, [
+			{ id: day.id, amount: minorUnits(50000) }
+		]);
+
+		await recordPayment(
+			invoiceRow.id,
+			{ amount: minorUnits(invoiceRow.total + 10000), date: '2024-02-01' },
+			tx
+		);
+
+		const balance = await getInvoiceBalance(invoiceRow.id, tx);
+		expect(balance?.settled).toBe(true);
+
+		const refreshedDay = await getWorkUnit(day.id, tx);
+		expect(refreshedDay.state).toBe('paid');
 	});
 });
