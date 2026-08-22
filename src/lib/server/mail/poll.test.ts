@@ -21,10 +21,15 @@
 // which is now hardwired to `imapConfig.inboxMailbox`. Only the cases
 // that are actually about the wiring — a connection failure, the
 // watched mailbox itself being wrong, a `mailbox_poll_run` row getting
-// written — go through `pollMailboxesOnce`, and the couple of cases
-// about the lookback window and the "shared inbox, unknown sender" shape
-// use the real `INBOX`, same as before #394, because both are
-// specifically about what the *watched* mailbox does.
+// written, the lookback window, and the "shared inbox, unknown sender"
+// shape — go through `pollMailboxesOnce`, most of them with
+// `inboxMailbox` overridden to a `testFolder` mailbox of their own
+// rather than the real `INBOX` (#421: a first pass over the real
+// `INBOX` used to be simulated by deleting every row it owned, which
+// deleted rows this file never created too — the seed's included).
+// Only the "shared inbox, unknown sender" case still uses the real
+// `INBOX`: it does not need an empty mailbox, and its assertions are
+// scoped to the message id it appended.
 
 import { ImapFlow } from 'imapflow';
 import { desc, eq } from 'drizzle-orm';
@@ -605,27 +610,30 @@ test.skipIf(!mailboxAvailable)(
 test.skipIf(!mailboxAvailable)(
 	'a first pass reaches back only as far as the lookback window, not to the start of the account',
 	async () => {
+		const folder = testFolder('lookback');
 		const oldId = `<ancient-${crypto.randomUUID()}@example.com>`;
 		const freshId = `<fresh-${crypto.randomUUID()}@example.com>`;
 		const ancient = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000);
 
-		await appendMessage('INBOX', { messageId: oldId, internalDate: ancient });
-		await appendMessage('INBOX', { messageId: freshId });
+		await appendMessage(folder, { messageId: oldId, internalDate: ancient });
+		await appendMessage(folder, { messageId: freshId });
 
 		// The window only governs a *first* pass: once a cursor exists the UID
 		// range is the bound, and an old message appended late legitimately
-		// has a high UID. So this has to be a first pass, which means no
-		// cursor for INBOX — the state a real instance is in the moment
-		// ingestion is switched on.
-		await db.delete(inboundThread).where(eq(inboundThread.mailbox, 'INBOX'));
-
-		await pollOnce();
+		// has a high UID. So this has to be a first pass, which a freshly
+		// created mailbox already is (#421) — no need to clear a cursor by
+		// deleting rows this test does not own, the state a real instance is
+		// in the moment ingestion is switched on for a mailbox nobody has
+		// polled before.
+		await pollOnce({}, { ...imapConfig, inboxMailbox: folder });
 
 		const archivedIds = (
-			await db.select({ messageId: inboundThread.messageId }).from(inboundThread)
+			await db
+				.select({ messageId: inboundThread.messageId })
+				.from(inboundThread)
+				.where(eq(inboundThread.mailbox, folder))
 		).map((row) => row.messageId);
 
-		// Scoped to the two ids this test appended: the mailbox is shared.
 		expect(archivedIds).toContain(freshId);
 		expect(archivedIds).not.toContain(oldId);
 	}
