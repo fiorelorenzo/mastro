@@ -65,6 +65,20 @@ export interface DayProposalSource {
 	 * above for either.
 	 */
 	readonly conversation?: readonly ConversationMessage[];
+	/**
+	 * The `extraction_run` row behind this read, when there is one — so a
+	 * conflict row this file writes (Task 6) can carry it, next to the
+	 * document, letting a reviewer jump from the disagreement straight to
+	 * the transcript that produced it. Nullable, genuinely: the FK on
+	 * `day_reading_conflict.extraction_run_id` is nullable because a run
+	 * is not always in scope — `proposeDaysFromMessage` above is not
+	 * job-driven at all, and a job-driven read (`drain.ts`'s
+	 * `applyDayJob`) still has none for a job enqueued before #278, or one
+	 * whose run row never landed. Undefined (every existing caller, every
+	 * test) and `null` are the same "no run" case; only a real id is
+	 * carried forward.
+	 */
+	readonly extractionRunId?: string | null;
 }
 
 /** How the extraction is actually run. Injected so this module can be
@@ -274,7 +288,7 @@ export async function writeDayProposals(
 				contractId: source.contractId,
 				date: entry.day.date,
 				documentId,
-				extractionRunId: null,
+				extractionRunId: source.extractionRunId ?? null,
 				proposedFields: {
 					date: entry.day.date,
 					quantity: entry.day.quantity,
@@ -316,7 +330,7 @@ export async function writeDayProposals(
 				contractId: source.contractId,
 				date,
 				documentId: source.documentId,
-				extractionRunId: null,
+				extractionRunId: source.extractionRunId ?? null,
 				proposedFields: null,
 				excerpt: null
 			},

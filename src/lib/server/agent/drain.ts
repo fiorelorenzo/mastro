@@ -262,6 +262,14 @@ async function applyDayJob(job: CompletedJob, executor?: DbExecutor): Promise<Da
 		throw new Error(`document ${job.result.documentId} has no inbound thread to date it by`);
 	}
 
+	// So a conflict row `writeDayProposals` writes (Task 6) can carry the
+	// run a reviewer can open and watch — genuinely absent, not just
+	// unfetched, for a job enqueued before #278 or whose run row never
+	// landed; `getExtractionRunByJobId` already answers `null` for either.
+	const run = executor
+		? await getExtractionRunByJobId(job.id, executor)
+		: await getExtractionRunByJobId(job.id);
+
 	return writeDayProposals(
 		{
 			documentId: job.result.documentId,
@@ -275,7 +283,8 @@ async function applyDayJob(job: CompletedJob, executor?: DbExecutor): Promise<Da
 			// for (#244): the year-rollover guard needs the message's own
 			// date, and the queue file never carried one — only the thread
 			// row did.
-			messageDate: thread.receivedAt.toISOString().slice(0, 10)
+			messageDate: thread.receivedAt.toISOString().slice(0, 10),
+			extractionRunId: run?.id ?? null
 		},
 		job.result,
 		executor
