@@ -299,13 +299,27 @@ test('publishAllPending never offers an unattributed document to the publisher, 
 		);
 
 		const target = createLocalDirectoryMirrorTarget(mirrorRoot);
-		const outcomes = await publishAllPending(target, folderConfig, tx);
 
-		// A batch made entirely of unattributed documents reads as nothing
-		// publishable, not as a failure: the acceptance criterion is that
-		// `failed` is zero because the document was never offered, not
-		// because it was tried and swallowed (#393).
-		expect(outcomes).toEqual([]);
+		// Deliberately not asserting on the returned outcome list. It used to
+		// be `expect(outcomes).toEqual([])` and it flaked: vitest runs test
+		// *files* in parallel workers against one database, so a document
+		// another file commits between the UPDATE above and this call is
+		// visible under READ COMMITTED, gets offered, and fails with an
+		// ENOENT because its blob sits under that file's own
+		// `DOCUMENT_STORAGE_ROOT` rather than this one's. The assertion then
+		// failed for a reason with nothing to do with the behaviour it was
+		// about, and `PublishOutcome` carries no document id, so the list
+		// cannot be narrowed to what this test created. The list is simply
+		// not where this claim lives.
+		//
+		// The claim is that the unattributed document was never offered, and
+		// the two assertions below discriminate it from "offered and
+		// swallowed": had the queue handed it over, `publishDocument`
+		// resolves its context inside its own `try`, finds none for a
+		// document with no contract, and records a `failure` run row for
+		// this document (#393). A null run row is only possible if it was
+		// never tried.
+		await publishAllPending(target, folderConfig, tx);
 
 		const [row] = await tx.select().from(document).where(eq(document.id, unattributed.id));
 		expect(row.remoteFileId).toBeNull();
